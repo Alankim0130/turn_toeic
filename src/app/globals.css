@@ -1,0 +1,176 @@
+@import "tailwindcss";
+
+/* ─── 역전토익 디자인 토큰 (브랜드 컬러: 핫핑크) ─────────────────────────── */
+@theme {
+  --color-brand-50: #fff5f9;
+  --color-brand-100: #ffe4ef;
+  --color-brand-200: #ffc2da;
+  --color-brand-300: #ff8fbd;
+  --color-brand-400: #ff5ca2;
+  --color-brand-500: #ff2e88;
+  --color-brand-600: #e61e75;
+  --color-brand-700: #bf125d;
+  --color-brand-800: #8f0c46;
+  --color-brand-900: #5c0730;
+
+  --color-ink: #17121f;
+  --color-ink-soft: #2b2436;
+  --color-slate: #5b5563;
+  --color-mist: #9a95a3;
+  --color-line: #ece6ec;
+  --color-surface: #fff8fb;
+  --color-paper: #ffffff;
+
+  --font-sans: "Pretendard Variable", "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+
+  --radius-xl2: 1.25rem;
+  --radius-xl3: 1.75rem;
+
+  --shadow-soft: 0 10px 30px -12px rgba(23, 18, 31, 0.18);
+  --shadow-pink: 0 12px 32px -10px rgba(255, 46, 136, 0.45);
+
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-float-slow: float 9s ease-in-out infinite;
+  --animate-marquee: marquee 28s linear infinite;
+  --animate-blob: blob 14s ease-in-out infinite;
+  --animate-pulse-ring: pulse-ring 2.4s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+  --animate-fade-up: fade-up 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-spin-slow: spin 18s linear infinite;
+  --animate-shimmer: shimmer 2.2s linear infinite;
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-14px); }
+  }
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+  @keyframes blob {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(30px, -20px) scale(1.08); }
+    66% { transform: translate(-20px, 24px) scale(0.95); }
+  }
+  @keyframes pulse-ring {
+    0% { transform: scale(0.6); opacity: 0.9; }
+    100% { transform: scale(1.8); opacity: 0; }
+  }
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(18px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+}
+
+/* ─── 기본 ────────────────────────────────────────────────────────────────── */
+:root {
+  color-scheme: light;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  @apply bg-surface text-ink antialiased;
+  font-family: var(--font-sans);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+::selection {
+  background: var(--color-brand-200);
+  color: var(--color-ink);
+}
+
+/* 모바일 하단 네비 높이만큼 본문 여백 확보 */
+.has-bottom-nav {
+  padding-bottom: calc(4.25rem + var(--safe-bottom));
+}
+@media (min-width: 768px) {
+  .has-bottom-nav { padding-bottom: 0; }
+}
+
+/* ─── 컴포넌트 유틸 ───────────────────────────────────────────────────────── */
+@utility container-x {
+  @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
+}
+
+@utility text-gradient-brand {
+  background-image: linear-gradient(100deg, #ff2e88 0%, #ff5ca2 45%, #ff8fbd 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+}
+
+@utility card {
+  @apply rounded-xl2 border border-line bg-paper shadow-soft;
+}
+
+@utility input {
+  @apply w-full rounded-xl border border-line bg-paper px-4 py-3 text-base text-ink placeholder:text-mist
+    focus:border-brand-400 focus:outline-none focus:ring-4 focus:ring-brand-100 disabled:opacity-60;
+}
+
+@utility label {
+  @apply mb-1.5 block text-sm font-semibold text-ink-soft;
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-bold transition
+    active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-brand-500 text-white shadow-pink hover:bg-brand-600;
+}
+@utility btn-secondary {
+  @apply btn border border-line bg-paper text-ink hover:border-brand-300 hover:text-brand-600;
+}
+@utility btn-ghost {
+  @apply btn text-ink-soft hover:bg-brand-50 hover:text-brand-600;
+}
+@utility btn-dark {
+  @apply btn bg-ink text-white hover:bg-ink-soft;
+}
+
+@utility chip {
+  @apply inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700;
+}
+
+/* 스크롤 진입 애니메이션 */
+.reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+.shimmer-bar {
+  background: linear-gradient(90deg, rgba(255, 46, 136, 0) 0%, rgba(255, 46, 136, 0.35) 50%, rgba(255, 46, 136, 0) 100%);
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .reveal { opacity: 1; transform: none; }
+}

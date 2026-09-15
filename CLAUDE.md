@@ -1,0 +1,405 @@
+# 역전토익 홈페이지 — CLAUDE.md
+
+부산 서면 YBM 어학원 소속 토익 브랜드 **역전토익**(강사: 이혜영 LC / 이영수 RC)의
+수강생 학습관리 홈페이지. 원페이지 랜딩이 아니라 LMS를 갖춘 사이트다.
+
+---
+
+## 작업 원칙 (반드시 준수)
+
+1. **요청하지 않은 기능을 추가하지 않는다.** 아래 "구현 범위"에 없는 것은 만들지 않는다.
+   좋아 보인다는 이유로 출결·과제·단어장·오답노트·알림톡·NFC 체크인 등을 끼워넣지 말 것.
+2. **미확정 항목은 추측해서 구현하지 않는다.** 문서 맨 아래 "미확정" 목록에 해당하면
+   구현을 멈추고 질문한다.
+3. 결제·수강신청은 **YBM 공식 사이트(ybmedu.com)에서만** 이뤄진다. 이 사이트는 결제를 다루지 않는다.
+4. 반·시간대·수강료 같은 운영 데이터는 **DB에서 읽는다. 코드에 하드코딩 금지.**
+
+---
+
+## 기술 스택
+
+- **Next.js** (App Router) + TypeScript
+- **Supabase** — Auth, Postgres, Storage, Edge Functions, RLS
+- 배포: Vercel
+- OCR: 외부 OCR API 호출 (엔진 미확정)
+
+---
+
+## 구현 범위 (2026-09-15 Alan 확장 반영)
+
+| 영역 | 내용 |
+|---|---|
+| 공개 페이지 | 역전토익 소개(랜딩, 애니메이션), 스터디 신청하기, 연락하기 |
+| 수강생 포털 | 등업신청(수강증 업로드·자동 등업), 불라방, 불라방 교재신청, 강의 다시보기, 내 시간표 |
+| 관리자 페이지 | 대시보드(학생명단·교재주문·마케팅 분석·시간대별 인원수 위젯), 반 개설·편성, 다시보기 등록, 등업 로그, 스터디·문의 처리 |
+
+### 디자인·품질 원칙 (항상 적용)
+- **브랜드 컬러는 핫핑크.** 팔레트: brand #FF2E88 / hover #E61E75 / tint #FFE4EF, 텍스트 ink #17121F
+- **SEO**: 모든 공개 페이지에 metadata(title/description/OG), 시맨틱 HTML, `app/sitemap.ts`·`app/robots.ts` 를 새 공개 라우트마다 갱신
+- **반응형** + 상단 네비게이션 바 + **모바일 하단 네비게이션 바**
+- 스태프(instructor/admin)에게는 학생 페이지에서 관리자 페이지로 바로 가는 버튼 노출
+- **기본 이모지 절대 금지.** 아이콘·일러스트는 힉스필드(Higgsfield)로 제작해 `public/` 에 저장한 자산만 사용
+- 브랜드 로고도 힉스필드로 제작 (`public/brand/`)
+- Downloads 의 첫토익 자료(노랑/연두, 파스텔 핑크 시간표·교재 표지)는 **다른 브랜드**. 참고 금지
+
+### 관리자 대시보드 항목
+- **학생명단**: 등록생(해당 월, 개강일~종강일 기준) / 예비등록생(개강 전 등록) / 졸업생
+- **교재주문**: 불라방 수강생의 교재 배송 신청 목록 (`textbook_orders`)
+- **마케팅 분석**: 가입 시 수집한 대학·학과·성별 차트
+- **수업시간대별 인원수 위젯**: 시간대마다 현장 인원, 괄호 안에 불라방 인원 — `현장 12 (불라방 5)`
+
+---
+
+## 도메인 핵심 규칙
+
+### 1. 수업 편성 — 강사가 매달 직접 짠다
+
+- 강사 일정은 **매달 달라진다.** 고정 패턴을 코드에 넣지 말 것.
+- 트랙은 두 가지: **월수금(MWF)** / **화목금(TTF)**
+- **주3일반** = 한 트랙만 수강 → 월 **10회**
+- **주5일반** = 두 트랙 모두 수강 → 월 **20회**
+- 월·수(또는 화·목)는 매주, **금요일은 격주**로 들어간다.
+  두 트랙의 금요일은 서로 엇갈려서, 주5일 학생은 금요일에 항상 한 타임만 듣는다.
+
+```
+1주  MWF: 월·수·금   TTF: 화·목        → 주5일 학생 5일
+2주  MWF: 월·수      TTF: 화·목·금     → 주5일 학생 5일
+3주  MWF: 월·수·금   TTF: 화·목        → 주5일 학생 5일
+4주  MWF: 월·수      TTF: 화·목·금     → 주5일 학생 5일
+     ────────────────────────────────
+     MWF 10회        TTF 10회          주5일 20회
+```
+
+> **요일 배열(`{월,수,금}`)만으로는 격주 금요일을 표현할 수 없다.**
+> 진실의 원천은 `session_dates` 행들이다. 강사가 캘린더에서 날짜를 확정하고,
+> 회차 수·학생 시간표·다시보기 슬롯은 전부 여기서 파생된다.
+> 강사가 편성을 바꾸면 파생 항목이 모두 따라 움직여야 한다.
+
+**강사 편성 화면 동작**
+1. 트랙(MWF/TTF)과 금요일 격주 시작 주를 고르면 초안 날짜가 자동 생성된다
+2. 강사가 캘린더에서 개별 날짜를 켜고 끄며 확정한다
+3. 화면에 `10 / 10회` 카운터를 항상 표시한다
+4. 두 트랙의 같은 날짜가 겹치면 경고한다 (주5일 학생이 하루에 두 수업을 듣게 되므로)
+
+### 2. 개강일 · 종강일 — 수업일과 **별개**로 강사가 지정
+
+| 필드 | 의미 |
+|---|---|
+| `enrollment_opens_at` (개강일) | 이 날부터 해당 반으로 **수강증 업로드가 활성화**된다 |
+| `closes_at` (종강일) | 이 날이 지나면 **다시보기 시청이 차단**된다 |
+
+- 첫 수업일·마지막 수업일과 같을 필요가 없다. 강사가 자유롭게 앞뒤로 잡는다.
+- 종강일을 마지막 수업일보다 뒤로 잡으면 마지막 회차 녹화본도 볼 수 있다.
+  **시스템이 유예 기간을 임의로 더하지 않는다.**
+
+### 3. 학생 등급 — 권한 × 반 배정 2축
+
+**축 1 · 권한 등급 (`profiles.role`)**
+
+| role | 설명 |
+|---|---|
+| `guest` | 비회원. 공개 페이지만 |
+| `member` | 가입 회원. 수강증 업로드 가능 |
+| `student` | 수강증 인증 통과 + 개강일 도래. 배정된 반의 불라방·다시보기 |
+| `alumni` | 종강일 경과로 자동 강등 |
+| `instructor` | 본인 반 개설·편성·관리 |
+| `admin` | 전체 |
+
+**축 2 · 반 배정 (`enrollments`)** — 학생 ↔ 분반 다대다.
+주5일 학생은 MWF·TTF **두 건**을 갖는다. 내 시간표는 두 트랙의 합집합.
+
+```
+콘텐츠 접근 =  role 이 student 이상
+            AND 해당 콘텐츠의 section 에 활성 enrollment 보유
+            AND today <= section.closes_at
+```
+
+### 4. 등록 기간 — 최대 2개월
+
+- 한 번에 **1개월 또는 2개월** 등록할 수 있다.
+- 2개월 등록인데 둘째 달 반이 아직 개설 전이면 `enrollments.status = 'pending_section'`으로 두고,
+  강사가 그 달 반을 개설하면 (`course`, `track`, `time_block`) 기준으로 자동 배정한다.
+- 시청 만료일은 **마지막 달 반의 `closes_at`**.
+
+### 5. 예비등록생 — 개강 전 수강증 업로드
+
+- 학생은 **개강일 전에도 수강증을 올릴 수 있다.**
+- OCR 검증을 통과하면 `enrollment_orders.status = 'preliminary'`로 기록되고,
+  **"N월 예비등록생"**으로 표시된다.
+- 예비등록생은 아직 `student`가 아니다. 불라방·다시보기 접근 불가.
+- **개강일이 되면 자동으로** `active` + `role = 'student'`로 전환된다.
+
+---
+
+## 수강증 OCR 자동 등업
+
+> **가장 어려운 부분이다.** 과거 운영에서 브랜드명 인식, 단과/종합 구분, 시간대 판별이
+> 계속 틀렸다. 수강증 전문을 자유 파싱하지 말 것 — 한글 OCR은 한 글자만 틀려도 무너진다.
+> **해당 시점에 열려 있는 반은 10~20개뿐이므로, 파싱이 아니라 후보 대조 문제로 푼다.**
+
+### 파이프라인
+
+```
+업로드 → Supabase Storage (private) → Edge Function
+  ↓ OCR
+  ↓ 정규화
+      공백·특수문자 제거, 전각→반각
+      시각 구분자  . ; ：  →  :
+      범위 구분자  - – ~   →  ~
+      금액 콤마 제거 → int
+  ↓ 게이트 (하나라도 실패하면 reject)
+      G1  학원명에 'YBM' AND ('서면' OR '부산')
+      G2  '역전토익' 정확 일치
+          OR 4글자 슬라이딩 윈도우 편집거리 ≤ 1
+             (역전토익 ↔ 력전토익 / 역젼토익 / 역전도익)
+          OR 강사명 '이혜영' | '이영수' 포함
+      G3  가입 실명 == 수강증 수강생명 (공백 무시)
+      G4  영수증번호 미사용 (DB unique index)
+  ↓ 후보 생성
+      class_sections 중 업로드 시점에 enrollment_opens_at 이 도래했거나
+      곧 도래하는 반 전체 (예비등록 허용하므로 다음 달 반도 포함)
+  ↓ 후보별 점수 (가중합 0~100)
+      +30  수강료 일치        ← 가장 신뢰도 높은 키
+      +20  시간대 일치
+      +15  트랙 일치          MWF / TTF / 주5일
+      +15  강좌유형 일치       종합 / 단과LC / 단과RC
+      +10  강사명 일치
+      +10  수강기간 일치
+  ↓ 판정
+      top1 ≥ 70 AND (top1 − top2) ≥ 15  →  자동 확정
+      그 외                              →  아래 "미확정" 참조
+```
+
+### 수강료를 최우선 키로 쓰는 이유
+숫자는 한글 대비 OCR 오인식률이 낮고, 단과·종합·불라방 할인가가 서로 충분히 떨어져 있어
+**금액 하나만 제대로 읽혀도 강좌유형과 시간대 후보가 대부분 걸러진다.**
+따라서 `class_sections.tuition`은 매달 정확히 입력되어야 한다 — 이 값이 판별 기준선이다.
+
+### 단과 / 종합 판정
+세 신호 중 **2개 이상 합치할 때만** 확정한다.
+
+| 신호 | 종합 | 단과 |
+|---|---|---|
+| 키워드 | 종합, 종합반, LC+RC | 단과, LC, RC |
+| 수업 길이 | 김 | 짧음 |
+| 수강료 | 높음 | 낮음 |
+
+### 개인정보
+- 수강증 원본은 private bucket에 저장하고 인증 후 자동 삭제한다 (보관 기간 미확정)
+- 업로드 화면에 수집 항목·보관 기간을 고지하고 동의를 받는다
+- `receipt_no`에 unique index — 영수증 1건당 1계정
+
+---
+
+## 데이터 모델
+
+```sql
+create type user_role as enum
+  ('guest','member','student','alumni','instructor','admin');
+
+create table profiles (
+  id          uuid primary key references auth.users on delete cascade,
+  name        text not null,              -- 실명. 수강증 대조에 사용
+  phone       text,
+  role        user_role not null default 'member',
+  university  text,                       -- 마케팅 분석용 (가입 시 입력)
+  department  text,
+  gender      text,                       -- male | female | other | undisclosed
+  created_at  timestamptz default now()
+);
+
+create table terms (                       -- 기수 = 월
+  id serial primary key,
+  year int not null,
+  month int not null,
+  unique(year, month)
+);
+
+create table courses (                     -- 강좌 마스터
+  id           serial primary key,
+  code         text unique not null,
+  name         text not null,
+  course_type  text not null,              -- 'full' | 'lc' | 'rc'
+  target_score int,
+  is_active    boolean default true
+);
+
+create table class_sections (              -- 트랙 단위 분반
+  id            serial primary key,
+  course_id     int references courses,
+  term_id       int references terms,
+  bundle_id     uuid,                      -- 주5일반: MWF+TTF 묶음 키
+  track         text not null,             -- 'mwf' | 'ttf'
+  start_time    time not null,
+  end_time      time not null,
+  time_block    text,                      -- 시간대 라벨. 값은 Alan 확정 후 입력
+  enrollment_opens_at date not null,       -- 개강일: 수강증 업로드 개시
+  closes_at           date not null,       -- 종강일: 다시보기 차단
+  target_sessions int not null,            -- 10 또는 20
+  instructor_id uuid references profiles,
+  capacity      int,
+  tuition       int not null,              -- 현장 수강료. OCR 매칭 기준선
+  live_tuition  int,                       -- 불라방 수강료. null 이면 불라방 미운영
+  status        text default 'open'        -- draft | open | closed. draft 는 비공개
+);
+-- class_sections 는 draft 를 제외하고 비회원도 조회 가능 (공개 시간표).
+-- 불라방 링크는 수강생 전용이라 별도 테이블로 분리 (Security Advisor 지적 반영)
+
+create table section_live_links (          -- 불라방 입장 링크. 접근 가능한 수강생·스태프만 조회
+  section_id  int primary key references class_sections on delete cascade,
+  live_url    text not null,
+  updated_at  timestamptz default now()
+);
+
+create table session_dates (               -- 진실의 원천. 강사가 캘린더로 확정
+  id          bigserial primary key,
+  section_id  int references class_sections on delete cascade,
+  seq         int not null,
+  date        date not null,
+  start_time  time not null,
+  end_time    time not null,
+  unique(section_id, seq),
+  unique(section_id, date)
+);
+
+create table replays (                     -- 다시보기
+  id              bigserial primary key,
+  session_date_id bigint references session_dates on delete cascade,
+  video_url       text not null,
+  published_at    timestamptz default now()
+);
+
+create table enrollment_orders (           -- 등록 단위. 수강증 1건 = 1건
+  id              bigserial primary key,
+  user_id         uuid references profiles,
+  verification_id bigint references enrollment_verifications,
+  months          int not null check (months between 1 and 2),
+  status          text not null default 'preliminary',
+                  -- preliminary | active | expired
+  activates_on    date not null,           -- 첫 달 개강일
+  access_until    date not null,           -- 마지막 달 종강일
+  created_at      timestamptz default now()
+);
+
+create table enrollments (                 -- 월별 실제 반 배정
+  id         bigserial primary key,
+  order_id   bigint references enrollment_orders on delete cascade,
+  student_id uuid references profiles,
+  section_id int references class_sections,
+  status     text default 'active',        -- active | pending_section | completed
+  mode       text not null default 'onsite', -- onsite(현장) | live(불라방)
+  pending_from_section_id int references class_sections,
+             -- pending_section 일 때만 사용. 첫 달 반을 가리키며, 다음 달에 같은
+             -- (course, track, time_block) 반이 개설되면 그 반으로 자동 배정된다
+  unique(student_id, section_id)
+);
+
+create table enrollment_verifications (
+  id              bigserial primary key,
+  user_id         uuid references profiles,
+  file_path       text not null,
+  ocr_raw         jsonb,
+  parsed          jsonb,   -- {name, course, teacher, time, tuition, period, receipt_no}
+  candidates      jsonb,   -- [{section_id, score, breakdown}] 튜닝용 로그
+  matched_section int references class_sections,
+  confidence      numeric,
+  result          text,    -- approved | rejected
+  reject_reason   text,
+  receipt_no      text,
+  created_at      timestamptz default now()
+);
+create unique index on enrollment_verifications (receipt_no)
+  where result = 'approved';
+```
+
+---
+
+## 상태 전이 (일 1회 배치)
+
+> 구현: `private.run_daily_status_transition()` 을 pg_cron 이 매일 00:05 KST 에 실행한다.
+> 날짜 비교는 전부 한국 시간(`private.today_kst()`) 기준. 둘째 달 반 자동 배정
+> (`private.resolve_pending_enrollments()`)도 이 배치와 class_sections 변경 트리거에서 돈다.
+
+```sql
+-- 개강일 도래 → 예비등록생을 수강생으로
+update enrollment_orders set status='active'
+where status='preliminary' and activates_on <= current_date;
+
+update profiles p set role='student'
+where p.role in ('member','alumni')
+  and exists (select 1 from enrollment_orders o
+              where o.user_id=p.id and o.status='active');
+
+-- 종강일 경과 → 만료
+update enrollment_orders set status='expired'
+where status='active' and access_until < current_date;
+
+update profiles p set role='alumni'
+where p.role='student'
+  and not exists (select 1 from enrollment_orders o
+                  where o.user_id=p.id and o.status='active');
+```
+
+---
+
+## 화면
+
+**공개**
+
+| 경로 | 내용 |
+|---|---|
+| `/` | 역전토익 소개 (랜딩, 애니메이션) |
+| `/study` | 스터디 신청하기 |
+| `/contact` | 연락하기 |
+| `/login`, `/signup` | 로그인 / 회원가입 (실명·전화·대학·학과·성별) |
+
+**수강생 `/my`**
+
+| 경로 | 내용 | 필요 등급 |
+|---|---|---|
+| `/my` | 대시보드. 예비등록생이면 "N월 예비등록생" 표시. 스태프면 관리자 바로가기 버튼 | member |
+| `/my/verify` | 등업신청: 수강증 업로드 → 자동 등업 | member |
+| `/my/class` | 내 시간표 (주5일이면 두 트랙 합집합) | student |
+| `/my/live` | 불라방 입장 | student |
+| `/my/textbook` | 불라방 교재신청 (불라방 수강생만) | student |
+| `/my/replay` | 강의 다시보기. 종강일까지 | student |
+
+**관리자 `/admin`**
+
+| 경로 | 내용 | 필요 등급 |
+|---|---|---|
+| `/admin` | 대시보드: 학생명단 요약, 교재주문, 마케팅 분석 차트, 시간대별 인원수 위젯 | instructor |
+| `/admin/students` | 학생명단: 등록생 / 예비등록생 / 졸업생 탭 | instructor |
+| `/admin/sections` | 월별 반 개설, 트랙 편성, 캘린더 확정, 개강일·종강일 지정 | instructor |
+| `/admin/replays` | 녹화본 등록·회차 연결 | instructor |
+| `/admin/verifications` | OCR 로그, 후보 점수, 오배정 정정 | instructor |
+| `/admin/textbook-orders` | 교재주문 처리 | instructor |
+| `/admin/analytics` | 마케팅 분석 (대학·학과·성별) | instructor |
+| `/admin/study` | 스터디 신청 처리 | instructor |
+| `/admin/contacts` | 문의 처리 | instructor |
+
+---
+
+## 미확정 — 구현 전에 반드시 Alan에게 질문할 것
+
+1. **시간대·반 목록** — 어떤 시간대에 어떤 반이 열리는지. Alan이 정리해서 전달 예정.
+   받기 전까지 시간대 값을 임의로 만들지 말 것.
+2. **수강료 실제 금액** — OCR 매칭 기준선. 확정 전까지 하드코딩 금지.
+3. **OCR 판정이 애매할 때** — 1·2위 점수가 붙었을 때 어떻게 할지.
+   (제안: 후보 3개를 학생에게 보여주고 직접 고르게 하면 관리자 개입 없이 오배정을 막을 수 있다.
+   Alan 확정 필요.)
+4. **편성 수정 시 기존 녹화본** — 학생 등록 후 강사가 회차를 빼면,
+   그 날짜에 붙은 녹화본을 어떻게 할지. (삭제 / 경고 후 강사 확인)
+5. **OCR 엔진** — 미선정. 수강증 실물 샘플을 받아 보고 결정.
+6. **수강증 원본 보관 기간**
+7. **도메인** — 현재 veterantoiec.com. 유지 여부 미정.
+
+### 아직 논의되지 않음 (임의 구현 금지)
+출결, 과제·채점, 성적·모의고사, 단어장, 오답노트, 자료실, 알림 발송, 후기 작성 기능
+
+### 확장 기능의 가정 (Alan 확인 전까지의 기본값)
+- **교재신청**: 불라방 수강생만, 본인 반 기준, 배송지 입력. 결제 없음(교재비는 YBM/현장 처리). 상태 requested → confirmed → shipped
+- **스터디 신청**: 비회원도 이름·연락처로 신청 가능. 목표 점수·희망 시간·메모. 스태프가 연락 후 상태 변경
+- **연락하기**: 비회원 가능. 이름 + (전화 또는 이메일) + 메시지. 스태프만 열람
+- **현장/불라방 구분**: `enrollments.mode` (onsite | live). OCR 은 수강료가 `tuition` 이면 onsite, `live_tuition` 이면 live 로 판정
+- **가입 정보**: 실명, 전화, 대학, 학과, 성별(선택). 성별은 미응답 허용

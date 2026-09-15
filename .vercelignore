@@ -1,0 +1,11 @@
+# Vercel CLI 로 배포할 때 업로드하지 않을 파일
+# 주의: 앞에 / 를 붙여 루트만 지정한다. "supabase/" 로 쓰면 src/lib/supabase 까지 빠져 빌드가 깨진다.
+
+# 비밀값
+.env*
+!.env.example
+
+# 로컬 전용 도구·설정
+/supabase/
+/.claude/
+*.log

@@ -1,0 +1,39 @@
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
+
+export type FormState = { ok?: boolean; error?: string; values?: Record<string, string> };
+
+export async function submitContact(_prev: FormState, formData: FormData): Promise<FormState> {
+  const v = (k: string) => String(formData.get(k) ?? "").trim();
+  const values = {
+    name: v("name"),
+    phone: v("phone").replace(/[^\d]/g, ""),
+    email: v("email").toLowerCase(),
+    message: v("message"),
+  };
+
+  if (values.name.length < 2) return { error: "이름을 입력해 주세요.", values };
+  if (!values.phone && !values.email) return { error: "휴대폰 번호와 이메일 중 하나는 꼭 남겨 주세요.", values };
+  if (values.phone && !/^01\d{8,9}$/.test(values.phone)) return { error: "휴대폰 번호를 확인해 주세요.", values };
+  if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) return { error: "이메일 형식을 확인해 주세요.", values };
+  if (values.message.length < 5) return { error: "문의 내용을 조금 더 자세히 적어 주세요.", values };
+  if (formData.get("agree") !== "on") return { error: "개인정보 수집·이용에 동의해 주세요.", values };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { error } = await supabase.from("contact_messages").insert({
+    user_id: user?.id ?? null,
+    name: values.name,
+    phone: values.phone || null,
+    email: values.email || null,
+    message: values.message,
+    status: "new",
+  });
+
+  if (error) return { error: "접수 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.", values };
+  return { ok: true };
+}
