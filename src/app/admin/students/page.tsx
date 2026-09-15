@@ -108,7 +108,6 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
                         {myEnroll.map((e) => (
                           <li key={e.id} className="flex flex-wrap items-center gap-1.5 text-xs">
                             <span>{sectionSummary(e.section, e.mode)}</span>
-                            {e.status === "pending_section" && <StatusBadge status="pending_section" />}
                           </li>
                         ))}
                       </ul>

@@ -4,13 +4,14 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export type SubmitVerificationInput = { filePath: string; months: number; mode: "onsite" | "live" };
+export type SubmitVerificationInput = { filePath: string };
 export type SubmitVerificationResult = { ok: true } | { ok: false; error: string };
 
 /**
  * 업로드가 끝난 수강증 경로를 접수한다.
  * enrollment_verifications 는 service_role 만 insert 할 수 있으므로, 여기서 세션·경로를 검증한 뒤 admin 클라이언트로 넣는다.
- * OCR 엔진 미확정 → result = null 로 두고 /admin/verifications 에서 검토·승인한다.
+ * 등록은 매달 단위이고 현장/불라방은 수강증 내용(수강료)으로 판정하므로 학생에게 따로 받지 않는다.
+ * OCR 엔진 미확정 → result·parsed 를 비워 두고 /admin/verifications 에서 검토·승인한다.
  */
 export async function submitVerification(input: SubmitVerificationInput): Promise<SubmitVerificationResult> {
   const supabase = await createClient();
@@ -19,12 +20,8 @@ export async function submitVerification(input: SubmitVerificationInput): Promis
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "로그인이 필요합니다." };
 
-  const filePath = String(input.filePath ?? "");
-  const months = Number(input.months);
-  const mode = input.mode === "live" ? "live" : "onsite";
-
+  const filePath = String(input?.filePath ?? "");
   if (!filePath.startsWith(`${user.id}/`) || filePath.includes("..")) return { ok: false, error: "파일 경로가 올바르지 않습니다." };
-  if (months !== 1 && months !== 2) return { ok: false, error: "등록 개월수는 1 또는 2개월만 가능합니다." };
 
   const admin = createAdminClient();
 
@@ -49,7 +46,6 @@ export async function submitVerification(input: SubmitVerificationInput): Promis
     user_id: user.id,
     file_path: filePath,
     result: null,
-    parsed: { months, mode_hint: mode },
   });
   if (error) return { ok: false, error: "접수 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요." };
 

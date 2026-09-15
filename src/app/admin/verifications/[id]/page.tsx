@@ -50,7 +50,7 @@ export default async function VerificationDetailPage({
       .order("start_time"),
     supabase
       .from("enrollment_orders")
-      .select("id, months, status, activates_on, access_until, enrollments(id, mode, status, section_id, section:class_sections!enrollments_section_id_fkey(track, start_time, time_block, term:terms(year, month), course:courses(name)))")
+      .select("id, status, activates_on, access_until, enrollments(id, mode, status, section_id, section:class_sections!enrollments_section_id_fkey(track, start_time, time_block, term:terms(year, month), course:courses(name)))")
       .eq("verification_id", id)
       .maybeSingle(),
   ]);
@@ -63,7 +63,6 @@ export default async function VerificationDetailPage({
   const orderInfo: OrderInfo | null = order
     ? {
         id: order.id,
-        months: order.months,
         status: order.status,
         activates_on: order.activates_on,
         access_until: order.access_until,
@@ -141,7 +140,6 @@ export default async function VerificationDetailPage({
               <h2 className="mb-3 font-black text-ink">생성된 등록</h2>
               <dl className="grid grid-cols-2 gap-2 text-sm">
                 <dt className="text-slate">상태</dt><dd><StatusBadge status={orderInfo.status} /></dd>
-                <dt className="text-slate">개월</dt><dd>{orderInfo.months}개월</dd>
                 <dt className="text-slate">개강일</dt><dd>{formatDate(orderInfo.activates_on, { year: "numeric", month: "long", day: "numeric" })}</dd>
                 <dt className="text-slate">시청 만료일</dt><dd>{formatDate(orderInfo.access_until, { year: "numeric", month: "long", day: "numeric" })}</dd>
               </dl>

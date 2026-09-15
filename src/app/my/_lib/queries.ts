@@ -14,7 +14,7 @@ export async function getMyOrders() {
   const { data } = await supabase
     .from("enrollment_orders")
     .select(
-      `id, months, status, activates_on, access_until, created_at,
+      `id, status, activates_on, access_until, created_at,
        enrollments:enrollments!enrollments_order_id_fkey(
          id, status, mode,
          section:class_sections!enrollments_section_id_fkey(${SECTION_COLS})

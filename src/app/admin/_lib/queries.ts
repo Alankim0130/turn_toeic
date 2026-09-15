@@ -49,18 +49,18 @@ export type RosterSets = {
   activeIds: string[];
   preliminaryIds: string[];
   /** user_id → 주문들 */
-  ordersByUser: Map<string, { status: string; activates_on: string; access_until: string; months: number }[]>;
+  ordersByUser: Map<string, { status: string; activates_on: string; access_until: string }[]>;
 };
 
 /** 등록생 / 예비등록생 집합 (오늘 기준) */
 export async function getRosterSets(supabase: DB, today: string): Promise<RosterSets> {
   const { data } = await supabase
     .from("enrollment_orders")
-    .select("user_id, status, activates_on, access_until, months")
+    .select("user_id, status, activates_on, access_until")
     .in("status", ["active", "preliminary"]);
   const active = new Set<string>();
   const prelim = new Set<string>();
-  const ordersByUser = new Map<string, { status: string; activates_on: string; access_until: string; months: number }[]>();
+  const ordersByUser = new Map<string, { status: string; activates_on: string; access_until: string }[]>();
   for (const o of data ?? []) {
     ordersByUser.set(o.user_id, [...(ordersByUser.get(o.user_id) ?? []), o]);
     if (o.status === "active" && o.activates_on <= today && today <= o.access_until) active.add(o.user_id);

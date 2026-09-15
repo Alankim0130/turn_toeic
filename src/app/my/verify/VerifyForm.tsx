@@ -18,8 +18,6 @@ function sanitizeName(name: string) {
 export function VerifyForm() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [months, setMonths] = useState<1 | 2>(1);
-  const [mode, setMode] = useState<"onsite" | "live">("onsite");
   const [agree, setAgree] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +72,7 @@ export function VerifyForm() {
       if (upErr) throw new Error("업로드에 실패했어요. 네트워크를 확인하고 다시 시도해 주세요.");
 
       startTransition(async () => {
-        const res = await submitVerification({ filePath: path, months, mode });
+        const res = await submitVerification({ filePath: path });
         if (!res.ok) {
           setError(res.error);
           return;
@@ -138,41 +136,6 @@ export function VerifyForm() {
           </span>
           <span className="text-xs text-mist">JPG · PNG · WEBP · PDF, 10MB 이하. 글자가 잘 보이게 찍어 주세요.</span>
         </label>
-      </div>
-
-      {/* 개월수 / 방식 */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <fieldset>
-          <legend className="label">등록 개월수</legend>
-          <div className="grid grid-cols-2 gap-2">
-            {[1, 2].map((m) => (
-              <label key={m} className="cursor-pointer">
-                <input type="radio" name="months" value={m} checked={months === m} onChange={() => setMonths(m as 1 | 2)} className="peer sr-only" disabled={busy} />
-                <span className="block rounded-xl border border-line bg-paper px-3 py-2.5 text-center text-sm font-bold text-slate transition peer-checked:border-brand-400 peer-checked:bg-brand-50 peer-checked:text-brand-700 peer-focus-visible:ring-4 peer-focus-visible:ring-brand-100">
-                  {m}개월
-                </span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        <fieldset>
-          <legend className="label">수강 방식</legend>
-          <div className="grid grid-cols-2 gap-2">
-            {(
-              [
-                { v: "onsite", l: "현장" },
-                { v: "live", l: "불라방" },
-              ] as const
-            ).map((o) => (
-              <label key={o.v} className="cursor-pointer">
-                <input type="radio" name="mode" value={o.v} checked={mode === o.v} onChange={() => setMode(o.v)} className="peer sr-only" disabled={busy} />
-                <span className="block rounded-xl border border-line bg-paper px-3 py-2.5 text-center text-sm font-bold text-slate transition peer-checked:border-brand-400 peer-checked:bg-brand-50 peer-checked:text-brand-700 peer-focus-visible:ring-4 peer-focus-visible:ring-brand-100">
-                  {o.l}
-                </span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
       </div>
 
       <label className="flex items-start gap-2 text-sm text-slate">

@@ -17,13 +17,16 @@ function revalidateAll(id: number) {
   revalidatePath("/my", "layout");
 }
 
-/** 수동 승인: 반 배정 + 등록 생성 + 등업 */
+/**
+ * 수동 승인: 반 배정 + 등록 생성 + 등업.
+ * 등록은 매달 단위(2026-09-15 Alan 확정)라 한 번의 승인 = 그 달 반 배정 1건이다.
+ * 주5일은 같은 달의 월수금·화목금 두 반을 함께 고른다.
+ */
 export async function approveVerification(_prev: ActionState, formData: FormData): Promise<ActionState> {
   await requireStaff();
 
   const id = Number(formData.get("verification_id"));
   const sectionIds = [...new Set(formData.getAll("section_ids").map(Number).filter((n) => Number.isInteger(n) && n > 0))];
-  const months = Number(formData.get("months")) === 2 ? 2 : 1;
   const mode = formData.get("mode") === "live" ? "live" : "onsite";
   const receiptNo = String(formData.get("receipt_no") ?? "").trim() || null;
 
@@ -37,7 +40,7 @@ export async function approveVerification(_prev: ActionState, formData: FormData
 
   const { data: sections } = await admin
     .from("class_sections")
-    .select("id, course_id, track, time_block, enrollment_opens_at, closes_at, term:terms(year, month)")
+    .select("id, enrollment_opens_at, closes_at")
     .in("id", sectionIds);
   if (!sections || sections.length !== sectionIds.length) return { error: "선택한 반을 찾을 수 없습니다." };
 
@@ -52,49 +55,15 @@ export async function approveVerification(_prev: ActionState, formData: FormData
     if (dup) return { error: "이미 다른 계정에서 사용된 영수증 번호입니다." };
   }
 
+  // 개강일 = 고른 반 중 가장 이른 개강일, 시청 만료일 = 가장 늦은 종강일
   const today = todayKST();
-  let activatesOn = sections.map((s) => s.enrollment_opens_at).sort()[0];
-  let accessUntil = sections.map((s) => s.closes_at).sort().at(-1)!;
-
-  // 둘째 달 자동 배정 시도
-  const nextRows: { section_id: number | null; pending_from: number }[] = [];
-  if (months === 2) {
-    for (const s of sections) {
-      const t = s.term;
-      let found: { id: number; closes_at: string } | null = null;
-      if (t) {
-        const ny = t.month === 12 ? t.year + 1 : t.year;
-        const nm = t.month === 12 ? 1 : t.month + 1;
-        const { data: nextTerm } = await admin.from("terms").select("id").eq("year", ny).eq("month", nm).maybeSingle();
-        if (nextTerm) {
-          let q = admin
-            .from("class_sections")
-            .select("id, closes_at")
-            .eq("term_id", nextTerm.id)
-            .eq("course_id", s.course_id)
-            .eq("track", s.track)
-            .neq("status", "draft")
-            .order("id")
-            .limit(1);
-          q = s.time_block === null ? q.is("time_block", null) : q.eq("time_block", s.time_block);
-          const { data } = await q;
-          found = data?.[0] ?? null;
-        }
-      }
-      if (found) {
-        nextRows.push({ section_id: found.id, pending_from: s.id });
-        if (found.closes_at > accessUntil) accessUntil = found.closes_at;
-      } else {
-        nextRows.push({ section_id: null, pending_from: s.id });
-      }
-    }
-  }
-  if (activatesOn > accessUntil) activatesOn = accessUntil;
+  const activatesOn = sections.map((s) => s.enrollment_opens_at).sort()[0];
+  const accessUntil = sections.map((s) => s.closes_at).sort().at(-1)!;
   const status = activatesOn <= today ? "active" : "preliminary";
 
   const { data: order, error: orderErr } = await admin
     .from("enrollment_orders")
-    .insert({ user_id: ver.user_id, verification_id: id, months, status, activates_on: activatesOn, access_until: accessUntil })
+    .insert({ user_id: ver.user_id, verification_id: id, months: 1, status, activates_on: activatesOn, access_until: accessUntil })
     .select("id")
     .single();
   if (orderErr || !order) return { error: `등록 생성에 실패했습니다. ${orderErr?.message ?? ""}` };
@@ -106,13 +75,6 @@ export async function approveVerification(_prev: ActionState, formData: FormData
     status: "active",
     mode,
   }));
-  for (const n of nextRows) {
-    rows.push(
-      n.section_id
-        ? { order_id: order.id, student_id: ver.user_id, section_id: n.section_id, status: "active", mode }
-        : { order_id: order.id, student_id: ver.user_id, section_id: null, status: "pending_section", mode, pending_from_section_id: n.pending_from },
-    );
-  }
   const { error: enrErr } = await admin.from("enrollments").insert(rows);
   if (enrErr) {
     await admin.from("enrollment_orders").delete().eq("id", order.id);
@@ -170,7 +132,7 @@ export async function updateEnrollment(_prev: ActionState, formData: FormData): 
 
   const { error } = await admin
     .from("enrollments")
-    .update({ section_id: sectionId, mode, status: "active", pending_from_section_id: null })
+    .update({ section_id: sectionId, mode, status: "active" })
     .eq("id", enrollmentId);
   if (error) return { error: error.code === "23505" ? "이미 같은 반에 배정되어 있습니다." : `저장에 실패했습니다. ${error.message}` };
 

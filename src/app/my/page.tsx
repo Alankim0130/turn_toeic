@@ -110,7 +110,6 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
                           >
                             {ORDER_STATUS_LABEL[o.status] ?? o.status}
                           </span>
-                          <span className="text-xs font-semibold text-slate">{o.months}개월 등록</span>
                           <span className="ml-auto text-xs text-mist">
                             {o.status === "expired" ? "시청 종료" : "다시보기 시청 가능"}: {formatDate(o.access_until, { month: "long", day: "numeric" })}까지
                           </span>
@@ -129,31 +128,23 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
                         )}
 
                         <ul className="mt-3 space-y-2">
-                          {o.enrollments.map((e) => (
-                            <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                              {e.status === "pending_section" || !e.section ? (
-                                <>
-                                  <Icon name="calendar" size={18} className="opacity-60" />
-                                  <span className="font-semibold text-slate">둘째 달 반 개설 대기 중</span>
-                                  <span className="text-xs text-mist">· {MODE_LABEL[e.mode]}</span>
-                                </>
-                              ) : (
-                                <>
-                                  <span className="font-black text-ink">{termLabel(e.section.term)}</span>
-                                  <span className="font-semibold text-ink">{e.section.course?.name ?? "강좌"}</span>
-                                  <span className="rounded-full bg-ink px-2 py-0.5 text-xs font-bold text-white">
-                                    {TRACK_LABEL[e.section.track] ?? e.section.track}
-                                  </span>
-                                  <span className="text-slate">
-                                    {formatTime(e.section.start_time)}–{formatTime(e.section.end_time)}
-                                  </span>
-                                  <span className={cn("text-xs font-bold", e.mode === "live" ? "text-brand-600" : "text-slate")}>
-                                    {MODE_LABEL[e.mode]}
-                                  </span>
-                                </>
-                              )}
-                            </li>
-                          ))}
+                          {o.enrollments.map((e) =>
+                            e.section ? (
+                              <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                                <span className="font-black text-ink">{termLabel(e.section.term)}</span>
+                                <span className="font-semibold text-ink">{e.section.course?.name ?? "강좌"}</span>
+                                <span className="rounded-full bg-ink px-2 py-0.5 text-xs font-bold text-white">
+                                  {TRACK_LABEL[e.section.track] ?? e.section.track}
+                                </span>
+                                <span className="text-slate">
+                                  {formatTime(e.section.start_time)}–{formatTime(e.section.end_time)}
+                                </span>
+                                <span className={cn("text-xs font-bold", e.mode === "live" ? "text-brand-600" : "text-slate")}>
+                                  {MODE_LABEL[e.mode]}
+                                </span>
+                              </li>
+                            ) : null,
+                          )}
                         </ul>
                       </li>
                     );

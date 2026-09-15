@@ -9,7 +9,6 @@ import { StatusBadge } from "@/components/admin/StatusBadge";
 export type Candidate = { id: number; label: string };
 export type OrderInfo = {
   id: number;
-  months: number;
   status: string;
   activates_on: string;
   access_until: string;
@@ -81,18 +80,7 @@ export function DecisionForms({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <fieldset>
-              <legend className="label">등록 기간</legend>
-              <div className="grid grid-cols-2 gap-2">
-                {[1, 2].map((m) => (
-                  <label key={m} className="cursor-pointer">
-                    <input type="radio" name="months" value={m} defaultChecked={m === 1} className="peer sr-only" />
-                    <span className="block rounded-xl border border-line px-3 py-2 text-center text-sm font-bold text-slate peer-checked:border-brand-400 peer-checked:bg-brand-50 peer-checked:text-brand-700">{m}개월</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-            <fieldset>
-              <legend className="label">수강 방식</legend>
+              <legend className="label">수강 방식 <span className="font-normal text-mist">(수강증 금액으로 구분)</span></legend>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { v: "onsite", l: "현장" },
@@ -105,11 +93,10 @@ export function DecisionForms({
                 ))}
               </div>
             </fieldset>
-          </div>
-
-          <div>
-            <label htmlFor="receipt_no" className="label">영수증 번호 <span className="font-normal text-mist">(선택 · 중복 등업 방지)</span></label>
-            <input id="receipt_no" name="receipt_no" className="input" placeholder="수강증의 영수증/주문 번호" />
+            <div>
+              <label htmlFor="receipt_no" className="label">영수증 번호 <span className="font-normal text-mist">(선택 · 중복 등업 방지)</span></label>
+              <input id="receipt_no" name="receipt_no" className="input" placeholder="수강증의 영수증/주문 번호" />
+            </div>
           </div>
 
           <SubmitButton pendingText="승인 처리 중…" className="w-full sm:w-full">승인하고 등업하기</SubmitButton>

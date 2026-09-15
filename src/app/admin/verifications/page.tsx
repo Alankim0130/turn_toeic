@@ -16,8 +16,6 @@ const TABS = [
   { value: "rejected", label: "반려" },
 ];
 
-type Parsed = { months?: number; mode_hint?: string; name?: string; tuition?: number; course?: string; time?: string } | null;
-
 export default async function VerificationsPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   const { status: statusParam } = await searchParams;
   const status = TABS.some((t) => t.value === statusParam) ? (statusParam as string) : "pending";
@@ -25,7 +23,7 @@ export default async function VerificationsPage({ searchParams }: { searchParams
 
   let query = supabase
     .from("enrollment_verifications")
-    .select("id, created_at, result, parsed, receipt_no, confidence, matched_section, profile:profiles(name)")
+    .select("id, created_at, result, receipt_no, confidence, matched_section, profile:profiles(name)")
     .order("created_at", { ascending: false })
     .limit(200);
   query = status === "pending" ? query.is("result", null) : query.eq("result", status);
@@ -51,8 +49,6 @@ export default async function VerificationsPage({ searchParams }: { searchParams
             <tr>
               <Th>신청일</Th>
               <Th>이름</Th>
-              <Th>개월</Th>
-              <Th>방식 힌트</Th>
               <Th>신뢰도</Th>
               <Th>결과</Th>
               <Th></Th>
@@ -60,13 +56,10 @@ export default async function VerificationsPage({ searchParams }: { searchParams
           </thead>
           <tbody className="divide-y divide-line">
             {(rows ?? []).map((r) => {
-              const parsed = (r.parsed ?? null) as Parsed;
               return (
                 <tr key={r.id} className="hover:bg-brand-50/40">
                   <Td className="whitespace-nowrap text-xs">{formatDate(r.created_at, { year: "2-digit", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
                   <Td className="whitespace-nowrap font-bold">{r.profile?.name ?? "-"}</Td>
-                  <Td>{parsed?.months ? `${parsed.months}개월` : "-"}</Td>
-                  <Td>{parsed?.mode_hint ? <StatusBadge status={parsed.mode_hint} /> : <span className="text-mist">-</span>}</Td>
                   <Td className="tabular-nums">{r.confidence != null ? `${Math.round(Number(r.confidence))}점` : "-"}</Td>
                   <Td><StatusBadge status={r.result ?? "pending"} /></Td>
                   <Td className="text-right">
