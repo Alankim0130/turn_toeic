@@ -4,12 +4,16 @@ import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
 import { formatTime, TRACK_LABEL, COURSE_TYPE_LABEL } from "@/lib/utils";
 
-const BANDS = [
-  { name: "아침", time: "9시 이전" },
-  { name: "오전", time: "9시 ~ 12시" },
-  { name: "오후", time: "12시 ~ 18시" },
-  { name: "저녁", time: "18시 이후" },
-];
+/** 목표 점수반별 수업 시간 (timetable_levels · timetable_slots). 매달 편성하는 반과 별개인 대표 시간표 */
+async function loadTimetable() {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("timetable_levels")
+    .select("level, note, timetable_slots(start_time, end_time)")
+    .order("sort_order")
+    .order("start_time", { referencedTable: "timetable_slots" });
+  return data ?? [];
+}
 
 /** DB 의 열린 반을 읽어 이번 달 시간표를 보여준다 (하드코딩 금지) */
 async function loadOpenSections() {
@@ -24,7 +28,7 @@ async function loadOpenSections() {
 }
 
 export async function Schedule() {
-  const sections = await loadOpenSections();
+  const [timetable, sections] = await Promise.all([loadTimetable(), loadOpenSections()]);
   const byTerm = new Map<string, typeof sections>();
   for (const s of sections) {
     const key = s.term ? `${s.term.year}년 ${s.term.month}월` : "개설 예정";
@@ -34,24 +38,45 @@ export async function Schedule() {
   return (
     <section aria-labelledby="schedule-title" className="container-x py-20">
       <Reveal className="mx-auto max-w-2xl text-center">
-        <p className="chip">수강 시간대</p>
+        <p className="chip">수업시간표</p>
         <h2 id="schedule-title" className="mt-4 text-3xl font-black tracking-tight text-ink sm:text-4xl">
           내 일정에 맞는 시간을 고르세요
         </h2>
-        <p className="mt-3 text-slate">아침부터 저녁까지, 주3일과 주5일. 반 편성은 매달 강사가 직접 짜서 공개합니다.</p>
+        <p className="mt-3 text-slate">목표 점수반마다 수업 시간이 정해져 있어요. 주3일과 주5일, 반 편성은 매달 강사가 직접 짜서 공개합니다.</p>
       </Reveal>
 
-      <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {BANDS.map((b, i) => (
-          <Reveal key={b.name} delay={i * 80} className="card p-5 text-center">
-            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50">
-              <Icon name="timeslot" size={30} />
-            </span>
-            <p className="mt-3 text-lg font-black text-ink">{b.name}</p>
-            <p className="text-sm text-slate">{b.time}</p>
-          </Reveal>
-        ))}
-      </div>
+      {timetable.length > 0 && (
+        <div className="mt-10 grid gap-4 md:grid-cols-3">
+          {timetable.map((t, i) => (
+            <Reveal key={t.level} delay={i * 80} className="card flex flex-col p-6">
+              <div className="flex items-center gap-3">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-50">
+                  <Icon name="timeslot" size={30} />
+                </span>
+                <h3 className="text-2xl font-black tracking-tight text-ink">
+                  {t.level}
+                  <span className="ml-0.5 text-lg">반</span>
+                </h3>
+              </div>
+              <ul className="mt-5 space-y-2">
+                {t.timetable_slots.map((s) => (
+                  <li
+                    key={s.start_time}
+                    className="rounded-xl bg-brand-50 px-4 py-3 text-center text-xl font-black tabular-nums text-brand-600"
+                  >
+                    {formatTime(s.start_time)} ~ {formatTime(s.end_time)}
+                  </li>
+                ))}
+              </ul>
+              {t.note && (
+                <p className="mt-3 rounded-xl border border-brand-200 px-4 py-2.5 text-center text-sm font-bold text-brand-700">
+                  {t.note}
+                </p>
+              )}
+            </Reveal>
+          ))}
+        </div>
+      )}
 
       <Reveal delay={120} className="mt-10">
         {sections.length === 0 ? (

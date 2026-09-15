@@ -1108,6 +1108,53 @@ export type Database = {
           },
         ]
       }
+      timetable_levels: {
+        Row: {
+          level: number
+          note: string | null
+          sort_order: number
+        }
+        Insert: {
+          level: number
+          note?: string | null
+          sort_order?: number
+        }
+        Update: {
+          level?: number
+          note?: string | null
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      timetable_slots: {
+        Row: {
+          end_time: string
+          id: number
+          level: number
+          start_time: string
+        }
+        Insert: {
+          end_time: string
+          id?: number
+          level: number
+          start_time: string
+        }
+        Update: {
+          end_time?: string
+          id?: number
+          level?: number
+          start_time?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "timetable_slots_level_fkey"
+            columns: ["level"]
+            isOneToOne: false
+            referencedRelation: "timetable_levels"
+            referencedColumns: ["level"]
+          },
+        ]
+      }
     }
     Views: {
       section_headcounts: {
