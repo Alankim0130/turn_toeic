@@ -17,7 +17,7 @@ type Pending = { key: string; file: File; title: string };
 const baseName = (name: string) => (name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name).slice(0, 100);
 
 /** 음원 여러 개 선택 → 제목 확인 → 순서대로 업로드 후 한 번에 등록 */
-export function AudioUploader({ level }: { level: number }) {
+export function AudioUploader({ bookId, label }: { bookId: number; label: string }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<Pending[]>([]);
@@ -48,10 +48,10 @@ export function AudioUploader({ level }: { level: number }) {
       for (let i = 0; i < items.length; i++) {
         setProgress(`${i + 1} / ${items.length} 업로드 중…`);
         const it = items[i];
-        uploaded.push({ title: it.title.trim(), file: await uploadFile(BUCKET, `${level}/${objectName(it.file)}`, it.file) });
+        uploaded.push({ title: it.title.trim(), file: await uploadFile(BUCKET, `${bookId}/${objectName(it.file)}`, it.file) });
       }
       setProgress("목록에 등록 중…");
-      const res = await registerAudioTracks({ level, tracks: uploaded });
+      const res = await registerAudioTracks({ bookId, tracks: uploaded });
       if (!res.ok) {
         await removeUploaded(BUCKET, uploaded.map((u) => u.file.path));
         setError(res.error ?? "등록하지 못했어요.");
@@ -86,7 +86,7 @@ export function AudioUploader({ level }: { level: number }) {
       >
         <input ref={inputRef} type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg" multiple className="sr-only" onChange={(e) => pick(e.target.files)} disabled={busy} />
         <Icon name="headphones" size={44} />
-        <span className="text-sm font-bold text-ink">여기를 눌러 {level} 음원 파일 선택 (여러 개 가능)</span>
+        <span className="text-sm font-bold text-ink">여기를 눌러 {label} 음원 파일 선택 (여러 개 가능)</span>
         <span className="text-xs text-mist">mp3 · m4a · wav, 파일당 50MB 이하 · 학생 화면에서는 제목의 숫자 순서대로 정렬돼요</span>
       </label>
 

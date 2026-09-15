@@ -171,15 +171,15 @@ export async function getMyHomework() {
 }
 export type MyHomework = Awaited<ReturnType<typeof getMyHomework>>[number];
 
-/** LC 음원듣기: 레벨 목록 + 들을 수 있는 음원·교재 이미지 (RLS: 지금 수강 중인 수강생) */
+/** LC 음원듣기: 레벨 목록 + 교재(A·B반 권별) + 들을 수 있는 음원 (RLS: 지금 수강 중인 수강생) */
 export async function getMyLcAudio() {
   const supabase = await createClient();
-  const [{ data: levels }, { data: tracks }, { data: images }] = await Promise.all([
+  const [{ data: levels }, { data: books }, { data: tracks }] = await Promise.all([
     supabase.from("lc_levels").select("level").order("sort_order").order("level"),
-    supabase.from("lc_audio_tracks").select("id, title, level"),
-    supabase.from("lc_textbook_images").select("id, level, file_name").order("created_at"),
+    supabase.from("lc_books").select("id, level, book_set, volume, title, description, cover_name, updated_at"),
+    supabase.from("lc_audio_tracks").select("id, title, book_id"),
   ]);
-  return { levels: (levels ?? []).map((l) => l.level), tracks: tracks ?? [], images: images ?? [] };
+  return { levels: (levels ?? []).map((l) => l.level), books: books ?? [], tracks: tracks ?? [] };
 }
 
 /** 라벨 */

@@ -472,42 +472,52 @@ export type Database = {
       }
       lc_audio_tracks: {
         Row: {
+          book_id: number | null
           content_type: string | null
           created_at: string
           file_name: string
           file_path: string
           file_size: number | null
           id: number
-          level: number
+          level: number | null
           title: string
           updated_at: string
           uploaded_by: string | null
         }
         Insert: {
+          book_id?: number | null
           content_type?: string | null
           created_at?: string
           file_name: string
           file_path: string
           file_size?: number | null
           id?: number
-          level: number
+          level?: number | null
           title: string
           updated_at?: string
           uploaded_by?: string | null
         }
         Update: {
+          book_id?: number | null
           content_type?: string | null
           created_at?: string
           file_name?: string
           file_path?: string
           file_size?: number | null
           id?: number
-          level?: number
+          level?: number | null
           title?: string
           updated_at?: string
           uploaded_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "lc_audio_tracks_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "lc_books"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "lc_audio_tracks_level_fkey"
             columns: ["level"]
@@ -518,6 +528,66 @@ export type Database = {
           {
             foreignKeyName: "lc_audio_tracks_uploaded_by_fkey"
             columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lc_books: {
+        Row: {
+          book_set: string
+          cover_name: string | null
+          cover_path: string | null
+          cover_size: number | null
+          cover_type: string | null
+          description: string | null
+          id: number
+          level: number
+          title: string | null
+          updated_at: string
+          updated_by: string | null
+          volume: number
+        }
+        Insert: {
+          book_set: string
+          cover_name?: string | null
+          cover_path?: string | null
+          cover_size?: number | null
+          cover_type?: string | null
+          description?: string | null
+          id?: number
+          level: number
+          title?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          volume: number
+        }
+        Update: {
+          book_set?: string
+          cover_name?: string | null
+          cover_path?: string | null
+          cover_size?: number | null
+          cover_type?: string | null
+          description?: string | null
+          id?: number
+          level?: number
+          title?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          volume?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lc_books_level_fkey"
+            columns: ["level"]
+            isOneToOne: false
+            referencedRelation: "lc_levels"
+            referencedColumns: ["level"]
+          },
+          {
+            foreignKeyName: "lc_books_updated_by_fkey"
+            columns: ["updated_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]

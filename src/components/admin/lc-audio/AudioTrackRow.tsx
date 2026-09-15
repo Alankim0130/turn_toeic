@@ -7,9 +7,10 @@ import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Icon } from "@/components/ui/Icon";
 import { formatBytes } from "@/lib/study";
 
-export type AudioTrackLite = { id: number; title: string; level: number; file_name: string; file_size: number | null };
+export type AudioTrackLite = { id: number; title: string; book_id: number | null; file_name: string; file_size: number | null };
+export type BookOption = { id: number; level: number; label: string };
 
-export function AudioTrackRow({ track, levels }: { track: AudioTrackLite; levels: number[] }) {
+export function AudioTrackRow({ track, bookOptions }: { track: AudioTrackLite; bookOptions: BookOption[] }) {
   const router = useRouter();
   const [mode, setMode] = useState<"view" | "edit" | "confirm">("view");
   const [state, action] = useActionState<AudioEditState, FormData>(updateAudioTrack, {});
@@ -29,6 +30,8 @@ export function AudioTrackRow({ track, levels }: { track: AudioTrackLite; levels
       if (res.ok) router.refresh();
       else setDelError(res.error ?? "삭제하지 못했어요.");
     });
+
+  const levels = [...new Set(bookOptions.map((b) => b.level))];
 
   return (
     <li className="card p-4">
@@ -53,17 +56,23 @@ export function AudioTrackRow({ track, levels }: { track: AudioTrackLite; levels
       </audio>
 
       {mode === "edit" && (
-        <form action={action} className="mt-3 grid gap-2 rounded-xl border border-line bg-surface p-3 sm:grid-cols-[1fr_9rem_auto] sm:items-end">
+        <form action={action} className="mt-3 grid gap-2 rounded-xl border border-line bg-surface p-3 sm:grid-cols-[1fr_12rem_auto] sm:items-end">
           <input type="hidden" name="id" value={track.id} />
           <div>
             <label htmlFor={`title-${track.id}`} className="label !mb-1 text-xs">제목</label>
             <input id={`title-${track.id}`} name="title" required maxLength={100} defaultValue={track.title} className="input !py-2 text-sm" />
           </div>
           <div>
-            <label htmlFor={`level-${track.id}`} className="label !mb-1 text-xs">레벨</label>
-            <select id={`level-${track.id}`} name="level" defaultValue={track.level} className="input !py-2 text-sm">
-              {levels.map((l) => (
-                <option key={l} value={l}>{l}</option>
+            <label htmlFor={`book-${track.id}`} className="label !mb-1 text-xs">교재</label>
+            <select id={`book-${track.id}`} name="book_id" defaultValue={track.book_id ?? ""} className="input !py-2 text-sm">
+              {levels.map((level) => (
+                <optgroup key={level} label={String(level)}>
+                  {bookOptions
+                    .filter((b) => b.level === level)
+                    .map((b) => (
+                      <option key={b.id} value={b.id}>{level} · {b.label}</option>
+                    ))}
+                </optgroup>
               ))}
             </select>
           </div>

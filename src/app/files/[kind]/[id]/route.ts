@@ -37,9 +37,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       : kind === "homework"
         ? await supabase.from("homework_files").select(cols).eq("id", id).maybeSingle()
         : kind === "textbook"
-          ? await supabase.from("lc_textbook_images").select(cols).eq("id", id).maybeSingle()
+          ? await supabase.from("lc_books").select("file_path:cover_path, file_name:cover_name, content_type:cover_type").eq("id", id).maybeSingle()
           : await supabase.from("lc_audio_tracks").select(cols).eq("id", id).maybeSingle();
-  if (!row) return notFound();
+  if (!row?.file_path || !row.file_name) return notFound();
 
   const sp = request.nextUrl.searchParams;
   const width = Number(sp.get("w"));
