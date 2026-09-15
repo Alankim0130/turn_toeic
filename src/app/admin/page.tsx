@@ -14,7 +14,7 @@ export default async function AdminDashboardPage() {
   const supabase = await createClient();
   const today = todayKST();
 
-  const [roster, alumni, term, textbook, textbookCount, profiles, pendingVer, pendingStudy, newContacts] = await Promise.all([
+  const [roster, alumni, term, textbook, textbookCount, profiles, pendingVer, pendingHomework, newContacts] = await Promise.all([
     getRosterSets(supabase, today),
     supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "alumni"),
     getCurrentOrUpcomingTerm(supabase, today),
@@ -27,7 +27,7 @@ export default async function AdminDashboardPage() {
     supabase.from("textbook_orders").select("id", { count: "exact", head: true }).eq("status", "requested"),
     supabase.from("profiles").select("gender, university"),
     supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null),
-    supabase.from("study_applications").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    supabase.from("homework_submissions").select("id", { count: "exact", head: true }).eq("status", "submitted"),
     supabase.from("contact_messages").select("id", { count: "exact", head: true }).eq("status", "new"),
   ]);
 
@@ -67,7 +67,7 @@ export default async function AdminDashboardPage() {
 
   const todo = [
     { label: "등업 검토 대기", value: pendingVer.count ?? 0, href: "/admin/verifications?status=pending", icon: "verify" as IconName },
-    { label: "스터디 신청 대기", value: pendingStudy.count ?? 0, href: "/admin/study?status=pending", icon: "study" as IconName },
+    { label: "숙제 점검 대기", value: pendingHomework.count ?? 0, href: "/admin/homework?status=submitted", icon: "homework" as IconName },
     { label: "새 문의", value: newContacts.count ?? 0, href: "/admin/contacts?status=new", icon: "contact" as IconName },
   ];
 

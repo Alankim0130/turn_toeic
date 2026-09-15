@@ -29,7 +29,7 @@ export function MobileMenu({ signedIn, staff, name }: { signedIn: boolean; staff
   }, [open]);
 
   return (
-    <div className="md:hidden">
+    <div className="xl:hidden">
       <button
         type="button"
         aria-label={open ? "메뉴 닫기" : "메뉴 열기"}
@@ -52,7 +52,7 @@ export function MobileMenu({ signedIn, staff, name }: { signedIn: boolean; staff
       >
         <div className="container-x flex h-full flex-col gap-6 overflow-y-auto py-6">
           <nav aria-label="모바일 메뉴">
-            <ul className="grid grid-cols-2 gap-3">
+            <ul className="grid grid-cols-2 gap-3 md:grid-cols-3">
               {NAV_MAIN.map((item) => {
                 const active = isActivePath(pathname, item.href);
                 return (

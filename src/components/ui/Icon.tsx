@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils";
 export type IconName =
   | "home" | "verify" | "live" | "textbook" | "replay" | "study" | "contact" | "admin"
   | "students" | "orders" | "analytics" | "timeslot" | "profile" | "calendar" | "upload"
-  | "success" | "warning" | "logout" | "login" | "location" | "rank1" | "target" | "bolt";
+  | "success" | "warning" | "logout" | "login" | "location" | "rank1" | "target" | "bolt"
+  | "offline" | "online" | "vocab" | "homework" | "headphones" | "download";
 
 export function Icon({
   name,

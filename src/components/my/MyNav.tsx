@@ -12,6 +12,9 @@ const ITEMS: { href: string; label: string; icon: IconName }[] = [
   { href: "/my/live", label: "불라방", icon: "live" },
   { href: "/my/textbook", label: "교재신청", icon: "textbook" },
   { href: "/my/replay", label: "다시보기", icon: "replay" },
+  { href: "/my/study", label: "내 스터디", icon: "study" },
+  { href: "/my/homework", label: "숙제제출", icon: "homework" },
+  { href: "/my/lc-audio", label: "LC 음원", icon: "headphones" },
 ];
 
 export function MyNav() {
