@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import { isYmd, labelKo } from "@/components/admin/sections/dates";
+import { isLectureKind, sortLectureKinds } from "@/lib/utils";
 
 type SectionInsert = Database["public"]["Tables"]["class_sections"]["Insert"];
 type SectionUpdate = Database["public"]["Tables"]["class_sections"]["Update"];
@@ -45,7 +46,7 @@ export type TermScheduleInput = {
   closes: string | null;
   mwf: string[];
   ttf: string[];
-  lectures: { date: string; lecturerId: number; content: string }[];
+  lectures: { date: string; lecturerId: number; content: string; kinds: string[] }[];
   /** 저장할 항목. 비우면 전부 */
   parts?: TermPart[];
 };
@@ -61,7 +62,7 @@ const RPC_ERROR: Record<string, string> = {
   closes_before_opens: "종강일은 개강일과 같거나 그 뒤여야 해요.",
   class_date_out_of_range: "수업일·특강은 그 달과 앞뒤 한 달 안에서만 고를 수 있어요.",
   class_date_out_of_month: "수업일·특강은 그 달과 앞뒤 한 달 안에서만 고를 수 있어요.",
-  invalid_lectures: "특강의 날짜·강사·내용(1~100자)을 확인해 주세요.",
+  invalid_lectures: "특강마다 종류를 하나 이상 고르거나 내용(1~100자)을 적어 주세요.",
 };
 
 /** 수업일·특강을 찍을 수 있는 범위: 그 달 ± 1개월 (강의가 다음 달까지 이어질 수 있다) */
@@ -72,6 +73,15 @@ function monthWindow(year: number, month: number) {
     to: iso(new Date(Date.UTC(year, month + 1, 0))),
   };
 }
+
+/** 'YYYY-MM-DD@YYYY-MM,…' → '10월 1일 (목)은 2026년 9월 기수가 쓰고 있어요.' */
+const listOtherTermDates = (csv?: string | null) =>
+  (csv ?? "")
+    .split(",")
+    .map((chunk) => chunk.split("@"))
+    .filter(([d, t]) => isYmd(d ?? "") && /^\d{4}-\d{2}$/.test(t ?? ""))
+    .map(([d, t]) => `${labelKo(d)}은 ${Number(t.slice(0, 4))}년 ${Number(t.slice(5, 7))}월 기수가 쓰고 있어요.`)
+    .join(" ");
 
 const listDates = (csv?: string | null) =>
   (csv ?? "")
@@ -116,15 +126,26 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
     date: String(l?.date ?? ""),
     lecturer_id: Number(l?.lecturerId),
     content: String(l?.content ?? "").trim(),
+    // 정해진 종류(RC특강·LC특강·1차/2차 모의고사)만, 정해진 순서로, 중복 없이
+    kinds: sortLectureKinds((Array.isArray(l?.kinds) ? l.kinds : []).map(String).filter(isLectureKind)),
   }));
   const badLecture = lectures.find(
-    (l) => !isYmd(l.date) || !inWindow(l.date) || !Number.isInteger(l.lecturer_id) || l.lecturer_id <= 0 || l.content.length < 1 || l.content.length > 100,
+    (l) =>
+      !isYmd(l.date) ||
+      !inWindow(l.date) ||
+      !Number.isInteger(l.lecturer_id) ||
+      l.lecturer_id <= 0 ||
+      l.content.length > 100 ||
+      // 종류를 고르거나 내용을 적거나, 둘 중 하나는 있어야 한다
+      (l.kinds.length === 0 && l.content.length === 0),
   );
   if (badLecture) {
     if (isYmd(badLecture.date) && !inWindow(badLecture.date)) return { ok: false, error: RPC_ERROR.class_date_out_of_range };
     return {
       ok: false,
-      error: isYmd(badLecture.date) ? `${labelKo(badLecture.date)} 특강의 강사와 내용(1~100자)을 채워 주세요.` : RPC_ERROR.invalid_lectures,
+      error: isYmd(badLecture.date)
+        ? `${labelKo(badLecture.date)} 특강은 종류를 하나 이상 고르거나 내용(1~100자)을 적어 주세요.`
+        : RPC_ERROR.invalid_lectures,
     };
   }
 
@@ -146,6 +167,9 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
     }
     if (error.message === "track_overlap") {
       return { ok: false, error: `같은 날짜를 월수금과 화목금에 함께 넣을 수 없어요: ${listDates(error.details)}` };
+    }
+    if (error.message === "date_in_other_term") {
+      return { ok: false, error: `${listOtherTermDates(error.details)} 한 날짜는 한 기수(월)의 수업일로만 쓸 수 있어요. 그 달 달력에서 먼저 빼 주세요.` };
     }
     if (error.code === "23503") return { ok: false, error: "선택한 강사를 찾을 수 없어요. 새로고침한 뒤 다시 시도해 주세요." };
     // 마이그레이션 20260915131500 (p_parts) 이 아직 적용되지 않은 상태

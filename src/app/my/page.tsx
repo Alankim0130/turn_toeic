@@ -4,7 +4,7 @@ import { Alert } from "@/components/ui/Alert";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
-import { requireUser, ROLE_LABEL } from "@/lib/auth";
+import { getStudentAccess, requireUser, ROLE_LABEL } from "@/lib/auth";
 import { cn, formatDate, formatTimeRange, MODE_LABEL, TRACK_LABEL } from "@/lib/utils";
 import {
   getMyOrders,
@@ -32,11 +32,12 @@ const QUICK: { href: string; label: string; desc: string; icon: IconName }[] = [
 ];
 
 export default async function MyPage({ searchParams }: { searchParams: Promise<{ welcome?: string; denied?: string }> }) {
-  const [{ profile, user }, sp, orders, verifications] = await Promise.all([
+  const [{ profile, user }, sp, orders, verifications, access] = await Promise.all([
     requireUser("/my"),
     searchParams,
     getMyOrders(),
     getMyVerifications(),
+    getStudentAccess(),
   ]);
 
   const name = profile?.name || user.email || "회원";
@@ -54,10 +55,19 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
             <span className="text-slate"> 님</span>
           </h1>
         </div>
-        <span className="chip self-start sm:self-auto">
-          <Icon name="profile" size={16} />
-          {ROLE_LABEL[role]}
-        </span>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <span className="chip">
+            <Icon name="profile" size={16} />
+            {ROLE_LABEL[role]}
+          </span>
+          {/* 수강생전용은 강사가 정한 종강일까지 쓸 수 있다 */}
+          {access.until && (
+            <span className="chip">
+              <Icon name="calendar" size={16} />
+              {formatDate(access.until, { month: "numeric", day: "numeric" })} 종강까지 이용
+            </span>
+          )}
+        </div>
       </header>
 
       {sp.welcome === "1" && (

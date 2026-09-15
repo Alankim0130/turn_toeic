@@ -47,6 +47,21 @@ export async function getMySessions() {
 }
 export type MySession = Awaited<ReturnType<typeof getMySessions>>[number];
 
+/**
+ * 내가 듣는 기수의 특강. RLS(private.is_term_enrollee)가 그 달 반에 배정된 수강생에게만 내려 준다.
+ * 수업일(session_dates)과 함께 내 시간표에 표시한다.
+ */
+export async function getMyLectures() {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("special_lectures")
+    .select("id, term_id, date, content, kinds, lecturer:lecturers(name), term:terms(year, month)")
+    .order("date", { ascending: true })
+    .order("id", { ascending: true });
+  return data ?? [];
+}
+export type MyLecture = Awaited<ReturnType<typeof getMyLectures>>[number];
+
 export async function getMyLiveLinks() {
   const supabase = await createClient();
   const { data } = await supabase
