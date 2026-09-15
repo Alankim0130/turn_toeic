@@ -6,6 +6,7 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DonutChart } from "@/components/admin/charts/DonutChart";
 import { BarChart } from "@/components/admin/charts/BarChart";
+import { NaverReservationsWidget } from "@/components/admin/NaverReservationsWidget";
 import { countBy, GENDER_LABEL, getCurrentOrUpcomingTerm, getRosterSets, termLabel } from "./_lib/queries";
 
 export const metadata: Metadata = { title: "대시보드", robots: { index: false } };
@@ -96,6 +97,9 @@ export default async function AdminDashboardPage() {
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
+        {/* 네이버 예약 */}
+        <NaverReservationsWidget />
+
         {/* 시간대별 인원수 */}
         <section aria-labelledby="slots-title" className="card p-5 lg:col-span-2">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">

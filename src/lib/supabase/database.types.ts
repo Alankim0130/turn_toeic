@@ -599,6 +599,92 @@ export type Database = {
         }
         Relationships: []
       }
+      naver_reservations: {
+        Row: {
+          booking_number: string | null
+          customer_name: string | null
+          dedupe_key: string
+          id: number
+          item_name: string | null
+          parsed: boolean
+          raw_text: string | null
+          received_at: string
+          reserved_date: string | null
+          reserved_time: string | null
+          source: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          booking_number?: string | null
+          customer_name?: string | null
+          dedupe_key: string
+          id?: number
+          item_name?: string | null
+          parsed?: boolean
+          raw_text?: string | null
+          received_at?: string
+          reserved_date?: string | null
+          reserved_time?: string | null
+          source?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          booking_number?: string | null
+          customer_name?: string | null
+          dedupe_key?: string
+          id?: number
+          item_name?: string | null
+          parsed?: boolean
+          raw_text?: string | null
+          received_at?: string
+          reserved_date?: string | null
+          reserved_time?: string | null
+          source?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      notification_settings: {
+        Row: {
+          contact: boolean
+          daily_digest: boolean
+          naver_reservation: boolean
+          textbook_order: boolean
+          updated_at: string
+          user_id: string
+          verification: boolean
+        }
+        Insert: {
+          contact?: boolean
+          daily_digest?: boolean
+          naver_reservation?: boolean
+          textbook_order?: boolean
+          updated_at?: string
+          user_id: string
+          verification?: boolean
+        }
+        Update: {
+          contact?: boolean
+          daily_digest?: boolean
+          naver_reservation?: boolean
+          textbook_order?: boolean
+          updated_at?: string
+          user_id?: string
+          verification?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -631,6 +717,47 @@ export type Database = {
           university?: string | null
         }
         Relationships: []
+      }
+      push_subscriptions: {
+        Row: {
+          auth: string
+          created_at: string
+          endpoint: string
+          id: number
+          last_sent_at: string | null
+          p256dh: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          auth: string
+          created_at?: string
+          endpoint: string
+          id?: number
+          last_sent_at?: string | null
+          p256dh: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          auth?: string
+          created_at?: string
+          endpoint?: string
+          id?: number
+          last_sent_at?: string | null
+          p256dh?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_subscriptions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       replays: {
         Row: {

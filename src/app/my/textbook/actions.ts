@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { notifyStaff } from "@/lib/push";
 import { createClient } from "@/lib/supabase/server";
 
 export type TextbookState = { ok?: boolean; error?: string; values?: Record<string, string> };
@@ -58,6 +60,14 @@ export async function submitTextbookOrder(_prev: TextbookState, formData: FormDa
     // RLS: 불라방 활성 등록이 없으면 insert 가 거부된다
     return { error: "신청할 수 없어요. 불라방으로 등록된 반만 교재를 신청할 수 있습니다.", values };
   }
+
+  after(() =>
+    notifyStaff("textbook_order", {
+      title: "새 교재주문",
+      body: `${values.recipient_name}님 · ${quantity}권 배송 신청`,
+      url: "/admin/textbook-orders",
+    }),
+  );
 
   revalidatePath("/my/textbook");
   return { ok: true };

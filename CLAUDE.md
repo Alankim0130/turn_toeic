@@ -31,7 +31,7 @@
 |---|---|
 | 공개 페이지 | 역전토익 소개(랜딩, 애니메이션), 수강생전용 소개, 스터디 신청하기(대면·비대면·단어), 연락하기 |
 | 수강생 포털 | 등업신청(수강증 업로드·자동 등업), 내 시간표, 내 스터디(비대면 자료 받기), 그리고 **수강생전용** 6개: 불라방, 다시보기, 숙제업로드, 스터디, 불라방교재주문, LC음원듣기 |
-| 관리자 페이지 | 대시보드(학생명단·교재주문·마케팅 분석·시간대별 인원수 위젯), 반 개설·편성(+ 그 달 스터디 시간 설정), 다시보기 등록, 등업 로그, 스터디 신청자 명단, 비대면 자료 등록, 숙제점검, LC 음원 등록, 문의 처리 |
+| 관리자 페이지 | 대시보드(학생명단·교재주문·마케팅 분석·시간대별 인원수 위젯), 반 개설·편성(+ 그 달 스터디 시간 설정), 다시보기 등록, 등업 로그, 스터디 신청자 명단, 비대면 자료 등록, 숙제점검, LC 음원 등록, 문의 처리, **알림 설정(웹 푸시)**, **네이버 예약 위젯** |
 
 ### 디자인·품질 원칙 (항상 적용)
 - **브랜드 컬러는 핫핑크.** 팔레트: brand #FF2E88 / hover #E61E75 / tint #FFE4EF, 텍스트 ink #17121F
@@ -174,6 +174,26 @@
 - 파일은 전부 private 버킷(`study-materials`, `homework`, `lc-audio`, `lc-textbooks`). 화면은 `/files/{material|homework|audio|textbook}/{id}` 로
   서명 URL 로 리다이렉트한다 — 행 RLS 와 storage 정책이 같은 규칙으로 막는다.
 - 서버 액션 본문 한도(1MB) 때문에 파일은 **브라우저 → Storage 직접 업로드**, 서버 액션은 경로·이름만 등록한다.
+
+### 8. 관리자 알림 · 네이버 예약 (2026-09-15 Alan 요청)
+
+- **알림은 웹 푸시만 쓴다.** 이메일·문자·카카오톡 알림은 쓰지 않는다. 받는 사람은 스태프(강사·관리자)뿐이다.
+  - 스태프가 `/admin/notifications` 에서 기기마다 "이 기기에서 알림 받기" → `push_subscriptions`.
+    아이폰은 **홈 화면에 추가한 앱에서만** 된다 (iOS 16.4+). 서비스 워커는 `public/sw.js` (fetch 는 가로채지 않음).
+  - 종류별 켜기·끄기는 `notification_settings` (행이 없으면 모두 켜짐).
+  - 바로 알림: 네이버 예약 · 등업신청 접수 · 불라방 교재주문 · 연락하기 문의 (서버 액션에서 `after()` 로 `notifyStaff()`).
+    하루 요약: 매일 21:00 KST Vercel Cron `/api/cron/daily-digest` — 최근 24시간 스터디 신청·숙제업로드·신규 가입 수 (0건이면 안 보냄).
+  - 발송은 `src/lib/push.ts`. 404/410 구독은 자동 삭제. 키: `NEXT_PUBLIC_VAPID_PUBLIC_KEY`·`VAPID_PRIVATE_KEY`·`VAPID_SUBJECT`, 크론은 `CRON_SECRET`.
+- **네이버 예약**: 서면 YBM 네이버 예약(사업장 459658)은 센터 전체 예약이고, 그중 "역전토익 강사상담"이 우리 상품이다.
+  - 네이버는 개별 사업자용 예약 조회 API 가 없고, 파트너센터 자동 수집은 약관 위반이다. **긁어오지 않는다.**
+  - 대신 네이버가 보내는 예약 알림(문자·메일·앱 알림) **원문을 연결 주소로 전달받는다**:
+    `POST /api/naver-reservations` + `Authorization: Bearer <NAVER_WEBHOOK_SECRET>`, 본문 `{"text": "원문"}` (메일 form·html 도 받음).
+  - `src/lib/naver-reservation.ts` 가 원문에서 예약 날짜·시각·상품·예약자(가운데 글자 가림)·예약번호·상태를 뽑는다.
+    "이용일시·방문일시" 줄을 우선하고 "신청일시·접수일시" 줄은 피한다. 원문의 전화번호는 가려서 보관한다.
+    날짜를 못 읽어도 원문을 저장하고 알림은 원문 앞부분으로 보낸다 (정보를 버리지 않는다).
+  - 같은 예약번호가 다시 오면 상태·일시가 바뀐 경우만 갱신·알림 (중복 전달 무시).
+  - 대시보드 위젯: 다가오는 예약(오늘부터, 취소 제외) + 최근 받은 알림 5건.
+  - **미확정**: 실제로 어떤 경로(문자·메일·스마트플레이스 앱)로 알림을 받는지, 원문 형식 샘플. 샘플을 받으면 해석 규칙을 맞춘다.
 
 ---
 
@@ -433,6 +453,32 @@ create table lc_audio_tracks (             -- LC 음원
 );
 -- 구버전 study_applications(비회원 자유 양식 신청)·lc_textbook_images(레벨별 이미지 묶음)는
 -- 배포 후 정리 마이그레이션 20260915112851 에서 삭제했다.
+
+-- ─── 관리자 알림 · 네이버 예약 (마이그레이션 20260915115015) ───
+create table push_subscriptions (          -- 스태프 기기별 웹 푸시 구독
+  id        bigint primary key,
+  user_id   uuid references profiles on delete cascade,
+  endpoint  text unique not null,
+  p256dh    text not null, auth text not null,
+  user_agent text, last_sent_at timestamptz
+);
+
+create table notification_settings (       -- 사람별 알림 종류 켜기·끄기 (행 없으면 모두 켜짐)
+  user_id uuid primary key references profiles,
+  verification bool, textbook_order bool, contact bool, naver_reservation bool, daily_digest bool
+);
+
+create table naver_reservations (          -- 네이버 예약 알림에서 뽑은 예약 (쓰기는 서버만, 조회는 스태프)
+  id             bigint primary key,
+  dedupe_key     text unique not null,       -- 예약번호, 없으면 원문 해시
+  status         text,                       -- requested | confirmed | cancelled | changed | unknown
+  item_name      text, customer_name text,   -- 이름은 가운데 글자 가림
+  reserved_date  date, reserved_time time,   -- 예약된 날짜·시각 (한국 시간)
+  booking_number text, source text,
+  raw_text       text,                       -- 원문 (전화번호 가림)
+  parsed         boolean,                    -- 날짜를 읽었는지
+  received_at    timestamptz
+);
 ```
 
 ---
@@ -507,6 +553,7 @@ where p.role='student'
 | `/admin/homework` | 숙제점검: 날짜별 제출물·미제출자, 점검완료 | instructor |
 | `/admin/lc-audio` | 레벨 탭 → A반·B반 교재 4권의 표지·교재명·설명, 교재별 음원 등록 | instructor |
 | `/admin/contacts` | 문의 처리 | instructor |
+| `/admin/notifications` | 알림 설정: 이 기기에서 푸시 받기, 알림 종류 켜기·끄기, 네이버 예약 연결 주소·코드(관리자만) | instructor |
 
 ---
 
@@ -528,7 +575,7 @@ where p.role='student'
 7. **도메인** — 현재 veterantoiec.com. 유지 여부 미정.
 
 ### 아직 논의되지 않음 (임의 구현 금지)
-출결, 채점·점수(숙제제출은 점검완료 표시까지만), 성적·모의고사, 단어장, 오답노트, 일반 자료실, 알림 발송, 후기 작성 기능
+출결, 채점·점수(숙제제출은 점검완료 표시까지만), 성적·모의고사, 단어장, 오답노트, 일반 자료실, 학생 대상 알림 발송(문자·알림톡·학생 푸시), 후기 작성 기능
 
 ### 확장 기능의 가정 (Alan 확인 전까지의 기본값)
 - **교재신청**: 불라방 수강생만, 본인 반 기준, 배송지 입력. 결제 없음(교재비는 YBM/현장 처리). 상태 requested → confirmed → shipped

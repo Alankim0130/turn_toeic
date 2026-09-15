@@ -1,8 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { notifyStaff } from "@/lib/push";
 
 export type SubmitVerificationInput = { filePath: string };
 export type SubmitVerificationResult = { ok: true } | { ok: false; error: string };
@@ -48,6 +50,15 @@ export async function submitVerification(input: SubmitVerificationInput): Promis
     result: null,
   });
   if (error) return { ok: false, error: "접수 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요." };
+
+  after(async () => {
+    const { data: profile } = await admin.from("profiles").select("name").eq("id", user.id).maybeSingle();
+    await notifyStaff("verification", {
+      title: "새 등업신청",
+      body: `${profile?.name || "회원"}님이 수강증을 올렸어요. 확인해 주세요.`,
+      url: "/admin/verifications?status=pending",
+    });
+  });
 
   revalidatePath("/my");
   revalidatePath("/my/verify");

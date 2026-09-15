@@ -8,4 +8,6 @@ import type { VercelConfig } from "@vercel/config/v1";
 export const config: VercelConfig = {
   framework: "nextjs",
   regions: ["icn1"],
+  // 매일 21:00 KST(12:00 UTC) 관리자 하루 요약 푸시. CRON_SECRET 으로 인증한다
+  crons: [{ path: "/api/cron/daily-digest", schedule: "0 12 * * *" }],
 };

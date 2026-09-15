@@ -1,6 +1,8 @@
 "use server";
 
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { notifyStaff } from "@/lib/push";
 
 export type FormState = { ok?: boolean; error?: string; values?: Record<string, string> };
 
@@ -35,5 +37,13 @@ export async function submitContact(_prev: FormState, formData: FormData): Promi
   });
 
   if (error) return { error: "접수 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.", values };
+
+  after(() =>
+    notifyStaff("contact", {
+      title: "새 문의",
+      body: `${values.name}: ${values.message.replace(/\s+/g, " ").slice(0, 60)}`,
+      url: "/admin/contacts?status=new",
+    }),
+  );
   return { ok: true };
 }

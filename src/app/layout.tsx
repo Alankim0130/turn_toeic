@@ -15,6 +15,7 @@ export const metadata: Metadata = {
   description: site.description,
   keywords: [...site.keywords],
   applicationName: site.name,
+  appleWebApp: { capable: true, title: site.name, statusBarStyle: "default" },
   authors: [{ name: site.name }],
   creator: site.name,
   openGraph: {

@@ -9,7 +9,11 @@ export function todayKST(): string {
 
 export function formatDate(d: string | Date, opts: Intl.DateTimeFormatOptions = { month: "long", day: "numeric", weekday: "short" }) {
   const date = typeof d === "string" ? new Date(d + (d.length === 10 ? "T00:00:00+09:00" : "")) : d;
-  return date.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", ...opts });
+  // Node 24(ICU 78)는 한국어 오전·오후를 "AM·PM"으로 내보내서 되돌린다
+  return date
+    .toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", ...opts })
+    .replace(/\bAM\b/g, "오전")
+    .replace(/\bPM\b/g, "오후");
 }
 
 export function formatTime(t: string) {

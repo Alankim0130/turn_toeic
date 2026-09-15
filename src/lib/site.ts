@@ -164,4 +164,5 @@ export const NAV_ADMIN: NavItem[] = [
   { href: "/admin/homework", label: "숙제점검", icon: "homework" },
   { href: "/admin/lc-audio", label: "LC 음원", icon: "headphones" },
   { href: "/admin/contacts", label: "문의", icon: "contact" },
+  { href: "/admin/notifications", label: "알림 설정", icon: "bell" },
 ];
