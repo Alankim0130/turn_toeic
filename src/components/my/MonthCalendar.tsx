@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 
+/** track: 'mwf' | 'ttf' 는 수업일, 'lecture' 는 특강 */
 export type CalendarMark = { date: string; label: string; track: string };
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -25,9 +26,12 @@ export function MonthCalendar({ year, month, marks, today }: { year: number; mon
         <p className="font-black text-ink">
           {year}년 {month}월
         </p>
-        <div className="flex gap-3 text-xs font-semibold text-slate">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold text-slate">
           <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-brand-500" />월수금</span>
           <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-ink" />화목금</span>
+          {marks.some((m) => m.track === "lecture") && (
+            <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-violet-500" />특강</span>
+          )}
         </div>
       </div>
       <div className="grid grid-cols-7 border-b border-line text-center text-xs font-bold text-mist">
@@ -59,7 +63,7 @@ export function MonthCalendar({ year, month, marks, today }: { year: number; mon
                         title={m.label}
                         className={cn(
                           "block h-1.5 w-full max-w-8 rounded-full sm:h-auto sm:max-w-none sm:px-1 sm:py-0.5 sm:text-[10px] sm:font-bold sm:text-white",
-                          m.track === "mwf" ? "bg-brand-500" : "bg-ink",
+                          m.track === "mwf" ? "bg-brand-500" : m.track === "lecture" ? "bg-violet-500" : "bg-ink",
                           past && "opacity-40",
                         )}
                       >

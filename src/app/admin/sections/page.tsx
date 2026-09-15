@@ -7,8 +7,8 @@ import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { formatDate, formatWon, TRACK_LABEL, COURSE_TYPE_LABEL, todayKST, cn } from "@/lib/utils";
 import { CreateSectionForm } from "@/components/admin/sections/CreateSectionForm";
-import { TermCalendar, type TermSchedule } from "@/components/admin/sections/TermCalendar";
-import { termKey } from "@/components/admin/sections/dates";
+import { TermCalendar, type TermSchedule, type OtherTermDate } from "@/components/admin/sections/TermCalendar";
+import { shiftMonth, termKey, ymd, daysInMonth } from "@/components/admin/sections/dates";
 import { StudyPlanner, type PlannerStudy } from "@/components/admin/studies/StudyPlanner";
 
 export const metadata: Metadata = { title: "반 편성", robots: { index: false } };
@@ -52,10 +52,10 @@ export default async function AdminSectionsPage({
       : Promise.resolve({ data: null }),
   ]);
 
-  const [{ data: classDates }, { data: lectureRows }, { data: sections }, { data: studyRows }] = term
+  const [{ data: classDates }, { data: lectureRows, error: lectureError }, { data: sections }, { data: studyRows }] = term
     ? await Promise.all([
         supabase.from("term_class_dates").select("date, track").eq("term_id", term.id).order("date"),
-        supabase.from("special_lectures").select("date, lecturer_id, content").eq("term_id", term.id).order("date").order("id"),
+        supabase.from("special_lectures").select("date, lecturer_id, content, kinds").eq("term_id", term.id).order("date").order("id"),
         supabase
           .from("class_sections")
           .select(
@@ -71,7 +71,23 @@ export default async function AdminSectionsPage({
           )
           .eq("term_id", term.id),
       ])
-    : [{ data: [] as never[] }, { data: [] as never[] }, { data: [] as never[] }, { data: [] as never[] }];
+    : [{ data: [] as never[] }, { data: [] as never[], error: null }, { data: [] as never[] }, { data: [] as never[] }];
+
+  // special_lectures.kinds 가 없으면 아직 마이그레이션이 적용되지 않은 것 — 저장이 전부 실패한다
+  const needsMigration = !!lectureError && (lectureError.code === "42703" || lectureError.code === "PGRST204" || /kinds/.test(lectureError.message ?? ""));
+
+  // 월(기수) 구분: 달력에 함께 보이는 앞뒤 달 날짜를 다른 기수가 이미 쓰고 있는지
+  const prev = shiftMonth(y, m, -1);
+  const next = shiftMonth(y, m, 1);
+  const { data: neighbourDates } = await supabase
+    .from("term_class_dates")
+    .select("date, track, term:terms!inner(id, year, month)")
+    .gte("date", ymd(prev.y, prev.m, 1))
+    .lte("date", ymd(next.y, next.m, daysInMonth(next.y, next.m)))
+    .order("date");
+  const otherTermDates: OtherTermDate[] = (neighbourDates ?? [])
+    .filter((d) => d.term && d.term.id !== term?.id)
+    .map((d) => ({ date: d.date, track: d.track === "ttf" ? ("ttf" as const) : ("mwf" as const), year: d.term!.year, month: d.term!.month }));
 
   // 다시보기가 붙은 수업일은 달력에서 뺄 수 없다 — 달력에 표시하려고 미리 읽는다
   const sectionTrack = new Map((sections ?? []).map((s) => [s.id, s.track]));
@@ -85,7 +101,12 @@ export default async function AdminSectionsPage({
     closes: term?.closes_at ?? null,
     mwf: (classDates ?? []).filter((d) => d.track === "mwf").map((d) => d.date),
     ttf: (classDates ?? []).filter((d) => d.track === "ttf").map((d) => d.date),
-    lectures: (lectureRows ?? []).map((l) => ({ date: l.date, lecturerId: l.lecturer_id, content: l.content })),
+    lectures: (lectureRows ?? []).map((l) => ({
+      date: l.date,
+      lecturerId: l.lecturer_id,
+      content: l.content ?? "",
+      kinds: l.kinds ?? [],
+    })),
   };
   const hasSaved = !!term?.enrollment_opens_at && !!term?.closes_at;
 
@@ -121,6 +142,16 @@ export default async function AdminSectionsPage({
         </Link>
       </PageHeader>
 
+      {needsMigration && (
+        <Alert kind="warning" title="데이터베이스 업데이트가 아직 적용되지 않았어요">
+          <p>이 상태에서는 <b className="text-ink">달력을 저장해도 저장되지 않습니다.</b> 편성을 시작하기 전에 먼저 적용해 주세요.</p>
+          <p className="mt-1">
+            터미널에서 <code className="rounded bg-ink/5 px-1 py-0.5 font-mono text-xs">npx supabase db push --linked</code> 를 실행하거나, Supabase 대시보드의 SQL
+            Editor 에서 <code className="rounded bg-ink/5 px-1 py-0.5 font-mono text-xs">supabase/migrations</code> 의 최신 파일을 실행하면 됩니다.
+          </p>
+        </Alert>
+      )}
+
       {sp.created && (
         <Alert kind="success" title={Number(sp.created) > 1 ? "주5일 묶음 반 2개를 개설했어요" : "반을 개설했어요"}>
           수업일·개강일·종강일은 {termLabel} 달력에서 자동으로 채워졌어요.
@@ -139,6 +170,7 @@ export default async function AdminSectionsPage({
           hasSaved={hasSaved}
           lecturers={lecturers ?? []}
           replayDates={replayDates}
+          otherTermDates={otherTermDates}
           sectionCount={sections?.length ?? 0}
         />
       </section>

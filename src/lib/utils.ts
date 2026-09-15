@@ -33,3 +33,28 @@ export function formatWon(n: number) {
 export const TRACK_LABEL: Record<string, string> = { mwf: "월수금", ttf: "화목금" };
 export const MODE_LABEL: Record<string, string> = { onsite: "현장", live: "불라방" };
 export const COURSE_TYPE_LABEL: Record<string, string> = { full: "종합", lc: "단과 LC", rc: "단과 RC" };
+
+/**
+ * 특강 종류 (2026-09-15 Alan 요청). 하나의 특강에 여러 개를 고를 수 있다 (`special_lectures.kinds`).
+ * short 는 달력 칸에 들어가는 짧은 이름. DB 의 check 제약과 값이 같아야 한다.
+ */
+export const LECTURE_KINDS = [
+  { value: "rc", label: "RC특강", short: "RC", tiny: "RC" },
+  { value: "lc", label: "LC특강", short: "LC", tiny: "LC" },
+  { value: "mock1", label: "1차 모의고사", short: "1차 모의고사", tiny: "1차" },
+  { value: "mock2", label: "2차 모의고사", short: "2차 모의고사", tiny: "2차" },
+] as const;
+
+export type LectureKind = (typeof LECTURE_KINDS)[number]["value"];
+export const LECTURE_KIND_VALUES: LectureKind[] = LECTURE_KINDS.map((k) => k.value);
+const KIND_BY_VALUE = new Map(LECTURE_KINDS.map((k) => [k.value as string, k]));
+
+export const isLectureKind = (v: unknown): v is LectureKind => typeof v === "string" && KIND_BY_VALUE.has(v);
+/** 알 수 없는 값이 들어와도 화면이 깨지지 않게 값 자체를 보여 준다 */
+export const lectureKindLabel = (v: string) => KIND_BY_VALUE.get(v)?.label ?? v;
+export const lectureKindShort = (v: string) => KIND_BY_VALUE.get(v)?.short ?? v;
+/** 좁은 화면(달력 칸)용 더 짧은 이름 */
+export const lectureKindTiny = (v: string) => KIND_BY_VALUE.get(v)?.tiny ?? v;
+/** 정해진 순서(RC · LC · 1차 · 2차)대로 정리하고 중복을 없앤다 */
+export const sortLectureKinds = (kinds: string[]) =>
+  LECTURE_KIND_VALUES.filter((k) => kinds.includes(k)) as string[];

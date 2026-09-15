@@ -5,14 +5,16 @@ import { useRouter } from "next/navigation";
 import { saveTermSchedule, type TermPart } from "@/app/admin/sections/actions";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
-import { cn } from "@/lib/utils";
+import { cn, LECTURE_KINDS, lectureKindShort, lectureKindTiny, sortLectureKinds, type LectureKind } from "@/lib/utils";
 import { HOLIDAY_YEAR_RANGE, hasHolidayData, holidayNamesBetween } from "@/lib/holidays";
 import { WEEKDAY_KO, coveringGrid, labelKo, shiftMonth, termKey, weekdayOf } from "./dates";
 import { downloadCalendarImage } from "./calendarImage";
 
 type Mode = "opens" | "closes" | "mwf" | "ttf" | "lecture";
 type Track = "mwf" | "ttf";
-export type TermLecture = { date: string; lecturerId: number; content: string };
+export type TermLecture = { date: string; lecturerId: number; content: string; kinds: string[] };
+/** 다른 기수(월)가 이미 수업일로 쓰고 있는 날짜 — 이 달에는 쓸 수 없다 */
+export type OtherTermDate = { date: string; track: Track; year: number; month: number };
 export type TermSchedule = { opens: string | null; closes: string | null; mwf: string[]; ttf: string[]; lectures: TermLecture[] };
 type Lecture = TermLecture & { key: string };
 type Notice = { kind: "success" | "warning" | "info"; text: string };
@@ -62,7 +64,8 @@ const PART_LABEL: Record<TermPart, string> = { dates: "개강·종강", mwf: "�
 const PART_ORDER: TermPart[] = ["dates", "mwf", "ttf", "lectures"];
 
 const sameDates = (a: string[], b: string[]) => a.length === b.length && [...a].sort().join(",") === [...b].sort().join(",");
-const lectureKey = (ls: TermLecture[]) => ls.map((l) => `${l.date}|${l.lecturerId}|${l.content.trim()}`).sort().join("¶");
+const lectureKey = (ls: TermLecture[]) =>
+  ls.map((l) => `${l.date}|${l.lecturerId}|${sortLectureKinds(l.kinds).join("+")}|${l.content.trim()}`).sort().join("¶");
 
 const shortDate = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))} (${WEEKDAY_KO[weekdayOf(d)]})`;
 
@@ -74,6 +77,7 @@ export function TermCalendar({
   hasSaved,
   lecturers,
   replayDates,
+  otherTermDates = [],
   sectionCount,
   readOnly = false,
 }: {
@@ -85,6 +89,8 @@ export function TermCalendar({
   lecturers: { id: number; name: string }[];
   /** 다시보기가 붙은 수업일 — 달력에서 빼면 저장이 막힌다 */
   replayDates: { date: string; track: Track }[];
+  /** 다른 기수(월)가 이미 쓰고 있는 수업일 — 이 달에서는 고를 수 없다 */
+  otherTermDates?: OtherTermDate[];
   sectionCount: number;
   readOnly?: boolean;
 }) {
@@ -94,6 +100,8 @@ export function TermCalendar({
   const [exporting, setExporting] = useState(false);
   /** 지금 저장 중인 항목 — "all" 은 전체 저장 */
   const [savingPart, setSavingPart] = useState<TermPart | "all" | null>(null);
+  /** 저장 결과. 달력 힌트(notice)와 따로 두어 저장 버튼 바로 옆에 보여 준다 */
+  const [result, setResult] = useState<Notice | null>(null);
 
   const [mode, setMode] = useState<Mode | null>(null);
   const [opens, setOpens] = useState(saved.opens);
@@ -101,7 +109,11 @@ export function TermCalendar({
   const [mwf, setMwf] = useState(() => new Set(saved.mwf));
   const [ttf, setTtf] = useState(() => new Set(saved.ttf));
   const [lectures, setLectures] = useState<Lecture[]>(() => saved.lectures.map((l, i) => ({ ...l, key: `saved-${i}` })));
-  const [brush, setBrush] = useState<{ lecturerId: number | null; content: string }>({ lecturerId: lecturers[0]?.id ?? null, content: "" });
+  const [brush, setBrush] = useState<{ lecturerId: number | null; kinds: LectureKind[]; content: string }>({
+    lecturerId: lecturers[0]?.id ?? null,
+    kinds: [],
+    content: "",
+  });
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const monthPrefix = `${termKey(year, month)}-`;
@@ -115,6 +127,8 @@ export function TermCalendar({
   const monthHolidays = useMemo(() => [...holidays].filter(([d]) => d.startsWith(monthPrefix)), [holidays, monthPrefix]);
   const lecturerName = useMemo(() => new Map(lecturers.map((t) => [t.id, t.name])), [lecturers]);
   const locked = useMemo(() => new Set(replayDates.map((r) => `${r.track}|${r.date}`)), [replayDates]);
+  /** 날짜 → 그 날짜를 이미 쓰고 있는 다른 기수 */
+  const otherTerm = useMemo(() => new Map(otherTermDates.map((o) => [o.date, o])), [otherTermDates]);
 
   const lecturesByDate = useMemo(() => {
     const map = new Map<string, Lecture[]>();
@@ -127,7 +141,13 @@ export function TermCalendar({
   );
 
   const current: TermSchedule = useMemo(
-    () => ({ opens, closes, mwf: [...mwf], ttf: [...ttf], lectures: lectures.map(({ date, lecturerId, content }) => ({ date, lecturerId, content })) }),
+    () => ({
+      opens,
+      closes,
+      mwf: [...mwf],
+      ttf: [...ttf],
+      lectures: lectures.map(({ date, lecturerId, content, kinds }) => ({ date, lecturerId, content, kinds })),
+    }),
     [opens, closes, mwf, ttf, lectures],
   );
   /** 항목마다 따로 저장하므로 바뀐 항목도 따로 센다 */
@@ -181,6 +201,12 @@ export function TermCalendar({
   };
 
   const toggleTrack = (track: Track, date: string, inMonth: boolean) => {
+    // 한 날짜는 한 기수(월)의 수업일로만 쓴다 — 두 기수에 잡히면 수강생 회차가 겹친다
+    const taken = otherTerm.get(date);
+    if (taken && !mwf.has(date) && !ttf.has(date)) {
+      warn(`${labelKo(date, true)}은 ${taken.year}년 ${taken.month}월 기수가 ${TRACK_LABEL[taken.track]} 수업일로 쓰고 있어요. 먼저 그 달 달력에서 빼야 이 달에 쓸 수 있어요.`);
+      return;
+    }
     const other: Track = track === "mwf" ? "ttf" : "mwf";
     const mine = track === "mwf" ? mwf : ttf;
     const theirs = track === "mwf" ? ttf : mwf;
@@ -221,13 +247,20 @@ export function TermCalendar({
       return;
     }
     const content = brush.content.trim();
-    const hit = lectures.find((l) => l.date === date && l.lecturerId === brush.lecturerId && l.content.trim() === content);
+    const kinds = sortLectureKinds(brush.kinds);
+    if (kinds.length === 0 && content === "") {
+      warn("특강 종류를 하나 이상 고르거나 내용을 적은 뒤 날짜를 눌러 주세요.");
+      return;
+    }
+    const same = (l: Lecture) =>
+      l.date === date && l.lecturerId === brush.lecturerId && l.content.trim() === content && sortLectureKinds(l.kinds).join("+") === kinds.join("+");
+    const hit = lectures.find(same);
     if (hit) {
       setLectures(lectures.filter((l) => l.key !== hit.key));
       setNotice(null);
       return;
     }
-    setLectures([...lectures, { key: crypto.randomUUID(), date, lecturerId: brush.lecturerId, content }]);
+    setLectures([...lectures, { key: crypto.randomUUID(), date, lecturerId: brush.lecturerId, content, kinds }]);
     settle(spillNote(date, inMonth));
   };
 
@@ -256,25 +289,27 @@ export function TermCalendar({
   /** 고른 항목만 저장한다. parts 를 비우면 전부 저장 */
   const save = (parts: TermPart[]) => {
     if (readOnly || parts.length === 0) return;
+    const fail = (text: string) => setResult({ kind: "warning", text });
     if (parts.includes("dates")) {
       if (!opens || !closes) {
-        warn("개강일과 종강일을 달력에서 찍어 주세요. [개강일]·[종강일] 버튼을 누른 뒤 날짜를 누르면 됩니다.");
+        fail("개강일과 종강일을 달력에서 찍어 주세요. [개강일]·[종강일] 버튼을 누른 뒤 날짜를 누르면 됩니다.");
         return;
       }
       if (closes < opens) {
-        warn("종강일은 개강일과 같거나 그 뒤여야 해요.");
+        fail("종강일은 개강일과 같거나 그 뒤여야 해요.");
         return;
       }
     }
     if (parts.includes("lectures")) {
-      const empty = sortedLectures.find((l) => !l.content.trim());
+      const empty = sortedLectures.find((l) => l.kinds.length === 0 && !l.content.trim());
       if (empty) {
-        warn(`${labelKo(empty.date)} 특강의 내용을 적어 주세요.`);
+        fail(`${labelKo(empty.date)} 특강은 종류를 하나 이상 고르거나 내용을 적어 주세요.`);
         return;
       }
     }
     const whole = parts.length === PART_ORDER.length;
     setSavingPart(whole ? "all" : parts[0]);
+    setResult(null);
     startSaving(async () => {
       const res = await saveTermSchedule({
         year,
@@ -283,16 +318,22 @@ export function TermCalendar({
         closes,
         mwf: [...mwf].sort(),
         ttf: [...ttf].sort(),
-        lectures: sortedLectures.map(({ date, lecturerId, content }) => ({ date, lecturerId, content: content.trim() })),
+        lectures: sortedLectures.map(({ date, lecturerId, content, kinds }) => ({
+          date,
+          lecturerId,
+          content: content.trim(),
+          kinds: sortLectureKinds(kinds),
+        })),
         parts,
       });
       setSavingPart(null);
       if (!res.ok) {
-        warn(res.error);
+        setResult({ kind: "warning", text: res.error });
         return;
       }
       const applied = res.sections ? ` · 이 달 반 ${res.sections}개의 수업일에 반영` : "";
-      setNotice({
+      setNotice(null);
+      setResult({
         kind: "success",
         text: whole
           ? `${month}월 일정을 ${hasSaved ? "저장" : "생성"}했어요. 월수금 ${res.mwf}회 · 화목금 ${res.ttf}회 · 특강 ${res.lectures}개${applied}`
@@ -373,40 +414,62 @@ export function TermCalendar({
         </div>
       )}
 
-      {/* 특강 설정 */}
+      {/* 특강 설정 — 강사·종류(중복 선택)·내용을 정한 뒤 날짜를 누른다 */}
       {!readOnly && mode === "lecture" && (
-        <div className="flex flex-col gap-3 rounded-xl2 border border-violet-200 bg-violet-50/60 p-3 sm:flex-row sm:items-end">
-          <div>
-            <span className="label">강사</span>
-            <div className="flex gap-2">
-              {lecturers.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  aria-pressed={brush.lecturerId === t.id}
-                  onClick={() => setBrush({ ...brush, lecturerId: t.id })}
-                  className={cn(
-                    "rounded-full border px-4 py-2 text-sm font-bold transition",
-                    brush.lecturerId === t.id ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-paper text-violet-700 hover:border-violet-400",
-                  )}
-                >
-                  {t.name}
-                </button>
-              ))}
+        <div className="space-y-3 rounded-xl2 border border-violet-200 bg-violet-50/60 p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div>
+              <span className="label">강사</span>
+              <div className="flex gap-2">
+                {lecturers.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    aria-pressed={brush.lecturerId === t.id}
+                    onClick={() => setBrush({ ...brush, lecturerId: t.id })}
+                    className={cn(
+                      "rounded-full border px-4 py-2 text-sm font-bold transition",
+                      brush.lecturerId === t.id ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-paper text-violet-700 hover:border-violet-400",
+                    )}
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="min-w-0 flex-1">
+              <label htmlFor="lecture-brush-content" className="label">
+                내용 <span className="font-semibold text-slate">(선택 — 종류만 골라도 돼요)</span>
+              </label>
+              <input
+                id="lecture-brush-content"
+                value={brush.content}
+                maxLength={100}
+                onChange={(e) => setBrush({ ...brush, content: e.target.value })}
+                placeholder="예: 파트2 집중"
+                className="input !py-2"
+              />
             </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <label htmlFor="lecture-brush-content" className="label">
-              내용
-            </label>
-            <input
-              id="lecture-brush-content"
-              value={brush.content}
-              maxLength={100}
-              onChange={(e) => setBrush({ ...brush, content: e.target.value })}
-              placeholder="예: LC 파트2 집중 특강"
-              className="input !py-2"
-            />
+          <div>
+            <span className="label">
+              종류 <span className="font-semibold text-slate">(여러 개 고를 수 있어요)</span>
+            </span>
+            <div role="group" aria-label="특강 종류" className="flex flex-wrap gap-2">
+              {LECTURE_KINDS.map((k) => (
+                <KindChip
+                  key={k.value}
+                  label={k.label}
+                  on={brush.kinds.includes(k.value)}
+                  onClick={() =>
+                    setBrush({
+                      ...brush,
+                      kinds: brush.kinds.includes(k.value) ? brush.kinds.filter((x) => x !== k.value) : sortLectureKinds([...brush.kinds, k.value]) as LectureKind[],
+                    })
+                  }
+                />
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -430,17 +493,23 @@ export function TermCalendar({
               const red = wd === 0 || !!names;
               const track: Track | null = mwf.has(c.date) ? "mwf" : ttf.has(c.date) ? "ttf" : null;
               const dayLectures = lecturesByDate.get(c.date) ?? [];
+              // 달력에는 종류를 짧게 (RC · LC · 1차 모의고사 · 2차 모의고사). 종류가 없으면 "특강"
+              const dayKinds = [...new Set(dayLectures.flatMap((l) => (l.kinds.length > 0 ? sortLectureKinds(l.kinds) : ["특강"])))];
+              const dayTags = dayKinds.map(lectureKindShort);
               const isOpens = opens === c.date;
               const isCloses = closes === c.date;
               const hasReplay = locked.has(`mwf|${c.date}`) || locked.has(`ttf|${c.date}`);
               const marked = !!track || isOpens || isCloses || dayLectures.length > 0;
+              // 다른 기수(월)가 이미 수업일로 쓰는 날짜 — 이 달에서는 고를 수 없다
+              const taken = !track ? otherTerm.get(c.date) : undefined;
               const label = [
                 labelKo(c.date, !c.inMonth),
                 names?.join(", "),
                 isOpens && "개강일",
                 isCloses && "종강일",
                 track && `${TRACK_LABEL[track]} 수업일`,
-                dayLectures.length > 0 && `특강 ${dayLectures.length}개`,
+                dayTags.length > 0 && `특강 ${dayTags.join(", ")}`,
+                taken && `${taken.month}월 기수가 쓰는 날짜`,
                 hasReplay && "다시보기 있음",
               ]
                 .filter(Boolean)
@@ -457,7 +526,8 @@ export function TermCalendar({
                   className={cn(
                     "relative flex min-h-[4.5rem] min-w-0 flex-col gap-0.5 overflow-hidden rounded-lg border p-1 text-left transition sm:min-h-[6.25rem] sm:p-1.5",
                     c.inMonth ? "border-line bg-paper" : "border-dashed border-line bg-surface",
-                    !c.inMonth && !marked && "opacity-50",
+                    !c.inMonth && !marked && "opacity-60",
+                    taken && "bg-line/40",
                     !readOnly && "hover:border-brand-300 hover:bg-brand-50/50",
                     readOnly && "cursor-default",
                   )}
@@ -472,7 +542,9 @@ export function TermCalendar({
                     >
                       {c.day}
                     </span>
-                    {!c.inMonth && marked && <span className="text-[9px] font-black text-mist sm:text-[10px]">{Number(c.date.slice(5, 7))}월</span>}
+                    {!c.inMonth && !taken && (
+                      <span className="shrink-0 whitespace-nowrap text-[9px] font-black text-mist sm:text-[10px]">{Number(c.date.slice(5, 7))}월</span>
+                    )}
                     {hasReplay && <Icon name="replay" size={12} className="opacity-70" />}
                   </span>
                   {names && <span className="hidden truncate text-[10px] font-bold leading-tight text-red-600 sm:block">{names.join("·")}</span>}
@@ -484,12 +556,18 @@ export function TermCalendar({
                       </span>
                     )}
                     {track && <Tag className={track === "mwf" ? "bg-brand-500 text-white" : "bg-ink text-white"}>{TRACK_LABEL[track]}</Tag>}
-                    {dayLectures.slice(0, 2).map((l) => (
-                      <Tag key={l.key} className="bg-violet-100 text-violet-800">
-                        특강<span className="hidden sm:inline"> {lecturerName.get(l.lecturerId)}</span>
+                    {taken && (
+                      <Tag className="bg-mist/25 text-slate">
+                        {taken.month}월<span className="hidden sm:inline"> 기수</span>
+                      </Tag>
+                    )}
+                    {dayKinds.slice(0, 2).map((k) => (
+                      <Tag key={k} className="bg-violet-100 text-violet-800">
+                        <span className="sm:hidden">{lectureKindTiny(k)}</span>
+                        <span className="hidden sm:inline">{lectureKindShort(k)}</span>
                       </Tag>
                     ))}
-                    {dayLectures.length > 2 && <span className="text-center text-[10px] font-bold text-violet-700">+{dayLectures.length - 2}</span>}
+                    {dayKinds.length > 2 && <span className="text-center text-[10px] font-bold text-violet-700">+{dayKinds.length - 2}</span>}
                   </span>
                 </button>
               );
@@ -525,6 +603,12 @@ export function TermCalendar({
             <Icon name="replay" size={12} />
             다시보기 등록됨 (뺄 수 없음)
           </li>
+          {otherTermDates.length > 0 && (
+            <li className="flex items-center gap-1.5">
+              <span className="h-3 w-5 rounded bg-mist/30" />
+              다른 달 기수가 쓰는 날짜 (이 달에는 못 씀)
+            </li>
+          )}
         </ul>
         {monthHolidays.length > 0 && (
           <p>
@@ -543,45 +627,71 @@ export function TermCalendar({
       {lectures.length > 0 && (
         <section aria-labelledby="lecture-list-title" className="rounded-xl2 border border-violet-200">
           <h3 id="lecture-list-title" className="border-b border-violet-100 bg-violet-50/60 px-4 py-2.5 text-sm font-black text-ink">
-            특강 {lectures.length}개 <span className="font-semibold text-slate">— 강사·내용은 여기서 바로 고칠 수 있어요</span>
+            특강 {lectures.length}개 <span className="font-semibold text-slate">— 강사·종류·내용은 여기서 바로 고칠 수 있어요</span>
           </h3>
           <ul className="divide-y divide-line">
-            {sortedLectures.map((l) => (
-              <li key={l.key} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center">
-                <span className="w-28 shrink-0 text-sm font-black text-violet-700">{labelKo(l.date)}</span>
-                <div className="flex shrink-0 gap-1.5" role="group" aria-label={`${labelKo(l.date)} 특강 강사`}>
-                  {lecturers.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      disabled={readOnly}
-                      aria-pressed={l.lecturerId === t.id}
-                      onClick={() => updateLecture(l.key, { lecturerId: t.id })}
-                      className={cn(
-                        "rounded-full border px-3 py-1.5 text-xs font-bold transition",
-                        l.lecturerId === t.id ? "border-violet-600 bg-violet-600 text-white" : "border-line bg-paper text-slate hover:border-violet-300",
-                      )}
-                    >
-                      {t.name}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  aria-label={`${labelKo(l.date)} 특강 내용`}
-                  value={l.content}
-                  maxLength={100}
-                  disabled={readOnly}
-                  onChange={(e) => updateLecture(l.key, { content: e.target.value })}
-                  placeholder="특강 내용을 적어 주세요"
-                  className={cn("input min-w-0 flex-1 !py-2 text-sm", !l.content.trim() && "border-amber-300")}
-                />
-                {!readOnly && (
-                  <button type="button" onClick={() => setLectures(lectures.filter((x) => x.key !== l.key))} className="btn-ghost shrink-0 !px-3 !py-1.5 text-xs">
-                    삭제
-                  </button>
-                )}
-              </li>
-            ))}
+            {sortedLectures.map((l) => {
+              const blank = l.kinds.length === 0 && !l.content.trim();
+              return (
+                <li key={l.key} className="space-y-2 px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="w-28 shrink-0 text-sm font-black text-violet-700">{labelKo(l.date)}</span>
+                    <div className="flex shrink-0 gap-1.5" role="group" aria-label={`${labelKo(l.date)} 특강 강사`}>
+                      {lecturers.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          disabled={readOnly}
+                          aria-pressed={l.lecturerId === t.id}
+                          onClick={() => updateLecture(l.key, { lecturerId: t.id })}
+                          className={cn(
+                            "rounded-full border px-3 py-1.5 text-xs font-bold transition",
+                            l.lecturerId === t.id ? "border-violet-600 bg-violet-600 text-white" : "border-line bg-paper text-slate hover:border-violet-300",
+                          )}
+                        >
+                          {t.name}
+                        </button>
+                      ))}
+                    </div>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => setLectures(lectures.filter((x) => x.key !== l.key))}
+                        className="btn-ghost ml-auto shrink-0 !px-3 !py-1.5 text-xs"
+                      >
+                        삭제
+                      </button>
+                    )}
+                  </div>
+                  <div role="group" aria-label={`${labelKo(l.date)} 특강 종류`} className="flex flex-wrap gap-1.5">
+                    {LECTURE_KINDS.map((k) => (
+                      <KindChip
+                        key={k.value}
+                        small
+                        label={k.label}
+                        on={l.kinds.includes(k.value)}
+                        onClick={() =>
+                          !readOnly &&
+                          updateLecture(l.key, {
+                            kinds: l.kinds.includes(k.value) ? l.kinds.filter((x) => x !== k.value) : sortLectureKinds([...l.kinds, k.value]),
+                          })
+                        }
+                      />
+                    ))}
+                  </div>
+                  <input
+                    aria-label={`${labelKo(l.date)} 특강 내용`}
+                    value={l.content}
+                    maxLength={100}
+                    disabled={readOnly}
+                    onChange={(e) => updateLecture(l.key, { content: e.target.value })}
+                    placeholder="내용 (선택) — 종류만 골라도 됩니다"
+                    className={cn("input w-full !py-2 text-sm", blank && "border-amber-300")}
+                  />
+                  {blank && <p className="text-xs font-bold text-amber-600">종류를 하나 이상 고르거나 내용을 적어 주세요.</p>}
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
@@ -592,6 +702,9 @@ export function TermCalendar({
           {afterCloses.length > 0 && <p>종강일 뒤 수업일 (다시보기를 볼 수 없어요): {afterCloses.map(shortDate).join(", ")}</p>}
         </Alert>
       )}
+
+      {/* 저장 결과 — 누른 버튼 바로 옆에서 보이도록 여기에 둔다 */}
+      {result && <Alert kind={result.kind}>{result.text}</Alert>}
 
       {/* 항목별 저장 — 개강·종강 / 월수금 / 화목금 / 특강을 따로 저장한다 */}
       {!readOnly && (
@@ -665,6 +778,23 @@ export function TermCalendar({
         <p className="text-xs text-mist">저장하면 이 달 반 {sectionCount}개의 수업일·개강일·종강일이 달력대로 바뀌고, 수강생 시간표와 다시보기 회차도 함께 바뀝니다.</p>
       )}
     </div>
+  );
+}
+
+function KindChip({ label, on, onClick, small = false }: { label: string; on: boolean; onClick: () => void; small?: boolean }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className={cn(
+        "rounded-full border font-bold transition",
+        small ? "px-2.5 py-1 text-xs" : "px-4 py-2 text-sm",
+        on ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-paper text-violet-700 hover:border-violet-400",
+      )}
+    >
+      {label}
+    </button>
   );
 }
 

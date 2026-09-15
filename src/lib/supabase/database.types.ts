@@ -883,26 +883,29 @@ export type Database = {
       }
       special_lectures: {
         Row: {
-          content: string
+          content: string | null
           created_at: string
           date: string
           id: number
+          kinds: string[]
           lecturer_id: number
           term_id: number
         }
         Insert: {
-          content: string
+          content?: string | null
           created_at?: string
           date: string
           id?: number
+          kinds?: string[]
           lecturer_id: number
           term_id: number
         }
         Update: {
-          content?: string
+          content?: string | null
           created_at?: string
           date?: string
           id?: number
+          kinds?: string[]
           lecturer_id?: number
           term_id?: number
         }
