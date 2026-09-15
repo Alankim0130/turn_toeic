@@ -98,9 +98,12 @@ export async function Schedule() {
                 <ul className="divide-y divide-line">
                   {list.map((s) => (
                     <li key={s.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 text-sm">
-                      <span className="w-28 font-black text-brand-600">
-                        {formatTime(s.start_time)}–{formatTime(s.end_time)}
-                      </span>
+                      {/* 반 편성 달력 전환 후 새 반은 시간이 null 일 수 있다 */}
+                      {s.start_time && s.end_time && (
+                        <span className="w-28 font-black text-brand-600">
+                          {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                        </span>
+                      )}
                       <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-bold text-white">{TRACK_LABEL[s.track] ?? s.track}</span>
                       <span className="font-semibold text-ink">{s.course?.name ?? "강좌"}</span>
                       {s.course?.course_type && <span className="text-slate">{COURSE_TYPE_LABEL[s.course.course_type]}</span>}
