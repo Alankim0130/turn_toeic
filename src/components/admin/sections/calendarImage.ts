@@ -1,10 +1,11 @@
 import { holidayNamesBetween } from "@/lib/holidays";
-import { WEEKDAY_KO, daysInMonth, monthGrid, weekday, ymd } from "./dates";
+import { WEEKDAY_KO, coveringGrid, weekdayOf } from "./dates";
 
 /**
  * 학원에 보낼 수업 일정 이미지. 화면을 캡처하지 않고 캔버스에 달력만 새로 그린다
  * (모바일에서 눌러도 같은 크기·같은 모양으로 저장된다).
  * 표시: 월수금 / 화목금 수업일, 일요일·공휴일 빨간색, 공휴일 이름.
+ * 다음 달까지 이어지는 수업일도 같은 달력에 이어서 그리고, 날짜를 "10/1" 처럼 적는다.
  */
 
 const FONT = '"Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
@@ -63,22 +64,22 @@ async function loadFonts(sample: string) {
 }
 
 export async function downloadCalendarImage({ year, month, mwf, ttf }: { year: number; month: number; mwf: string[]; ttf: string[] }) {
-  const rows = monthGrid(year, month);
+  const mwfSet = new Set(mwf);
+  const ttfSet = new Set(ttf);
+  // 앞뒤 달로 이어지는 수업일까지 덮는 주 수만큼 그린다
+  const rows = coveringGrid(year, month, [...mwfSet, ...ttfSet]);
+  const cells = rows.flat();
+  const spill = cells.some((c) => !c.inMonth && (mwfSet.has(c.date) || ttfSet.has(c.date)));
+  const note = spill ? "빨간 날: 일요일 · 공휴일   |   회색 날짜(10/1 형식)는 앞뒤 달로 이어지는 수업일" : "빨간 날: 일요일 · 공휴일";
   const H = PAD + HEAD + WEEK_H + rows.length * CELL_H + FOOT + PAD - 20;
-  const last = ymd(year, month, daysInMonth(year, month));
-  const holidays = holidayNamesBetween(ymd(year, month, 1), last);
-  const prefix = ymd(year, month, 1).slice(0, 8);
-  const mwfSet = new Set(mwf.filter((d) => d.startsWith(prefix)));
-  const ttfSet = new Set(ttf.filter((d) => d.startsWith(prefix)));
-  const mwfCount = mwfSet.size;
-  const ttfCount = ttfSet.size;
+  const holidays = holidayNamesBetween(cells[0].date, cells[cells.length - 1].date);
 
   const title = `${year}년 ${month}월 수업 일정`;
   const legend = [
-    { color: C.brand, label: `월수금 ${mwfCount}회` },
-    { color: C.ink, label: `화목금 ${ttfCount}회` },
+    { color: C.brand, label: `월수금 ${mwfSet.size}회` },
+    { color: C.ink, label: `화목금 ${ttfSet.size}회` },
   ];
-  await loadFonts(`역전토익${title}${legend.map((l) => l.label).join("")}${WEEKDAY_KO.join("")}0123456789${[...holidays.values()].flat().join("")}빨간날일요일공휴일…·`);
+  await loadFonts(`역전토익${title}${legend.map((l) => l.label).join("")}${WEEKDAY_KO.join("")}0123456789/${[...holidays.values()].flat().join("")}${note}…·`);
 
   const canvas = document.createElement("canvas");
   canvas.width = W * SCALE;
@@ -136,35 +137,37 @@ export async function downloadCalendarImage({ year, month, mwf, ttf }: { year: n
   // 날짜 칸
   const top = gridY + WEEK_H + 8;
   rows.forEach((row, ri) => {
-    row.forEach((day, ci) => {
+    row.forEach((cell, ci) => {
       const x = gridX + cellW * ci;
       const y = top + CELL_H * ri;
       ctx.strokeStyle = C.line;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(x + 0.75, y + 0.75, cellW - 1.5, CELL_H - 1.5);
-      if (day === null) {
+
+      const date = cell.date;
+      const track = mwfSet.has(date) ? { label: "월수금", color: C.brand } : ttfSet.has(date) ? { label: "화목금", color: C.ink } : null;
+      // 다른 달이면서 수업일도 아닌 칸은 빈 칸으로 둔다
+      if (!cell.inMonth && !track) {
         ctx.fillStyle = C.surface;
         ctx.fillRect(x + 1.5, y + 1.5, cellW - 3, CELL_H - 3);
         return;
       }
 
-      const date = ymd(year, month, day);
       const names = holidays.get(date);
-      const wd = weekday(year, month, day);
+      const wd = weekdayOf(date);
       const red = wd === 0 || !!names;
 
       ctx.textAlign = "left";
-      ctx.fillStyle = red ? C.red : wd === 6 ? C.blue : C.ink;
+      ctx.fillStyle = !cell.inMonth ? C.mist : red ? C.red : wd === 6 ? C.blue : C.ink;
       ctx.font = font(800, 28);
-      ctx.fillText(String(day), x + 14, y + 38);
+      ctx.fillText(cell.inMonth ? String(cell.day) : `${Number(date.slice(5, 7))}/${cell.day}`, x + 14, y + 38);
 
       if (names) {
-        ctx.fillStyle = C.red;
+        ctx.fillStyle = cell.inMonth ? C.red : C.mist;
         ctx.font = font(700, 17);
         ctx.fillText(fitText(ctx, names.join("·"), cellW - 24), x + 14, y + 64);
       }
 
-      const track = mwfSet.has(date) ? { label: "월수금", color: C.brand } : ttfSet.has(date) ? { label: "화목금", color: C.ink } : null;
       if (track) {
         const pw = cellW - 24;
         const ph = 40;
@@ -185,7 +188,7 @@ export async function downloadCalendarImage({ year, month, mwf, ttf }: { year: n
   ctx.textAlign = "left";
   ctx.fillStyle = C.mist;
   ctx.font = font(700, 18);
-  ctx.fillText("빨간 날: 일요일 · 공휴일", PAD, top + rows.length * CELL_H + 38);
+  ctx.fillText(note, PAD, top + rows.length * CELL_H + 38);
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) throw new Error("image encode failed");

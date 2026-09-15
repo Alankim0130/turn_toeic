@@ -32,6 +32,12 @@ export function Icon({
       height={size}
       priority={priority}
       className={cn("inline-block shrink-0 select-none", className)}
+      /**
+       * 아이콘 원본은 정사각형이다. Tailwind preflight 가 img 에 height:auto 를 주기 때문에
+       * flex 컨테이너(기본 align-items:stretch) 안에서는 세로로 늘어나 찌그러진다.
+       * 가로·세로를 CSS 로 못박아 어디에 놓아도 비율이 그대로 유지되게 한다.
+       */
+      style={{ width: size, height: size }}
     />
   );
 }

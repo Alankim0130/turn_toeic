@@ -1307,11 +1307,12 @@ export type Database = {
     Functions: {
       save_term_schedule: {
         Args: {
-          p_closes: string
+          p_closes: string | null
           p_lectures: Json
           p_month: number
           p_mwf: string[]
-          p_opens: string
+          p_opens: string | null
+          p_parts?: string[] | null
           p_ttf: string[]
           p_year: number
         }

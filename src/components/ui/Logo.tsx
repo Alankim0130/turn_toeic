@@ -44,7 +44,16 @@ export function Logo({
 }
 
 export function Symbol({ size = 28, className }: { size?: number; className?: string }) {
+  // 심볼 원본은 정사각형. flex 안에서 세로로 늘어나지 않도록 크기를 CSS 로 못박는다
   return (
-    <Image src="/brand/symbol.png" alt="" aria-hidden width={size} height={size} className={cn("select-none", className)} />
+    <Image
+      src="/brand/symbol.png"
+      alt=""
+      aria-hidden
+      width={size}
+      height={size}
+      className={cn("select-none", className)}
+      style={{ width: size, height: size }}
+    />
   );
 }
