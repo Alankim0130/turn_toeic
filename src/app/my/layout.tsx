@@ -9,7 +9,8 @@ export default async function MyLayout({ children }: { children: React.ReactNode
 
   return (
     <div className="container-x py-6 sm:py-10">
-      <div className="mb-6 flex flex-col gap-3 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
+      {/* PC(xl 이상)에서는 상단 네비·관리자 버튼이 헤더에 다 보이므로 두 번째 메뉴 줄을 숨긴다 */}
+      <div className="mb-6 flex flex-col gap-3 sm:mb-8 sm:flex-row sm:items-center sm:justify-between xl:hidden">
         <MyNav />
         {staff && (
           <Link href="/admin" className="btn-primary shrink-0 self-start sm:self-auto">
