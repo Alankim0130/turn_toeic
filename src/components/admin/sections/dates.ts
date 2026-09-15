@@ -33,26 +33,41 @@ export function labelKo(dateStr: string, withYear = false) {
   return `${withYear ? `${y}년 ` : ""}${m}월 ${d}일 (${WEEKDAY_KO[weekday(y, m, d)]})`;
 }
 
-/** 일요일 시작 달력 행렬. null 은 빈 칸 */
-export function monthGrid(y: number, m: number): (number | null)[][] {
-  const first = weekday(y, m, 1);
-  const days = daysInMonth(y, m);
-  const cells: (number | null)[] = [...Array(first).fill(null), ...Array.from({ length: days }, (_, i) => i + 1)];
-  while (cells.length % 7 !== 0) cells.push(null);
-  const rows: (number | null)[][] = [];
-  for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
-  return rows;
-}
-
 export type GridCell = { date: string; day: number; inMonth: boolean };
 
-/** 일요일 시작 6주(42칸) 달력. 앞뒤 달 날짜도 채워서 달을 넘겨도 칸 수가 변하지 않는다 */
-export function sixWeekGrid(y: number, m: number): GridCell[] {
-  const start = Date.UTC(y, m - 1, 1 - weekday(y, m, 1));
-  return Array.from({ length: 42 }, (_, i) => {
-    const d = new Date(start + i * 86_400_000);
-    return { date: d.toISOString().slice(0, 10), day: d.getUTCDate(), inMonth: d.getUTCMonth() === m - 1 };
-  });
+/**
+ * 일요일 시작 달력 행렬. 그 달 전체와, 함께 넘긴 날짜(앞뒤 달로 이어지는 수업일)까지
+ * 덮는 주 수만큼 만든다. 빈 칸 없이 앞뒤 달 날짜도 채운다.
+ * minRows 를 주면 그보다 적은 주는 뒤로 늘려 칸 수를 맞춘다 (편성 화면은 항상 6주).
+ */
+export function coveringGrid(y: number, m: number, extra: string[] = [], minRows = 0): GridCell[][] {
+  const DAY = 86_400_000;
+  let from = Date.UTC(y, m - 1, 1);
+  let to = Date.UTC(y, m - 1, daysInMonth(y, m));
+  for (const s of extra) {
+    const { y: ey, m: em, d: ed } = parseYmd(s);
+    const t = Date.UTC(ey, em - 1, ed);
+    if (t < from) from = t;
+    if (t > to) to = t;
+  }
+  const start = from - new Date(from).getUTCDay() * DAY;
+  let end = to + (6 - new Date(to).getUTCDay()) * DAY;
+  const weeks = Math.round((end - start + DAY) / (7 * DAY));
+  if (weeks < minRows) end += (minRows - weeks) * 7 * DAY;
+  const rows: GridCell[][] = [];
+  for (let t = start; t <= end; t += 7 * DAY) {
+    rows.push(
+      Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(t + i * DAY);
+        return {
+          date: d.toISOString().slice(0, 10),
+          day: d.getUTCDate(),
+          inMonth: d.getUTCFullYear() === y && d.getUTCMonth() === m - 1,
+        };
+      }),
+    );
+  }
+  return rows;
 }
 
 /** 기수 쿼리 문자열 'YYYY-MM' */

@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { saveTermSchedule } from "@/app/admin/sections/actions";
+import { saveTermSchedule, type TermPart } from "@/app/admin/sections/actions";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
 import { HOLIDAY_YEAR_RANGE, hasHolidayData, holidayNamesBetween } from "@/lib/holidays";
-import { WEEKDAY_KO, labelKo, shiftMonth, sixWeekGrid, termKey, weekdayOf } from "./dates";
+import { WEEKDAY_KO, coveringGrid, labelKo, shiftMonth, termKey, weekdayOf } from "./dates";
 import { downloadCalendarImage } from "./calendarImage";
 
 type Mode = "opens" | "closes" | "mwf" | "ttf" | "lecture";
@@ -35,21 +35,21 @@ const MODES: { value: Mode; label: string; hint: string; on: string; off: string
   {
     value: "mwf",
     label: "월수금",
-    hint: "월수금 수업일을 하나씩 누르세요. 다시 누르면 빠지고, 화목금 날짜를 누르면 월수금으로 옮겨집니다.",
+    hint: "월수금 수업일을 하나씩 누르세요. 다시 누르면 빠지고, 화목금 날짜를 누르면 월수금으로 옮겨집니다. 강의가 이어지면 앞뒤 달 날짜(흐린 칸)도 찍을 수 있어요.",
     on: "border-brand-500 bg-brand-500 text-white",
     off: "border-brand-200 bg-paper text-brand-700 hover:border-brand-400",
   },
   {
     value: "ttf",
     label: "화목금",
-    hint: "화목금 수업일을 하나씩 누르세요. 다시 누르면 빠지고, 월수금 날짜를 누르면 화목금으로 옮겨집니다.",
+    hint: "화목금 수업일을 하나씩 누르세요. 다시 누르면 빠지고, 월수금 날짜를 누르면 화목금으로 옮겨집니다. 강의가 이어지면 앞뒤 달 날짜(흐린 칸)도 찍을 수 있어요.",
     on: "border-ink bg-ink text-white",
     off: "border-ink/20 bg-paper text-ink hover:border-ink/50",
   },
   {
     value: "lecture",
     label: "특강",
-    hint: "강사와 내용을 정한 뒤 날짜를 누르세요. 수업일과 같은 날도, 하루에 여러 개도 됩니다. 같은 특강을 다시 누르면 빠져요.",
+    hint: "강사와 내용을 정한 뒤 날짜를 누르세요. 수업일과 같은 날도, 하루에 여러 개도 됩니다. 같은 특강을 다시 누르면 빠져요. 앞뒤 달 날짜도 찍을 수 있어요.",
     on: "border-violet-600 bg-violet-600 text-white",
     off: "border-violet-200 bg-paper text-violet-700 hover:border-violet-400",
   },
@@ -57,14 +57,12 @@ const MODES: { value: Mode; label: string; hint: string; on: string; off: string
 
 const TRACK_LABEL: Record<Track, string> = { mwf: "월수금", ttf: "화목금" };
 
-const normalize = (s: TermSchedule) =>
-  JSON.stringify({
-    o: s.opens,
-    c: s.closes,
-    m: [...s.mwf].sort(),
-    t: [...s.ttf].sort(),
-    l: s.lectures.map((l) => `${l.date}|${l.lecturerId}|${l.content.trim()}`).sort(),
-  });
+/** 항목별로 따로 저장한다 — 화면에 보여 줄 순서·이름 */
+const PART_LABEL: Record<TermPart, string> = { dates: "개강·종강", mwf: "월수금", ttf: "화목금", lectures: "특강" };
+const PART_ORDER: TermPart[] = ["dates", "mwf", "ttf", "lectures"];
+
+const sameDates = (a: string[], b: string[]) => a.length === b.length && [...a].sort().join(",") === [...b].sort().join(",");
+const lectureKey = (ls: TermLecture[]) => ls.map((l) => `${l.date}|${l.lecturerId}|${l.content.trim()}`).sort().join("¶");
 
 const shortDate = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))} (${WEEKDAY_KO[weekdayOf(d)]})`;
 
@@ -94,6 +92,8 @@ export function TermCalendar({
   const [saving, startSaving] = useTransition();
   const [navigating, startNavigating] = useTransition();
   const [exporting, setExporting] = useState(false);
+  /** 지금 저장 중인 항목 — "all" 은 전체 저장 */
+  const [savingPart, setSavingPart] = useState<TermPart | "all" | null>(null);
 
   const [mode, setMode] = useState<Mode | null>(null);
   const [opens, setOpens] = useState(saved.opens);
@@ -105,7 +105,12 @@ export function TermCalendar({
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const monthPrefix = `${termKey(year, month)}-`;
-  const cells = useMemo(() => sixWeekGrid(year, month), [year, month]);
+  // 그 달 + 이 기수로 찍힌 앞뒤 달 날짜까지 모두 보이도록 (최소 6주)
+  const rows = useMemo(
+    () => coveringGrid(year, month, [...mwf, ...ttf, ...lectures.map((l) => l.date), opens, closes].filter((d): d is string => !!d), 6),
+    [year, month, mwf, ttf, lectures, opens, closes],
+  );
+  const cells = useMemo(() => rows.flat(), [rows]);
   const holidays = useMemo(() => holidayNamesBetween(cells[0].date, cells[cells.length - 1].date), [cells]);
   const monthHolidays = useMemo(() => [...holidays].filter(([d]) => d.startsWith(monthPrefix)), [holidays, monthPrefix]);
   const lecturerName = useMemo(() => new Map(lecturers.map((t) => [t.id, t.name])), [lecturers]);
@@ -125,7 +130,27 @@ export function TermCalendar({
     () => ({ opens, closes, mwf: [...mwf], ttf: [...ttf], lectures: lectures.map(({ date, lecturerId, content }) => ({ date, lecturerId, content })) }),
     [opens, closes, mwf, ttf, lectures],
   );
-  const dirty = useMemo(() => normalize(current) !== normalize(saved), [current, saved]);
+  /** 항목마다 따로 저장하므로 바뀐 항목도 따로 센다 */
+  const partDirty = useMemo<Record<TermPart, boolean>>(
+    () => ({
+      dates: current.opens !== saved.opens || current.closes !== saved.closes,
+      mwf: !sameDates(current.mwf, saved.mwf),
+      ttf: !sameDates(current.ttf, saved.ttf),
+      lectures: lectureKey(current.lectures) !== lectureKey(saved.lectures),
+    }),
+    [current, saved],
+  );
+  const dirtyParts = useMemo(() => PART_ORDER.filter((p) => partDirty[p]), [partDirty]);
+  const dirty = dirtyParts.length > 0;
+
+  /** 앞뒤 달로 이어지는 수업일 수 (강의가 다음 달까지 이어지는 기수) */
+  const spill = useMemo(
+    () => ({
+      mwf: [...mwf].filter((d) => !d.startsWith(monthPrefix)).length,
+      ttf: [...ttf].filter((d) => !d.startsWith(monthPrefix)).length,
+    }),
+    [mwf, ttf, monthPrefix],
+  );
 
   // 저장하지 않고 창을 닫거나 새로고침하면 한 번 묻는다
   useEffect(() => {
@@ -146,7 +171,16 @@ export function TermCalendar({
     startNavigating(() => router.push(`/admin/sections?term=${termKey(t.y, t.m)}`, { scroll: false }));
   };
 
-  const toggleTrack = (track: Track, date: string) => {
+  /** 앞뒤 달 날짜를 찍었을 때 어느 기수로 들어가는지 덧붙이는 안내 */
+  const spillNote = (date: string, inMonth: boolean) =>
+    inMonth ? "" : `${labelKo(date, true)}은 다른 달 날짜지만 ${year}년 ${month}월 기수 일정으로 저장돼요.`;
+
+  const settle = (...parts: string[]) => {
+    const text = parts.filter(Boolean).join(" ");
+    setNotice(text ? { kind: "info", text } : null);
+  };
+
+  const toggleTrack = (track: Track, date: string, inMonth: boolean) => {
     const other: Track = track === "mwf" ? "ttf" : "mwf";
     const mine = track === "mwf" ? mwf : ttf;
     const theirs = track === "mwf" ? ttf : mwf;
@@ -164,6 +198,7 @@ export function TermCalendar({
       setNotice(null);
       return;
     }
+    let moved = "";
     if (theirs.has(date)) {
       if (locked.has(`${other}|${date}`)) {
         warn(`${labelKo(date)} ${TRACK_LABEL[other]} 회차에는 다시보기가 등록되어 있어 옮길 수 없어요.`);
@@ -172,16 +207,15 @@ export function TermCalendar({
       const nextTheirs = new Set(theirs);
       nextTheirs.delete(date);
       setTheirs(nextTheirs);
-      setNotice({ kind: "info", text: `${labelKo(date)}을 ${TRACK_LABEL[other]}에서 ${TRACK_LABEL[track]}으로 옮겼어요. 한 날짜는 한 트랙에만 들어가요.` });
-    } else {
-      setNotice(null);
+      moved = `${labelKo(date)}을 ${TRACK_LABEL[other]}에서 ${TRACK_LABEL[track]}으로 옮겼어요. 한 날짜는 한 트랙에만 들어가요.`;
     }
     const next = new Set(mine);
     next.add(date);
     setMine(next);
+    settle(moved, spillNote(date, inMonth));
   };
 
-  const toggleLecture = (date: string) => {
+  const toggleLecture = (date: string, inMonth: boolean) => {
     if (brush.lecturerId === null) {
       warn("특강 강사 명단이 비어 있어요. 관리자에게 강사 등록을 요청해 주세요.");
       return;
@@ -190,10 +224,11 @@ export function TermCalendar({
     const hit = lectures.find((l) => l.date === date && l.lecturerId === brush.lecturerId && l.content.trim() === content);
     if (hit) {
       setLectures(lectures.filter((l) => l.key !== hit.key));
-    } else {
-      setLectures([...lectures, { key: crypto.randomUUID(), date, lecturerId: brush.lecturerId, content }]);
+      setNotice(null);
+      return;
     }
-    setNotice(null);
+    setLectures([...lectures, { key: crypto.randomUUID(), date, lecturerId: brush.lecturerId, content }]);
+    settle(spillNote(date, inMonth));
   };
 
   const onDay = (date: string, inMonth: boolean) => {
@@ -202,10 +237,7 @@ export function TermCalendar({
       setNotice({ kind: "info", text: "먼저 위에서 개강일 · 종강일 · 월수금 · 화목금 · 특강 중 하나를 골라 주세요." });
       return;
     }
-    if (!inMonth && mode !== "opens" && mode !== "closes") {
-      setNotice({ kind: "info", text: `수업일과 특강은 ${month}월 날짜만 고를 수 있어요. 다른 달은 위의 화살표로 넘어가서 편성해 주세요.` });
-      return;
-    }
+    // 강의가 다음 달까지 이어질 수 있어 달력에 함께 보이는 앞뒤 달 날짜도 이 기수의 수업일·특강으로 찍는다
     if (mode === "opens") {
       setOpens(opens === date ? null : date);
       setNotice(null);
@@ -213,29 +245,36 @@ export function TermCalendar({
       setCloses(closes === date ? null : date);
       setNotice(null);
     } else if (mode === "lecture") {
-      toggleLecture(date);
+      toggleLecture(date, inMonth);
     } else {
-      toggleTrack(mode, date);
+      toggleTrack(mode, date, inMonth);
     }
   };
 
   const updateLecture = (key: string, patch: Partial<TermLecture>) => setLectures(lectures.map((l) => (l.key === key ? { ...l, ...patch } : l)));
 
-  const save = () => {
-    if (readOnly) return;
-    if (!opens || !closes) {
-      warn("개강일과 종강일을 달력에서 찍어 주세요. [개강일]·[종강일] 버튼을 누른 뒤 날짜를 누르면 됩니다.");
-      return;
+  /** 고른 항목만 저장한다. parts 를 비우면 전부 저장 */
+  const save = (parts: TermPart[]) => {
+    if (readOnly || parts.length === 0) return;
+    if (parts.includes("dates")) {
+      if (!opens || !closes) {
+        warn("개강일과 종강일을 달력에서 찍어 주세요. [개강일]·[종강일] 버튼을 누른 뒤 날짜를 누르면 됩니다.");
+        return;
+      }
+      if (closes < opens) {
+        warn("종강일은 개강일과 같거나 그 뒤여야 해요.");
+        return;
+      }
     }
-    if (closes < opens) {
-      warn("종강일은 개강일과 같거나 그 뒤여야 해요.");
-      return;
+    if (parts.includes("lectures")) {
+      const empty = sortedLectures.find((l) => !l.content.trim());
+      if (empty) {
+        warn(`${labelKo(empty.date)} 특강의 내용을 적어 주세요.`);
+        return;
+      }
     }
-    const empty = sortedLectures.find((l) => !l.content.trim());
-    if (empty) {
-      warn(`${labelKo(empty.date)} 특강의 내용을 적어 주세요.`);
-      return;
-    }
+    const whole = parts.length === PART_ORDER.length;
+    setSavingPart(whole ? "all" : parts[0]);
     startSaving(async () => {
       const res = await saveTermSchedule({
         year,
@@ -245,16 +284,21 @@ export function TermCalendar({
         mwf: [...mwf].sort(),
         ttf: [...ttf].sort(),
         lectures: sortedLectures.map(({ date, lecturerId, content }) => ({ date, lecturerId, content: content.trim() })),
+        parts,
       });
-      if (res.ok) {
-        setNotice({
-          kind: "success",
-          text: `${month}월 일정을 ${hasSaved ? "저장" : "생성"}했어요. 월수금 ${res.mwf}회 · 화목금 ${res.ttf}회 · 특강 ${res.lectures}개${res.sections ? ` · 이 달 반 ${res.sections}개의 수업일에 반영` : ""}`,
-        });
-        router.refresh();
-      } else {
+      setSavingPart(null);
+      if (!res.ok) {
         warn(res.error);
+        return;
       }
+      const applied = res.sections ? ` · 이 달 반 ${res.sections}개의 수업일에 반영` : "";
+      setNotice({
+        kind: "success",
+        text: whole
+          ? `${month}월 일정을 ${hasSaved ? "저장" : "생성"}했어요. 월수금 ${res.mwf}회 · 화목금 ${res.ttf}회 · 특강 ${res.lectures}개${applied}`
+          : `${parts.map((x) => PART_LABEL[x]).join(" · ")}만 저장했어요. 월수금 ${res.mwf}회 · 화목금 ${res.ttf}회 · 특강 ${res.lectures}개${applied}`,
+      });
+      router.refresh();
     });
   };
 
@@ -268,6 +312,16 @@ export function TermCalendar({
       setExporting(false);
     }
   };
+
+  const partSummary = useMemo<Record<TermPart, string>>(() => {
+    const track = (n: number, over: number) => `${n}회${over > 0 ? ` · 다른 달 ${over}회` : ""}`;
+    return {
+      dates: `${opens ? shortDate(opens) : "미정"} → ${closes ? shortDate(closes) : "미정"}`,
+      mwf: track(mwf.size, spill.mwf),
+      ttf: track(ttf.size, spill.ttf),
+      lectures: lectures.length === 0 ? "없음" : `${lectures.length}개`,
+    };
+  }, [opens, closes, mwf, ttf, spill, lectures]);
 
   const classDates = [...mwf, ...ttf].sort();
   const beforeOpens = opens ? classDates.filter((d) => d < opens) : [];
@@ -368,9 +422,9 @@ export function TermCalendar({
             </div>
           ))}
         </div>
-        {Array.from({ length: 6 }, (_, r) => (
-          <div key={r} role="row" className="grid grid-cols-7 gap-1 pb-1">
-            {cells.slice(r * 7, r * 7 + 7).map((c) => {
+        {rows.map((week) => (
+          <div key={week[0].date} role="row" className="grid grid-cols-7 gap-1 pb-1">
+            {week.map((c) => {
               const wd = weekdayOf(c.date);
               const names = holidays.get(c.date);
               const red = wd === 0 || !!names;
@@ -379,6 +433,7 @@ export function TermCalendar({
               const isOpens = opens === c.date;
               const isCloses = closes === c.date;
               const hasReplay = locked.has(`mwf|${c.date}`) || locked.has(`ttf|${c.date}`);
+              const marked = !!track || isOpens || isCloses || dayLectures.length > 0;
               const label = [
                 labelKo(c.date, !c.inMonth),
                 names?.join(", "),
@@ -396,13 +451,13 @@ export function TermCalendar({
                   type="button"
                   role="gridcell"
                   aria-label={label}
-                  aria-selected={!!track || isOpens || isCloses || dayLectures.length > 0}
+                  aria-selected={marked}
                   onClick={() => onDay(c.date, c.inMonth)}
                   disabled={readOnly}
                   className={cn(
                     "relative flex min-h-[4.5rem] min-w-0 flex-col gap-0.5 overflow-hidden rounded-lg border p-1 text-left transition sm:min-h-[6.25rem] sm:p-1.5",
-                    c.inMonth ? "border-line bg-paper" : "border-transparent bg-surface",
-                    !c.inMonth && "opacity-50",
+                    c.inMonth ? "border-line bg-paper" : "border-dashed border-line bg-surface",
+                    !c.inMonth && !marked && "opacity-50",
                     !readOnly && "hover:border-brand-300 hover:bg-brand-50/50",
                     readOnly && "cursor-default",
                   )}
@@ -417,6 +472,7 @@ export function TermCalendar({
                     >
                       {c.day}
                     </span>
+                    {!c.inMonth && marked && <span className="text-[9px] font-black text-mist sm:text-[10px]">{Number(c.date.slice(5, 7))}월</span>}
                     {hasReplay && <Icon name="replay" size={12} className="opacity-70" />}
                   </span>
                   {names && <span className="hidden truncate text-[10px] font-bold leading-tight text-red-600 sm:block">{names.join("·")}</span>}
@@ -537,7 +593,36 @@ export function TermCalendar({
         </Alert>
       )}
 
-      {/* 요약 + 생성하기 */}
+      {/* 항목별 저장 — 개강·종강 / 월수금 / 화목금 / 특강을 따로 저장한다 */}
+      {!readOnly && (
+        <section aria-labelledby="term-parts-title" className="overflow-hidden rounded-xl2 border border-line">
+          <h3 id="term-parts-title" className="border-b border-line bg-surface px-4 py-2.5 text-sm font-black text-ink">
+            따로 저장 <span className="font-semibold text-slate">— 항목마다 나눠서 저장할 수 있어요. 한 항목을 저장해도 나머지 편성은 그대로 남습니다</span>
+          </h3>
+          <ul className="divide-y divide-line">
+            {PART_ORDER.map((part) => {
+              const changed = partDirty[part];
+              return (
+                <li key={part} className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4">
+                  <span className="w-16 shrink-0 text-sm font-black text-ink sm:w-20">{PART_LABEL[part]}</span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-slate sm:text-sm">{partSummary[part]}</span>
+                  {changed && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">변경됨</span>}
+                  <button
+                    type="button"
+                    onClick={() => save([part])}
+                    disabled={saving || !changed}
+                    className="btn-secondary shrink-0 !px-3 !py-1.5 text-xs disabled:opacity-40"
+                  >
+                    {savingPart === part ? "저장 중…" : "저장"}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {/* 요약 + 전체 저장 */}
       <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] z-10 flex items-center justify-between gap-3 rounded-xl2 border border-line bg-paper/95 p-2.5 shadow-soft backdrop-blur sm:p-3 md:bottom-4">
         <dl className="flex min-w-0 flex-wrap gap-x-3 gap-y-0.5 text-xs sm:gap-x-4 sm:text-sm">
           <div className="flex gap-1.5">
@@ -556,6 +641,12 @@ export function TermCalendar({
             <dt className="font-semibold text-slate">화목금</dt>
             <dd className="font-black tabular-nums text-ink">{ttf.size}회</dd>
           </div>
+          {spill.mwf + spill.ttf > 0 && (
+            <div className="flex gap-1.5">
+              <dt className="font-semibold text-slate">다른 달</dt>
+              <dd className="font-black tabular-nums text-slate">{spill.mwf + spill.ttf}회</dd>
+            </div>
+          )}
           <div className="flex gap-1.5">
             <dt className="font-semibold text-slate">특강</dt>
             <dd className="font-black tabular-nums text-violet-700">{lectures.length}개</dd>
@@ -563,9 +654,9 @@ export function TermCalendar({
         </dl>
         {!readOnly && (
           <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-2">
-            {dirty && hasSaved && <span className="text-[11px] font-bold text-amber-600 sm:text-xs">저장 안 됨</span>}
-            <button type="button" onClick={save} disabled={saving || (hasSaved && !dirty)} className="btn-primary !px-4 !py-2.5 sm:!px-5">
-              {saving ? "저장 중…" : !hasSaved ? "생성하기" : dirty ? "수정 저장" : "저장됨"}
+            {dirty && hasSaved && <span className="text-[11px] font-bold text-amber-600 sm:text-xs">저장 안 됨 {dirtyParts.length}개</span>}
+            <button type="button" onClick={() => save(PART_ORDER)} disabled={saving || (hasSaved && !dirty)} className="btn-primary !px-4 !py-2.5 sm:!px-5">
+              {savingPart === "all" ? "저장 중…" : !hasSaved ? "생성하기" : dirty ? "전체 저장" : "저장됨"}
             </button>
           </div>
         )}

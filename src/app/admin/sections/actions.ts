@@ -32,7 +32,12 @@ function revalidateSchedule() {
   revalidatePath("/");
 }
 
-/* ─── 달력: 생성하기 ────────────────────────────────────────────────────── */
+/* ─── 달력: 저장하기 (항목별로 따로 저장할 수 있다) ─────────────────────── */
+/** 저장할 항목 — 개강·종강 / 월수금 / 화목금 / 특강. 넘기지 않으면 전부 저장한다 */
+export type TermPart = "dates" | "mwf" | "ttf" | "lectures";
+// "use server" 모듈은 async 함수만 내보낼 수 있어 목록은 여기서만 쓴다
+const TERM_PARTS: TermPart[] = ["dates", "mwf", "ttf", "lectures"];
+
 export type TermScheduleInput = {
   year: number;
   month: number;
@@ -41,19 +46,32 @@ export type TermScheduleInput = {
   mwf: string[];
   ttf: string[];
   lectures: { date: string; lecturerId: number; content: string }[];
+  /** 저장할 항목. 비우면 전부 */
+  parts?: TermPart[];
 };
 export type TermScheduleResult =
-  | { ok: true; mwf: number; ttf: number; lectures: number; sections: number }
+  | { ok: true; mwf: number; ttf: number; lectures: number; sections: number; parts: TermPart[] }
   | { ok: false; error: string };
 
 const RPC_ERROR: Record<string, string> = {
   forbidden: "권한이 없어요. 강사·관리자만 일정을 만들 수 있습니다.",
   invalid_term: "기수(연·월)가 올바르지 않아요.",
+  invalid_parts: "저장할 항목이 올바르지 않아요. 새로고침한 뒤 다시 시도해 주세요.",
   dates_required: "개강일과 종강일을 달력에서 찍어 주세요.",
   closes_before_opens: "종강일은 개강일과 같거나 그 뒤여야 해요.",
-  class_date_out_of_month: "수업일은 그 달 날짜만 고를 수 있어요.",
+  class_date_out_of_range: "수업일·특강은 그 달과 앞뒤 한 달 안에서만 고를 수 있어요.",
+  class_date_out_of_month: "수업일·특강은 그 달과 앞뒤 한 달 안에서만 고를 수 있어요.",
   invalid_lectures: "특강의 날짜·강사·내용(1~100자)을 확인해 주세요.",
 };
+
+/** 수업일·특강을 찍을 수 있는 범위: 그 달 ± 1개월 (강의가 다음 달까지 이어질 수 있다) */
+function monthWindow(year: number, month: number) {
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return {
+    from: iso(new Date(Date.UTC(year, month - 2, 1))),
+    to: iso(new Date(Date.UTC(year, month + 1, 0))),
+  };
+}
 
 const listDates = (csv?: string | null) =>
   (csv ?? "")
@@ -70,25 +88,40 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
   if (!Number.isInteger(year) || !Number.isInteger(month) || year < 2020 || year > 2100 || month < 1 || month > 12) {
     return { ok: false, error: RPC_ERROR.invalid_term };
   }
+
+  const asked = Array.isArray(input.parts) ? input.parts : null;
+  const parts: TermPart[] = asked ? TERM_PARTS.filter((p) => asked.includes(p)) : [...TERM_PARTS];
+  if (parts.length === 0) return { ok: false, error: RPC_ERROR.invalid_parts };
+
   const opens = input.opens && isYmd(input.opens) ? input.opens : null;
   const closes = input.closes && isYmd(input.closes) ? input.closes : null;
-  if (!opens || !closes) return { ok: false, error: RPC_ERROR.dates_required };
-  if (closes < opens) return { ok: false, error: RPC_ERROR.closes_before_opens };
+  if (parts.includes("dates")) {
+    if (!opens || !closes) return { ok: false, error: RPC_ERROR.dates_required };
+    if (closes < opens) return { ok: false, error: RPC_ERROR.closes_before_opens };
+  }
+
+  // 수업일·특강은 그 달 ± 1개월까지 (강의가 다음 달까지 이어지는 기수가 있다)
+  const range = monthWindow(year, month);
+  const inWindow = (d: string) => d >= range.from && d <= range.to;
 
   const dates = (v: unknown) => (Array.isArray(v) ? [...new Set(v.map(String))] : []);
-  const mwf = dates(input.mwf);
-  const ttf = dates(input.ttf);
-  if (mwf.length > 31 || ttf.length > 31 || ![...mwf, ...ttf].every(isYmd)) return { ok: false, error: "수업일 형식이 올바르지 않아요." };
+  const mwf = parts.includes("mwf") ? dates(input.mwf) : [];
+  const ttf = parts.includes("ttf") ? dates(input.ttf) : [];
+  if (mwf.length > 62 || ttf.length > 62 || ![...mwf, ...ttf].every(isYmd)) return { ok: false, error: "수업일 형식이 올바르지 않아요." };
+  if (![...mwf, ...ttf].every(inWindow)) return { ok: false, error: RPC_ERROR.class_date_out_of_range };
 
-  const rawLectures = Array.isArray(input.lectures) ? input.lectures : [];
+  const rawLectures = parts.includes("lectures") && Array.isArray(input.lectures) ? input.lectures : [];
   if (rawLectures.length > 100) return { ok: false, error: "특강은 한 달에 100개까지 만들 수 있어요." };
   const lectures = rawLectures.map((l) => ({
     date: String(l?.date ?? ""),
     lecturer_id: Number(l?.lecturerId),
     content: String(l?.content ?? "").trim(),
   }));
-  const badLecture = lectures.find((l) => !isYmd(l.date) || !Number.isInteger(l.lecturer_id) || l.lecturer_id <= 0 || l.content.length < 1 || l.content.length > 100);
+  const badLecture = lectures.find(
+    (l) => !isYmd(l.date) || !inWindow(l.date) || !Number.isInteger(l.lecturer_id) || l.lecturer_id <= 0 || l.content.length < 1 || l.content.length > 100,
+  );
   if (badLecture) {
+    if (isYmd(badLecture.date) && !inWindow(badLecture.date)) return { ok: false, error: RPC_ERROR.class_date_out_of_range };
     return {
       ok: false,
       error: isYmd(badLecture.date) ? `${labelKo(badLecture.date)} 특강의 강사와 내용(1~100자)을 채워 주세요.` : RPC_ERROR.invalid_lectures,
@@ -104,6 +137,7 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
     p_mwf: mwf,
     p_ttf: ttf,
     p_lectures: lectures,
+    p_parts: parts,
   });
 
   if (error) {
@@ -119,7 +153,7 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
 
   revalidateSchedule();
   const res = (data ?? {}) as { mwf?: number; ttf?: number; lectures?: number; sections?: number };
-  return { ok: true, mwf: res.mwf ?? 0, ttf: res.ttf ?? 0, lectures: res.lectures ?? 0, sections: res.sections ?? 0 };
+  return { ok: true, mwf: res.mwf ?? 0, ttf: res.ttf ?? 0, lectures: res.lectures ?? 0, sections: res.sections ?? 0, parts };
 }
 
 /* ─── 강좌 마스터 추가 ──────────────────────────────────────────────────── */
