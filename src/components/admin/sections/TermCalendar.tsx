@@ -533,21 +533,24 @@ export function TermCalendar({
                   )}
                 >
                   <span className="flex items-center justify-between gap-0.5">
+                    {/* 다른 달 날짜는 "10/1" 로 적어 어느 달인지 바로 보이게 한다 (이미지 저장과 같은 표기) */}
                     <span
                       className={cn(
-                        "flex h-5 min-w-5 items-center justify-center rounded-full text-xs font-black tabular-nums sm:h-6 sm:min-w-6 sm:text-sm",
-                        red ? "text-red-600" : wd === 6 ? "text-blue-600" : "text-ink",
+                        "flex h-5 min-w-5 items-center justify-center whitespace-nowrap rounded-full px-0.5 text-xs font-black tabular-nums sm:h-6 sm:min-w-6 sm:text-sm",
+                        !c.inMonth ? "text-mist" : red ? "text-red-600" : wd === 6 ? "text-blue-600" : "text-ink",
                         c.date === today && "bg-ink/10",
                       )}
                     >
-                      {c.day}
+                      {c.inMonth ? c.day : `${Number(c.date.slice(5, 7))}/${c.day}`}
                     </span>
-                    {!c.inMonth && !taken && (
-                      <span className="shrink-0 whitespace-nowrap text-[9px] font-black text-mist sm:text-[10px]">{Number(c.date.slice(5, 7))}월</span>
-                    )}
                     {hasReplay && <Icon name="replay" size={12} className="opacity-70" />}
                   </span>
-                  {names && <span className="hidden truncate text-[10px] font-bold leading-tight text-red-600 sm:block">{names.join("·")}</span>}
+                  {/* 무슨 날인지 칸 안에 적는다. 좁은 화면은 두 줄까지 (추석 / 연휴), 넓으면 한 줄 */}
+                  {names && (
+                    <span className="line-clamp-2 text-[9px] font-bold leading-[1.15] text-red-600 sm:line-clamp-1 sm:text-[10px] sm:leading-tight">
+                      {names.join("·")}
+                    </span>
+                  )}
                   <span className="mt-auto flex min-w-0 flex-col gap-0.5">
                     {(isOpens || isCloses) && (
                       <span className="flex gap-0.5">
