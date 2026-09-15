@@ -33,8 +33,8 @@ export function DonutChart({
 
   return (
     <div className={cn("flex flex-col items-center gap-5 sm:flex-row", className)}>
-      <svg viewBox="0 0 100 100" className="h-40 w-40 shrink-0" role="img" aria-labelledby={`donut-${slug(title)}`}>
-        <title id={`donut-${slug(title)}`}>{title} 도넛 차트</title>
+      <svg viewBox="0 0 100 100" className="h-40 w-40 shrink-0" role="img" aria-label={`${title} 도넛 차트`}>
+        <title>{`${title} 도넛 차트`}</title>
         <circle cx="50" cy="50" r={r} fill="none" stroke="#ffe4ef" strokeWidth="14" />
         {segments.map(({ d, len, offset }, i) => (
           <circle
@@ -91,8 +91,4 @@ export function DonutChart({
       </div>
     </div>
   );
-}
-
-function slug(s: string) {
-  return s.replace(/[^a-zA-Z0-9가-힣]/g, "-");
 }

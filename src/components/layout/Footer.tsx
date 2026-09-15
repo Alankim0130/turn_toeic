@@ -24,6 +24,7 @@ export function Footer() {
           <ul className="mt-3 space-y-2 text-sm text-slate">
             <li><Link href="/" className="hover:text-brand-600">역전토익 소개</Link></li>
             <li><Link href="/my/verify" className="hover:text-brand-600">등업신청</Link></li>
+            <li><Link href="/student" className="hover:text-brand-600">수강생전용</Link></li>
             <li><Link href="/my/live" className="hover:text-brand-600">불라방</Link></li>
             <li><Link href="/my/replay" className="hover:text-brand-600">강의 다시보기</Link></li>
             <li><Link href="/study" className="hover:text-brand-600">스터디 신청하기</Link></li>

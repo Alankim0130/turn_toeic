@@ -1,26 +1,26 @@
 import Link from "next/link";
 import { Logo } from "@/components/ui/Logo";
 import { Icon } from "@/components/ui/Icon";
-import { NAV_MAIN } from "@/lib/site";
-import { isStaff, type Profile } from "@/lib/auth";
+import { isStaff, type Profile, type StudentAccess } from "@/lib/auth";
 import { MobileMenu } from "./MobileMenu";
-import { NavLinks } from "./NavLinks";
+import { DesktopNav } from "./DesktopNav";
 import { signOut } from "@/app/(auth)/actions";
 
-export function SiteHeader({ profile, signedIn }: { profile: Profile | null; signedIn: boolean }) {
+export function SiteHeader({ profile, signedIn, access }: { profile: Profile | null; signedIn: boolean; access: StudentAccess }) {
   const staff = isStaff(profile?.role);
+  const navAccess = { active: access.active, enrollee: access.enrollee };
 
   return (
     <header className="sticky top-0 z-40 border-b border-line/70 glass">
       <div className="container-x flex h-16 items-center justify-between gap-4">
         <Logo height={30} priority />
 
-        {/* 데스크톱 네비 — 메뉴가 많아 넓은 화면(xl)에서만 한 줄로, 그보다 좁으면 햄버거 메뉴 */}
-        <nav aria-label="주요 메뉴" className="hidden xl:block">
-          <NavLinks items={NAV_MAIN} />
+        {/* 데스크톱 메뉴 (lg 이상). 수강생전용 기능은 하위 메뉴로 묶었다 */}
+        <nav aria-label="주요 메뉴" className="hidden lg:block">
+          <DesktopNav access={navAccess} />
         </nav>
 
-        <div className="hidden shrink-0 items-center gap-2 xl:flex">
+        <div className="hidden shrink-0 items-center gap-2 lg:flex">
           {staff && (
             <Link href="/admin" className="btn-primary whitespace-nowrap !px-4 !py-2">
               <Icon name="admin" size={18} className="brightness-0 invert" />
@@ -41,18 +41,18 @@ export function SiteHeader({ profile, signedIn }: { profile: Profile | null; sig
             </>
           ) : (
             <>
-              <Link href="/login" className="btn-ghost !px-4 !py-2">
+              <Link href="/login" className="btn-ghost whitespace-nowrap !px-4 !py-2">
                 로그인
               </Link>
-              <Link href="/signup" className="btn-dark !px-4 !py-2">
+              <Link href="/signup" className="btn-dark whitespace-nowrap !px-4 !py-2">
                 회원가입
               </Link>
             </>
           )}
         </div>
 
-        {/* 모바일 메뉴 */}
-        <MobileMenu signedIn={signedIn} staff={staff} name={profile?.name ?? null} />
+        {/* 모바일·태블릿: 오른쪽 슬라이드 메뉴 */}
+        <MobileMenu signedIn={signedIn} staff={staff} name={profile?.name ?? null} access={navAccess} />
       </div>
     </header>
   );

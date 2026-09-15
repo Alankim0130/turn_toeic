@@ -1,3 +1,4 @@
+import { studentGate } from "@/components/student/StudentGate";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -13,6 +14,10 @@ export const metadata: Metadata = {
 };
 
 export default async function ReplayPage() {
+  // 수강생이 아니면 기능 대신 잠금 안내를 보여준다
+  const locked = await studentGate("replay");
+  if (locked) return locked;
+
   const replays = (await getMyReplays()).filter((r) => r.session?.section);
 
   if (replays.length === 0) {

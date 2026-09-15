@@ -3,7 +3,7 @@ import "./globals.css";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { Footer } from "@/components/layout/Footer";
 import { BottomNav } from "@/components/layout/BottomNav";
-import { getSessionProfile } from "@/lib/auth";
+import { getSessionProfile, getStudentAccess } from "@/lib/auth";
 import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -45,7 +45,7 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const { user, profile } = await getSessionProfile();
+  const [{ user, profile }, access] = await Promise.all([getSessionProfile(), getStudentAccess()]);
 
   return (
     <html lang="ko">
@@ -57,10 +57,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
       </head>
       <body className="min-h-dvh">
-        <SiteHeader profile={profile} signedIn={!!user} />
+        <SiteHeader profile={profile} signedIn={!!user} access={access} />
         <main className="has-bottom-nav min-h-[70vh]">{children}</main>
         <Footer />
-        <BottomNav />
+        <BottomNav access={{ active: access.active, enrollee: access.enrollee }} />
       </body>
     </html>
   );

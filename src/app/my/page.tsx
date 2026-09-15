@@ -24,11 +24,11 @@ const QUICK: { href: string; label: string; desc: string; icon: IconName }[] = [
   { href: "/my/verify", label: "등업신청", desc: "수강증 올리기", icon: "verify" },
   { href: "/my/class", label: "내 시간표", desc: "수업일 확인", icon: "calendar" },
   { href: "/my/live", label: "불라방", desc: "실시간 입장", icon: "live" },
-  { href: "/my/textbook", label: "교재신청", desc: "불라방 교재 배송", icon: "textbook" },
+  { href: "/my/textbook", label: "교재주문", desc: "불라방 교재 배송", icon: "textbook" },
   { href: "/my/replay", label: "다시보기", desc: "종강일까지 시청", icon: "replay" },
   { href: "/my/study", label: "내 스터디", desc: "신청 · 비대면 자료", icon: "study" },
-  { href: "/my/homework", label: "숙제제출", desc: "풀이 사진 올리기", icon: "homework" },
-  { href: "/my/lc-audio", label: "LC 음원", desc: "음원 듣기", icon: "headphones" },
+  { href: "/my/homework", label: "숙제업로드", desc: "풀이 사진 올리기", icon: "homework" },
+  { href: "/my/lc-audio", label: "LC음원듣기", desc: "레벨별 음원", icon: "headphones" },
 ];
 
 export default async function MyPage({ searchParams }: { searchParams: Promise<{ welcome?: string; denied?: string }> }) {

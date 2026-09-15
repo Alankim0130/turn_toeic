@@ -1,3 +1,4 @@
+import { studentGate } from "@/components/student/StudentGate";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -10,11 +11,15 @@ import { TextbookForm, type EligibleSection } from "./TextbookForm";
 import { cancelTextbookOrder } from "./actions";
 
 export const metadata: Metadata = {
-  title: "불라방 교재신청",
+  title: "불라방 교재주문",
   robots: { index: false },
 };
 
 export default async function TextbookPage() {
+  // 수강생이 아니면 기능 대신 잠금 안내를 보여준다
+  const locked = await studentGate("textbook");
+  if (locked) return locked;
+
   const [{ profile }, enrollments, orders] = await Promise.all([requireUser("/my/textbook"), getMyLiveEnrollments(), getMyTextbookOrders()]);
 
   const sections: EligibleSection[] = enrollments.map((e) => {
@@ -27,7 +32,7 @@ export default async function TextbookPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader icon="textbook" title="불라방 교재신청" description="불라방 수강생은 교재를 집으로 받아볼 수 있어요." />
+      <PageHeader icon="textbook" title="불라방 교재주문" description="불라방 수강생은 교재를 집으로 받아볼 수 있어요." />
 
       {sections.length === 0 ? (
         <EmptyState
@@ -45,7 +50,7 @@ export default async function TextbookPage() {
 
       <Reveal delay={100}>
         <section aria-labelledby="orders-title" className="card p-5 sm:p-6">
-          <h2 id="orders-title" className="text-base font-black text-ink">내 교재신청 내역</h2>
+          <h2 id="orders-title" className="text-base font-black text-ink">내 교재주문 내역</h2>
           {orders.length === 0 ? (
             <p className="mt-3 text-sm text-slate">아직 신청한 교재가 없어요.</p>
           ) : (

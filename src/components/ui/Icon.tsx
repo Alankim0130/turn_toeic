@@ -9,7 +9,8 @@ export type IconName =
   | "home" | "verify" | "live" | "textbook" | "replay" | "study" | "contact" | "admin"
   | "students" | "orders" | "analytics" | "timeslot" | "profile" | "calendar" | "upload"
   | "success" | "warning" | "logout" | "login" | "location" | "rank1" | "target" | "bolt"
-  | "offline" | "online" | "vocab" | "homework" | "headphones" | "download";
+  | "offline" | "online" | "vocab" | "homework" | "headphones" | "download"
+  | "lock" | "exclusive";
 
 export function Icon({
   name,

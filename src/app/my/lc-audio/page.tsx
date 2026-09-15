@@ -1,3 +1,4 @@
+import { studentGate } from "@/components/student/StudentGate";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -15,6 +16,10 @@ export const metadata: Metadata = {
 };
 
 export default async function LcAudioPage({ searchParams }: { searchParams: Promise<{ level?: string }> }) {
+  // 수강생이 아니면 기능 대신 잠금 안내를 보여준다
+  const locked = await studentGate("lc-audio");
+  if (locked) return locked;
+
   const [sp, { profile }, { levels, tracks, images }, orders] = await Promise.all([searchParams, getSessionProfile(), getMyLcAudio(), getMyOrders()]);
   const header = <PageHeader icon="headphones" title="LC 음원듣기" description="내 교재 레벨을 골라 LC 음원을 들어요. 교재 사진을 보고 찾으면 쉬워요." />;
 

@@ -29,14 +29,17 @@
 
 | 영역 | 내용 |
 |---|---|
-| 공개 페이지 | 역전토익 소개(랜딩, 애니메이션), 스터디 신청하기(대면·비대면·단어), 연락하기 |
-| 수강생 포털 | 등업신청(수강증 업로드·자동 등업), 불라방, 불라방 교재신청, 강의 다시보기, 내 시간표, 내 스터디(비대면 자료 받기), 숙제제출, LC 음원듣기 |
+| 공개 페이지 | 역전토익 소개(랜딩, 애니메이션), 수강생전용 소개, 스터디 신청하기(대면·비대면·단어), 연락하기 |
+| 수강생 포털 | 등업신청(수강증 업로드·자동 등업), 내 시간표, 내 스터디(비대면 자료 받기), 그리고 **수강생전용** 6개: 불라방, 다시보기, 숙제업로드, 스터디, 불라방교재주문, LC음원듣기 |
 | 관리자 페이지 | 대시보드(학생명단·교재주문·마케팅 분석·시간대별 인원수 위젯), 반 개설·편성(+ 그 달 스터디 시간 설정), 다시보기 등록, 등업 로그, 스터디 신청자 명단, 비대면 자료 등록, 숙제점검, LC 음원 등록, 문의 처리 |
 
 ### 디자인·품질 원칙 (항상 적용)
 - **브랜드 컬러는 핫핑크.** 팔레트: brand #FF2E88 / hover #E61E75 / tint #FFE4EF, 텍스트 ink #17121F
 - **SEO**: 모든 공개 페이지에 metadata(title/description/OG), 시맨틱 HTML, `app/sitemap.ts`·`app/robots.ts` 를 새 공개 라우트마다 갱신
 - **반응형** + 상단 네비게이션 바 + **모바일 하단 네비게이션 바**
+- 상단 메뉴는 `소개 · 등업신청 · 수강생전용(하위 메뉴) · 연락하기`. PC(lg 이상)는 드롭다운, 그보다 좁으면 햄버거
+- **햄버거 메뉴는 오른쪽에서 밀려나오는 패널**이다. 화면 전체를 덮지 않고 뒤 화면은 살짝만 어둡게 한다
+- PC 에서는 헤더 바로 아래에 두 번째 메뉴 줄을 두지 않는다 (마이페이지 메뉴 줄은 lg 미만에서만)
 - 스태프(instructor/admin)에게는 학생 페이지에서 관리자 페이지로 바로 가는 버튼 노출
 - **기본 이모지 절대 금지.** 아이콘·일러스트는 힉스필드(Higgsfield)로 제작해 `public/` 에 저장한 자산만 사용
 - 브랜드 로고도 힉스필드로 제작 (`public/brand/`)
@@ -114,12 +117,23 @@
             AND today <= section.closes_at
 ```
 
-### 4. 등록 기간 — 최대 2개월
+### 4. 등록 기간 — 매달 등록 (2026-09-15 Alan 확정)
 
-- 한 번에 **1개월 또는 2개월** 등록할 수 있다.
-- 2개월 등록인데 둘째 달 반이 아직 개설 전이면 `enrollments.status = 'pending_section'`으로 두고,
-  강사가 그 달 반을 개설하면 (`course`, `track`, `time_block`) 기준으로 자동 배정한다.
-- 시청 만료일은 **마지막 달 반의 `closes_at`**.
+- **등록은 매달 한다.** 수강증 1건 = 그 달 등록 1건. 2개월 등록은 받지 않는다.
+- 등업신청에서 학생은 **수강증만 올린다.** 개월수·현장/불라방을 고르지 않는다 (현장/불라방은 수강료로 판정).
+- 주5일은 같은 달의 월수금·화목금 두 반이 한 등록에 함께 배정된다.
+- 시청 만료일은 **그 달 반의 `closes_at`** (두 반이면 늦은 쪽).
+- DB 의 `enrollment_orders.months` 는 항상 1, `pending_section`·`pending_from_section_id`·
+  `private.resolve_pending_enrollments()` 는 예전 2개월 등록용으로 남아 있을 뿐 쓰지 않는다. 새 기능에서 참조하지 말 것.
+
+### 4-1. 수강생전용 — 보이지만 수강생만 쓴다 (2026-09-15 Alan 요청)
+
+- 소개 페이지 `/student` 와 메뉴의 "수강생전용" 아래에 6개: 불라방 · 다시보기 · 숙제업로드 · 스터디 · 불라방교재주문 · LC음원듣기.
+  목록과 설명은 `src/lib/site.ts` 의 `STUDENT_FEATURES` 한곳에서 관리한다.
+- 비수강생에게도 **메뉴와 소개는 보인다** (잠금 표시). 누르면 소개 페이지의 해당 카드로 가서 수강생이 되는 방법을 안내한다.
+  "수강생이 되면 이런 걸 쓸 수 있구나"를 알게 하는 것이 목적이다.
+- 판정 (`getStudentAccess`): 스터디는 예비등록생부터, 나머지 5개는 role 이 student 이상. 강사·관리자는 모두 열림.
+- 기능 페이지 주소로 바로 들어와도 `studentGate()` 가 잠금 안내를 보여준다. 화면 안내일 뿐 실제 데이터 보호는 RLS 가 한다.
 
 ### 5. 예비등록생 — 개강 전 수강증 업로드
 
@@ -302,7 +316,7 @@ create table enrollment_orders (           -- 등록 단위. 수강증 1건 = 1�
   id              bigserial primary key,
   user_id         uuid references profiles,
   verification_id bigint references enrollment_verifications,
-  months          int not null check (months between 1 and 2),
+  months          int not null check (months between 1 and 2),  -- 매달 등록 원칙: 항상 1
   status          text not null default 'preliminary',
                   -- preliminary | active | expired
   activates_on    date not null,           -- 첫 달 개강일
@@ -315,11 +329,10 @@ create table enrollments (                 -- 월별 실제 반 배정
   order_id   bigint references enrollment_orders on delete cascade,
   student_id uuid references profiles,
   section_id int references class_sections,
-  status     text default 'active',        -- active | pending_section | completed
+  status     text default 'active',        -- active | completed (pending_section 은 예전 2개월 등록용, 사용 안 함)
   mode       text not null default 'onsite', -- onsite(현장) | live(불라방)
   pending_from_section_id int references class_sections,
-             -- pending_section 일 때만 사용. 첫 달 반을 가리키며, 다음 달에 같은
-             -- (course, track, time_block) 반이 개설되면 그 반으로 자동 배정된다
+             -- 예전 2개월 등록용. 매달 등록 원칙(2026-09-15)부터 사용하지 않는다
   unique(student_id, section_id)
 );
 
@@ -419,8 +432,8 @@ create table lc_textbook_images (          -- 레벨별 교재 이미지 (여러
 ## 상태 전이 (일 1회 배치)
 
 > 구현: `private.run_daily_status_transition()` 을 pg_cron 이 매일 00:05 KST 에 실행한다.
-> 날짜 비교는 전부 한국 시간(`private.today_kst()`) 기준. 둘째 달 반 자동 배정
-> (`private.resolve_pending_enrollments()`)도 이 배치와 class_sections 변경 트리거에서 돈다.
+> 날짜 비교는 전부 한국 시간(`private.today_kst()`) 기준. 예전 2개월 등록용 둘째 달 자동 배정
+> (`private.resolve_pending_enrollments()`)도 이 배치와 트리거에 남아 있지만, 매달 등록이라 처리할 행이 없다.
 
 ```sql
 -- 개강일 도래 → 예비등록생을 수강생으로
@@ -451,6 +464,7 @@ where p.role='student'
 | 경로 | 내용 |
 |---|---|
 | `/` | 역전토익 소개 (랜딩, 애니메이션) |
+| `/student` | 수강생전용 소개: 6개 기능 카드. 수강생은 바로가기, 비수강생은 잠금 표시와 수강생이 되는 방법 |
 | `/study` | 스터디 신청하기: 대면·비대면·단어 소개 + 이번 달·다음 달 일정. 그 달 수강생은 여기서 신청·시간대 변경·취소 |
 | `/contact` | 연락하기 |
 | `/login`, `/signup` | 로그인 / 회원가입 (실명·전화·대학·학과·성별) |
@@ -460,13 +474,13 @@ where p.role='student'
 | 경로 | 내용 | 필요 등급 |
 |---|---|---|
 | `/my` | 대시보드. 예비등록생이면 "N월 예비등록생" 표시. 스태프면 관리자 바로가기 버튼 | member |
-| `/my/verify` | 등업신청: 수강증 업로드 → 자동 등업 | member |
+| `/my/verify` | 등업신청: 수강증만 업로드 → 자동 등업 (개월수·현장/불라방 선택 없음) | member |
 | `/my/class` | 내 시간표 (주5일이면 두 트랙 합집합) | student |
 | `/my/live` | 불라방 입장 | student |
-| `/my/textbook` | 불라방 교재신청 (불라방 수강생만) | student |
+| `/my/textbook` | 불라방 교재주문 (불라방 수강생만) | student |
 | `/my/replay` | 강의 다시보기. 종강일까지 | student |
 | `/my/study` | 내 스터디: 신청한 스터디·시간대, 비대면 자료 받기(해당 날짜부터) | 그 달 수강생 |
-| `/my/homework` | 숙제제출: 비대면 자료별 사진·PDF 업로드, 점검 상태 | student |
+| `/my/homework` | 숙제업로드: 비대면 자료별 사진·PDF 업로드, 점검 상태 | student |
 | `/my/lc-audio` | LC 음원듣기: 레벨(650·750·850) 카드에서 교재 표지로 고르고 음원 재생 | student |
 
 **관리자 `/admin`**

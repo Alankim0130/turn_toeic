@@ -26,18 +26,118 @@ export const site = {
   },
 } as const;
 
-export type NavItem = { href: string; label: string; icon: string; auth?: "member" | "student" | "staff" };
+// ─── 수강생전용 ─────────────────────────────────────────────────────────────
+// 메뉴에는 누구에게나 보이고, 수강생이 아니면 잠금 표시와 함께 소개 페이지(/student)로 안내한다.
+
+export type StudentFeatureKey = "live" | "replay" | "homework" | "study" | "textbook" | "lc-audio";
+
+export type StudentFeature = {
+  key: StudentFeatureKey;
+  href: string;
+  label: string;
+  icon: string;
+  /** 메뉴에 붙는 한 줄 설명 */
+  summary: string;
+  /** 소개 페이지·잠금 화면 설명 */
+  desc: string;
+  points: string[];
+  /** active: 수강 중인 수강생(student 이상) / enrollee: 예비등록생도 가능 */
+  access: "active" | "enrollee";
+};
+
+export const STUDENT_HUB = { href: "/student", label: "수강생전용", icon: "exclusive" } as const;
+
+export const STUDENT_FEATURES: StudentFeature[] = [
+  {
+    key: "live",
+    href: "/my/live",
+    label: "불라방",
+    icon: "live",
+    summary: "현장 강의 실시간 입장",
+    desc: "현장 강의를 실시간 라이브로 들어요. 집에서도 같은 시간에 같은 수업을 받습니다.",
+    points: ["수업 시작 10분 전부터 바로 입장", "입장 링크를 매번 찾을 필요 없이 한곳에서"],
+    access: "active",
+  },
+  {
+    key: "replay",
+    href: "/my/replay",
+    label: "다시보기",
+    icon: "replay",
+    summary: "놓친 수업 녹화본",
+    desc: "놓친 수업이나 다시 듣고 싶은 부분을 녹화본으로 봐요.",
+    points: ["회차별로 정리된 녹화본", "강사가 정한 종강일까지 시청"],
+    access: "active",
+  },
+  {
+    key: "homework",
+    href: "/my/homework",
+    label: "숙제업로드",
+    icon: "homework",
+    summary: "풀이 사진·PDF 제출",
+    desc: "비대면스터디 자료를 풀고 풀이 사진이나 PDF를 올려요. 강사가 확인하면 점검완료로 바뀝니다.",
+    points: ["날짜별 자료마다 여러 장 제출", "점검 상태를 바로 확인"],
+    access: "active",
+  },
+  {
+    key: "study",
+    href: "/study",
+    label: "스터디",
+    icon: "study",
+    summary: "대면·비대면·단어 스터디",
+    desc: "매달 열리는 대면·비대면·단어 스터디 중 나에게 맞는 스터디를 골라 신청해요.",
+    points: ["강사가 정한 시간대 중 선택", "예비등록생도 개강 전에 미리 신청"],
+    access: "enrollee",
+  },
+  {
+    key: "textbook",
+    href: "/my/textbook",
+    label: "불라방교재주문",
+    icon: "textbook",
+    summary: "교재 집으로 받기",
+    desc: "불라방으로 듣는 수강생은 교재를 집으로 받아볼 수 있어요.",
+    points: ["배송지만 남기면 신청 끝", "처리 상태와 송장번호 확인"],
+    access: "active",
+  },
+  {
+    key: "lc-audio",
+    href: "/my/lc-audio",
+    label: "LC음원듣기",
+    icon: "headphones",
+    summary: "레벨별 LC 음원",
+    desc: "내 교재 레벨의 LC 음원을 교재 사진을 보고 골라 들어요.",
+    points: ["레벨별로 정리된 음원", "휴대폰에서 바로 재생"],
+    access: "active",
+  },
+];
+
+export function canUseFeature(feature: Pick<StudentFeature, "access">, access: { active: boolean; enrollee: boolean }) {
+  return feature.access === "enrollee" ? access.enrollee : access.active;
+}
+
+/**
+ * 메뉴 링크: 이용할 수 있으면 기능 페이지로, 아니면 소개 페이지의 해당 카드로.
+ * ?feature= 는 소개 페이지가 그 카드를 강조하는 데 쓴다 (클라이언트 이동에서는 :target 이 안 잡힌다)
+ */
+export function featureHref(feature: StudentFeature, access: { active: boolean; enrollee: boolean }) {
+  return canUseFeature(feature, access) ? feature.href : `${STUDENT_HUB.href}?feature=${feature.key}#${feature.key}`;
+}
+
+export type NavItem = {
+  href: string;
+  label: string;
+  icon: string;
+  auth?: "member" | "student" | "staff";
+  /** 수강생전용 하위 메뉴를 펼치는 항목 */
+  group?: "student";
+  /** 수강생전용 기능이면 잠금 판정에 쓴다 */
+  feature?: StudentFeatureKey;
+};
 
 /** 상단 네비게이션 */
 export const NAV_MAIN: NavItem[] = [
   { href: "/", label: "소개", icon: "home" },
   { href: "/my/verify", label: "등업신청", icon: "verify", auth: "member" },
-  { href: "/my/live", label: "불라방", icon: "live", auth: "member" },
-  { href: "/my/textbook", label: "교재신청", icon: "textbook", auth: "member" },
-  { href: "/my/replay", label: "다시보기", icon: "replay", auth: "member" },
-  { href: "/study", label: "스터디", icon: "study" },
-  { href: "/my/homework", label: "숙제제출", icon: "homework", auth: "member" },
-  { href: "/my/lc-audio", label: "LC음원", icon: "headphones", auth: "member" },
+  { href: STUDENT_HUB.href, label: STUDENT_HUB.label, icon: STUDENT_HUB.icon, group: "student" },
   { href: "/contact", label: "연락하기", icon: "contact" },
 ];
 
@@ -45,8 +145,8 @@ export const NAV_MAIN: NavItem[] = [
 export const NAV_BOTTOM: NavItem[] = [
   { href: "/", label: "홈", icon: "home" },
   { href: "/my/verify", label: "등업", icon: "verify" },
-  { href: "/my/live", label: "불라방", icon: "live" },
-  { href: "/my/replay", label: "다시보기", icon: "replay" },
+  { href: STUDENT_HUB.href, label: STUDENT_HUB.label, icon: STUDENT_HUB.icon },
+  { href: "/my/live", label: "불라방", icon: "live", feature: "live" },
   { href: "/my", label: "마이", icon: "profile" },
 ];
 

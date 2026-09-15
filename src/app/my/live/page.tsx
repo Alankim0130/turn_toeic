@@ -1,3 +1,4 @@
+import { studentGate } from "@/components/student/StudentGate";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -13,6 +14,10 @@ export const metadata: Metadata = {
 };
 
 export default async function LivePage() {
+  // 수강생이 아니면 기능 대신 잠금 안내를 보여준다
+  const locked = await studentGate("live");
+  if (locked) return locked;
+
   const links = (await getMyLiveLinks()).filter((l) => l.section);
   const next = await getNextSessionBySection(links.map((l) => l.section_id));
 

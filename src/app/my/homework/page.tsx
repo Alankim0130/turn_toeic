@@ -1,3 +1,4 @@
+import { studentGate } from "@/components/student/StudentGate";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -6,11 +7,15 @@ import { requireUser } from "@/lib/auth";
 import { getMyHomework, getMyStudyMaterials, getMyStudySignups } from "../_lib/queries";
 
 export const metadata: Metadata = {
-  title: "숙제제출",
+  title: "숙제업로드",
   robots: { index: false },
 };
 
 export default async function HomeworkPage() {
+  // 수강생이 아니면 기능 대신 잠금 안내를 보여준다
+  const locked = await studentGate("homework");
+  if (locked) return locked;
+
   const [{ user }, materials, homework, signups] = await Promise.all([requireUser("/my/homework"), getMyStudyMaterials(), getMyHomework(), getMyStudySignups()]);
   const submissionByMaterial = new Map(homework.map((h) => [h.material_id, h]));
   const hasOnline = signups.some((s) => s.study?.kind === "online");
@@ -18,7 +23,7 @@ export default async function HomeworkPage() {
   const header = (
     <PageHeader
       icon="homework"
-      title="숙제제출"
+      title="숙제업로드"
       description="비대면스터디 자료를 풀고, 풀이 사진이나 PDF를 날짜별로 올려 주세요. 강사가 확인하면 점검완료로 바뀌어요."
     />
   );
