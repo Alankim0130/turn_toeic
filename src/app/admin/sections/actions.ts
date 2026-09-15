@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
-import { isHm, isYmd } from "@/components/admin/sections/dates";
+import { isYmd, labelKo } from "@/components/admin/sections/dates";
 
 type SectionInsert = Database["public"]["Tables"]["class_sections"]["Insert"];
 type SectionUpdate = Database["public"]["Tables"]["class_sections"]["Update"];
@@ -18,21 +18,108 @@ const toInt = (s: string) => (s === "" ? null : Number(s.replace(/[^\d-]/g, ""))
 function rlsMessage(code?: string, fallback = "저장하지 못했어요. 잠시 후 다시 시도해 주세요.") {
   if (code === "42501") return "권한이 없어요. 본인 반만 수정할 수 있습니다.";
   if (code === "23505") return "이미 같은 값이 있어요. (중복)";
-  if (code === "23514") return "입력값이 규칙에 맞지 않아요. 날짜·시간·금액을 확인해 주세요.";
+  if (code === "23514") return "입력값이 규칙에 맞지 않아요. 날짜·금액을 확인해 주세요.";
   return fallback;
 }
 
-/* ─── 기수(월) 생성 ─────────────────────────────────────────────────────── */
-export async function createTerm(formData: FormData) {
+/** 달력이 바뀌면 수업일·개강일·종강일을 보여 주는 화면이 모두 따라 바뀐다 */
+function revalidateSchedule() {
+  revalidatePath("/admin/sections", "layout");
+  revalidatePath("/admin/replays");
+  revalidatePath("/admin/study-materials");
+  revalidatePath("/admin");
+  revalidatePath("/my", "layout");
+  revalidatePath("/");
+}
+
+/* ─── 달력: 생성하기 ────────────────────────────────────────────────────── */
+export type TermScheduleInput = {
+  year: number;
+  month: number;
+  opens: string | null;
+  closes: string | null;
+  mwf: string[];
+  ttf: string[];
+  lectures: { date: string; lecturerId: number; content: string }[];
+};
+export type TermScheduleResult =
+  | { ok: true; mwf: number; ttf: number; lectures: number; sections: number }
+  | { ok: false; error: string };
+
+const RPC_ERROR: Record<string, string> = {
+  forbidden: "권한이 없어요. 강사·관리자만 일정을 만들 수 있습니다.",
+  invalid_term: "기수(연·월)가 올바르지 않아요.",
+  dates_required: "개강일과 종강일을 달력에서 찍어 주세요.",
+  closes_before_opens: "종강일은 개강일과 같거나 그 뒤여야 해요.",
+  class_date_out_of_month: "수업일은 그 달 날짜만 고를 수 있어요.",
+  invalid_lectures: "특강의 날짜·강사·내용(1~100자)을 확인해 주세요.",
+};
+
+const listDates = (csv?: string | null) =>
+  (csv ?? "")
+    .split(",")
+    .filter(isYmd)
+    .map((d) => labelKo(d))
+    .join(", ");
+
+export async function saveTermSchedule(input: TermScheduleInput): Promise<TermScheduleResult> {
   await requireStaff();
-  const year = Number(str(formData, "year"));
-  const month = Number(str(formData, "month"));
-  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return;
+
+  const year = Number(input?.year);
+  const month = Number(input?.month);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || year < 2020 || year > 2100 || month < 1 || month > 12) {
+    return { ok: false, error: RPC_ERROR.invalid_term };
+  }
+  const opens = input.opens && isYmd(input.opens) ? input.opens : null;
+  const closes = input.closes && isYmd(input.closes) ? input.closes : null;
+  if (!opens || !closes) return { ok: false, error: RPC_ERROR.dates_required };
+  if (closes < opens) return { ok: false, error: RPC_ERROR.closes_before_opens };
+
+  const dates = (v: unknown) => (Array.isArray(v) ? [...new Set(v.map(String))] : []);
+  const mwf = dates(input.mwf);
+  const ttf = dates(input.ttf);
+  if (mwf.length > 31 || ttf.length > 31 || ![...mwf, ...ttf].every(isYmd)) return { ok: false, error: "수업일 형식이 올바르지 않아요." };
+
+  const rawLectures = Array.isArray(input.lectures) ? input.lectures : [];
+  if (rawLectures.length > 100) return { ok: false, error: "특강은 한 달에 100개까지 만들 수 있어요." };
+  const lectures = rawLectures.map((l) => ({
+    date: String(l?.date ?? ""),
+    lecturer_id: Number(l?.lecturerId),
+    content: String(l?.content ?? "").trim(),
+  }));
+  const badLecture = lectures.find((l) => !isYmd(l.date) || !Number.isInteger(l.lecturer_id) || l.lecturer_id <= 0 || l.content.length < 1 || l.content.length > 100);
+  if (badLecture) {
+    return {
+      ok: false,
+      error: isYmd(badLecture.date) ? `${labelKo(badLecture.date)} 특강의 강사와 내용(1~100자)을 채워 주세요.` : RPC_ERROR.invalid_lectures,
+    };
+  }
 
   const supabase = await createClient();
-  await supabase.from("terms").insert({ year, month });
-  revalidatePath("/admin/sections");
-  redirect(`/admin/sections?term=${year}-${String(month).padStart(2, "0")}`);
+  const { data, error } = await supabase.rpc("save_term_schedule", {
+    p_year: year,
+    p_month: month,
+    p_opens: opens,
+    p_closes: closes,
+    p_mwf: mwf,
+    p_ttf: ttf,
+    p_lectures: lectures,
+  });
+
+  if (error) {
+    if (error.message === "replay_block") {
+      return { ok: false, error: `다시보기가 등록된 회차는 달력에서 뺄 수 없어요: ${listDates(error.details)}. 먼저 다시보기 등록에서 삭제해 주세요.` };
+    }
+    if (error.message === "track_overlap") {
+      return { ok: false, error: `같은 날짜를 월수금과 화목금에 함께 넣을 수 없어요: ${listDates(error.details)}` };
+    }
+    if (error.code === "23503") return { ok: false, error: "선택한 강사를 찾을 수 없어요. 새로고침한 뒤 다시 시도해 주세요." };
+    return { ok: false, error: RPC_ERROR[error.message] ?? rlsMessage(error.code) };
+  }
+
+  revalidateSchedule();
+  const res = (data ?? {}) as { mwf?: number; ttf?: number; lectures?: number; sections?: number };
+  return { ok: true, mwf: res.mwf ?? 0, ttf: res.ttf ?? 0, lectures: res.lectures ?? 0, sections: res.sections ?? 0 };
 }
 
 /* ─── 강좌 마스터 추가 ──────────────────────────────────────────────────── */
@@ -64,39 +151,16 @@ export async function createCourse(_prev: ActionState, formData: FormData): Prom
   return { ok: true, message: `강좌 "${values.name}" 을(를) 추가했어요.` };
 }
 
-/* ─── 반 개설 ───────────────────────────────────────────────────────────── */
-type SectionFields = {
-  start_time: string;
-  end_time: string;
-  time_block: string | null;
-  enrollment_opens_at: string;
-  closes_at: string;
-  target_sessions: number;
-  capacity: number | null;
-  tuition: number;
-  live_tuition: number | null;
-  status: string;
-};
+/* ─── 반 개설 · 수정 공통 필드 (수강료 · 정원 · 상태) ─────────────────────── */
+type SectionFields = { capacity: number | null; tuition: number; live_tuition: number | null; status: string };
 
 function parseSectionFields(formData: FormData, allowedStatus: string[]): { fields?: SectionFields; error?: string; values: Record<string, string> } {
   const values = {
-    start_time: str(formData, "start_time"),
-    end_time: str(formData, "end_time"),
-    time_block: str(formData, "time_block"),
-    enrollment_opens_at: str(formData, "enrollment_opens_at"),
-    closes_at: str(formData, "closes_at"),
-    target_sessions: str(formData, "target_sessions") || "10",
     capacity: str(formData, "capacity"),
     tuition: str(formData, "tuition"),
     live_tuition: str(formData, "live_tuition"),
     status: str(formData, "status") || "draft",
   };
-  if (!isHm(values.start_time) || !isHm(values.end_time)) return { error: "수업 시간을 입력해 주세요.", values };
-  if (values.end_time <= values.start_time) return { error: "종료 시간은 시작 시간보다 늦어야 해요.", values };
-  if (!isYmd(values.enrollment_opens_at) || !isYmd(values.closes_at)) return { error: "개강일과 종강일을 입력해 주세요.", values };
-  if (values.closes_at < values.enrollment_opens_at) return { error: "종강일은 개강일과 같거나 이후여야 해요.", values };
-  const target = toInt(values.target_sessions);
-  if (target === null || target < 1 || target > 60) return { error: "회차 수는 1~60 사이로 입력해 주세요.", values };
   const capacity = toInt(values.capacity);
   if (capacity !== null && capacity < 1) return { error: "정원은 1명 이상이어야 해요.", values };
   const tuition = toInt(values.tuition);
@@ -105,23 +169,10 @@ function parseSectionFields(formData: FormData, allowedStatus: string[]): { fiel
   if (live !== null && live < 0) return { error: "불라방 수강료는 0 이상이어야 해요.", values };
   if (!allowedStatus.includes(values.status)) return { error: "상태 값이 올바르지 않아요.", values };
 
-  return {
-    values,
-    fields: {
-      start_time: values.start_time,
-      end_time: values.end_time,
-      time_block: values.time_block || null,
-      enrollment_opens_at: values.enrollment_opens_at,
-      closes_at: values.closes_at,
-      target_sessions: target,
-      capacity,
-      tuition,
-      live_tuition: live,
-      status: values.status,
-    },
-  };
+  return { values, fields: { capacity, tuition, live_tuition: live, status: values.status } };
 }
 
+/* ─── 반 개설: 개강일·종강일·수업일은 그 달 달력에서 가져온다 ───────────── */
 export async function createSection(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { user, profile } = await requireStaff();
   const parsed = parseSectionFields(formData, ["draft", "open"]);
@@ -135,34 +186,45 @@ export async function createSection(_prev: ActionState, formData: FormData): Pro
   if (!courseId) return { error: "강좌를 선택해 주세요.", values };
   if (!["mwf", "ttf", "both"].includes(track)) return { error: "트랙을 선택해 주세요.", values };
 
+  const supabase = await createClient();
+  const [{ data: term }, { data: classDates }] = await Promise.all([
+    supabase.from("terms").select("year, month, enrollment_opens_at, closes_at").eq("id", termId).maybeSingle(),
+    supabase.from("term_class_dates").select("track").eq("term_id", termId),
+  ]);
+  if (!term) return { error: "기수(월)를 찾을 수 없어요.", values };
+  if (!term.enrollment_opens_at || !term.closes_at) {
+    return { error: "먼저 위 달력에서 개강일·종강일을 찍고 생성하기를 눌러 주세요.", values };
+  }
+
   // 강사는 본인만, admin 은 다른 강사 지정 가능
   const instructorId = isAdmin(profile.role) && values.instructor_id ? values.instructor_id : user.id;
-
-  const supabase = await createClient();
-  const base = { ...parsed.fields, term_id: termId, course_id: courseId, instructor_id: instructorId };
+  const sessionsOf = (t: string) => (classDates ?? []).filter((d) => d.track === t).length || 1;
+  const base = {
+    ...parsed.fields,
+    term_id: termId,
+    course_id: courseId,
+    instructor_id: instructorId,
+    enrollment_opens_at: term.enrollment_opens_at,
+    closes_at: term.closes_at,
+  };
   let rows: SectionInsert[];
   if (track === "both") {
     const bundle = crypto.randomUUID();
     rows = [
-      { ...base, track: "mwf", bundle_id: bundle },
-      { ...base, track: "ttf", bundle_id: bundle },
+      { ...base, track: "mwf", bundle_id: bundle, target_sessions: sessionsOf("mwf") },
+      { ...base, track: "ttf", bundle_id: bundle, target_sessions: sessionsOf("ttf") },
     ];
   } else {
-    rows = [{ ...base, track, bundle_id: null }];
+    rows = [{ ...base, track, bundle_id: null, target_sessions: sessionsOf(track) }];
   }
 
-  const { data, error } = await supabase.from("class_sections").insert(rows).select("id");
+  const { error } = await supabase.from("class_sections").insert(rows);
   if (error) return { error: rlsMessage(error.code, "반을 개설하지 못했어요."), values };
 
-  const { data: term } = await supabase.from("terms").select("year, month").eq("id", termId).single();
-  const q = new URLSearchParams();
-  if (term) q.set("term", `${term.year}-${String(term.month).padStart(2, "0")}`);
-  q.set("created", String(rows.length));
-
   revalidatePath("/admin/sections");
+  revalidatePath("/admin");
   revalidatePath("/");
-  if (rows.length === 1 && data?.[0]) redirect(`/admin/sections/${data[0].id}?created=1`);
-  redirect(`/admin/sections?${q.toString()}`);
+  redirect(`/admin/sections?term=${term.year}-${String(term.month).padStart(2, "0")}&created=${rows.length}#sections`);
 }
 
 /* ─── 반 정보 수정 ──────────────────────────────────────────────────────── */
@@ -242,91 +304,4 @@ export async function upsertLiveLink(_prev: ActionState, formData: FormData): Pr
   revalidatePath(`/admin/sections/${sectionId}`);
   revalidatePath("/admin/sections");
   return { ok: true, message: "불라방 링크를 저장했어요.", values: { live_url: url } };
-}
-
-/* ─── 편성(수업일) 저장 ─────────────────────────────────────────────────── */
-export type SessionInput = { date: string; start_time: string; end_time: string };
-export type SaveResult = { ok: boolean; error?: string; inserted?: number; deleted?: number; updated?: number; blocked?: string[] };
-
-export async function saveSessionDates(sectionId: number, dates: SessionInput[]): Promise<SaveResult> {
-  await requireStaff();
-  if (!Number.isInteger(sectionId)) return { ok: false, error: "잘못된 요청이에요." };
-
-  // 입력 검증 + 중복 제거
-  const next = new Map<string, SessionInput>();
-  for (const d of dates) {
-    if (!isYmd(d.date) || !isHm(d.start_time) || !isHm(d.end_time)) return { ok: false, error: `날짜/시간 형식이 잘못됐어요: ${d.date}` };
-    if (d.end_time.slice(0, 5) <= d.start_time.slice(0, 5)) return { ok: false, error: `${d.date} 의 종료 시간이 시작 시간보다 빨라요.` };
-    next.set(d.date, { date: d.date, start_time: d.start_time.slice(0, 5), end_time: d.end_time.slice(0, 5) });
-  }
-
-  const supabase = await createClient();
-  const { data: existing, error: loadErr } = await supabase
-    .from("session_dates")
-    .select("id, date, start_time, end_time, seq")
-    .eq("section_id", sectionId);
-  if (loadErr) return { ok: false, error: "기존 편성을 불러오지 못했어요." };
-
-  const ids = (existing ?? []).map((r) => r.id);
-  const withReplay = new Set<number>();
-  if (ids.length) {
-    const { data: reps } = await supabase.from("replays").select("session_date_id").in("session_date_id", ids);
-    for (const r of reps ?? []) withReplay.add(r.session_date_id);
-  }
-
-  const existingByDate = new Map((existing ?? []).map((r) => [r.date, r]));
-  const toDelete = (existing ?? []).filter((r) => !next.has(r.date));
-  const blocked = toDelete.filter((r) => withReplay.has(r.id)).map((r) => r.date);
-  if (blocked.length) {
-    return {
-      ok: false,
-      blocked,
-      error: `다시보기가 등록된 회차는 뺄 수 없어요: ${blocked.join(", ")}. 먼저 다시보기를 삭제하거나 관리자와 상의해 주세요.`,
-    };
-  }
-
-  const toInsert = [...next.values()].filter((d) => !existingByDate.has(d.date));
-  const toUpdate = [...next.values()].filter((d) => {
-    const e = existingByDate.get(d.date);
-    return e && (e.start_time.slice(0, 5) !== d.start_time || e.end_time.slice(0, 5) !== d.end_time);
-  });
-
-  // 1) 삭제
-  if (toDelete.length) {
-    const { error } = await supabase.from("session_dates").delete().in("id", toDelete.map((r) => r.id));
-    if (error) return { ok: false, error: rlsMessage(error.code, "회차를 삭제하지 못했어요.") };
-  }
-  // 2) 시간 변경
-  for (const d of toUpdate) {
-    const e = existingByDate.get(d.date)!;
-    const { error } = await supabase.from("session_dates").update({ start_time: d.start_time, end_time: d.end_time }).eq("id", e.id);
-    if (error) return { ok: false, error: rlsMessage(error.code, "회차 시간을 수정하지 못했어요.") };
-  }
-  // 3) 추가 (임시 seq 로 넣고 뒤에서 재번호)
-  if (toInsert.length) {
-    const { error } = await supabase.from("session_dates").insert(
-      toInsert.map((d, i) => ({ section_id: sectionId, seq: 2000 + i, date: d.date, start_time: d.start_time, end_time: d.end_time })),
-    );
-    if (error) return { ok: false, error: rlsMessage(error.code, "회차를 추가하지 못했어요.") };
-  }
-
-  // 4) seq 재번호 (두 단계: 먼저 +1000 으로 비켜 두고, 날짜순으로 1..n)
-  const { data: all, error: allErr } = await supabase.from("session_dates").select("id, seq").eq("section_id", sectionId).order("date");
-  if (allErr || !all) return { ok: false, error: "회차 번호를 다시 매기지 못했어요." };
-  for (const r of all) {
-    if (r.seq < 1000) {
-      const { error } = await supabase.from("session_dates").update({ seq: r.seq + 1000 }).eq("id", r.id);
-      if (error) return { ok: false, error: rlsMessage(error.code, "회차 번호를 다시 매기지 못했어요.") };
-    }
-  }
-  for (let i = 0; i < all.length; i++) {
-    const { error } = await supabase.from("session_dates").update({ seq: i + 1 }).eq("id", all[i].id);
-    if (error) return { ok: false, error: rlsMessage(error.code, "회차 번호를 다시 매기지 못했어요.") };
-  }
-
-  revalidatePath(`/admin/sections/${sectionId}`);
-  revalidatePath("/admin/sections");
-  revalidatePath("/admin/replays");
-  revalidatePath("/my/class");
-  return { ok: true, inserted: toInsert.length, deleted: toDelete.length, updated: toUpdate.length };
 }

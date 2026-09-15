@@ -93,8 +93,8 @@ export function CreateSectionForm({
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-mist">
-            <Icon name="warning" size={14} className="mr-1 inline" />
-            개설 후 상세 페이지에서 수업일을 확정해야 수강생 시간표와 다시보기 슬롯이 생깁니다.
+            <Icon name="calendar" size={14} className="mr-1 inline" />
+            개설하면 이 달 달력의 수업일로 수강생 시간표와 다시보기 회차가 바로 만들어져요.
           </p>
           <SubmitButton pendingText="개설 중…">{termLabel} 반 개설</SubmitButton>
         </div>

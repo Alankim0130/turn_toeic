@@ -59,7 +59,7 @@ export type MyLiveLink = Awaited<ReturnType<typeof getMyLiveLinks>>[number];
 
 /** 오늘 이후 첫 수업일을 section_id 별로 */
 export async function getNextSessionBySection(sectionIds: number[]) {
-  if (sectionIds.length === 0) return new Map<number, { date: string; start_time: string; end_time: string; seq: number }>();
+  if (sectionIds.length === 0) return new Map<number, { date: string; start_time: string | null; end_time: string | null; seq: number }>();
   const supabase = await createClient();
   const { data } = await supabase
     .from("session_dates")
@@ -67,7 +67,7 @@ export async function getNextSessionBySection(sectionIds: number[]) {
     .in("section_id", sectionIds)
     .gte("date", todayKST())
     .order("date", { ascending: true });
-  const map = new Map<number, { date: string; start_time: string; end_time: string; seq: number }>();
+  const map = new Map<number, { date: string; start_time: string | null; end_time: string | null; seq: number }>();
   for (const s of data ?? []) if (!map.has(s.section_id)) map.set(s.section_id, s);
   return map;
 }

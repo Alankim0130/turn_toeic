@@ -46,12 +46,12 @@ export type Database = {
           closes_at: string
           course_id: number
           created_at: string
-          end_time: string
+          end_time: string | null
           enrollment_opens_at: string
           id: number
           instructor_id: string | null
           live_tuition: number | null
-          start_time: string
+          start_time: string | null
           status: string
           target_sessions: number
           term_id: number
@@ -65,12 +65,12 @@ export type Database = {
           closes_at: string
           course_id: number
           created_at?: string
-          end_time: string
+          end_time?: string | null
           enrollment_opens_at: string
           id?: number
           instructor_id?: string | null
           live_tuition?: number | null
-          start_time: string
+          start_time?: string | null
           status?: string
           target_sessions: number
           term_id: number
@@ -84,12 +84,12 @@ export type Database = {
           closes_at?: string
           course_id?: number
           created_at?: string
-          end_time?: string
+          end_time?: string | null
           enrollment_opens_at?: string
           id?: number
           instructor_id?: string | null
           live_tuition?: number | null
-          start_time?: string
+          start_time?: string | null
           status?: string
           target_sessions?: number
           term_id?: number
@@ -599,6 +599,24 @@ export type Database = {
         }
         Relationships: []
       }
+      lecturers: {
+        Row: {
+          id: number
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          id?: number
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          id?: number
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
       naver_reservations: {
         Row: {
           booking_number: string | null
@@ -824,27 +842,27 @@ export type Database = {
       session_dates: {
         Row: {
           date: string
-          end_time: string
+          end_time: string | null
           id: number
           section_id: number
           seq: number
-          start_time: string
+          start_time: string | null
         }
         Insert: {
           date: string
-          end_time: string
+          end_time?: string | null
           id?: number
           section_id: number
           seq: number
-          start_time: string
+          start_time?: string | null
         }
         Update: {
           date?: string
-          end_time?: string
+          end_time?: string | null
           id?: number
           section_id?: number
           seq?: number
-          start_time?: string
+          start_time?: string | null
         }
         Relationships: [
           {
@@ -860,6 +878,48 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "section_headcounts"
             referencedColumns: ["section_id"]
+          },
+        ]
+      }
+      special_lectures: {
+        Row: {
+          content: string
+          created_at: string
+          date: string
+          id: number
+          lecturer_id: number
+          term_id: number
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          date: string
+          id?: number
+          lecturer_id: number
+          term_id: number
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          date?: string
+          id?: number
+          lecturer_id?: number
+          term_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "special_lectures_lecturer_id_fkey"
+            columns: ["lecturer_id"]
+            isOneToOne: false
+            referencedRelation: "lecturers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "special_lectures_term_id_fkey"
+            columns: ["term_id"]
+            isOneToOne: false
+            referencedRelation: "terms"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1042,18 +1102,50 @@ export type Database = {
           },
         ]
       }
+      term_class_dates: {
+        Row: {
+          date: string
+          term_id: number
+          track: string
+        }
+        Insert: {
+          date: string
+          term_id: number
+          track: string
+        }
+        Update: {
+          date?: string
+          term_id?: number
+          track?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "term_class_dates_term_id_fkey"
+            columns: ["term_id"]
+            isOneToOne: false
+            referencedRelation: "terms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       terms: {
         Row: {
+          closes_at: string | null
+          enrollment_opens_at: string | null
           id: number
           month: number
           year: number
         }
         Insert: {
+          closes_at?: string | null
+          enrollment_opens_at?: string | null
           id?: number
           month: number
           year: number
         }
         Update: {
+          closes_at?: string | null
+          enrollment_opens_at?: string | null
           id?: number
           month?: number
           year?: number
@@ -1213,7 +1305,18 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      save_term_schedule: {
+        Args: {
+          p_closes: string
+          p_lectures: Json
+          p_month: number
+          p_mwf: string[]
+          p_opens: string
+          p_ttf: string[]
+          p_year: number
+        }
+        Returns: Json
+      }
     }
     Enums: {
       user_role:

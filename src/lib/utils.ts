@@ -16,9 +16,14 @@ export function formatDate(d: string | Date, opts: Intl.DateTimeFormatOptions = 
     .replace(/\bPM\b/g, "오후");
 }
 
-export function formatTime(t: string) {
-  // "09:30:00" → "09:30"
-  return t.slice(0, 5);
+export function formatTime(t: string | null | undefined) {
+  // "09:30:00" → "09:30". 반 편성에서 수업 시간을 받지 않으므로 반·회차 시간은 비어 있을 수 있다
+  return t ? t.slice(0, 5) : "";
+}
+
+/** "09:30–11:50". 시작·종료 중 하나라도 없으면 빈 문자열 */
+export function formatTimeRange(start: string | null | undefined, end: string | null | undefined) {
+  return start && end ? `${formatTime(start)}–${formatTime(end)}` : "";
 }
 
 export function formatWon(n: number) {

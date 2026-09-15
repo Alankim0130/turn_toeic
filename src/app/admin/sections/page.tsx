@@ -5,10 +5,11 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
-import { formatDate, formatTime, formatWon, TRACK_LABEL, COURSE_TYPE_LABEL, todayKST, cn } from "@/lib/utils";
+import { formatDate, formatWon, TRACK_LABEL, COURSE_TYPE_LABEL, todayKST, cn } from "@/lib/utils";
 import { CreateSectionForm } from "@/components/admin/sections/CreateSectionForm";
+import { TermCalendar, type TermSchedule } from "@/components/admin/sections/TermCalendar";
+import { termKey } from "@/components/admin/sections/dates";
 import { StudyPlanner, type PlannerStudy } from "@/components/admin/studies/StudyPlanner";
-import { createTerm } from "./actions";
 
 export const metadata: Metadata = { title: "반 편성", robots: { index: false } };
 
@@ -24,15 +25,11 @@ function parseTerm(term?: string): { y: number; m: number } {
   if (match) {
     const y = Number(match[1]);
     const m = Number(match[2]);
-    if (m >= 1 && m <= 12) return { y, m };
+    if (y >= 2020 && y <= 2100 && m >= 1 && m <= 12) return { y, m };
   }
   const [y, m] = todayKST().split("-").map(Number);
   return { y, m };
 }
-
-const termParam = (y: number, m: number) => `${y}-${String(m).padStart(2, "0")}`;
-const nextMonth = (y: number, m: number) => (m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 });
-const prevMonth = (y: number, m: number) => (m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 });
 
 export default async function AdminSectionsPage({
   searchParams,
@@ -42,26 +39,30 @@ export default async function AdminSectionsPage({
   const { user, profile } = await requireStaff();
   const sp = await searchParams;
   const { y, m } = parseTerm(sp.term);
+  const key = termKey(y, m);
+  const today = todayKST();
   const supabase = await createClient();
 
-  const [{ data: terms }, { data: term }, { data: courses }, { data: instructors }] = await Promise.all([
-    supabase.from("terms").select("id, year, month").order("year", { ascending: false }).order("month", { ascending: false }).limit(24),
-    supabase.from("terms").select("id, year, month").eq("year", y).eq("month", m).maybeSingle(),
+  const [{ data: term }, { data: lecturers }, { data: courses }, { data: instructors }] = await Promise.all([
+    supabase.from("terms").select("id, year, month, enrollment_opens_at, closes_at").eq("year", y).eq("month", m).maybeSingle(),
+    supabase.from("lecturers").select("id, name").order("sort_order").order("name"),
     supabase.from("courses").select("id, code, name, course_type, target_score").eq("is_active", true).order("target_score").order("name"),
     isAdmin(profile.role)
       ? supabase.from("profiles").select("id, name, role").in("role", ["instructor", "admin"]).order("name")
       : Promise.resolve({ data: null }),
   ]);
 
-  const [{ data: sections }, { data: studyRows }] = term
+  const [{ data: classDates }, { data: lectureRows }, { data: sections }, { data: studyRows }] = term
     ? await Promise.all([
+        supabase.from("term_class_dates").select("date, track").eq("term_id", term.id).order("date"),
+        supabase.from("special_lectures").select("date, lecturer_id, content").eq("term_id", term.id).order("date").order("id"),
         supabase
           .from("class_sections")
           .select(
-            "id, bundle_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, target_sessions, capacity, tuition, live_tuition, status, instructor_id, course:courses(name, course_type, target_score), instructor:profiles(name), session_dates(count), section_live_links(section_id)",
+            "id, bundle_id, track, capacity, tuition, live_tuition, status, instructor_id, course:courses(name, course_type, target_score), instructor:profiles(name), session_dates(count), section_live_links(section_id)",
           )
           .eq("term_id", term.id)
-          .order("start_time")
+          .order("course_id")
           .order("track"),
         supabase
           .from("studies")
@@ -70,7 +71,23 @@ export default async function AdminSectionsPage({
           )
           .eq("term_id", term.id),
       ])
-    : [{ data: [] as never[] }, { data: [] as never[] }];
+    : [{ data: [] as never[] }, { data: [] as never[] }, { data: [] as never[] }, { data: [] as never[] }];
+
+  // 다시보기가 붙은 수업일은 달력에서 뺄 수 없다 — 달력에 표시하려고 미리 읽는다
+  const sectionTrack = new Map((sections ?? []).map((s) => [s.id, s.track]));
+  const { data: replayRows } = sectionTrack.size
+    ? await supabase.from("session_dates").select("date, section_id, replays!inner(id)").in("section_id", [...sectionTrack.keys()])
+    : { data: [] as { date: string; section_id: number }[] };
+  const replayDates = (replayRows ?? []).map((r) => ({ date: r.date, track: sectionTrack.get(r.section_id) === "ttf" ? ("ttf" as const) : ("mwf" as const) }));
+
+  const saved: TermSchedule = {
+    opens: term?.enrollment_opens_at ?? null,
+    closes: term?.closes_at ?? null,
+    mwf: (classDates ?? []).filter((d) => d.track === "mwf").map((d) => d.date),
+    ttf: (classDates ?? []).filter((d) => d.track === "ttf").map((d) => d.date),
+    lectures: (lectureRows ?? []).map((l) => ({ date: l.date, lecturerId: l.lecturer_id, content: l.content })),
+  };
+  const hasSaved = !!term?.enrollment_opens_at && !!term?.closes_at;
 
   const studies: PlannerStudy[] = (studyRows ?? []).map((s) => ({
     id: s.id,
@@ -86,16 +103,14 @@ export default async function AdminSectionsPage({
   type Sec = NonNullable<typeof sections>[number];
   const groups = new Map<string, Sec[]>();
   for (const s of sections ?? []) {
-    const key = s.bundle_id ?? `single-${s.id}`;
-    groups.set(key, [...(groups.get(key) ?? []), s]);
+    const k = s.bundle_id ?? `single-${s.id}`;
+    groups.set(k, [...(groups.get(k) ?? []), s]);
   }
-
-  const nm = nextMonth(y, m);
-  const pm = prevMonth(y, m);
+  const termLabel = `${y}년 ${m}월`;
 
   return (
     <div className="space-y-8">
-      <PageHeader icon="calendar" title="반 편성" description="매달 반을 개설하고, 캘린더에서 수업일을 확정합니다. 개강일·종강일은 수업일과 별개로 지정하고, 이 달 스터디 시간대도 함께 정해요.">
+      <PageHeader icon="calendar" title="반 편성" description="달력에서 개강일·종강일·월수금·화목금 수업일·특강을 찍고 생성하기를 누르면 이 달 일정이 만들어져요.">
         <Link href="/admin/replays" className="btn-secondary">
           <Icon name="replay" size={18} />
           다시보기 등록
@@ -104,81 +119,52 @@ export default async function AdminSectionsPage({
 
       {sp.created && (
         <Alert kind="success" title={Number(sp.created) > 1 ? "주5일 묶음 반 2개를 개설했어요" : "반을 개설했어요"}>
-          이제 각 반의 상세 페이지에서 수업일을 확정해 주세요.
+          수업일·개강일·종강일은 {termLabel} 달력에서 자동으로 채워졌어요.
         </Alert>
       )}
       {sp.deleted && <Alert kind="info" title="반을 삭제했어요" />}
 
-      {/* 기수 선택 */}
-      <section className="card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Link href={`/admin/sections?term=${termParam(pm.y, pm.m)}`} className="btn-ghost !px-3 !py-2" aria-label="이전 달">
-              ‹
-            </Link>
-            <h2 className="text-xl font-black text-ink">
-              {y}년 {m}월
-            </h2>
-            <Link href={`/admin/sections?term=${termParam(nm.y, nm.m)}`} className="btn-ghost !px-3 !py-2" aria-label="다음 달">
-              ›
-            </Link>
-          </div>
-          <Link href={`/admin/sections?term=${termParam(nm.y, nm.m)}`} className="chip">
-            다음 달 ({nm.m}월) 편성하기
-          </Link>
-        </div>
-        {terms && terms.length > 0 && (
-          <ul className="mt-4 flex flex-wrap gap-2">
-            {terms.map((t) => {
-              const active = t.year === y && t.month === m;
-              return (
-                <li key={t.id}>
-                  <Link
-                    href={`/admin/sections?term=${termParam(t.year, t.month)}`}
-                    className={cn(
-                      "rounded-full border px-3 py-1 text-xs font-bold transition",
-                      active ? "border-brand-400 bg-brand-500 text-white" : "border-line bg-paper text-slate hover:border-brand-300",
-                    )}
-                  >
-                    {t.year}.{String(t.month).padStart(2, "0")}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {!term && (
-          <form action={createTerm} className="mt-5 flex flex-col gap-3 rounded-xl2 border border-dashed border-brand-200 bg-brand-50/50 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <input type="hidden" name="year" value={y} />
-            <input type="hidden" name="month" value={m} />
-            <p className="text-sm text-slate">
-              <span className="font-bold text-ink">{y}년 {m}월</span> 기수가 아직 없어요. 기수를 만들면 반을 개설할 수 있습니다.
-            </p>
-            <button type="submit" className="btn-primary">
-              이 달 기수 만들기
-            </button>
-          </form>
-        )}
+      {/* 달력 */}
+      <section aria-label={`${termLabel} 달력`} className="card p-4 sm:p-6">
+        <TermCalendar
+          key={key}
+          year={y}
+          month={m}
+          today={today}
+          saved={saved}
+          hasSaved={hasSaved}
+          lecturers={lecturers ?? []}
+          replayDates={replayDates}
+          sectionCount={sections?.length ?? 0}
+        />
       </section>
 
-      {/* 반 목록 */}
+      {!term && (
+        <div className="card flex flex-col items-center gap-2 p-8 text-center">
+          <Icon name="calendar" size={44} />
+          <p className="font-bold text-ink">{termLabel} 일정이 아직 없어요</p>
+          <p className="text-sm text-slate">달력에서 날짜를 찍고 생성하기를 누르면 이 달 반 개설과 스터디 시간 설정이 열려요.</p>
+        </div>
+      )}
+
+      {/* 개설 반 */}
       {term && (
-        <section aria-labelledby="section-list-title">
+        <section id="sections" aria-labelledby="section-list-title" className="scroll-mt-20">
           <h2 id="section-list-title" className="mb-3 text-lg font-black text-ink">
             개설 반 <span className="text-slate">({sections?.length ?? 0})</span>
           </h2>
           {(sections?.length ?? 0) === 0 ? (
             <div className="card flex flex-col items-center gap-2 p-8 text-center">
-              <Icon name="calendar" size={44} />
+              <Icon name="students" size={44} />
               <p className="font-bold text-ink">아직 개설된 반이 없어요</p>
-              <p className="text-sm text-slate">아래 “새 반 개설”에서 첫 반을 만들어 주세요.</p>
+              <p className="text-sm text-slate">아래 “새 반 개설”에서 강좌와 트랙을 고르면 달력의 수업일로 반이 만들어져요.</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {[...groups.entries()].map(([key, list]) => {
+              {[...groups.entries()].map(([k, list]) => {
                 const bundled = list.length > 1;
                 return (
-                  <div key={key} className={cn(bundled && "rounded-xl3 border border-brand-200 bg-brand-50/40 p-3")}>
+                  <div key={k} className={cn(bundled && "rounded-xl3 border border-brand-200 bg-brand-50/40 p-3")}>
                     {bundled && (
                       <p className="mb-2 flex items-center gap-2 px-1 text-xs font-black text-brand-700">
                         <Icon name="bolt" size={16} />
@@ -189,7 +175,6 @@ export default async function AdminSectionsPage({
                       {list.map((s) => {
                         const count = s.session_dates?.[0]?.count ?? 0;
                         const hasLive = !!s.section_live_links;
-                        const under = count < s.target_sessions;
                         return (
                           <Link
                             key={s.id}
@@ -204,12 +189,13 @@ export default async function AdminSectionsPage({
                                     <span className="ml-2 text-sm font-semibold text-slate">{COURSE_TYPE_LABEL[s.course.course_type]}</span>
                                   )}
                                 </p>
-                                <p className="mt-1 text-sm text-slate">
-                                  <span className="rounded-full bg-ink px-2 py-0.5 text-xs font-bold text-white">{TRACK_LABEL[s.track] ?? s.track}</span>
-                                  <span className="ml-2 font-bold text-brand-600">
-                                    {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                                <p className="mt-1 text-sm">
+                                  <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold text-white", s.track === "mwf" ? "bg-brand-500" : "bg-ink")}>
+                                    {TRACK_LABEL[s.track] ?? s.track}
                                   </span>
-                                  {s.time_block && <span className="ml-2">{s.time_block}</span>}
+                                  <span className={cn("ml-2 font-black", count > 0 ? "text-brand-600" : "text-amber-600")}>
+                                    수업일 {count}회{count === 0 && " — 달력에 이 트랙 날짜가 없어요"}
+                                  </span>
                                 </p>
                               </div>
                               <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold", STATUS_CLASS[s.status] ?? STATUS_CLASS.draft)}>
@@ -218,19 +204,6 @@ export default async function AdminSectionsPage({
                             </div>
 
                             <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                              <div>
-                                <dt className="text-xs text-mist">개강일 · 종강일</dt>
-                                <dd className="font-semibold text-ink">
-                                  {formatDate(s.enrollment_opens_at, { month: "numeric", day: "numeric" })} ~ {formatDate(s.closes_at, { month: "numeric", day: "numeric" })}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt className="text-xs text-mist">수업일</dt>
-                                <dd className={cn("font-black", under ? "text-amber-600" : "text-brand-600")}>
-                                  {count} / {s.target_sessions}회
-                                  {under && <span className="ml-1 text-xs font-semibold">편성 필요</span>}
-                                </dd>
-                              </div>
                               <div>
                                 <dt className="text-xs text-mist">수강료 (현장 / 불라방)</dt>
                                 <dd className="font-semibold text-ink">
@@ -266,27 +239,37 @@ export default async function AdminSectionsPage({
       )}
 
       {/* 이 달 스터디 시간 설정 (편성과 함께) */}
-      {term && <StudyPlanner termId={term.id} termLabel={`${y}년 ${m}월`} termKey={termParam(y, m)} studies={studies} />}
+      {term && <StudyPlanner termId={term.id} termLabel={termLabel} termKey={key} studies={studies} />}
 
       {/* 새 반 개설 */}
       {term && (
         <section aria-labelledby="create-section-title" className="card p-5 sm:p-7">
           <h2 id="create-section-title" className="text-lg font-black text-ink">
-            새 반 개설 <span className="text-sm font-semibold text-slate">— {y}년 {m}월</span>
+            새 반 개설 <span className="text-sm font-semibold text-slate">— {termLabel}</span>
           </h2>
-          <p className="mt-1 text-sm text-slate">
-            트랙을 “주5일(월수금+화목금)”로 고르면 같은 조건의 반 두 개가 묶음으로 만들어져요. 시간대·수강료는 확정된 값을 그대로 입력해 주세요.
-          </p>
-          <div className="mt-5">
-            <CreateSectionForm
-              termId={term.id}
-              termLabel={`${y}년 ${m}월`}
-              courses={courses ?? []}
-              instructors={instructors ?? null}
-              currentUserId={user.id}
-              isAdmin={isAdmin(profile.role)}
-            />
-          </div>
+          {hasSaved ? (
+            <>
+              <p className="mt-1 text-sm text-slate">
+                트랙을 “주5일(월수금+화목금)”로 고르면 같은 조건의 반 두 개가 묶음으로 만들어져요. 개강일(
+                {formatDate(term.enrollment_opens_at!, { month: "numeric", day: "numeric" })})·종강일(
+                {formatDate(term.closes_at!, { month: "numeric", day: "numeric" })})과 수업일은 위 달력에서 가져옵니다.
+              </p>
+              <div className="mt-5">
+                <CreateSectionForm
+                  termId={term.id}
+                  termLabel={termLabel}
+                  courses={courses ?? []}
+                  instructors={instructors ?? null}
+                  currentUserId={user.id}
+                  isAdmin={isAdmin(profile.role)}
+                />
+              </div>
+            </>
+          ) : (
+            <p className="mt-2 rounded-xl bg-brand-50/60 px-4 py-4 text-sm text-slate">
+              먼저 위 달력에서 <b className="text-ink">개강일·종강일</b>을 찍고 <b className="text-ink">생성하기</b>를 눌러 주세요. 그 다음에 반을 개설할 수 있어요.
+            </p>
+          )}
         </section>
       )}
     </div>

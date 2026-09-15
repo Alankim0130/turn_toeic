@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { todayKST, formatDate, formatTime, TRACK_LABEL } from "@/lib/utils";
+import { todayKST, formatDate, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DonutChart } from "@/components/admin/charts/DonutChart";
@@ -48,7 +48,8 @@ export default async function AdminDashboardPage() {
     ]);
     const countMap = new Map((counts ?? []).map((c) => [c.section_id, c]));
     for (const s of sections ?? []) {
-      const label = s.time_block ?? `${formatTime(s.start_time)}–${formatTime(s.end_time)}`;
+      // 수업 시간이 없는 반(반 편성 달력 이후)은 강좌 이름으로 묶는다
+      const label = s.time_block || formatTimeRange(s.start_time, s.end_time) || (s.course?.name ?? "강좌");
       const c = countMap.get(s.id);
       slots.set(label, [
         ...(slots.get(label) ?? []),

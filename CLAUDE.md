@@ -49,7 +49,8 @@
 - **학생명단**: 등록생(해당 월, 개강일~종강일 기준) / 예비등록생(개강 전 등록) / 졸업생
 - **교재주문**: 불라방 수강생의 교재 배송 신청 목록 (`textbook_orders`)
 - **마케팅 분석**: 가입 시 수집한 대학·학과·성별 차트
-- **수업시간대별 인원수 위젯**: 시간대마다 현장 인원, 괄호 안에 불라방 인원 — `현장 12 (불라방 5)`
+- **수업시간대별 인원수 위젯**: 시간대마다 현장 인원, 괄호 안에 불라방 인원 — `현장 12 (불라방 5)`.
+  반 편성에서 시간을 받지 않으므로 시간이 없는 반은 강좌 이름으로 묶는다
 
 ---
 
@@ -74,15 +75,20 @@
 ```
 
 > **요일 배열(`{월,수,금}`)만으로는 격주 금요일을 표현할 수 없다.**
-> 진실의 원천은 `session_dates` 행들이다. 강사가 캘린더에서 날짜를 확정하고,
-> 회차 수·학생 시간표·다시보기 슬롯은 전부 여기서 파생된다.
-> 강사가 편성을 바꾸면 파생 항목이 모두 따라 움직여야 한다.
+> 진실의 원천은 **기수(월) 달력**이다: `term_class_dates`(월수금/화목금 수업일)와 `terms` 의 개강일·종강일.
+> 반마다의 `session_dates` 는 여기서 파생되고(DB 함수 `private.sync_section_schedule`),
+> 회차 수·학생 시간표·다시보기 회차가 따라 움직인다. 공휴일 등으로 회차 수는 달마다 다르다 (예: 월 9회).
 
-**강사 편성 화면 동작**
-1. 트랙(MWF/TTF)과 금요일 격주 시작 주를 고르면 초안 날짜가 자동 생성된다
-2. 강사가 캘린더에서 개별 날짜를 켜고 끄며 확정한다
-3. 화면에 `10 / 10회` 카운터를 항상 표시한다
-4. 두 트랙의 같은 날짜가 겹치면 경고한다 (주5일 학생이 하루에 두 수업을 듣게 되므로)
+**반 편성 달력 동작** (`/admin/sections`, 2026-09-15 Alan 요청)
+1. 달력은 `‹ ›` 로 지난달·다음달을 자유롭게 넘긴다. 보고 있는 달 = 편성하는 기수
+2. `[개강일] [종강일] [월수금] [화목금] [특강]` 중 하나를 고르고 날짜를 하나씩 누른 뒤 **생성하기**
+   → `public.save_term_schedule()` 한 트랜잭션에 저장 (기수가 없으면 만든다). 초안 자동 생성은 없다
+3. 한 날짜는 월수금·화목금 중 **한 트랙에만** 들어간다 (다른 트랙 날짜를 누르면 옮겨진다).
+   수업일·특강은 그 달 날짜만, 개강일·종강일은 달력에 보이는 앞뒤 달 날짜도 고를 수 있다
+4. **특강**은 수업일과 같은 날이어도 되고 하루에 여러 개도 된다. 특강마다 강사(`lecturers`: 이혜영·이영수)와 내용(1~100자)
+5. 일요일·공휴일은 빨간색. 공휴일은 `src/lib/holidays.ts` (공휴일 법·대체공휴일 규정, 2024~2032). 임시공휴일이 새로 지정되면 여기에 추가
+6. 우측 상단 **이미지 저장**: 보고 있는 달의 월수금/화목금 수업일만 그린 PNG (학원 전달용, 캔버스로 새로 그린다)
+7. 반 편성 화면에서는 **수업 시작·종료 시간을 받지 않는다** (반·회차의 시간 컬럼은 null). 대표 수업 시간은 랜딩 시간표(`timetable_slots`)
 
 ### 2. 개강일 · 종강일 — 수업일과 **별개**로 강사가 지정
 
@@ -94,6 +100,8 @@
 - 첫 수업일·마지막 수업일과 같을 필요가 없다. 강사가 자유롭게 앞뒤로 잡는다.
 - 종강일을 마지막 수업일보다 뒤로 잡으면 마지막 회차 녹화본도 볼 수 있다.
   **시스템이 유예 기간을 임의로 더하지 않는다.**
+- 반 편성 달력에서 **기수(월) 단위로** 정한다 (`terms.enrollment_opens_at` / `closes_at`). 그 달 모든 반의 같은 컬럼과
+  배정된 등록(`enrollment_orders.activates_on` / `access_until`)이 저장할 때 함께 맞춰진다. 반을 개설하려면 먼저 이 둘이 있어야 한다.
 
 ### 3. 학생 등급 — 권한 × 반 배정 2축
 
@@ -278,8 +286,32 @@ create table terms (                       -- 기수 = 월
   id serial primary key,
   year int not null,
   month int not null,
+  enrollment_opens_at date,                -- 그 달 개강일 (반 편성 달력). 그 달 모든 반에 복사
+  closes_at           date,                -- 그 달 종강일
   unique(year, month)
 );
+
+-- ─── 반 편성 달력 (마이그레이션 20260915111851) ───
+create table term_class_dates (            -- 기수 수업일. 진실의 원천
+  term_id  bigint references terms on delete cascade,
+  date     date not null,
+  track    text not null,                  -- mwf | ttf. 한 날짜는 한 트랙만
+  primary key (term_id, date)
+);
+
+create table lecturers (                   -- 특강 강사 선택지 (이혜영·이영수). 계정과 별개, 행 추가로 늘어난다
+  id bigint primary key, name text unique not null, sort_order int default 0
+);
+
+create table special_lectures (            -- 특강. 수업일과 겹쳐도 되고 하루 여러 개 가능
+  id          bigint primary key,
+  term_id     bigint references terms on delete cascade,
+  date        date not null,
+  lecturer_id bigint references lecturers,
+  content     text not null                -- 1~100자
+);
+-- 저장: public.save_term_schedule(year, month, opens, closes, mwf[], ttf[], lectures jsonb) — 스태프만, 한 트랜잭션.
+-- 다시보기가 붙은 회차를 달력에서 빼면 저장 전체를 거부한다 (미확정 4 확정 전까지).
 
 create table courses (                     -- 강좌 마스터
   id           serial primary key,
@@ -296,12 +328,12 @@ create table class_sections (              -- 트랙 단위 분반
   term_id       int references terms,
   bundle_id     uuid,                      -- 주5일반: MWF+TTF 묶음 키
   track         text not null,             -- 'mwf' | 'ttf'
-  start_time    time not null,
-  end_time      time not null,
+  start_time    time,                      -- 반 편성에서 받지 않음 (null)
+  end_time      time,
   time_block    text,                      -- 시간대 라벨. 값은 Alan 확정 후 입력
-  enrollment_opens_at date not null,       -- 개강일: 수강증 업로드 개시
-  closes_at           date not null,       -- 종강일: 다시보기 차단
-  target_sessions int not null,            -- 10 또는 20
+  enrollment_opens_at date not null,       -- 개강일: 기수 달력에서 복사
+  closes_at           date not null,       -- 종강일: 다시보기 차단. 기수 달력에서 복사
+  target_sessions int not null,            -- 달력의 이 트랙 수업일 수
   instructor_id uuid references profiles,
   capacity      int,
   tuition       int not null,              -- 현장 수강료. OCR 매칭 기준선
@@ -317,13 +349,13 @@ create table section_live_links (          -- 불라방 입장 링크. 접근 �
   updated_at  timestamptz default now()
 );
 
-create table session_dates (               -- 진실의 원천. 강사가 캘린더로 확정
+create table session_dates (               -- 반별 회차. term_class_dates 에서 파생 (직접 편집 화면 없음)
   id          bigserial primary key,
   section_id  int references class_sections on delete cascade,
-  seq         int not null,
+  seq         int not null,                -- 날짜순 1..n 으로 자동 재번호
   date        date not null,
-  start_time  time not null,
-  end_time    time not null,
+  start_time  time,                        -- null
+  end_time    time,
   unique(section_id, seq),
   unique(section_id, date)
 );
@@ -543,7 +575,8 @@ where p.role='student'
 |---|---|---|
 | `/admin` | 대시보드: 학생명단 요약, 교재주문, 마케팅 분석 차트, 시간대별 인원수 위젯 | instructor |
 | `/admin/students` | 학생명단: 등록생 / 예비등록생 / 졸업생 탭 | instructor |
-| `/admin/sections` | 월별 반 개설, 트랙 편성, 캘린더 확정, 개강일·종강일 지정, 그 달 스터디 시간 설정 | instructor |
+| `/admin/sections` | 반 편성 달력(개강일·종강일·월수금·화목금·특강 → 생성하기, 이전/다음 달, 이미지 저장), 그 달 반 개설(강좌·트랙·수강료·정원·상태), 스터디 시간 설정 | instructor |
+| `/admin/sections/[id]` | 반 상세: 달력에서 파생된 수업일(읽기 전용)·다시보기 여부, 불라방 링크, 수강료·정원·상태·강사 수정, 삭제 | instructor |
 | `/admin/replays` | 녹화본 등록·회차 연결 | instructor |
 | `/admin/verifications` | OCR 로그, 후보 점수, 오배정 정정 | instructor |
 | `/admin/textbook-orders` | 교재주문 처리 | instructor |
@@ -570,6 +603,7 @@ where p.role='student'
    Alan 확정 필요.)
 4. **편성 수정 시 기존 녹화본** — 학생 등록 후 강사가 회차를 빼면,
    그 날짜에 붙은 녹화본을 어떻게 할지. (삭제 / 경고 후 강사 확인)
+   → 확정 전까지 현재 동작: 다시보기가 붙은 날짜는 달력에서 뺄 수 없다 (화면에서 막고, 저장도 거부).
 5. **OCR 엔진** — 미선정. 수강증 실물 샘플을 받아 보고 결정.
 6. **수강증 원본 보관 기간**
 7. **도메인** — 현재 veterantoiec.com. 유지 여부 미정.

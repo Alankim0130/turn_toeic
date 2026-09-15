@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { todayKST, formatDate, formatWon, TRACK_LABEL } from "@/lib/utils";
+import { todayKST, formatDate, formatTimeRange, formatWon, TRACK_LABEL } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { StatusBadge } from "@/components/admin/StatusBadge";
@@ -57,7 +57,16 @@ export default async function VerificationDetailPage({
 
   const candidates: Candidate[] = (sections ?? []).map((s) => ({
     id: s.id,
-    label: `${termLabel(s.term)} · ${s.course?.name ?? "강좌"} · ${TRACK_LABEL[s.track] ?? s.track} · ${sectionSummary({ start_time: s.start_time, end_time: s.end_time }, null, { withEnd: true }).replace(/^미정 · 강좌 · /, "")}${s.time_block ? ` · ${s.time_block}` : ""} · 현장 ${formatWon(s.tuition)}${s.live_tuition != null ? ` / 불라방 ${formatWon(s.live_tuition)}` : ""}`,
+    label: [
+      termLabel(s.term),
+      s.course?.name ?? "강좌",
+      TRACK_LABEL[s.track] ?? s.track,
+      formatTimeRange(s.start_time, s.end_time),
+      s.time_block,
+      `현장 ${formatWon(s.tuition)}${s.live_tuition != null ? ` / 불라방 ${formatWon(s.live_tuition)}` : ""}`,
+    ]
+      .filter(Boolean)
+      .join(" · "),
   }));
 
   const orderInfo: OrderInfo | null = order

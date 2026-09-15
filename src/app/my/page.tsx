@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
 import { requireUser, ROLE_LABEL } from "@/lib/auth";
-import { cn, formatDate, formatTime, MODE_LABEL, TRACK_LABEL } from "@/lib/utils";
+import { cn, formatDate, formatTimeRange, MODE_LABEL, TRACK_LABEL } from "@/lib/utils";
 import {
   getMyOrders,
   getMyVerifications,
@@ -139,9 +139,9 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
                                 <span className="rounded-full bg-ink px-2 py-0.5 text-xs font-bold text-white">
                                   {TRACK_LABEL[e.section.track] ?? e.section.track}
                                 </span>
-                                <span className="text-slate">
-                                  {formatTime(e.section.start_time)}–{formatTime(e.section.end_time)}
-                                </span>
+                                {e.section.start_time && e.section.end_time && (
+                                  <span className="text-slate">{formatTimeRange(e.section.start_time, e.section.end_time)}</span>
+                                )}
                                 <span className={cn("text-xs font-bold", e.mode === "live" ? "text-brand-600" : "text-slate")}>
                                   {MODE_LABEL[e.mode]}
                                 </span>

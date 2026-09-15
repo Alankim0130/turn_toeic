@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
-import { formatDate, formatTime, TRACK_LABEL } from "@/lib/utils";
+import { formatDate, formatTime, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
 import { SectionSelect } from "@/components/admin/replays/SectionSelect";
 import { ReplayRow } from "@/components/admin/replays/ReplayRow";
 
@@ -36,7 +36,7 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
 
   const options = list.map((s) => ({
     id: s.id,
-    label: `${s.course?.name ?? "강좌"} · ${TRACK_LABEL[s.track] ?? s.track} · ${formatTime(s.start_time)}${s.time_block ? ` (${s.time_block})` : ""}`,
+    label: [s.course?.name ?? "강좌", TRACK_LABEL[s.track] ?? s.track, formatTime(s.start_time), s.time_block].filter(Boolean).join(" · "),
     group: s.term ? `${s.term.year}년 ${s.term.month}월` : "기수 미지정",
     status: s.status,
   }));
@@ -99,7 +99,7 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
                   sessionDateId={s.id}
                   seq={s.seq}
                   date={s.date}
-                  time={`${formatTime(s.start_time)}–${formatTime(s.end_time)}`}
+                  time={formatTimeRange(s.start_time, s.end_time)}
                   replay={s.replays?.[0] ? { id: s.replays[0].id, video_url: s.replays[0].video_url, published_at: s.replays[0].published_at } : null}
                   readOnly={!canManage}
                 />
