@@ -26,6 +26,9 @@ const QUICK: { href: string; label: string; desc: string; icon: IconName }[] = [
   { href: "/my/live", label: "불라방", desc: "실시간 입장", icon: "live" },
   { href: "/my/textbook", label: "교재신청", desc: "불라방 교재 배송", icon: "textbook" },
   { href: "/my/replay", label: "다시보기", desc: "종강일까지 시청", icon: "replay" },
+  { href: "/my/study", label: "내 스터디", desc: "신청 · 비대면 자료", icon: "study" },
+  { href: "/my/homework", label: "숙제제출", desc: "풀이 사진 올리기", icon: "homework" },
+  { href: "/my/lc-audio", label: "LC 음원", desc: "음원 듣기", icon: "headphones" },
 ];
 
 export default async function MyPage({ searchParams }: { searchParams: Promise<{ welcome?: string; denied?: string }> }) {
@@ -187,7 +190,7 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
       <Reveal delay={140}>
         <section aria-labelledby="quick-title">
           <h2 id="quick-title" className="mb-3 text-lg font-black text-ink">바로가기</h2>
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {QUICK.map((q) => (
               <li key={q.href}>
                 <Link href={q.href} className="card flex h-full flex-col items-start gap-3 p-4 transition hover:-translate-y-0.5 hover:shadow-pink">

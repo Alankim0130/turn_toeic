@@ -4,7 +4,7 @@ import { todayKST } from "@/lib/utils";
 /** 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다. */
 
 const SECTION_COLS = `
-  id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status,
+  id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status,
   course:courses(name, course_type, target_score),
   term:terms(year, month)
 ` as const;
@@ -109,6 +109,78 @@ export async function getMyTextbookOrders() {
   return data ?? [];
 }
 export type MyTextbookOrder = Awaited<ReturnType<typeof getMyTextbookOrders>>[number];
+
+/**
+ * 스터디 자격 (DB 의 private.is_term_enrollee / has_term_access 와 같은 규칙)
+ *  - signupTerms: 그 달 반에 배정 + 주문이 예비등록·수강 중 + 종강 전 → 신청 가능
+ *  - accessTerms: 그중 주문이 수강 중(active) → 비대면 자료·LC 음원 열람
+ * 실제 권한은 RLS 가 판단하고, 이 값은 화면 안내용이다.
+ */
+export async function getMyStudyEligibility(orders?: MyOrder[]) {
+  const list = orders ?? (await getMyOrders());
+  const today = todayKST();
+  const signupTerms = new Set<number>();
+  const accessTerms = new Set<number>();
+  const opensOn = new Map<number, string>(); // 예비등록생: 기수별 개강일
+  for (const o of list) {
+    if (o.status !== "preliminary" && o.status !== "active") continue;
+    for (const e of o.enrollments) {
+      if (e.status !== "active" || !e.section || today > e.section.closes_at) continue;
+      signupTerms.add(e.section.term_id);
+      if (o.status === "active") accessTerms.add(e.section.term_id);
+      else opensOn.set(e.section.term_id, o.activates_on);
+    }
+  }
+  return { signupTerms, accessTerms, opensOn };
+}
+
+/** 내 스터디 신청 (기수·유형·시간대 포함) */
+export async function getMyStudySignups() {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("study_signups")
+    .select(
+      `id, study_id, slot_id, created_at,
+       study:studies!study_signups_study_id_fkey(id, kind, status, notice, term_id, term:terms(id, year, month)),
+       slot:study_slots!study_signups_slot_id_study_id_fkey(id, start_time, end_time)`,
+    )
+    .order("created_at", { ascending: false });
+  return (data ?? []).filter((s) => s.study);
+}
+export type MyStudySignup = Awaited<ReturnType<typeof getMyStudySignups>>[number];
+
+/** 내가 받을 수 있는 비대면 자료 (RLS: 신청했고, 수강 중이고, 해당 날짜가 된 것만) */
+export async function getMyStudyMaterials() {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("study_materials")
+    .select("id, study_id, date, title, file_name, file_size, content_type, updated_at")
+    .order("date", { ascending: false });
+  return data ?? [];
+}
+export type MyStudyMaterial = Awaited<ReturnType<typeof getMyStudyMaterials>>[number];
+
+/** 내 숙제 제출물과 파일 */
+export async function getMyHomework() {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("homework_submissions")
+    .select("id, material_id, status, created_at, checked_at, homework_files(id, file_name, file_size, content_type, created_at)")
+    .order("created_at", { ascending: false });
+  return data ?? [];
+}
+export type MyHomework = Awaited<ReturnType<typeof getMyHomework>>[number];
+
+/** LC 음원듣기: 레벨 목록 + 들을 수 있는 음원·교재 이미지 (RLS: 지금 수강 중인 수강생) */
+export async function getMyLcAudio() {
+  const supabase = await createClient();
+  const [{ data: levels }, { data: tracks }, { data: images }] = await Promise.all([
+    supabase.from("lc_levels").select("level").order("sort_order").order("level"),
+    supabase.from("lc_audio_tracks").select("id, title, level"),
+    supabase.from("lc_textbook_images").select("id, level, file_name").order("created_at"),
+  ]);
+  return { levels: (levels ?? []).map((l) => l.level), tracks: tracks ?? [], images: images ?? [] };
+}
 
 /** 라벨 */
 export const ORDER_STATUS_LABEL: Record<string, string> = {

@@ -36,6 +36,8 @@ export const NAV_MAIN: NavItem[] = [
   { href: "/my/textbook", label: "교재신청", icon: "textbook", auth: "member" },
   { href: "/my/replay", label: "다시보기", icon: "replay", auth: "member" },
   { href: "/study", label: "스터디", icon: "study" },
+  { href: "/my/homework", label: "숙제제출", icon: "homework", auth: "member" },
+  { href: "/my/lc-audio", label: "LC음원", icon: "headphones", auth: "member" },
   { href: "/contact", label: "연락하기", icon: "contact" },
 ];
 
@@ -57,6 +59,9 @@ export const NAV_ADMIN: NavItem[] = [
   { href: "/admin/textbook-orders", label: "교재주문", icon: "orders" },
   { href: "/admin/replays", label: "다시보기", icon: "replay" },
   { href: "/admin/analytics", label: "마케팅 분석", icon: "analytics" },
-  { href: "/admin/study", label: "스터디 신청", icon: "study" },
+  { href: "/admin/study", label: "스터디 신청자", icon: "study" },
+  { href: "/admin/study-materials", label: "비대면 자료", icon: "online" },
+  { href: "/admin/homework", label: "숙제점검", icon: "homework" },
+  { href: "/admin/lc-audio", label: "LC 음원", icon: "headphones" },
   { href: "/admin/contacts", label: "문의", icon: "contact" },
 ];

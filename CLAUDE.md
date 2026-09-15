@@ -8,7 +8,7 @@
 ## 작업 원칙 (반드시 준수)
 
 1. **요청하지 않은 기능을 추가하지 않는다.** 아래 "구현 범위"에 없는 것은 만들지 않는다.
-   좋아 보인다는 이유로 출결·과제·단어장·오답노트·알림톡·NFC 체크인 등을 끼워넣지 말 것.
+   좋아 보인다는 이유로 출결·채점·단어장·오답노트·알림톡·NFC 체크인 등을 끼워넣지 말 것.
 2. **미확정 항목은 추측해서 구현하지 않는다.** 문서 맨 아래 "미확정" 목록에 해당하면
    구현을 멈추고 질문한다.
 3. 결제·수강신청은 **YBM 공식 사이트(ybmedu.com)에서만** 이뤄진다. 이 사이트는 결제를 다루지 않는다.
@@ -29,9 +29,9 @@
 
 | 영역 | 내용 |
 |---|---|
-| 공개 페이지 | 역전토익 소개(랜딩, 애니메이션), 스터디 신청하기, 연락하기 |
-| 수강생 포털 | 등업신청(수강증 업로드·자동 등업), 불라방, 불라방 교재신청, 강의 다시보기, 내 시간표 |
-| 관리자 페이지 | 대시보드(학생명단·교재주문·마케팅 분석·시간대별 인원수 위젯), 반 개설·편성, 다시보기 등록, 등업 로그, 스터디·문의 처리 |
+| 공개 페이지 | 역전토익 소개(랜딩, 애니메이션), 스터디 신청하기(대면·비대면·단어), 연락하기 |
+| 수강생 포털 | 등업신청(수강증 업로드·자동 등업), 불라방, 불라방 교재신청, 강의 다시보기, 내 시간표, 내 스터디(비대면 자료 받기), 숙제제출, LC 음원듣기 |
+| 관리자 페이지 | 대시보드(학생명단·교재주문·마케팅 분석·시간대별 인원수 위젯), 반 개설·편성(+ 그 달 스터디 시간 설정), 다시보기 등록, 등업 로그, 스터디 신청자 명단, 비대면 자료 등록, 숙제점검, LC 음원 등록, 문의 처리 |
 
 ### 디자인·품질 원칙 (항상 적용)
 - **브랜드 컬러는 핫핑크.** 팔레트: brand #FF2E88 / hover #E61E75 / tint #FFE4EF, 텍스트 ink #17121F
@@ -128,6 +128,35 @@
   **"N월 예비등록생"**으로 표시된다.
 - 예비등록생은 아직 `student`가 아니다. 불라방·다시보기 접근 불가.
 - **개강일이 되면 자동으로** `active` + `role = 'student'`로 전환된다.
+
+### 6. 스터디 — 강사가 매달 연다 (2026-09-15 Alan 요청)
+
+| 유형 (`studies.kind`) | 신청 | 운영 |
+|---|---|---|
+| 대면스터디 `offline` | 시간대(`study_slots`)를 골라 신청 | 강사가 그 달 편성 때 시간대를 정한다. 하루 2타임·3타임 등 개수 자유 |
+| 비대면스터디 `online` | 시간대 없이 신청 | 수업일마다 하루 하나씩 자료(`study_materials`). 학생은 해당 날짜부터 받고, 풀이는 숙제제출에 올린다 |
+| 단어스터디 `vocab` | 대면처럼 시간대를 골라 신청 | 정해진 시간에 단어 점검 |
+
+- 스터디는 **기수(월) × 유형**당 하나. 시간대는 매달 달라지므로 코드에 두지 않고
+  `/admin/sections?term=` 의 "스터디 시간 설정"에서 행으로 만든다.
+- 공개 상태: `draft`(학생에게 안 보임) → `open`(신청·변경·취소 가능) → `closed`(보이지만 신청·취소 불가).
+- **신청 자격**: 그 달 반에 배정된 수강생 — 예비등록생 포함, 종강일까지 (`private.is_term_enrollee`).
+  **자료·음원 열람**: 주문이 active 인 수강생만 (`private.has_term_access`). 비대면 자료는 **해당 날짜(KST)부터** 공개.
+- 한 스터디에 신청은 1건. 시간대 변경은 같은 행의 `slot_id` 만 바꾼다. 정원(`capacity`, 선택)은
+  트리거가 `applied_count` 를 조건부로 올려서 동시에 신청해도 넘지 않는다.
+- 신청자가 있는 시간대·스터디, 제출물이 있는 자료는 DB 가 삭제를 막는다 (학생 기록 보호).
+
+### 7. 숙제제출 · LC 음원
+
+- **숙제제출**: 비대면 자료(날짜)마다 1건, 사진·PDF 여러 장(최대 20개, 파일당 20MB).
+  강사가 `/admin/homework` 에서 점검완료로 바꾸면 학생은 더 이상 파일을 바꾸거나 지울 수 없다. 점수·코멘트는 없다.
+- **LC 음원**: **레벨(650 · 750 · 850)별**로 구분한다 (2026-09-15 Alan 요청). 레벨 목록은 `lc_levels` 테이블에서 읽고,
+  강사가 레벨마다 **교재 이미지**(여러 장)와 음원을 올린다. 학생은 교재 표지를 보고 레벨을 골라 듣는다 —
+  기본 선택은 지금 듣는 강좌의 `courses.target_score`. 열람은 지금 수강 중인 수강생 전체(레벨로 막지 않음).
+  음원 목록은 제목의 숫자 순서(Unit 1, 2, 10)로 정렬한다.
+- 파일은 전부 private 버킷(`study-materials`, `homework`, `lc-audio`, `lc-textbooks`). 화면은 `/files/{material|homework|audio|textbook}/{id}` 로
+  서명 URL 로 리다이렉트한다 — 행 RLS 와 storage 정책이 같은 규칙으로 막는다.
+- 서버 액션 본문 한도(1MB) 때문에 파일은 **브라우저 → Storage 직접 업로드**, 서버 액션은 경로·이름만 등록한다.
 
 ---
 
@@ -310,6 +339,79 @@ create table enrollment_verifications (
 );
 create unique index on enrollment_verifications (receipt_no)
   where result = 'approved';
+
+-- ─── 스터디 · 숙제 · LC 음원 (마이그레이션 20260915093000) ───
+create table studies (                     -- 월별 스터디. 기수 × 유형당 1개
+  id        bigint primary key,
+  term_id   bigint references terms,
+  kind      text not null,                 -- offline(대면) | online(비대면) | vocab(단어)
+  status    text default 'draft',          -- draft | open | closed
+  notice    text,                          -- 장소·요일·준비물 안내
+  unique(term_id, kind)
+);
+
+create table study_slots (                 -- 대면·단어 스터디 시간대
+  id            bigint primary key,
+  study_id      bigint references studies on delete cascade,
+  start_time    time not null,
+  end_time      time not null,
+  capacity      int,                       -- null = 정원 없음
+  applied_count int default 0,             -- study_signups 트리거가 유지 (직접 수정 불가)
+  unique(study_id, start_time)
+);
+
+create table study_signups (               -- 스터디 신청. 한 스터디에 1건
+  id        bigint primary key,
+  study_id  bigint references studies,
+  slot_id   bigint,                        -- (slot_id, study_id) → study_slots. 비대면은 null
+  user_id   uuid references profiles,
+  unique(study_id, user_id)
+);
+
+create table study_materials (             -- 비대면 자료. 하루 하나
+  id        bigint primary key,
+  study_id  bigint references studies,
+  date      date not null,                 -- 이 날짜(KST)부터 신청자에게 공개
+  title     text,
+  file_path text unique, file_name text, file_size bigint, content_type text,
+  unique(study_id, date)
+);
+
+create table homework_submissions (        -- 자료별 숙제 제출
+  id          bigint primary key,
+  material_id bigint references study_materials,
+  user_id     uuid references profiles,
+  status      text default 'submitted',    -- submitted | checked
+  checked_by  uuid references profiles,
+  checked_at  timestamptz,
+  unique(material_id, user_id)
+);
+
+create table homework_files (              -- 제출 파일 (여러 장)
+  id            bigint primary key,
+  submission_id bigint references homework_submissions on delete cascade,
+  file_path text unique, file_name text, file_size bigint, content_type text
+);
+
+create table lc_levels (                   -- LC 음원·교재 레벨 (마이그레이션 20260915103723)
+  level      int primary key,              -- 650 | 750 | 850 … 행 추가만으로 탭이 생긴다
+  sort_order int default 0
+);
+
+create table lc_audio_tracks (             -- LC 음원
+  id        bigint primary key,
+  level     int not null references lc_levels,
+  title     text not null,                 -- 숫자 순서로 정렬 (Unit 1, 2, 10)
+  file_path text unique, file_name text, file_size bigint, content_type text
+);
+
+create table lc_textbook_images (          -- 레벨별 교재 이미지 (여러 장)
+  id        bigint primary key,
+  level     int not null references lc_levels,
+  file_path text unique, file_name text, file_size bigint, content_type text
+);
+-- 구버전 study_applications(비회원 자유 양식 신청)는 이전 배포 코드가 쓰고 있어 남겨 두었다.
+-- 이 기능이 main 에 배포되면 별도 마이그레이션으로 삭제한다.
 ```
 
 ---
@@ -349,7 +451,7 @@ where p.role='student'
 | 경로 | 내용 |
 |---|---|
 | `/` | 역전토익 소개 (랜딩, 애니메이션) |
-| `/study` | 스터디 신청하기 |
+| `/study` | 스터디 신청하기: 대면·비대면·단어 소개 + 이번 달·다음 달 일정. 그 달 수강생은 여기서 신청·시간대 변경·취소 |
 | `/contact` | 연락하기 |
 | `/login`, `/signup` | 로그인 / 회원가입 (실명·전화·대학·학과·성별) |
 
@@ -363,6 +465,9 @@ where p.role='student'
 | `/my/live` | 불라방 입장 | student |
 | `/my/textbook` | 불라방 교재신청 (불라방 수강생만) | student |
 | `/my/replay` | 강의 다시보기. 종강일까지 | student |
+| `/my/study` | 내 스터디: 신청한 스터디·시간대, 비대면 자료 받기(해당 날짜부터) | 그 달 수강생 |
+| `/my/homework` | 숙제제출: 비대면 자료별 사진·PDF 업로드, 점검 상태 | student |
+| `/my/lc-audio` | LC 음원듣기: 레벨(650·750·850) 카드에서 교재 표지로 고르고 음원 재생 | student |
 
 **관리자 `/admin`**
 
@@ -370,12 +475,15 @@ where p.role='student'
 |---|---|---|
 | `/admin` | 대시보드: 학생명단 요약, 교재주문, 마케팅 분석 차트, 시간대별 인원수 위젯 | instructor |
 | `/admin/students` | 학생명단: 등록생 / 예비등록생 / 졸업생 탭 | instructor |
-| `/admin/sections` | 월별 반 개설, 트랙 편성, 캘린더 확정, 개강일·종강일 지정 | instructor |
+| `/admin/sections` | 월별 반 개설, 트랙 편성, 캘린더 확정, 개강일·종강일 지정, 그 달 스터디 시간 설정 | instructor |
 | `/admin/replays` | 녹화본 등록·회차 연결 | instructor |
 | `/admin/verifications` | OCR 로그, 후보 점수, 오배정 정정 | instructor |
 | `/admin/textbook-orders` | 교재주문 처리 | instructor |
 | `/admin/analytics` | 마케팅 분석 (대학·학과·성별) | instructor |
-| `/admin/study` | 스터디 신청 처리 | instructor |
+| `/admin/study` | 스터디 신청자 명단 (월 · 유형 · 시간대별, 비대면은 숙제 제출 수) | instructor |
+| `/admin/study-materials` | 비대면 자료 날짜별 등록·교체·삭제 (수업일 기준) | instructor |
+| `/admin/homework` | 숙제점검: 날짜별 제출물·미제출자, 점검완료 | instructor |
+| `/admin/lc-audio` | LC 음원·교재 이미지 등록 (레벨별 탭) | instructor |
 | `/admin/contacts` | 문의 처리 | instructor |
 
 ---
@@ -395,11 +503,17 @@ where p.role='student'
 7. **도메인** — 현재 veterantoiec.com. 유지 여부 미정.
 
 ### 아직 논의되지 않음 (임의 구현 금지)
-출결, 과제·채점, 성적·모의고사, 단어장, 오답노트, 자료실, 알림 발송, 후기 작성 기능
+출결, 채점·점수(숙제제출은 점검완료 표시까지만), 성적·모의고사, 단어장, 오답노트, 일반 자료실, 알림 발송, 후기 작성 기능
 
 ### 확장 기능의 가정 (Alan 확인 전까지의 기본값)
 - **교재신청**: 불라방 수강생만, 본인 반 기준, 배송지 입력. 결제 없음(교재비는 YBM/현장 처리). 상태 requested → confirmed → shipped
-- **스터디 신청**: 비회원도 이름·연락처로 신청 가능. 목표 점수·희망 시간·메모. 스태프가 연락 후 상태 변경
+- **스터디 신청 자격**: 그 달 반에 배정된 수강생만 (예비등록생 포함). 비회원·일반 회원은 안내만 본다
+- **스터디 신청 방식**: 신청 즉시 확정(스태프 승인 없음). 유형마다 시간대 1개. 본인 취소는 '신청 받는 중'일 때만, 그 뒤엔 스태프가 명단에서 취소
+- **대면·단어 시간대**: 그 달 내내 같은 시간대(요일·장소는 안내 문구에 적는다). 정원은 선택
+- **비대면 자료**: 해당 날짜 00:00(KST)부터 공개, 날짜마다 파일 1개. 목록은 그 달 반들의 수업일(session_dates) 합집합 + 직접 고른 날짜
+- **숙제제출**: 비대면스터디 자료에 대한 제출만 (정규 수업 숙제 아님). 점검 전 / 점검완료 2단계
+- **LC 음원**: 레벨(650·750·850)별, 월 구분 없음. 지금 수강 중인 수강생은 모든 레벨을 들을 수 있고 기본 탭만 내 강좌 목표 점수. 페이지에서 재생, 별도 다운로드 버튼 없음
+- **교재 이미지**: LC 음원 페이지의 레벨별 교재 표지 (교재신청 화면용 아님). 레벨마다 여러 장, 이미지당 10MB
 - **연락하기**: 비회원 가능. 이름 + (전화 또는 이메일) + 메시지. 스태프만 열람
 - **현장/불라방 구분**: `enrollments.mode` (onsite | live). OCR 은 수강료가 `tuition` 이면 onsite, `live_tuition` 이면 live 로 판정
 - **가입 정보**: 실명, 전화, 대학, 학과, 성별(선택). 성별은 미응답 허용

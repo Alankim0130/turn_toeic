@@ -45,6 +45,23 @@ export async function getCurrentOrUpcomingTerm(supabase: DB, today: string): Pro
   return upcoming ?? null;
 }
 
+/**
+ * 목록 화면의 기수 선택: ?term=YYYY-MM 이 있으면 그 기수, 없으면 이번 달 → 가장 가까운 다음 달 → 가장 최근 순.
+ * terms 는 후보 기수 목록 (예: 스터디가 있는 기수)
+ */
+export function pickTerm<T extends TermLite>(terms: T[], param: string | undefined, today: string): T | null {
+  const match = param?.match(/^(\d{4})-(\d{2})$/);
+  if (match) {
+    const hit = terms.find((t) => t.year === Number(match[1]) && t.month === Number(match[2]));
+    if (hit) return hit;
+  }
+  const [y, m] = today.split("-").map(Number);
+  const now = y * 12 + m;
+  const idx = (t: TermLite) => t.year * 12 + t.month;
+  const sorted = [...terms].sort((a, b) => idx(a) - idx(b));
+  return sorted.find((t) => idx(t) === now) ?? sorted.find((t) => idx(t) > now) ?? sorted.at(-1) ?? null;
+}
+
 export type RosterSets = {
   activeIds: string[];
   preliminaryIds: string[];

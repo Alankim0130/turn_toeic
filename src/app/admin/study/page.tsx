@@ -1,89 +1,195 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate } from "@/lib/utils";
+import { formatDate, todayKST, cn } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { FilterTabs } from "@/components/admin/FilterTabs";
-import { StatusBadge } from "@/components/admin/StatusBadge";
-import { updateStudyStatus } from "./actions";
+import { TermChips } from "@/components/admin/TermChips";
+import { TableWrap, Th, Td } from "@/components/admin/Table";
+import { CancelSignupButton } from "@/components/admin/studies/CancelSignupButton";
+import { isSlotKind, slotTime, sortSlots, STUDY_KIND_LABEL, STUDY_STATUS_LABEL, termParam } from "@/lib/study";
+import { pickTerm, termLabel } from "../_lib/queries";
 
-export const metadata: Metadata = { title: "스터디 신청", robots: { index: false } };
+export const metadata: Metadata = { title: "스터디 신청자", robots: { index: false } };
 
-const TABS = [
-  { value: "pending", label: "대기" },
-  { value: "contacted", label: "연락함" },
-  { value: "confirmed", label: "확정" },
-  { value: "closed", label: "종료" },
-  { value: "all", label: "전체" },
-];
+const KIND_ORDER = ["offline", "vocab", "online"] as const;
 
-export default async function StudyAdminPage({ searchParams }: { searchParams: Promise<{ status?: string; ok?: string; error?: string }> }) {
-  const { status: statusParam, ok, error } = await searchParams;
-  const status = TABS.some((t) => t.value === statusParam) ? (statusParam as string) : "pending";
+export default async function StudyRosterPage({ searchParams }: { searchParams: Promise<{ term?: string; kind?: string }> }) {
+  const sp = await searchParams;
   const supabase = await createClient();
+  const today = todayKST();
 
-  let query = supabase.from("study_applications").select("*, profile:profiles(name)").order("created_at", { ascending: false }).limit(300);
-  if (status !== "all") query = query.eq("status", status);
+  // 스터디가 있는 기수만 고른다
+  const { data: allStudies } = await supabase.from("studies").select("id, term_id, kind, term:terms(id, year, month)");
+  const termMap = new Map<number, { id: number; year: number; month: number }>();
+  for (const s of allStudies ?? []) if (s.term) termMap.set(s.term.id, s.term);
+  const terms = [...termMap.values()].sort((a, b) => b.year * 12 + b.month - (a.year * 12 + a.month));
+  const term = pickTerm(terms, sp.term, today);
 
-  const [{ data: rows }, ...countRes] = await Promise.all([
-    query,
-    ...["pending", "contacted", "confirmed", "closed"].map((s) => supabase.from("study_applications").select("id", { count: "exact", head: true }).eq("status", s)),
+  if (!term) {
+    return (
+      <>
+        <PageHeader icon="study" title="스터디 신청자" description="대면·단어 스터디는 시간대별로, 비대면 스터디는 숙제 제출 현황과 함께 보여 드려요." />
+        <EmptyState
+          icon="study"
+          title="아직 만든 스터디가 없어요"
+          description="반 편성 화면에서 그 달 스터디를 열고 시간대를 정하면, 수강생 신청이 여기에 모입니다."
+          action={{ href: "/admin/sections", label: "반 편성에서 스터디 열기" }}
+        />
+      </>
+    );
+  }
+
+  const termKey = termParam(term.year, term.month);
+  const { data: studies } = await supabase
+    .from("studies")
+    .select("id, kind, status, notice, study_slots!study_slots_study_id_fkey(id, start_time, end_time, capacity, applied_count), study_signups!study_signups_study_id_fkey(count)")
+    .eq("term_id", term.id);
+
+  const byKind = new Map((studies ?? []).map((s) => [s.kind, s]));
+  const kinds = KIND_ORDER.filter((k) => byKind.has(k));
+  const kind = kinds.includes(sp.kind as (typeof KIND_ORDER)[number]) ? (sp.kind as string) : kinds[0];
+  const study = byKind.get(kind)!;
+
+  const [{ data: signups }, { data: materials }] = await Promise.all([
+    supabase
+      .from("study_signups")
+      .select("id, slot_id, created_at, user:profiles!study_signups_user_id_fkey(id, name, phone)")
+      .eq("study_id", study.id)
+      .order("created_at"),
+    kind === "online" ? supabase.from("study_materials").select("id").eq("study_id", study.id) : Promise.resolve({ data: [] as { id: number }[] }),
   ]);
-  const counts: Record<string, number | undefined> = {
-    pending: countRes[0].count ?? 0,
-    contacted: countRes[1].count ?? 0,
-    confirmed: countRes[2].count ?? 0,
-    closed: countRes[3].count ?? 0,
-  };
-  const back = `/admin/study?status=${status}`;
+
+  // 비대면: 학생별 숙제 제출·점검 수
+  const homework = new Map<string, { submitted: number; checked: number }>();
+  if (kind === "online" && (materials ?? []).length > 0) {
+    const { data: subs } = await supabase
+      .from("homework_submissions")
+      .select("user_id, status")
+      .in("material_id", (materials ?? []).map((m) => m.id));
+    for (const s of subs ?? []) {
+      const h = homework.get(s.user_id) ?? { submitted: 0, checked: 0 };
+      h.submitted += 1;
+      if (s.status === "checked") h.checked += 1;
+      homework.set(s.user_id, h);
+    }
+  }
+
+  const rows = signups ?? [];
+  const slots = sortSlots(study.study_slots ?? []);
 
   return (
     <>
-      <PageHeader icon="study" title="스터디 신청" description="신청자에게 연락한 뒤 상태를 바꿔 주세요. 회원이 아닌 신청도 들어옵니다." />
-      {ok && <Alert kind="success" className="mb-4">신청 #{ok} 상태를 저장했습니다.</Alert>}
-      {error && <Alert kind="warning" className="mb-4">저장에 실패했습니다. 다시 시도해 주세요.</Alert>}
-      <FilterTabs basePath="/admin/study" paramKey="status" current={status} tabs={TABS.map((t) => ({ ...t, count: counts[t.value] }))} />
+      <PageHeader icon="study" title="스터디 신청자" description="대면·단어 스터디는 시간대별로, 비대면 스터디는 숙제 제출 현황과 함께 보여 드려요.">
+        <Link href={`/admin/sections?term=${termKey}`} className="btn-secondary">
+          <Icon name="timeslot" size={18} />
+          시간대 설정
+        </Link>
+      </PageHeader>
 
-      {(rows ?? []).length === 0 ? (
-        <EmptyState icon="study" title="해당 상태의 스터디 신청이 없습니다" />
+      <TermChips basePath="/admin/study" terms={terms} current={termKey} />
+      <FilterTabs
+        basePath="/admin/study"
+        paramKey="kind"
+        current={kind}
+        keep={{ term: termKey }}
+        tabs={kinds.map((k) => ({ value: k, label: STUDY_KIND_LABEL[k], count: byKind.get(k)?.study_signups?.[0]?.count ?? 0 }))}
+      />
+
+      <p className="mb-4 flex flex-wrap items-center gap-2 text-sm text-slate">
+        <span className="font-black text-ink">{termLabel(term)} {STUDY_KIND_LABEL[kind]}</span>
+        <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-bold", study.status === "open" ? "bg-brand-500 text-white" : study.status === "closed" ? "bg-ink text-white" : "bg-line text-slate")}>
+          {STUDY_STATUS_LABEL[study.status] ?? study.status}
+        </span>
+        {study.notice && <span className="text-xs">· {study.notice}</span>}
+      </p>
+
+      {isSlotKind(kind) ? (
+        slots.length === 0 ? (
+          <EmptyState icon="timeslot" title="시간대가 아직 없어요" description="반 편성 화면에서 시간대를 추가하면 수강생이 신청할 수 있어요." action={{ href: `/admin/sections?term=${termKey}`, label: "시간대 추가하기" }} />
+        ) : (
+          <div className="space-y-5">
+            {slots.map((slot, i) => {
+              const list = rows.filter((r) => r.slot_id === slot.id);
+              return (
+                <section key={slot.id} aria-labelledby={`slot-${slot.id}`} className="card overflow-hidden">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-brand-50/60 px-5 py-3">
+                    <h2 id={`slot-${slot.id}`} className="font-black text-ink">
+                      <span className="text-brand-600">{i + 1}타임</span> {slotTime(slot)}
+                    </h2>
+                    <p className="text-sm font-bold tabular-nums text-ink">
+                      신청 {slot.applied_count}명{slot.capacity !== null && <span className="text-slate"> / 정원 {slot.capacity}명</span>}
+                    </p>
+                  </div>
+                  {list.length === 0 ? (
+                    <p className="px-5 py-6 text-center text-sm text-slate">아직 신청한 수강생이 없어요.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[32rem] text-left text-sm">
+                        <thead>
+                          <tr>
+                            <Th className="w-12">#</Th>
+                            <Th>이름</Th>
+                            <Th>연락처</Th>
+                            <Th>신청일</Th>
+                            <Th className="text-right">관리</Th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-line">
+                          {list.map((r, n) => (
+                            <tr key={r.id} className="hover:bg-brand-50/40">
+                              <Td className="text-xs text-mist">{n + 1}</Td>
+                              <Td className="font-bold">{r.user?.name || "-"}</Td>
+                              <Td>{r.user?.phone ? <a href={`tel:${r.user.phone}`} className="text-brand-600 hover:underline">{r.user.phone}</a> : "-"}</Td>
+                              <Td className="whitespace-nowrap text-xs text-slate">{formatDate(r.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
+                              <Td className="text-right"><CancelSignupButton id={r.id} name={r.user?.name ?? "수강생"} /></Td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        )
+      ) : rows.length === 0 ? (
+        <EmptyState icon="online" title="아직 신청한 수강생이 없어요" description="신청 받기 상태로 바꾸면 수강생이 스터디 페이지에서 신청할 수 있어요." />
       ) : (
-        <ul className="grid gap-4 md:grid-cols-2">
-          {(rows ?? []).map((r) => (
-            <li key={r.id} className="card flex flex-col p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-lg font-black text-ink">
-                    {r.name}
-                    {r.profile?.name && r.profile.name !== r.name && <span className="ml-1 text-xs font-semibold text-mist">(회원명 {r.profile.name})</span>}
-                    {!r.user_id && <span className="ml-1 text-xs font-semibold text-mist">(비회원)</span>}
-                  </p>
-                  <a href={`tel:${r.phone}`} className="text-sm font-bold text-brand-600 hover:underline">{r.phone}</a>
-                </div>
-                <StatusBadge status={r.status} />
-              </div>
-              <dl className="mt-3 grid grid-cols-[5rem_1fr] gap-y-1 text-sm">
-                <dt className="text-slate">목표 점수</dt><dd className="font-semibold">{r.target_score ? `${r.target_score}점` : "-"}</dd>
-                <dt className="text-slate">가능 시간</dt><dd>{r.preferred_time || "-"}</dd>
-                <dt className="text-slate">신청일</dt><dd>{formatDate(r.created_at, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</dd>
-              </dl>
-              {r.message && <p className="mt-3 whitespace-pre-wrap rounded-xl bg-surface p-3 text-sm text-ink-soft">{r.message}</p>}
-              <form action={updateStudyStatus} className="mt-4 flex items-center gap-2 border-t border-line pt-3">
-                <input type="hidden" name="id" value={r.id} />
-                <input type="hidden" name="back" value={back} />
-                <Icon name="bolt" size={18} />
-                <select name="status" defaultValue={r.status} className="input !w-auto !py-1.5 text-xs" aria-label="상태">
-                  <option value="pending">대기</option>
-                  <option value="contacted">연락함</option>
-                  <option value="confirmed">확정</option>
-                  <option value="closed">종료</option>
-                </select>
-                <button type="submit" className="btn-secondary !py-1.5 text-xs">저장</button>
-              </form>
-            </li>
-          ))}
-        </ul>
+        <TableWrap>
+          <thead>
+            <tr>
+              <Th className="w-12">#</Th>
+              <Th>이름</Th>
+              <Th>연락처</Th>
+              <Th>신청일</Th>
+              <Th>숙제 제출 / 자료</Th>
+              <Th className="text-right">관리</Th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {rows.map((r, n) => {
+              const h = r.user ? homework.get(r.user.id) : undefined;
+              return (
+                <tr key={r.id} className="hover:bg-brand-50/40">
+                  <Td className="text-xs text-mist">{n + 1}</Td>
+                  <Td className="font-bold">{r.user?.name || "-"}</Td>
+                  <Td>{r.user?.phone ? <a href={`tel:${r.user.phone}`} className="text-brand-600 hover:underline">{r.user.phone}</a> : "-"}</Td>
+                  <Td className="whitespace-nowrap text-xs text-slate">{formatDate(r.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
+                  <Td className="whitespace-nowrap">
+                    <span className="font-bold tabular-nums text-ink">{h?.submitted ?? 0}</span>
+                    <span className="text-slate"> / {(materials ?? []).length}</span>
+                    {h && h.checked > 0 && <span className="ml-2 text-xs font-semibold text-brand-600">점검 {h.checked}</span>}
+                  </Td>
+                  <Td className="text-right"><CancelSignupButton id={r.id} name={r.user?.name ?? "수강생"} /></Td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </TableWrap>
       )}
     </>
   );

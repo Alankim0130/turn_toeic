@@ -15,26 +15,26 @@ export function SiteHeader({ profile, signedIn }: { profile: Profile | null; sig
       <div className="container-x flex h-16 items-center justify-between gap-4">
         <Logo height={30} priority />
 
-        {/* 데스크톱 네비 */}
-        <nav aria-label="주요 메뉴" className="hidden md:block">
+        {/* 데스크톱 네비 — 메뉴가 많아 넓은 화면(xl)에서만 한 줄로, 그보다 좁으면 햄버거 메뉴 */}
+        <nav aria-label="주요 메뉴" className="hidden xl:block">
           <NavLinks items={NAV_MAIN} />
         </nav>
 
-        <div className="hidden items-center gap-2 md:flex">
+        <div className="hidden shrink-0 items-center gap-2 xl:flex">
           {staff && (
-            <Link href="/admin" className="btn-primary !px-4 !py-2">
+            <Link href="/admin" className="btn-primary whitespace-nowrap !px-4 !py-2">
               <Icon name="admin" size={18} className="brightness-0 invert" />
               관리자
             </Link>
           )}
           {signedIn ? (
             <>
-              <Link href="/my" className="btn-ghost !px-3 !py-2">
+              <Link href="/my" className="btn-ghost whitespace-nowrap !px-3 !py-2">
                 <Icon name="profile" size={20} />
-                {profile?.name ? `${profile.name}님` : "마이페이지"}
+                <span className="max-w-[7rem] truncate">{profile?.name ? `${profile.name}님` : "마이페이지"}</span>
               </Link>
               <form action={signOut}>
-                <button type="submit" className="btn-secondary !px-4 !py-2">
+                <button type="submit" className="btn-secondary whitespace-nowrap !px-4 !py-2">
                   로그아웃
                 </button>
               </form>

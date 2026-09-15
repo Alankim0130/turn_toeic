@@ -7,6 +7,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { formatDate, formatTime, formatWon, TRACK_LABEL, COURSE_TYPE_LABEL, todayKST, cn } from "@/lib/utils";
 import { CreateSectionForm } from "@/components/admin/sections/CreateSectionForm";
+import { StudyPlanner, type PlannerStudy } from "@/components/admin/studies/StudyPlanner";
 import { createTerm } from "./actions";
 
 export const metadata: Metadata = { title: "반 편성", robots: { index: false } };
@@ -52,16 +53,34 @@ export default async function AdminSectionsPage({
       : Promise.resolve({ data: null }),
   ]);
 
-  const { data: sections } = term
-    ? await supabase
-        .from("class_sections")
-        .select(
-          "id, bundle_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, target_sessions, capacity, tuition, live_tuition, status, instructor_id, course:courses(name, course_type, target_score), instructor:profiles(name), session_dates(count), section_live_links(section_id)",
-        )
-        .eq("term_id", term.id)
-        .order("start_time")
-        .order("track")
-    : { data: [] as never[] };
+  const [{ data: sections }, { data: studyRows }] = term
+    ? await Promise.all([
+        supabase
+          .from("class_sections")
+          .select(
+            "id, bundle_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, target_sessions, capacity, tuition, live_tuition, status, instructor_id, course:courses(name, course_type, target_score), instructor:profiles(name), session_dates(count), section_live_links(section_id)",
+          )
+          .eq("term_id", term.id)
+          .order("start_time")
+          .order("track"),
+        supabase
+          .from("studies")
+          .select(
+            "id, kind, status, notice, study_slots!study_slots_study_id_fkey(id, start_time, end_time, capacity, applied_count), study_signups!study_signups_study_id_fkey(count), study_materials(count)",
+          )
+          .eq("term_id", term.id),
+      ])
+    : [{ data: [] as never[] }, { data: [] as never[] }];
+
+  const studies: PlannerStudy[] = (studyRows ?? []).map((s) => ({
+    id: s.id,
+    kind: s.kind,
+    status: s.status,
+    notice: s.notice,
+    slots: s.study_slots ?? [],
+    signupCount: s.study_signups?.[0]?.count ?? 0,
+    materialCount: s.study_materials?.[0]?.count ?? 0,
+  }));
 
   // 주5일 묶음(bundle) 끼리 모아 보여준다
   type Sec = NonNullable<typeof sections>[number];
@@ -76,7 +95,7 @@ export default async function AdminSectionsPage({
 
   return (
     <div className="space-y-8">
-      <PageHeader icon="calendar" title="반 편성" description="매달 반을 개설하고, 캘린더에서 수업일을 확정합니다. 개강일·종강일은 수업일과 별개로 지정해요.">
+      <PageHeader icon="calendar" title="반 편성" description="매달 반을 개설하고, 캘린더에서 수업일을 확정합니다. 개강일·종강일은 수업일과 별개로 지정하고, 이 달 스터디 시간대도 함께 정해요.">
         <Link href="/admin/replays" className="btn-secondary">
           <Icon name="replay" size={18} />
           다시보기 등록
@@ -245,6 +264,9 @@ export default async function AdminSectionsPage({
           )}
         </section>
       )}
+
+      {/* 이 달 스터디 시간 설정 (편성과 함께) */}
+      {term && <StudyPlanner termId={term.id} termLabel={`${y}년 ${m}월`} termKey={termParam(y, m)} studies={studies} />}
 
       {/* 새 반 개설 */}
       {term && (

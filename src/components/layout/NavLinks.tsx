@@ -24,7 +24,7 @@ export function NavLinks({ items, className, onNavigate }: { items: NavItem[]; c
               onClick={onNavigate}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "relative rounded-full px-3.5 py-2 text-sm font-semibold transition hover:bg-brand-50 hover:text-brand-600",
+                "relative whitespace-nowrap rounded-full px-3 py-2 text-sm font-semibold transition hover:bg-brand-50 hover:text-brand-600",
                 active ? "text-brand-600" : "text-ink-soft",
               )}
             >
