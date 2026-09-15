@@ -28,7 +28,7 @@ export const STATUS_META: Record<string, { label: string; tone: Tone }> = {
   confirmed: { label: "확인", tone: "pink" },
   shipped: { label: "발송", tone: "green" },
   cancelled: { label: "취소", tone: "gray" },
-  // study_applications
+  // 기타 상태 (연락함 · 종료)
   contacted: { label: "연락함", tone: "pink" },
   closed: { label: "종료", tone: "gray" },
   // contact_messages

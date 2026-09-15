@@ -431,8 +431,8 @@ create table lc_audio_tracks (             -- LC 음원
   title     text not null,                 -- 숫자 순서로 정렬 (Unit 1, 2, 10)
   file_path text unique, file_name text, file_size bigint, content_type text
 );
--- 구버전 study_applications(비회원 자유 양식 신청)는 이전 배포 코드가 쓰고 있어 남겨 두었다.
--- 이 기능이 main 에 배포되면 별도 마이그레이션으로 삭제한다.
+-- 구버전 study_applications(비회원 자유 양식 신청)·lc_textbook_images(레벨별 이미지 묶음)는
+-- 배포 후 정리 마이그레이션 20260915112851 에서 삭제했다.
 ```
 
 ---

@@ -472,40 +472,37 @@ export type Database = {
       }
       lc_audio_tracks: {
         Row: {
-          book_id: number | null
+          book_id: number
           content_type: string | null
           created_at: string
           file_name: string
           file_path: string
           file_size: number | null
           id: number
-          level: number | null
           title: string
           updated_at: string
           uploaded_by: string | null
         }
         Insert: {
-          book_id?: number | null
+          book_id: number
           content_type?: string | null
           created_at?: string
           file_name: string
           file_path: string
           file_size?: number | null
           id?: number
-          level?: number | null
           title: string
           updated_at?: string
           uploaded_by?: string | null
         }
         Update: {
-          book_id?: number | null
+          book_id?: number
           content_type?: string | null
           created_at?: string
           file_name?: string
           file_path?: string
           file_size?: number | null
           id?: number
-          level?: number | null
           title?: string
           updated_at?: string
           uploaded_by?: string | null
@@ -517,13 +514,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "lc_books"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "lc_audio_tracks_level_fkey"
-            columns: ["level"]
-            isOneToOne: false
-            referencedRelation: "lc_levels"
-            referencedColumns: ["level"]
           },
           {
             foreignKeyName: "lc_audio_tracks_uploaded_by_fkey"
@@ -608,54 +598,6 @@ export type Database = {
           sort_order?: number
         }
         Relationships: []
-      }
-      lc_textbook_images: {
-        Row: {
-          content_type: string | null
-          created_at: string
-          file_name: string
-          file_path: string
-          file_size: number | null
-          id: number
-          level: number
-          uploaded_by: string | null
-        }
-        Insert: {
-          content_type?: string | null
-          created_at?: string
-          file_name: string
-          file_path: string
-          file_size?: number | null
-          id?: number
-          level: number
-          uploaded_by?: string | null
-        }
-        Update: {
-          content_type?: string | null
-          created_at?: string
-          file_name?: string
-          file_path?: string
-          file_size?: number | null
-          id?: number
-          level?: number
-          uploaded_by?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "lc_textbook_images_level_fkey"
-            columns: ["level"]
-            isOneToOne: false
-            referencedRelation: "lc_levels"
-            referencedColumns: ["level"]
-          },
-          {
-            foreignKeyName: "lc_textbook_images_uploaded_by_fkey"
-            columns: ["uploaded_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       profiles: {
         Row: {
@@ -825,50 +767,6 @@ export type Database = {
             columns: ["term_id"]
             isOneToOne: false
             referencedRelation: "terms"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      study_applications: {
-        Row: {
-          created_at: string
-          id: number
-          message: string | null
-          name: string
-          phone: string
-          preferred_time: string | null
-          status: string
-          target_score: number | null
-          user_id: string | null
-        }
-        Insert: {
-          created_at?: string
-          id?: number
-          message?: string | null
-          name: string
-          phone: string
-          preferred_time?: string | null
-          status?: string
-          target_score?: number | null
-          user_id?: string | null
-        }
-        Update: {
-          created_at?: string
-          id?: number
-          message?: string | null
-          name?: string
-          phone?: string
-          preferred_time?: string | null
-          status?: string
-          target_score?: number | null
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "study_applications_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
