@@ -3,12 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { isImageType } from "@/lib/upload";
 
 /**
- * 비공개 파일 열기: /files/material/12 · /files/homework/34 · /files/audio/56
+ * 비공개 파일 열기: /files/material/12 · /files/homework/34 · /files/audio/56 · /files/textbook/78
  *  - 사용자 세션으로 행을 조회하므로 RLS 가 접근 권한을 정한다 (못 보면 404).
  *  - 저장소 서명 URL 도 사용자 세션으로 만들어 storage 정책을 한 번 더 통과한다.
- *  - ?download=1 은 원본 파일명으로 내려받기, 숙제 사진은 ?w=400 으로 썸네일.
+ *  - ?download=1 은 원본 파일명으로 내려받기, 숙제 사진·교재 이미지는 ?w=400 으로 썸네일.
  */
-const BUCKET = { material: "study-materials", homework: "homework", audio: "lc-audio" } as const;
+const BUCKET = { material: "study-materials", homework: "homework", audio: "lc-audio", textbook: "lc-textbooks" } as const;
 type Kind = keyof typeof BUCKET;
 
 const notFound = () =>
@@ -36,12 +36,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       ? await supabase.from("study_materials").select(cols).eq("id", id).maybeSingle()
       : kind === "homework"
         ? await supabase.from("homework_files").select(cols).eq("id", id).maybeSingle()
-        : await supabase.from("lc_audio_tracks").select(cols).eq("id", id).maybeSingle();
+        : kind === "textbook"
+          ? await supabase.from("lc_textbook_images").select(cols).eq("id", id).maybeSingle()
+          : await supabase.from("lc_audio_tracks").select(cols).eq("id", id).maybeSingle();
   if (!row) return notFound();
 
   const sp = request.nextUrl.searchParams;
   const width = Number(sp.get("w"));
-  const thumb = kind === "homework" && isImageType(row.content_type) && width >= 80 && width <= 1200;
+  const thumb = (kind === "homework" || kind === "textbook") && isImageType(row.content_type) && width >= 80 && width <= 1200;
   // 음원은 재생 중 구간 요청이 이어지므로 넉넉히, 나머지는 짧게
   const expiresIn = kind === "audio" ? 6 * 60 * 60 : 10 * 60;
 

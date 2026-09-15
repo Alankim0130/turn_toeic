@@ -6,11 +6,10 @@ import { deleteAudioTrack, updateAudioTrack, type AudioEditState } from "@/app/a
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Icon } from "@/components/ui/Icon";
 import { formatBytes } from "@/lib/study";
-import { labelKo } from "@/components/admin/sections/dates";
 
-export type AudioTrackLite = { id: number; title: string; date: string | null; term_id: number | null; file_name: string; file_size: number | null };
+export type AudioTrackLite = { id: number; title: string; level: number; file_name: string; file_size: number | null };
 
-export function AudioTrackRow({ track, termOptions }: { track: AudioTrackLite; termOptions: { id: number; label: string }[] }) {
+export function AudioTrackRow({ track, levels }: { track: AudioTrackLite; levels: number[] }) {
   const router = useRouter();
   const [mode, setMode] = useState<"view" | "edit" | "confirm">("view");
   const [state, action] = useActionState<AudioEditState, FormData>(updateAudioTrack, {});
@@ -38,7 +37,6 @@ export function AudioTrackRow({ track, termOptions }: { track: AudioTrackLite; t
         <div className="min-w-0 flex-1">
           <p className="truncate font-bold text-ink">{track.title}</p>
           <p className="truncate text-xs text-slate">
-            {track.date ? `${labelKo(track.date)} · ` : ""}
             {track.file_name} · {formatBytes(track.file_size)}
           </p>
         </div>
@@ -55,22 +53,17 @@ export function AudioTrackRow({ track, termOptions }: { track: AudioTrackLite; t
       </audio>
 
       {mode === "edit" && (
-        <form action={action} className="mt-3 grid gap-2 rounded-xl border border-line bg-surface p-3 sm:grid-cols-[1fr_10rem_10rem_auto] sm:items-end">
+        <form action={action} className="mt-3 grid gap-2 rounded-xl border border-line bg-surface p-3 sm:grid-cols-[1fr_9rem_auto] sm:items-end">
           <input type="hidden" name="id" value={track.id} />
           <div>
             <label htmlFor={`title-${track.id}`} className="label !mb-1 text-xs">제목</label>
             <input id={`title-${track.id}`} name="title" required maxLength={100} defaultValue={track.title} className="input !py-2 text-sm" />
           </div>
           <div>
-            <label htmlFor={`date-${track.id}`} className="label !mb-1 text-xs">날짜 <span className="font-normal text-mist">(선택)</span></label>
-            <input id={`date-${track.id}`} name="date" type="date" defaultValue={track.date ?? ""} className="input !py-2 text-sm" />
-          </div>
-          <div>
-            <label htmlFor={`term-${track.id}`} className="label !mb-1 text-xs">공개 범위</label>
-            <select id={`term-${track.id}`} name="term_id" defaultValue={track.term_id ?? ""} className="input !py-2 text-sm">
-              <option value="">상시 (현재 수강생 전체)</option>
-              {termOptions.map((t) => (
-                <option key={t.id} value={t.id}>{t.label} 수강생</option>
+            <label htmlFor={`level-${track.id}`} className="label !mb-1 text-xs">레벨</label>
+            <select id={`level-${track.id}`} name="level" defaultValue={track.level} className="input !py-2 text-sm">
+              {levels.map((l) => (
+                <option key={l} value={l}>{l}</option>
               ))}
             </select>
           </div>
@@ -78,7 +71,7 @@ export function AudioTrackRow({ track, termOptions }: { track: AudioTrackLite; t
             <SubmitButton className="!px-4 !py-2" pendingText="저장 중…">저장</SubmitButton>
             <button type="button" onClick={() => setMode("view")} className="btn-ghost !px-3 !py-2 text-xs">취소</button>
           </div>
-          {state.error && <p className="text-xs font-semibold text-red-600 sm:col-span-4">{state.error}</p>}
+          {state.error && <p className="text-xs font-semibold text-red-600 sm:col-span-3">{state.error}</p>}
         </form>
       )}
 

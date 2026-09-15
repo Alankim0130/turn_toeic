@@ -474,12 +474,11 @@ export type Database = {
         Row: {
           content_type: string | null
           created_at: string
-          date: string | null
           file_name: string
           file_path: string
           file_size: number | null
           id: number
-          term_id: number | null
+          level: number
           title: string
           updated_at: string
           uploaded_by: string | null
@@ -487,12 +486,11 @@ export type Database = {
         Insert: {
           content_type?: string | null
           created_at?: string
-          date?: string | null
           file_name: string
           file_path: string
           file_size?: number | null
           id?: number
-          term_id?: number | null
+          level: number
           title: string
           updated_at?: string
           uploaded_by?: string | null
@@ -500,26 +498,88 @@ export type Database = {
         Update: {
           content_type?: string | null
           created_at?: string
-          date?: string | null
           file_name?: string
           file_path?: string
           file_size?: number | null
           id?: number
-          term_id?: number | null
+          level?: number
           title?: string
           updated_at?: string
           uploaded_by?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "lc_audio_tracks_term_id_fkey"
-            columns: ["term_id"]
+            foreignKeyName: "lc_audio_tracks_level_fkey"
+            columns: ["level"]
             isOneToOne: false
-            referencedRelation: "terms"
-            referencedColumns: ["id"]
+            referencedRelation: "lc_levels"
+            referencedColumns: ["level"]
           },
           {
             foreignKeyName: "lc_audio_tracks_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lc_levels: {
+        Row: {
+          level: number
+          sort_order: number
+        }
+        Insert: {
+          level: number
+          sort_order?: number
+        }
+        Update: {
+          level?: number
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      lc_textbook_images: {
+        Row: {
+          content_type: string | null
+          created_at: string
+          file_name: string
+          file_path: string
+          file_size: number | null
+          id: number
+          level: number
+          uploaded_by: string | null
+        }
+        Insert: {
+          content_type?: string | null
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          id?: number
+          level: number
+          uploaded_by?: string | null
+        }
+        Update: {
+          content_type?: string | null
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          id?: number
+          level?: number
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lc_textbook_images_level_fkey"
+            columns: ["level"]
+            isOneToOne: false
+            referencedRelation: "lc_levels"
+            referencedColumns: ["level"]
+          },
+          {
+            foreignKeyName: "lc_textbook_images_uploaded_by_fkey"
             columns: ["uploaded_by"]
             isOneToOne: false
             referencedRelation: "profiles"

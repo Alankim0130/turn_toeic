@@ -12,12 +12,12 @@ import { removeUploaded, uploadFile } from "@/lib/upload-client";
 const BUCKET = "lc-audio";
 const MAX = 50 * MB;
 
-type Pending = { key: string; file: File; title: string; date: string };
+type Pending = { key: string; file: File; title: string };
 
 const baseName = (name: string) => (name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name).slice(0, 100);
 
-/** 음원 여러 개 선택 → 제목·날짜 확인 → 순서대로 업로드 후 한 번에 등록 */
-export function AudioUploader({ termId, targetLabel }: { termId: number | null; targetLabel: string }) {
+/** 음원 여러 개 선택 → 제목 확인 → 순서대로 업로드 후 한 번에 등록 */
+export function AudioUploader({ level }: { level: number }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<Pending[]>([]);
@@ -35,7 +35,7 @@ export function AudioUploader({ termId, targetLabel }: { termId: number | null; 
     const big = files.find((f) => f.size > MAX);
     if (big) return setError(`${big.name}: 50MB 이하 파일만 올릴 수 있어요.`);
     if (files.length > 30) return setError("한 번에 30개까지 올릴 수 있어요.");
-    setItems(files.map((f, i) => ({ key: `${i}-${f.name}-${f.size}`, file: f, title: baseName(f.name), date: "" })));
+    setItems(files.map((f, i) => ({ key: `${i}-${f.name}-${f.size}`, file: f, title: baseName(f.name) })));
   }
 
   async function submit() {
@@ -43,16 +43,15 @@ export function AudioUploader({ termId, targetLabel }: { termId: number | null; 
     if (items.some((it) => !it.title.trim())) return setError("모든 음원에 제목을 적어 주세요.");
     setBusy(true);
     setError(null);
-    const uploaded: { title: string; date: string | null; file: UploadedFile }[] = [];
+    const uploaded: { title: string; file: UploadedFile }[] = [];
     try {
       for (let i = 0; i < items.length; i++) {
         setProgress(`${i + 1} / ${items.length} 업로드 중…`);
         const it = items[i];
-        const file = await uploadFile(BUCKET, `${termId ?? "always"}/${objectName(it.file)}`, it.file);
-        uploaded.push({ title: it.title.trim(), date: it.date || null, file });
+        uploaded.push({ title: it.title.trim(), file: await uploadFile(BUCKET, `${level}/${objectName(it.file)}`, it.file) });
       }
       setProgress("목록에 등록 중…");
-      const res = await registerAudioTracks({ termId, tracks: uploaded });
+      const res = await registerAudioTracks({ level, tracks: uploaded });
       if (!res.ok) {
         await removeUploaded(BUCKET, uploaded.map((u) => u.file.path));
         setError(res.error ?? "등록하지 못했어요.");
@@ -87,14 +86,14 @@ export function AudioUploader({ termId, targetLabel }: { termId: number | null; 
       >
         <input ref={inputRef} type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg" multiple className="sr-only" onChange={(e) => pick(e.target.files)} disabled={busy} />
         <Icon name="headphones" size={44} />
-        <span className="text-sm font-bold text-ink">여기를 눌러 음원 파일 선택 (여러 개 가능)</span>
-        <span className="text-xs text-mist">mp3 · m4a · wav, 파일당 50MB 이하 · {targetLabel}에 올라가요</span>
+        <span className="text-sm font-bold text-ink">여기를 눌러 {level} 음원 파일 선택 (여러 개 가능)</span>
+        <span className="text-xs text-mist">mp3 · m4a · wav, 파일당 50MB 이하 · 학생 화면에서는 제목의 숫자 순서대로 정렬돼요</span>
       </label>
 
       {items.length > 0 && (
         <ul className="divide-y divide-line rounded-xl2 border border-line">
           {items.map((it, i) => (
-            <li key={it.key} className="grid gap-2 p-3 sm:grid-cols-[1fr_10rem_auto] sm:items-end">
+            <li key={it.key} className="grid gap-2 p-3 sm:grid-cols-[1fr_auto] sm:items-end">
               <div>
                 <label htmlFor={`t-${it.key}`} className="label !mb-1 text-xs">
                   제목 <span className="font-normal text-mist">· {it.file.name} ({formatBytes(it.file.size)})</span>
@@ -104,17 +103,6 @@ export function AudioUploader({ termId, targetLabel }: { termId: number | null; 
                   value={it.title}
                   maxLength={100}
                   onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))}
-                  className="input !py-2 text-sm"
-                  disabled={busy}
-                />
-              </div>
-              <div>
-                <label htmlFor={`d-${it.key}`} className="label !mb-1 text-xs">날짜 <span className="font-normal text-mist">(선택)</span></label>
-                <input
-                  id={`d-${it.key}`}
-                  type="date"
-                  value={it.date}
-                  onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, date: e.target.value } : x)))}
                   className="input !py-2 text-sm"
                   disabled={busy}
                 />

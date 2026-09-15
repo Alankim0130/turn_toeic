@@ -171,17 +171,16 @@ export async function getMyHomework() {
 }
 export type MyHomework = Awaited<ReturnType<typeof getMyHomework>>[number];
 
-/** 들을 수 있는 LC 음원 (RLS: 그 달 수강생 · 상시 음원은 현재 수강생) */
-export async function getMyAudioTracks() {
+/** LC 음원듣기: 레벨 목록 + 들을 수 있는 음원·교재 이미지 (RLS: 지금 수강 중인 수강생) */
+export async function getMyLcAudio() {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("lc_audio_tracks")
-    .select("id, title, date, term_id, file_size, created_at, term:terms(year, month)")
-    .order("date", { ascending: true, nullsFirst: true })
-    .order("created_at", { ascending: true });
-  return data ?? [];
+  const [{ data: levels }, { data: tracks }, { data: images }] = await Promise.all([
+    supabase.from("lc_levels").select("level").order("sort_order").order("level"),
+    supabase.from("lc_audio_tracks").select("id, title, level"),
+    supabase.from("lc_textbook_images").select("id, level, file_name").order("created_at"),
+  ]);
+  return { levels: (levels ?? []).map((l) => l.level), tracks: tracks ?? [], images: images ?? [] };
 }
-export type MyAudioTrack = Awaited<ReturnType<typeof getMyAudioTracks>>[number];
 
 /** 라벨 */
 export const ORDER_STATUS_LABEL: Record<string, string> = {
