@@ -26,7 +26,7 @@ export default async function TextbookPage() {
     const s = e.section!;
     return {
       id: s.id,
-      label: `${termLabel(s.term)} · ${s.course?.name ?? "강좌"} · ${TRACK_LABEL[s.track] ?? s.track} ${formatTime(s.start_time)}`,
+      label: `${termLabel(s.term)} · ${s.course?.name ?? "강좌"} · ${[TRACK_LABEL[s.track] ?? s.track, formatTime(s.start_time)].filter(Boolean).join(" ")}`,
     };
   });
 

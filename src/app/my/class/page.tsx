@@ -4,7 +4,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
 import { MonthCalendar, type CalendarMark } from "@/components/my/MonthCalendar";
-import { cn, formatDate, formatTime, todayKST, TRACK_LABEL } from "@/lib/utils";
+import { cn, formatDate, formatTime, formatTimeRange, todayKST, TRACK_LABEL } from "@/lib/utils";
 import { getMySessions, termLabel } from "../_lib/queries";
 
 export const metadata: Metadata = {
@@ -59,7 +59,7 @@ export default async function ClassPage() {
         const marks: CalendarMark[] = g.list.map((s) => ({
           date: s.date,
           track: s.section!.track,
-          label: `${s.section!.course?.name ?? "수업"} ${formatTime(s.start_time)}`,
+          label: [s.section!.course?.name ?? "수업", formatTime(s.start_time)].filter(Boolean).join(" "),
         }));
         return (
           <Reveal key={`${g.year}-${g.month}`} delay={gi * 80} className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
@@ -88,9 +88,7 @@ export default async function ClassPage() {
                     >
                       <span className="w-12 font-black text-brand-600">{s.seq}회차</span>
                       <span className="font-semibold text-ink">{formatDate(s.date)}</span>
-                      <span className="text-slate">
-                        {formatTime(s.start_time)}–{formatTime(s.end_time)}
-                      </span>
+                      {s.start_time && s.end_time && <span className="text-slate">{formatTimeRange(s.start_time, s.end_time)}</span>}
                       <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold text-white", s.section!.track === "mwf" ? "bg-brand-500" : "bg-ink")}>
                         {TRACK_LABEL[s.section!.track] ?? s.section!.track}
                       </span>

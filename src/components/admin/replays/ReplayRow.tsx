@@ -65,7 +65,7 @@ export function ReplayRow({
         <span className="w-12 text-lg font-black text-brand-600">{seq}회</span>
         <div className="min-w-[9rem]">
           <p className="font-bold text-ink">{labelKo(date)}</p>
-          <p className="text-xs text-slate">{time}</p>
+          {time && <p className="text-xs text-slate">{time}</p>}
         </div>
 
         {replay && mode === "view" && (

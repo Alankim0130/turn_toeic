@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
 import { VideoEmbed } from "@/components/my/VideoEmbed";
-import { formatDate, formatTime, TRACK_LABEL } from "@/lib/utils";
+import { formatDate, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
 import { getMyReplays, termLabel, type MyReplay } from "../_lib/queries";
 
 export const metadata: Metadata = {
@@ -69,9 +69,7 @@ export default async function ReplayPage() {
                     <div className="text-sm">
                       <p className="text-lg font-black text-brand-600">{s.seq}회차</p>
                       <p className="font-semibold text-ink">{formatDate(s.date)}</p>
-                      <p className="text-slate">
-                        {formatTime(s.start_time)}–{formatTime(s.end_time)}
-                      </p>
+                      {s.start_time && s.end_time && <p className="text-slate">{formatTimeRange(s.start_time, s.end_time)}</p>}
                       <p className="mt-2 text-xs text-mist">{formatDate(r.published_at, { month: "long", day: "numeric" })} 업로드</p>
                     </div>
                     <VideoEmbed url={r.video_url} title={title} />

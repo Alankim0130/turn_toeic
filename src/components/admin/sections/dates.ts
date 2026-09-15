@@ -1,5 +1,5 @@
 /**
- * 편성 캘린더용 순수 날짜 유틸. 타임존 영향을 받지 않도록 UTC 기반으로만 계산하고,
+ * 편성 달력용 순수 날짜 유틸. 타임존 영향을 받지 않도록 UTC 기반으로만 계산하고,
  * 날짜는 항상 'YYYY-MM-DD' 문자열로 다룬다.
  */
 export const WEEKDAY_KO = ["일", "월", "화", "수", "목", "금", "토"] as const;
@@ -44,48 +44,24 @@ export function monthGrid(y: number, m: number): (number | null)[][] {
   return rows;
 }
 
-/** 해당 날짜가 속한 달력 행(0부터) */
-export function rowOfDay(y: number, m: number, d: number) {
-  return Math.floor((d - 1 + weekday(y, m, 1)) / 7);
+export type GridCell = { date: string; day: number; inMonth: boolean };
+
+/** 일요일 시작 6주(42칸) 달력. 앞뒤 달 날짜도 채워서 달을 넘겨도 칸 수가 변하지 않는다 */
+export function sixWeekGrid(y: number, m: number): GridCell[] {
+  const start = Date.UTC(y, m - 1, 1 - weekday(y, m, 1));
+  return Array.from({ length: 42 }, (_, i) => {
+    const d = new Date(start + i * 86_400_000);
+    return { date: d.toISOString().slice(0, 10), day: d.getUTCDate(), inMonth: d.getUTCMonth() === m - 1 };
+  });
 }
 
-/** 평일(월~금)을 하나라도 포함하는 첫 행 = "1주차" */
-export function firstWeekdayRow(y: number, m: number) {
-  const days = daysInMonth(y, m);
-  for (let d = 1; d <= days; d++) {
-    const wd = weekday(y, m, d);
-    if (wd >= 1 && wd <= 5) return rowOfDay(y, m, d);
-  }
-  return 0;
-}
+/** 기수 쿼리 문자열 'YYYY-MM' */
+export const termKey = (y: number, m: number) => `${y}-${pad2(m)}`;
 
-export type Track = "mwf" | "ttf";
-
-/**
- * 초안 날짜 생성.
- *  - mwf: 모든 월·수 + 격주 금요일
- *  - ttf: 모든 화·목 + 격주 금요일
- *  - fridayStartWeek: 이 트랙의 금요일이 들어가는 첫 주 (1주차 또는 2주차).
- *    두 트랙은 서로 다른 값을 쓰면 금요일이 엇갈린다.
- */
-export function generateDraft(y: number, m: number, track: Track, fridayStartWeek: 1 | 2): string[] {
-  const days = daysInMonth(y, m);
-  const baseRow = firstWeekdayRow(y, m);
-  const out: string[] = [];
-  for (let d = 1; d <= days; d++) {
-    const wd = weekday(y, m, d);
-    const regular = track === "mwf" ? wd === 1 || wd === 3 : wd === 2 || wd === 4;
-    if (regular) {
-      out.push(ymd(y, m, d));
-      continue;
-    }
-    if (wd === 5) {
-      const k = rowOfDay(y, m, d) - baseRow;
-      if (k >= 0 && k % 2 === fridayStartWeek - 1) out.push(ymd(y, m, d));
-    }
-  }
-  return out;
-}
+export const shiftMonth = (y: number, m: number, delta: number) => {
+  const t = y * 12 + (m - 1) + delta;
+  return { y: Math.floor(t / 12), m: (t % 12) + 1 };
+};
 
 export const isYmd = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
 export const isHm = (s: string) => /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(s);

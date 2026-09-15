@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
-import { formatDate, formatTime, TRACK_LABEL } from "@/lib/utils";
+import { formatDate, formatTime, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
 import { getMyLiveLinks, getNextSessionBySection, termLabel } from "../_lib/queries";
 
 export const metadata: Metadata = {
@@ -47,10 +47,9 @@ export default async function LivePage() {
                       <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-bold text-white">{TRACK_LABEL[s.track] ?? s.track}</span>
                     </div>
                     <h2 className="mt-3 text-xl font-black text-ink">{s.course?.name ?? "강좌"}</h2>
-                    <p className="mt-1 text-sm text-slate">
-                      {formatTime(s.start_time)}–{formatTime(s.end_time)}
-                      {s.time_block ? ` · ${s.time_block}` : ""}
-                    </p>
+                    {(s.start_time || s.time_block) && (
+                      <p className="mt-1 text-sm text-slate">{[formatTimeRange(s.start_time, s.end_time), s.time_block].filter(Boolean).join(" · ")}</p>
+                    )}
 
                     <div className="mt-4 flex items-center gap-3 rounded-xl bg-surface p-3 text-sm">
                       <Icon name="timeslot" size={26} />
@@ -58,7 +57,8 @@ export default async function LivePage() {
                         <p>
                           <span className="font-bold text-ink">다음 수업</span>{" "}
                           <span className="text-slate">
-                            {n.seq}회차 · {formatDate(n.date)} {formatTime(n.start_time)}
+                            {n.seq}회차 · {formatDate(n.date)}
+                            {n.start_time ? ` ${formatTime(n.start_time)}` : ""}
                           </span>
                         </p>
                       ) : (
