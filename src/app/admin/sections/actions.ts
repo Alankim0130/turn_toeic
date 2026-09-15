@@ -148,6 +148,10 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
       return { ok: false, error: `같은 날짜를 월수금과 화목금에 함께 넣을 수 없어요: ${listDates(error.details)}` };
     }
     if (error.code === "23503") return { ok: false, error: "선택한 강사를 찾을 수 없어요. 새로고침한 뒤 다시 시도해 주세요." };
+    // 마이그레이션 20260915131500 (p_parts) 이 아직 적용되지 않은 상태
+    if (error.code === "PGRST202") {
+      return { ok: false, error: "데이터베이스 업데이트가 아직 적용되지 않았어요. 마이그레이션(supabase db push)을 적용한 뒤 다시 시도해 주세요." };
+    }
     return { ok: false, error: RPC_ERROR[error.message] ?? rlsMessage(error.code) };
   }
 
