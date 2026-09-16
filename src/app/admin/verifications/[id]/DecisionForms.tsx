@@ -80,7 +80,10 @@ export function DecisionForms({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <fieldset>
-              <legend className="label">수강 방식 <span className="font-normal text-mist">(수강증 금액으로 구분)</span></legend>
+              {/* 반 수강료는 2026-09-16 부터 선택이라 늘 대조할 수 있는 게 아니다 — 수강증 자체에서 확인하도록 안내한다 */}
+              <legend className="label">
+                수강 방식 <span className="font-normal text-mist">(수강증에서 확인 — 반에 수강료가 있으면 금액으로 대조)</span>
+              </legend>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { v: "onsite", l: "현장" },

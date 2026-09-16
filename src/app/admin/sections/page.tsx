@@ -12,6 +12,7 @@ import { sectionKeyOf, timeBlockOf } from "@/components/admin/sections/bulk";
 import { TermCalendar, type TermSchedule, type OtherTermDate } from "@/components/admin/sections/TermCalendar";
 import { shiftMonth, termKey, ymd, daysInMonth } from "@/components/admin/sections/dates";
 import { StudyPlanner, type PlannerStudy } from "@/components/admin/studies/StudyPlanner";
+import { SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
 
 export const metadata: Metadata = { title: "반 편성", robots: { index: false } };
 
@@ -48,11 +49,17 @@ export default async function AdminSectionsPage({
   const [{ data: term }, { data: lecturers }, { data: courses }, { data: instructors }, { data: timetable }] = await Promise.all([
     supabase.from("terms").select("id, year, month, enrollment_opens_at, closes_at").eq("year", y).eq("month", m).maybeSingle(),
     supabase.from("lecturers").select("id, name").order("sort_order").order("name"),
-    supabase.from("courses").select("id, code, name, course_type, target_score").eq("is_active", true).order("target_score").order("name"),
+    supabase
+      .from("courses")
+      .select("id, code, name, course_type, target_score, program, includes_levels")
+      .eq("is_active", true)
+      .order("program")
+      .order("target_score")
+      .order("name"),
     isAdmin(profile.role)
       ? supabase.from("profiles").select("id, name, role").in("role", ["instructor", "admin"]).order("name")
       : Promise.resolve({ data: null }),
-    supabase.from("timetable_slots").select("id, level, start_time, end_time").order("level").order("start_time"),
+    supabase.from("timetable_slots").select("id, level, program, season, start_time, end_time").order("level").order("start_time").order("end_time"),
   ]);
 
   const [{ data: classDates }, { data: lectureRows, error: lectureError }, { data: sections }, { data: studyRows }] = term
@@ -62,7 +69,7 @@ export default async function AdminSectionsPage({
         supabase
           .from("class_sections")
           .select(
-            "id, bundle_id, track, time_block, course_id, capacity, tuition, live_tuition, status, instructor_id, course:courses(name, course_type, target_score), instructor:profiles(name), session_dates(count), section_live_links(section_id)",
+            "id, bundle_id, track, time_block, book_set, course_id, capacity, tuition, live_tuition, status, instructor_id, course:courses(name, course_type, target_score, program), instructor:profiles(name), session_dates(count), section_live_links(section_id)",
           )
           .eq("term_id", term.id)
           .order("course_id")
@@ -99,6 +106,18 @@ export default async function AdminSectionsPage({
     : { data: [] as { date: string; section_id: number }[] };
   const replayDates = (replayRows ?? []).map((r) => ({ date: r.date, track: sectionTrack.get(r.section_id) === "ttf" ? ("ttf" as const) : ("mwf" as const) }));
 
+  // 스파르타 반이 권한을 함께 주는 반 (DB 의 private.section_includes 와 같은 판정) — 카드에 보여 준다
+  const hasSparta = (sections ?? []).some((s) => s.course?.program === "sparta");
+  const { data: includeRows } = term && hasSparta ? await supabase.rpc("term_section_includes", { p_term_id: term.id }) : { data: [] };
+  const sectionById = new Map((sections ?? []).map((s) => [s.id, s]));
+  const includedBySection = new Map<number, string[]>();
+  for (const r of includeRows ?? []) {
+    const inc = sectionById.get(r.included_id);
+    if (!inc) continue;
+    const label = [inc.course?.name ?? "강좌", inc.time_block].filter(Boolean).join(" ");
+    includedBySection.set(r.section_id, [...(includedBySection.get(r.section_id) ?? []), label]);
+  }
+
   const saved: TermSchedule = {
     opens: term?.enrollment_opens_at ?? null,
     closes: term?.closes_at ?? null,
@@ -114,10 +133,14 @@ export default async function AdminSectionsPage({
   };
   const hasSaved = !!term?.enrollment_opens_at && !!term?.closes_at;
 
-  // 시간표 기준 일괄 개설용: 레벨별 시간대와 이미 만들어진 (강좌·트랙·시간대) 조합
+  // 시간표 기준 일괄 개설용: 레벨별 시간대와 이미 만들어진 (강좌·트랙·시간대) 조합.
+  // 평달과 방학달은 시간대가 다르다 (2026-09-16 Alan) — 이 기수의 계절에 맞는 시간대만 쓴다
+  const season = term ? seasonOfMonth(term.month) : "regular";
   const bulkSlots: BulkSlot[] = (timetable ?? [])
-    .map((s) => ({ id: s.id, level: s.level, label: timeBlockOf(s.start_time, s.end_time) ?? "" }))
+    .filter((s) => s.season === season)
+    .map((s) => ({ id: s.id, level: s.level, program: s.program, label: timeBlockOf(s.start_time, s.end_time) ?? "" }))
     .filter((s) => s.label);
+  const seasonHasNoSlots = term != null && bulkSlots.length === 0 && (timetable ?? []).length > 0;
   const existingKeys = (sections ?? []).map((s) => sectionKeyOf(s.course_id, s.track, s.time_block));
 
   const studies: PlannerStudy[] = (studyRows ?? []).map((s) => ({
@@ -146,6 +169,10 @@ export default async function AdminSectionsPage({
         title="반 편성"
         description="달력에서 개강일·종강일·월수금·화목금 수업일·특강을 찍어 주세요. 항목마다 따로 저장할 수 있고, 강의가 다음 달까지 이어지면 앞뒤 달 날짜도 찍을 수 있어요."
       >
+        <Link href={`/admin/lectures?term=${key}`} className="btn-secondary">
+          <Icon name="bolt" size={18} />
+          특강 신청
+        </Link>
         <Link href="/admin/replays" className="btn-secondary">
           <Icon name="replay" size={18} />
           다시보기 등록
@@ -243,7 +270,16 @@ export default async function AdminSectionsPage({
                                   <span className={cn("ml-2 font-black", count > 0 ? "text-brand-600" : "text-amber-600")}>
                                     수업일 {count}회{count === 0 && " — 달력에 이 트랙 날짜가 없어요"}
                                   </span>
+                                  {s.book_set && <span className="ml-2 text-xs font-bold text-slate">LC 교재 {s.book_set}반</span>}
                                 </p>
+                                {s.course?.program === "sparta" && (
+                                  <p className="mt-2 text-xs text-slate">
+                                    <span className="mr-1 rounded-full bg-brand-50 px-2 py-0.5 font-black text-brand-700">스파르타반</span>
+                                    {includedBySection.get(s.id)?.length
+                                      ? <>이 반 학생에게 함께 열리는 반: <strong className="text-ink">{includedBySection.get(s.id)!.join(" · ")}</strong></>
+                                      : <span className="text-amber-700">같은 트랙·시간에 함께 들을 반이 아직 없어요. 포함 레벨의 반을 먼저 개설해 주세요.</span>}
+                                  </p>
+                                )}
                               </div>
                               <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold", STATUS_CLASS[s.status] ?? STATUS_CLASS.draft)}>
                                 {STATUS_LABEL[s.status] ?? s.status}
@@ -254,7 +290,7 @@ export default async function AdminSectionsPage({
                               <div>
                                 <dt className="text-xs text-mist">수강료 (현장 / 불라방)</dt>
                                 <dd className="font-semibold text-ink">
-                                  {formatWon(s.tuition)} / {s.live_tuition != null ? formatWon(s.live_tuition) : "미운영"}
+                                  {s.tuition != null ? formatWon(s.tuition) : "미입력"} / {s.live_tuition != null ? formatWon(s.live_tuition) : "미운영"}
                                 </dd>
                               </div>
                               <div>
@@ -301,7 +337,17 @@ export default async function AdminSectionsPage({
                 <div className="mb-8">
                   <p className="mt-1 text-sm text-slate">
                     시간표의 시간대와 강좌를 엮어 한 번에 개설합니다. 불라방은 따로 만들지 않고, 반마다 불라방 수강료를 넣으면 같은 반을 불라방으로 들을 수 있어요.
+                    {term && <> 지금은 <strong className="text-ink">{term.month}월 · {SEASON_LABEL[season]} 시간표</strong>를 씁니다.</>}
                   </p>
+                  {seasonHasNoSlots && (
+                    <div className="mt-3">
+                      <Alert kind="warning">
+                        {term?.month}월은 <strong>{SEASON_LABEL[season]}</strong>인데 {SEASON_LABEL[season]} 시간대가 아직 등록돼 있지 않아요.
+                        평달 시간대로 만들면 반의 시간이 틀리게 박히므로 표에 아무것도 띄우지 않았습니다.
+                        그 달 레벨별 실제 시간을 알려 주시면 넣어 드릴게요.
+                      </Alert>
+                    </div>
+                  )}
                   <div className="mt-4">
                     <BulkCreateSections
                       termId={term.id}

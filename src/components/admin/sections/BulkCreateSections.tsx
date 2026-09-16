@@ -8,8 +8,8 @@ import { Icon } from "@/components/ui/Icon";
 import { cn, COURSE_TYPE_LABEL, TRACK_LABEL } from "@/lib/utils";
 import { sectionKeyOf } from "./bulk";
 
-export type BulkSlot = { id: number; level: number; label: string };
-export type BulkCourse = { id: number; name: string; course_type: string; target_score: number | null };
+export type BulkSlot = { id: number; level: number; program: string; label: string };
+export type BulkCourse = { id: number; name: string; course_type: string; target_score: number | null; program: string; includes_levels: number[] };
 type Instructor = { id: string; name: string; role: string };
 
 const TRACKS = ["mwf", "ttf"] as const;
@@ -42,14 +42,19 @@ export function BulkCreateSections({
   const router = useRouter();
   const [common, setCommon] = useState({ tuition: "", live: "", capacity: "", status: "open" });
   const [fees, setFees] = useState<Record<number, { tuition: string; live: string }>>({});
+  // LC 교재 세트는 시간대 · 트랙마다 정해진다 (2026-09-16 편성표) — 같은 120분 반이라도
+  // 9월 650 은 월수금이 11:10(B) 에, 화목금이 10:00(A) 에 LC 를 들어서 트랙마다 교재가 다르다
+  const [bookSets, setBookSets] = useState<Record<string, string>>({});
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [instructorId, setInstructorId] = useState(currentUserId);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "success" | "warning"; text: string } | null>(null);
 
   const existing = useMemo(() => new Set(existingKeys), [existingKeys]);
-  const slotsOf = (c: BulkCourse) => slots.filter((s) => c.target_score != null && s.level === c.target_score);
+  // 같은 레벨이라도 점수보장반과 스파르타반은 시간대가 달라 과정까지 맞춘다
+  const slotsOf = (c: BulkCourse) => slots.filter((s) => c.target_score != null && s.level === c.target_score && s.program === c.program);
   const feeOf = (courseId: number) => fees[courseId] ?? { tuition: common.tuition, live: common.live };
+  const bookKey = (courseId: number, slotId: number | null, track: string) => `${courseId}:${slotId ?? 0}:${track}`;
 
   const toggle = (key: string, on: boolean) =>
     setChecked((prev) => {
@@ -87,19 +92,17 @@ export function BulkCreateSections({
       for (const s of cells) {
         for (const t of TRACKS) {
           if (!checked.has(cellKey(c.id, s?.id ?? null, t))) continue;
-          const tuition = Number(digits(fee.tuition));
-          if (!digits(fee.tuition)) {
-            setMsg({ kind: "warning", text: `${c.name} 의 현장 수강료를 입력해 주세요.` });
-            return;
-          }
           rows.push({
             courseId: c.id,
             slotId: s?.id ?? null,
             track: t,
-            tuition,
+            // 수강료는 선택 — 등록은 YBM 에서 한다 (2026-09-16 Alan)
+            tuition: digits(fee.tuition) ? Number(digits(fee.tuition)) : null,
             liveTuition: digits(fee.live) ? Number(digits(fee.live)) : null,
             capacity: digits(common.capacity) ? Number(digits(common.capacity)) : null,
             status: common.status,
+            // 스파르타 반은 교재를 두지 않는다 — 함께 듣는 점수보장반의 교재를 쓴다
+            bookSet: c.program === "sparta" ? null : bookSets[bookKey(c.id, s?.id ?? null, t)] || null,
           });
         }
       }
@@ -133,13 +136,13 @@ export function BulkCreateSections({
     <div className="space-y-5">
       <div className="grid gap-3 rounded-xl2 border border-line bg-surface p-4 sm:grid-cols-2 lg:grid-cols-4">
         <div>
-          <label htmlFor="bulk-tuition" className="label !mb-1 text-xs">현장 수강료 <span className="font-normal text-mist">(기본값)</span></label>
+          <label htmlFor="bulk-tuition" className="label !mb-1 text-xs">현장 수강료 <span className="font-normal text-mist">(선택 · 기본값)</span></label>
           <input
             id="bulk-tuition"
             inputMode="numeric"
             value={common.tuition}
             onChange={(e) => setCommon({ ...common, tuition: digits(e.target.value) })}
-            placeholder="예: 250000"
+            placeholder="비워도 됩니다"
             className="input !py-2 text-sm"
           />
         </div>
@@ -203,6 +206,11 @@ export function BulkCreateSections({
                     <span className="ml-2 text-xs font-bold text-slate">{COURSE_TYPE_LABEL[c.course_type] ?? c.course_type}</span>
                     {c.target_score && <span className="ml-1.5 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-black text-brand-700">{c.target_score}</span>}
                   </p>
+                  {c.program === "sparta" && (
+                    <p className="mt-1 text-xs text-slate">
+                      스파르타반 · {[c.target_score, ...c.includes_levels].filter(Boolean).join(" + ")} 반을 함께 들어요. 이 반 학생에게는 같은 트랙·시간의 그 반들이 함께 열립니다.
+                    </p>
+                  )}
                   {list.length === 0 && (
                     <p className="mt-1 text-xs text-amber-700">
                       이 강좌의 목표 점수에 맞는 시간표 시간대가 없어요. 시간대 없이 만들어집니다.
@@ -211,7 +219,7 @@ export function BulkCreateSections({
                 </div>
                 <div className="flex flex-wrap items-end gap-2">
                   <div>
-                    <label htmlFor={`fee-${c.id}`} className="label !mb-1 text-xs">현장 수강료</label>
+                    <label htmlFor={`fee-${c.id}`} className="label !mb-1 text-xs">현장 수강료 <span className="font-normal text-mist">(선택)</span></label>
                     <input
                       id={`fee-${c.id}`}
                       inputMode="numeric"
@@ -242,7 +250,10 @@ export function BulkCreateSections({
                     <tr className="text-left text-xs text-mist">
                       <th className="py-1 font-semibold">시간대</th>
                       {TRACKS.map((t) => (
-                        <th key={t} className="py-1 text-center font-semibold">{TRACK_LABEL[t]}</th>
+                        <th key={t} className="py-1 text-center font-semibold">
+                          {TRACK_LABEL[t]}
+                          {c.program !== "sparta" && <span className="block text-[10px] font-normal">개설 · LC 교재</span>}
+                        </th>
                       ))}
                     </tr>
                   </thead>
@@ -253,21 +264,41 @@ export function BulkCreateSections({
                         {TRACKS.map((t) => {
                           const taken = existing.has(sectionKeyOf(c.id, t, s ? s.label : null));
                           const key = cellKey(c.id, s?.id ?? null, t);
+                          const bKey = bookKey(c.id, s?.id ?? null, t);
                           return (
                             <td key={t} className="py-2 text-center">
-                              {taken ? (
-                                <span className="rounded-full bg-line px-2 py-0.5 text-[11px] font-bold text-slate">있음</span>
-                              ) : (
-                                <label className="inline-flex cursor-pointer items-center justify-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={checked.has(key)}
-                                    onChange={(e) => toggle(key, e.target.checked)}
-                                    className="h-5 w-5 accent-brand-500"
-                                    aria-label={`${c.name} ${s ? s.label : ""} ${TRACK_LABEL[t]} 반 개설`}
-                                  />
-                                </label>
-                              )}
+                              <span className="inline-flex items-center justify-center gap-2">
+                                {taken ? (
+                                  <span className="rounded-full bg-line px-2 py-0.5 text-[11px] font-bold text-slate">있음</span>
+                                ) : (
+                                  <label className="inline-flex cursor-pointer items-center justify-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked.has(key)}
+                                      onChange={(e) => toggle(key, e.target.checked)}
+                                      className="h-5 w-5 accent-brand-500"
+                                      aria-label={`${c.name} ${s ? s.label : ""} ${TRACK_LABEL[t]} 반 개설`}
+                                    />
+                                  </label>
+                                )}
+                                {!taken && c.program !== "sparta" && (
+                                  <>
+                                    <label className="sr-only" htmlFor={`book-${bKey}`}>
+                                      {c.name} {s ? s.label : ""} {TRACK_LABEL[t]} LC 교재 세트
+                                    </label>
+                                    <select
+                                      id={`book-${bKey}`}
+                                      value={bookSets[bKey] ?? ""}
+                                      onChange={(e) => setBookSets({ ...bookSets, [bKey]: e.target.value })}
+                                      className="input !w-[4.5rem] !px-2 !py-1 text-xs"
+                                    >
+                                      <option value="">교재</option>
+                                      <option value="A">A반</option>
+                                      <option value="B">B반</option>
+                                    </select>
+                                  </>
+                                )}
+                              </span>
                             </td>
                           );
                         })}

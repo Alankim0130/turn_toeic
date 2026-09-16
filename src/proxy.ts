@@ -8,6 +8,6 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     // 정적 파일·이미지·아이콘·public 자산은 제외
-    "/((?!_next/static|_next/image|api/|sw.js|favicon.ico|icon.png|apple-icon.png|og.png|brand/|icons/|illustrations/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml)$).*)",
+    "/((?!_next/static|_next/image|api/|sw.js|offline.html|manifest.webmanifest|favicon.ico|icon.png|apple-icon.png|og.png|brand/|icons/|illustrations/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml)$).*)",
   ],
 };

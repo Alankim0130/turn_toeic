@@ -41,6 +41,7 @@ export type Database = {
     Tables: {
       class_sections: {
         Row: {
+          book_set: string | null
           bundle_id: string | null
           capacity: number | null
           closes_at: string
@@ -57,9 +58,10 @@ export type Database = {
           term_id: number
           time_block: string | null
           track: string
-          tuition: number
+          tuition: number | null
         }
         Insert: {
+          book_set?: string | null
           bundle_id?: string | null
           capacity?: number | null
           closes_at: string
@@ -76,9 +78,10 @@ export type Database = {
           term_id: number
           time_block?: string | null
           track: string
-          tuition: number
+          tuition?: number | null
         }
         Update: {
+          book_set?: string | null
           bundle_id?: string | null
           capacity?: number | null
           closes_at?: string
@@ -95,7 +98,7 @@ export type Database = {
           term_id?: number
           time_block?: string | null
           track?: string
-          tuition?: number
+          tuition?: number | null
         }
         Relationships: [
           {
@@ -167,24 +170,30 @@ export type Database = {
           code: string
           course_type: string
           id: number
+          includes_levels: number[]
           is_active: boolean
           name: string
+          program: string
           target_score: number | null
         }
         Insert: {
           code: string
           course_type: string
           id?: number
+          includes_levels?: number[]
           is_active?: boolean
           name: string
+          program?: string
           target_score?: number | null
         }
         Update: {
           code?: string
           course_type?: string
           id?: number
+          includes_levels?: number[]
           is_active?: boolean
           name?: string
+          program?: string
           target_score?: number | null
         }
         Relationships: []
@@ -475,11 +484,14 @@ export type Database = {
           book_id: number
           content_type: string | null
           created_at: string
+          day: number
           file_name: string
           file_path: string
           file_size: number | null
           id: number
-          title: string
+          kind: string
+          label: string | null
+          sort_order: number
           updated_at: string
           uploaded_by: string | null
         }
@@ -487,11 +499,14 @@ export type Database = {
           book_id: number
           content_type?: string | null
           created_at?: string
+          day: number
           file_name: string
           file_path: string
           file_size?: number | null
           id?: number
-          title: string
+          kind?: string
+          label?: string | null
+          sort_order?: number
           updated_at?: string
           uploaded_by?: string | null
         }
@@ -499,11 +514,14 @@ export type Database = {
           book_id?: number
           content_type?: string | null
           created_at?: string
+          day?: number
           file_name?: string
           file_path?: string
           file_size?: number | null
           id?: number
-          title?: string
+          kind?: string
+          label?: string | null
+          sort_order?: number
           updated_at?: string
           uploaded_by?: string | null
         }
@@ -533,11 +551,11 @@ export type Database = {
           cover_type: string | null
           description: string | null
           id: number
+          lesson_offset: number
           level: number
           title: string | null
           updated_at: string
           updated_by: string | null
-          volume: number
         }
         Insert: {
           book_set: string
@@ -547,11 +565,11 @@ export type Database = {
           cover_type?: string | null
           description?: string | null
           id?: number
+          lesson_offset?: number
           level: number
           title?: string | null
           updated_at?: string
           updated_by?: string | null
-          volume: number
         }
         Update: {
           book_set?: string
@@ -561,11 +579,11 @@ export type Database = {
           cover_type?: string | null
           description?: string | null
           id?: number
+          lesson_offset?: number
           level?: number
           title?: string | null
           updated_at?: string
           updated_by?: string | null
-          volume?: number
         }
         Relationships: [
           {
@@ -748,6 +766,7 @@ export type Database = {
           name: string
           phone: string | null
           role: Database["public"]["Enums"]["user_role"]
+          test_role: Database["public"]["Enums"]["user_role"] | null
           university: string | null
         }
         Insert: {
@@ -758,6 +777,7 @@ export type Database = {
           name: string
           phone?: string | null
           role?: Database["public"]["Enums"]["user_role"]
+          test_role?: Database["public"]["Enums"]["user_role"] | null
           university?: string | null
         }
         Update: {
@@ -768,6 +788,7 @@ export type Database = {
           name?: string
           phone?: string | null
           role?: Database["public"]["Enums"]["user_role"]
+          test_role?: Database["public"]["Enums"]["user_role"] | null
           university?: string | null
         }
         Relationships: []
@@ -1299,18 +1320,24 @@ export type Database = {
           end_time: string
           id: number
           level: number
+          program: string
+          season: string
           start_time: string
         }
         Insert: {
           end_time: string
           id?: number
           level: number
+          program?: string
+          season?: string
           start_time: string
         }
         Update: {
           end_time?: string
           id?: number
           level?: number
+          program?: string
+          season?: string
           start_time?: string
         }
         Relationships: [
@@ -1356,6 +1383,7 @@ export type Database = {
       }
     }
     Functions: {
+      my_section_ids: { Args: never; Returns: number[] }
       save_term_schedule: {
         Args: {
           p_closes: string | null
@@ -1368,6 +1396,13 @@ export type Database = {
           p_year: number
         }
         Returns: Json
+      }
+      term_section_includes: {
+        Args: { p_term_id: number }
+        Returns: {
+          included_id: number
+          section_id: number
+        }[]
       }
     }
     Enums: {

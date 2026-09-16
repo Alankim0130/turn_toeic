@@ -1,21 +1,30 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { todayKST, formatDate, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
+import { cn, todayKST, formatDate, formatTimeRange } from "@/lib/utils";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DonutChart } from "@/components/admin/charts/DonutChart";
 import { BarChart } from "@/components/admin/charts/BarChart";
 import { NaverReservationsWidget } from "@/components/admin/NaverReservationsWidget";
+import { koreanTime } from "@/lib/naver-reservation";
 import { countBy, GENDER_LABEL, getCurrentOrUpcomingTerm, getRosterSets, termLabel } from "./_lib/queries";
 
 export const metadata: Metadata = { title: "대시보드", robots: { index: false } };
+
+/** 시간대 라벨 앞의 HH:MM 으로 정렬한다. 시간이 없는 반은 맨 뒤 */
+const slotKey = (label: string) => {
+  const m = label.match(/(\d{1,2}):(\d{2})/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : 24 * 60 + 1;
+};
+/** 좁은 화면용 짧은 시간대 이름: "10:00~12:10" → "10:00" */
+const slotShort = (label: string) => label.match(/\d{1,2}:\d{2}/)?.[0] ?? label;
 
 export default async function AdminDashboardPage() {
   const supabase = await createClient();
   const today = todayKST();
 
-  const [roster, alumni, term, textbook, textbookCount, profiles, pendingVer, pendingHomework, newContacts] = await Promise.all([
+  const [roster, alumni, term, textbook, textbookCount, profiles, pendingVer, pendingHomework, newContacts, naver] = await Promise.all([
     getRosterSets(supabase, today),
     supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "alumni"),
     getCurrentOrUpcomingTerm(supabase, today),
@@ -30,128 +39,229 @@ export default async function AdminDashboardPage() {
     supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null),
     supabase.from("homework_submissions").select("id", { count: "exact", head: true }).eq("status", "submitted"),
     supabase.from("contact_messages").select("id", { count: "exact", head: true }).eq("status", "new"),
+    supabase
+      .from("naver_reservations")
+      .select("reserved_date, reserved_time", { count: "exact" })
+      .gte("reserved_date", today)
+      .neq("status", "cancelled")
+      .order("reserved_date", { ascending: true })
+      .order("reserved_time", { ascending: true, nullsFirst: false })
+      .limit(1),
   ]);
 
-  // 시간대별 인원수
-  type SlotRow = { sectionId: number; course: string; track: string; onsite: number; live: number };
-  const slots = new Map<string, SlotRow[]>();
+  /* 수업시간대별 인원수 — 강좌(행) × 시간대(열) 표 */
+  const cells = new Map<string, { onsite: number; live: number }>(); // `${강좌}|${시간대}`
+  const slotLabels = new Set<string>();
+  const courseNames = new Set<string>();
+  const courseScore = new Map<string, number>();
   if (term) {
     const [{ data: counts }, { data: sections }] = await Promise.all([
       supabase.from("section_headcounts").select("section_id, onsite_count, live_count").eq("term_id", term.id),
       supabase
         .from("class_sections")
-        .select("id, time_block, start_time, end_time, track, course:courses(name)")
+        .select("id, time_block, start_time, end_time, course:courses(name, target_score)")
         .eq("term_id", term.id)
-        .neq("status", "draft")
-        .order("start_time")
-        .order("track"),
+        .neq("status", "draft"),
     ]);
     const countMap = new Map((counts ?? []).map((c) => [c.section_id, c]));
     for (const s of sections ?? []) {
-      // 수업 시간이 없는 반(반 편성 달력 이후)은 강좌 이름으로 묶는다
-      const label = s.time_block || formatTimeRange(s.start_time, s.end_time) || (s.course?.name ?? "강좌");
+      // 반 편성 달력은 시간을 받지 않으므로 시간이 없는 반이 있다 — 강좌 이름으로 묶고 "시간 미정" 칸에 넣는다
+      const slot = s.time_block || formatTimeRange(s.start_time, s.end_time) || "시간 미정";
+      const course = s.course?.name ?? "강좌";
+      slotLabels.add(slot);
+      courseNames.add(course);
+      if (typeof s.course?.target_score === "number") courseScore.set(course, s.course.target_score);
       const c = countMap.get(s.id);
-      slots.set(label, [
-        ...(slots.get(label) ?? []),
-        { sectionId: s.id, course: s.course?.name ?? "강좌", track: s.track, onsite: c?.onsite_count ?? 0, live: c?.live_count ?? 0 },
-      ]);
+      const prev = cells.get(`${course}|${slot}`) ?? { onsite: 0, live: 0 };
+      cells.set(`${course}|${slot}`, { onsite: prev.onsite + (c?.onsite_count ?? 0), live: prev.live + (c?.live_count ?? 0) });
     }
   }
+  const slots = [...slotLabels].sort((a, b) => slotKey(a) - slotKey(b) || a.localeCompare(b, "ko"));
+  const courses = [...courseNames].sort((a, b) => (courseScore.get(a) ?? 0) - (courseScore.get(b) ?? 0) || a.localeCompare(b, "ko"));
+  const slotTotal = (slot: string) =>
+    courses.reduce(
+      (acc, c) => {
+        const v = cells.get(`${c}|${slot}`);
+        return { onsite: acc.onsite + (v?.onsite ?? 0), live: acc.live + (v?.live ?? 0) };
+      },
+      { onsite: 0, live: 0 },
+    );
 
   const genderData = countBy(profiles.data ?? [], (p) => (p.gender ? GENDER_LABEL[p.gender] ?? p.gender : "미응답"), "미응답");
   const univData = countBy(profiles.data ?? [], (p) => p.university).slice(0, 5);
 
-  const tiles: { label: string; value: number; href: string; icon: IconName; hint: string }[] = [
-    { label: "등록생", value: roster.activeIds.length, href: "/admin/students?tab=active", icon: "students", hint: "개강일~종강일 사이" },
-    { label: "예비등록생", value: roster.preliminaryIds.length, href: "/admin/students?tab=preliminary", icon: "verify", hint: "개강 전 등록 완료" },
-    { label: "졸업생", value: alumni.count ?? 0, href: "/admin/students?tab=alumni", icon: "rank1", hint: "종강일 경과" },
+  const naverNext = naver.data?.[0];
+  const naverCount = naver.count ?? 0;
+
+  const todo: { label: string; value: number; href: string; icon: IconName; zero: string; some: string }[] = [
+    { label: "등업 검토", value: pendingVer.count ?? 0, href: "/admin/verifications?status=pending", icon: "verify", zero: "검토할 수강증이 없어요", some: "검토를 기다리는 수강증" },
+    { label: "숙제 점검", value: pendingHomework.count ?? 0, href: "/admin/homework?status=submitted", icon: "homework", zero: "점검할 제출물이 없어요", some: "점검을 기다리는 제출물" },
+    { label: "교재주문", value: textbookCount.count ?? 0, href: "/admin/textbook-orders", icon: "orders", zero: "처리할 주문이 없어요", some: "배송을 기다리는 주문" },
+    { label: "새 문의", value: newContacts.count ?? 0, href: "/admin/contacts?status=new", icon: "contact", zero: "새로 온 문의가 없어요", some: "답변을 기다리는 문의" },
   ];
 
-  const todo = [
-    { label: "등업 검토 대기", value: pendingVer.count ?? 0, href: "/admin/verifications?status=pending", icon: "verify" as IconName },
-    { label: "숙제 점검 대기", value: pendingHomework.count ?? 0, href: "/admin/homework?status=submitted", icon: "homework" as IconName },
-    { label: "새 문의", value: newContacts.count ?? 0, href: "/admin/contacts?status=new", icon: "contact" as IconName },
+  const stats: { label: string; value: number; unit: string; href: string; icon: IconName; hint: string }[] = [
+    { label: "등록생", value: roster.activeIds.length, unit: "명", href: "/admin/students?tab=active", icon: "students", hint: "개강일~종강일 사이" },
+    { label: "예비등록생", value: roster.preliminaryIds.length, unit: "명", href: "/admin/students?tab=preliminary", icon: "verify", hint: "개강 전 등록 완료" },
+    { label: "졸업생", value: alumni.count ?? 0, unit: "명", href: "/admin/students?tab=alumni", icon: "rank1", hint: "종강일 경과" },
+    {
+      label: "네이버 예약",
+      value: naverCount,
+      unit: "건",
+      href: "#naver-reservations",
+      icon: "calendar",
+      hint: naverNext?.reserved_date
+        ? `${formatDate(naverNext.reserved_date, { month: "numeric", day: "numeric" })} ${naverNext.reserved_time ? koreanTime(naverNext.reserved_time) : "시간 확인 필요"}`
+        : "잡힌 예약 없음",
+    },
   ];
 
   return (
     <>
       <PageHeader icon="analytics" title="대시보드" description={`${formatDate(today, { year: "numeric", month: "long", day: "numeric", weekday: "short" })} 기준 현황`} />
 
-      {/* 학생명단 요약 */}
-      <section aria-labelledby="roster-title" className="mb-6">
-        <h2 id="roster-title" className="sr-only">학생명단 요약</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {tiles.map((t) => (
-            <Link key={t.label} href={t.href} className="card group relative overflow-hidden p-5 transition hover:-translate-y-0.5 hover:shadow-pink">
-              <div aria-hidden className="absolute -right-5 -top-5 h-20 w-20 rounded-full bg-brand-50" />
-              <div className="relative flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-bold text-slate">{t.label}</p>
-                  <p className="mt-1 text-4xl font-black tabular-nums text-brand-600">{t.value.toLocaleString("ko-KR")}<span className="ml-1 text-base text-slate">명</span></p>
-                  <p className="mt-1 text-xs text-mist">{t.hint}</p>
-                </div>
-                <Icon name={t.icon} size={40} />
-              </div>
-            </Link>
-          ))}
-        </div>
+      {/* 처리 대기 — 손이 가야 하는 것부터 */}
+      <section aria-labelledby="todo-title" className="mb-8">
+        <h2 id="todo-title" className="mb-3 text-sm font-black text-slate">처리 대기</h2>
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {todo.map((t) => {
+            const on = t.value > 0;
+            return (
+              <li key={t.label}>
+                <Link
+                  href={t.href}
+                  className={cn(
+                    "card flex h-full items-center gap-3 p-4 transition hover:-translate-y-0.5 hover:shadow-pink",
+                    on && "border-brand-200 bg-gradient-to-br from-brand-50 via-paper to-paper",
+                  )}
+                >
+                  <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl2", on ? "bg-brand-500 shadow-pink" : "bg-surface")}>
+                    <Icon name={t.icon} size={24} className={cn(on && "brightness-0 invert")} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-black text-ink">{t.label}</span>
+                    <span className="block truncate text-xs text-mist">{on ? t.some : t.zero}</span>
+                  </span>
+                  <span className="flex shrink-0 items-baseline gap-0.5">
+                    <span className={cn("text-2xl font-black tabular-nums", on ? "text-brand-600" : "text-mist")}>{t.value}</span>
+                    <span className="text-xs font-bold text-slate">건</span>
+                    <span aria-hidden className="ml-1 text-lg font-black text-line">›</span>
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/* 오늘 현황 */}
+      <section aria-labelledby="stats-title" className="mb-8">
+        <h2 id="stats-title" className="mb-3 text-sm font-black text-slate">오늘 현황</h2>
+        <ul className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          {stats.map((s) => (
+            <li key={s.label}>
+              <Link href={s.href} className="card flex h-full flex-col p-4 transition hover:-translate-y-0.5 hover:shadow-pink">
+                <span className="flex items-center gap-2">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                    <Icon name={s.icon} size={20} />
+                  </span>
+                  <span className="min-w-0 truncate text-sm font-bold text-slate">{s.label}</span>
+                </span>
+                <span className="mt-3 flex items-baseline gap-1">
+                  <span className="text-3xl font-black tabular-nums text-ink">{s.value.toLocaleString("ko-KR")}</span>
+                  <span className="text-sm font-bold text-slate">{s.unit}</span>
+                </span>
+                <span className="mt-1 truncate text-xs text-mist">{s.hint}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* 수업시간대별 인원수 */}
+      <section aria-labelledby="slots-title" className="card mb-8 p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+              <Icon name="timeslot" size={20} />
+            </span>
+            <h2 id="slots-title" className="text-lg font-black text-ink">수업시간대별 인원수</h2>
+          </div>
+          <Link href="/admin/sections" className="rounded-full bg-surface px-3 py-1 text-xs font-bold text-ink-soft ring-1 ring-line transition hover:text-brand-600">
+            {term ? `${termLabel(term)} 기수` : "기수 없음"} ›
+          </Link>
+        </div>
+
+        {slots.length === 0 ? (
+          <p className="rounded-xl bg-brand-50/60 px-4 py-8 text-center text-sm text-slate">
+            아직 개설된 반이 없습니다.{" "}
+            <Link href="/admin/sections" className="font-bold text-brand-600 hover:underline">반 편성으로 이동</Link>
+          </p>
+        ) : (
+          <div className="-mx-5 overflow-x-auto px-5">
+            <table className="w-full min-w-max border-collapse text-sm">
+              <caption className="caption-bottom pt-3 text-left text-xs text-mist">현장 인원, 괄호 안은 불라방 인원 (명)</caption>
+              <thead>
+                <tr className="border-b border-line">
+                  <th scope="col" className="py-2 pr-4 text-left text-xs font-bold text-slate">강좌</th>
+                  {slots.map((s) => (
+                    <th key={s} scope="col" className="px-3 py-2 text-right text-xs font-bold text-slate">
+                      <span className="sm:hidden">{slotShort(s)}</span>
+                      <span className="hidden sm:inline">{s}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {courses.map((c) => (
+                  <tr key={c} className="border-b border-line/70">
+                    <th scope="row" className="py-2.5 pr-4 text-left font-bold text-ink">{c}</th>
+                    {slots.map((s) => {
+                      const v = cells.get(`${c}|${s}`);
+                      return (
+                        <td key={s} className="px-3 py-2.5 text-right tabular-nums">
+                          {!v ? (
+                            <span className="text-line">–</span>
+                          ) : (
+                            <>
+                              <span className="font-black text-ink">{v.onsite}</span>
+                              {v.live > 0 && <span className="ml-1 text-xs font-semibold text-slate">({v.live})</span>}
+                            </>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+                <tr>
+                  <th scope="row" className="py-2.5 pr-4 text-left text-xs font-black text-slate">합계</th>
+                  {slots.map((s) => {
+                    const t = slotTotal(s);
+                    return (
+                      <td key={s} className="px-3 py-2.5 text-right tabular-nums">
+                        <span className="font-black text-brand-600">{t.onsite}</span>
+                        {t.live > 0 && <span className="ml-1 text-xs font-semibold text-slate">({t.live})</span>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <div className="grid items-start gap-6 lg:grid-cols-2">
         {/* 네이버 예약 */}
         <NaverReservationsWidget />
-
-        {/* 시간대별 인원수 */}
-        <section aria-labelledby="slots-title" className="card p-5 lg:col-span-2">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Icon name="timeslot" size={28} />
-              <h2 id="slots-title" className="text-lg font-black text-ink">수업시간대별 인원수</h2>
-            </div>
-            <p className="text-xs font-semibold text-slate">{term ? `${termLabel(term)} 기수` : "개설된 기수 없음"} · 현장 인원 (불라방 인원)</p>
-          </div>
-          {slots.size === 0 ? (
-            <p className="rounded-xl bg-brand-50/60 px-4 py-8 text-center text-sm text-slate">
-              아직 개설된 반이 없습니다.{" "}
-              <Link href="/admin/sections" className="font-bold text-brand-600 hover:underline">반 편성으로 이동</Link>
-            </p>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {[...slots.entries()].map(([label, rows]) => {
-                const onsite = rows.reduce((s, r) => s + r.onsite, 0);
-                const live = rows.reduce((s, r) => s + r.live, 0);
-                return (
-                  <article key={label} className="rounded-xl2 border border-line bg-surface p-4">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <h3 className="font-black text-ink">{label}</h3>
-                      <p className="text-sm font-black tabular-nums text-brand-600">
-                        현장 {onsite} <span className="text-slate">(불라방 {live})</span>
-                      </p>
-                    </div>
-                    <ul className="mt-2 space-y-1.5">
-                      {rows.map((r) => (
-                        <li key={r.sectionId} className="flex items-center justify-between gap-2 text-sm">
-                          <span className="truncate text-ink-soft">
-                            {r.course} · {TRACK_LABEL[r.track] ?? r.track}
-                          </span>
-                          <span className="shrink-0 font-bold tabular-nums text-ink">
-                            현장 {r.onsite} <span className="font-semibold text-slate">(불라방 {r.live})</span>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-        </section>
 
         {/* 교재주문 */}
         <section aria-labelledby="textbook-title" className="card p-5">
           <div className="mb-4 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <Icon name="orders" size={28} />
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                <Icon name="orders" size={20} />
+              </span>
               <h2 id="textbook-title" className="text-lg font-black text-ink">교재주문</h2>
               {(textbookCount.count ?? 0) > 0 && (
                 <span className="rounded-full bg-brand-500 px-2 py-0.5 text-xs font-black text-white">{textbookCount.count}</span>
@@ -170,7 +280,7 @@ export default async function AdminDashboardPage() {
                       {o.recipient_name} <span className="font-semibold text-slate">· {o.quantity}권</span>
                     </p>
                     <p className="truncate text-xs text-slate">
-                      {termLabel(o.section?.term, true)} · {o.section?.course?.name ?? "강좌"} · {o.section?.track ? TRACK_LABEL[o.section.track] : ""}
+                      {termLabel(o.section?.term, true)} · {o.section?.course?.name ?? "강좌"}
                     </p>
                   </div>
                   <span className="shrink-0 text-xs text-mist">{formatDate(o.created_at, { month: "numeric", day: "numeric" })}</span>
@@ -180,39 +290,18 @@ export default async function AdminDashboardPage() {
           )}
         </section>
 
-        {/* 처리 대기 */}
-        <section aria-labelledby="todo-title" className="card p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <Icon name="bolt" size={28} />
-            <h2 id="todo-title" className="text-lg font-black text-ink">처리 대기</h2>
-          </div>
-          <ul className="space-y-2">
-            {todo.map((t) => (
-              <li key={t.label}>
-                <Link href={t.href} className="flex items-center justify-between rounded-xl border border-line px-4 py-3 transition hover:border-brand-300 hover:bg-brand-50/50">
-                  <span className="flex items-center gap-2 text-sm font-bold text-ink">
-                    <Icon name={t.icon} size={22} />
-                    {t.label}
-                  </span>
-                  <span className={t.value > 0 ? "rounded-full bg-brand-500 px-2.5 py-0.5 text-sm font-black text-white" : "text-sm font-bold text-mist"}>
-                    {t.value}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-
         {/* 마케팅 분석 미니 */}
-        <section aria-labelledby="mkt-title" className="card p-5 lg:col-span-2">
+        <section aria-labelledby="mkt-title" className="card p-5">
           <div className="mb-4 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <Icon name="analytics" size={28} />
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                <Icon name="analytics" size={20} />
+              </span>
               <h2 id="mkt-title" className="text-lg font-black text-ink">마케팅 분석</h2>
             </div>
             <Link href="/admin/analytics" className="text-sm font-bold text-brand-600 hover:underline">자세히 보기</Link>
           </div>
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-6">
             <div>
               <h3 className="mb-2 text-sm font-bold text-slate">가입 회원 성별</h3>
               <DonutChart title="가입 회원 성별" data={genderData} />

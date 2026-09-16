@@ -55,7 +55,7 @@ export function AdminSidebar({ name, roleLabel }: { name: string; roleLabel: str
         <div className="mt-3 space-y-1 border-t border-line pt-3">
           <Link href="/my" className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-ink-soft hover:bg-brand-50 hover:text-brand-600">
             <Icon name="profile" size={22} />
-            학생 페이지로
+            학생 모드로
           </Link>
           <form action={signOut}>
             <button type="submit" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-ink-soft hover:bg-brand-50 hover:text-brand-600">
@@ -96,7 +96,7 @@ export function AdminMobileTabs() {
         <li>
           <Link href="/my" className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-paper px-3.5 py-2 text-xs font-bold text-ink-soft">
             <Icon name="profile" size={16} />
-            학생 페이지
+            학생 모드
           </Link>
         </li>
       </ul>

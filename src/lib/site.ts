@@ -16,9 +16,30 @@ export const site = {
     ybmUrl: "https://www.ybmedu.com/seomyon/winnertoeic",
     address: "부산광역시 부산진구 서면",
   },
+  // 강사 사진: 배경 투명 PNG. 두 장 모두 머리 크기(380px)·구도가 같고 얼굴이 가로 중앙이라 나란히 둬도 맞는다
+  // casual: 원본 얼굴을 유지한 채 힉스필드(Nano Banana Pro)로 의상·자세만 바꾸고 배경을 지운 컷. 무릎 위까지라
+  //         설명 구간 곳곳에 <InstructorCameo /> 로 등장시킨다. 손짓 방향은 모두 화면 왼쪽 → 콘텐츠 오른쪽에 둔다
   instructors: [
-    { name: "이혜영", part: "LC", desc: "미국 Brigham Young University 영어교육학 전공. 역전토익 대표 강사." },
-    { name: "이영수", part: "RC", desc: "부산대학교 영어영문학과 전공. 역전토익 대표 강사." },
+    {
+      name: "이혜영",
+      part: "LC",
+      desc: "미국 Brigham Young University 영어교육학 전공. 역전토익 대표 강사.",
+      photo: { src: "/instructors/lee-hyeyoung.png", width: 827, height: 1500 },
+      casual: [
+        { pose: "point", src: "/instructors/casual/lee-hyeyoung-point.png", width: 655, height: 1400 },
+        { pose: "notebook", src: "/instructors/casual/lee-hyeyoung-notebook.png", width: 623, height: 1400 },
+      ],
+    },
+    {
+      name: "이영수",
+      part: "RC",
+      desc: "부산대학교 영어영문학과 전공. 역전토익 대표 강사.",
+      photo: { src: "/instructors/lee-yeongsu.png", width: 1233, height: 1500 },
+      casual: [
+        { pose: "thumbsup", src: "/instructors/casual/lee-yeongsu-thumbsup.png", width: 681, height: 1400 },
+        { pose: "tablet", src: "/instructors/casual/lee-yeongsu-tablet.png", width: 888, height: 1400 },
+      ],
+    },
   ],
   social: {
     instagram: "",
@@ -29,7 +50,7 @@ export const site = {
 // ─── 수강생전용 ─────────────────────────────────────────────────────────────
 // 메뉴에는 누구에게나 보이고, 수강생이 아니면 잠금 표시와 함께 소개 페이지(/student)로 안내한다.
 
-export type StudentFeatureKey = "live" | "replay" | "homework" | "study" | "textbook" | "lc-audio";
+export type StudentFeatureKey = "live" | "replay" | "homework" | "study" | "lecture" | "textbook" | "lc-audio";
 
 export type StudentFeature = {
   key: StudentFeatureKey;
@@ -86,6 +107,16 @@ export const STUDENT_FEATURES: StudentFeature[] = [
     summary: "대면·비대면·단어 스터디",
     desc: "매달 열리는 대면·비대면·단어 스터디 중 나에게 맞는 스터디를 골라 신청해요.",
     points: ["강사가 정한 시간대 중 선택", "예비등록생도 개강 전에 미리 신청"],
+    access: "enrollee",
+  },
+  {
+    key: "lecture",
+    href: "/my/lecture",
+    label: "특강신청",
+    icon: "bolt",
+    summary: "특강·모의고사 신청",
+    desc: "그 달에 열리는 특강과 모의고사를 신청해요. 정원이 있는 특강은 먼저 신청한 순서대로 자리가 찹니다.",
+    points: ["신청 시작 시각까지 남은 시간 표시", "신청 받는 중에는 언제든 취소"],
     access: "enrollee",
   },
   {

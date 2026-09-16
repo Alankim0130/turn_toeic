@@ -63,7 +63,12 @@ export default async function VerificationDetailPage({
       TRACK_LABEL[s.track] ?? s.track,
       formatTimeRange(s.start_time, s.end_time),
       s.time_block,
-      `현장 ${formatWon(s.tuition)}${s.live_tuition != null ? ` / 불라방 ${formatWon(s.live_tuition)}` : ""}`,
+      // 수강료는 선택이라 비어 있을 수 있다 (2026-09-16 Alan). 둘 다 없으면 이 칸은 아예 뺀다
+      s.tuition != null || s.live_tuition != null
+        ? [s.tuition != null ? `현장 ${formatWon(s.tuition)}` : null, s.live_tuition != null ? `불라방 ${formatWon(s.live_tuition)}` : null]
+            .filter(Boolean)
+            .join(" / ")
+        : null,
     ]
       .filter(Boolean)
       .join(" · "),

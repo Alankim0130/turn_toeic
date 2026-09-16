@@ -4,7 +4,8 @@ import { Alert } from "@/components/ui/Alert";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
-import { getStudentAccess, requireUser, ROLE_LABEL } from "@/lib/auth";
+import { InstallApp } from "@/components/pwa/InstallApp";
+import { effectiveRole, getStudentAccess, requireUser, ROLE_LABEL } from "@/lib/auth";
 import { cn, formatDate, formatTimeRange, MODE_LABEL, TRACK_LABEL } from "@/lib/utils";
 import {
   getMyOrders,
@@ -23,6 +24,7 @@ export const metadata: Metadata = {
 const QUICK: { href: string; label: string; desc: string; icon: IconName }[] = [
   { href: "/my/verify", label: "등업신청", desc: "수강증 올리기", icon: "verify" },
   { href: "/my/class", label: "내 시간표", desc: "수업일 확인", icon: "calendar" },
+  { href: "/my/lecture", label: "특강신청", desc: "특강·모의고사", icon: "bolt" },
   { href: "/my/live", label: "불라방", desc: "실시간 입장", icon: "live" },
   { href: "/my/textbook", label: "교재주문", desc: "불라방 교재 배송", icon: "textbook" },
   { href: "/my/replay", label: "다시보기", desc: "종강일까지 시청", icon: "replay" },
@@ -41,7 +43,8 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
   ]);
 
   const name = profile?.name || user.email || "회원";
-  const role = profile?.role ?? "member";
+  // 테스터가 테스트 등급을 켜 두었으면 그 등급으로 보여 준다
+  const role = effectiveRole(profile) ?? "member";
   const latestVerification = verifications[0];
   const empty = orders.length === 0 && verifications.length === 0;
 
@@ -80,6 +83,9 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
           강사 또는 관리자 계정으로만 이용할 수 있습니다.
         </Alert>
       )}
+
+      {/* 휴대폰에서 아직 홈 화면 앱으로 설치하지 않았을 때만 보인다 */}
+      <InstallApp variant="card" />
 
       {empty ? (
         <EmptyState

@@ -11,7 +11,7 @@ export function termLabel(t?: { year: number; month: number } | null, short = fa
   return short ? `${t.month}월` : `${t.year}년 ${t.month}월`;
 }
 
-/** "9월 · 강좌명 · 월수금 · 10:00 · 현장" */
+/** "9월 · 강좌명 · 월수금 · 10:00 · 현장". 시간 컬럼이 없는 반(일괄 개설)은 시간대 라벨 "10:00~12:10" 을 쓴다 */
 export function sectionSummary(
   s: {
     track?: string | null;
@@ -29,7 +29,8 @@ export function sectionSummary(
     termLabel(s.term, true),
     s.course?.name ?? "강좌",
     s.track ? (TRACK_LABEL[s.track] ?? s.track) : null,
-    s.start_time ? (opts.withEnd && s.end_time ? `${formatTime(s.start_time)}–${formatTime(s.end_time)}` : formatTime(s.start_time)) : null,
+    // 같은 강좌·트랙의 오전반·저녁반을 반 배정에서 구분할 수 있어야 한다
+    s.start_time ? (opts.withEnd && s.end_time ? `${formatTime(s.start_time)}–${formatTime(s.end_time)}` : formatTime(s.start_time)) : (s.time_block ?? null),
     mode ? (MODE_LABEL[mode] ?? mode) : null,
   ].filter(Boolean);
   return parts.join(" · ");
@@ -73,12 +74,14 @@ export type RosterSets = {
 export async function getRosterSets(supabase: DB, today: string): Promise<RosterSets> {
   const { data } = await supabase
     .from("enrollment_orders")
-    .select("user_id, status, activates_on, access_until")
+    .select("user_id, status, activates_on, access_until, profile:profiles!enrollment_orders_user_id_fkey(role)")
     .in("status", ["active", "preliminary"]);
   const active = new Set<string>();
   const prelim = new Set<string>();
   const ordersByUser = new Map<string, { status: string; activates_on: string; access_until: string }[]>();
   for (const o of data ?? []) {
+    // 테스터(강사·관리자 계정)의 테스트용 반 배정은 등록생 · 예비등록생 수에 세지 않는다
+    if (o.profile?.role === "instructor" || o.profile?.role === "admin") continue;
     ordersByUser.set(o.user_id, [...(ordersByUser.get(o.user_id) ?? []), o]);
     if (o.status === "active" && o.activates_on <= today && today <= o.access_until) active.add(o.user_id);
     if (o.status === "preliminary") prelim.add(o.user_id);

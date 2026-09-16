@@ -34,7 +34,7 @@ export function BookEditorCard({ book, trackCount, selected, manageHref }: { boo
     setBusy(true);
     let path: string | null = null;
     try {
-      const uploaded = await uploadFile(BUCKET, `${book.level}/${book.book_set}${book.volume}-${objectName(file)}`, file);
+      const uploaded = await uploadFile(BUCKET, `${book.level}/${book.book_set}-${objectName(file)}`, file);
       path = uploaded.path;
       const res = await setBookCover(book.id, uploaded);
       if (!res.ok) {

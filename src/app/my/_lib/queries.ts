@@ -4,10 +4,23 @@ import { todayKST } from "@/lib/utils";
 /** 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다. */
 
 const SECTION_COLS = `
-  id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status,
-  course:courses(name, course_type, target_score),
+  id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status, book_set,
+  course:courses(name, course_type, target_score, program, includes_levels),
   term:terms(year, month)
 ` as const;
+
+/**
+ * 지금 접근할 수 있는 반 — 직접 배정된 반 + 스파르타반이 함께 여는 점수보장반(예: 650 10:00 + 850 12:30).
+ * 어떤 반이 열리는지는 DB 의 my_section_ids() (private.section_includes) 가 정한다. 화면에서 따로 계산하지 말 것.
+ */
+export async function getMyAccessibleSections() {
+  const supabase = await createClient();
+  const { data: ids } = await supabase.rpc("my_section_ids");
+  if (!ids || ids.length === 0) return [];
+  const { data } = await supabase.from("class_sections").select(SECTION_COLS).in("id", ids);
+  return data ?? [];
+}
+export type MyAccessibleSection = Awaited<ReturnType<typeof getMyAccessibleSections>>[number];
 
 export async function getMyOrders() {
   const supabase = await createClient();
@@ -198,8 +211,8 @@ export async function getMyLcAudio() {
   const supabase = await createClient();
   const [{ data: levels }, { data: books }, { data: tracks }] = await Promise.all([
     supabase.from("lc_levels").select("level").order("sort_order").order("level"),
-    supabase.from("lc_books").select("id, level, book_set, volume, title, description, cover_name, updated_at"),
-    supabase.from("lc_audio_tracks").select("id, title, book_id"),
+    supabase.from("lc_books").select("id, level, book_set, title, description, cover_name, lesson_offset, updated_at"),
+    supabase.from("lc_audio_tracks").select("id, day, kind, label, sort_order, book_id"),
   ]);
   return { levels: (levels ?? []).map((l) => l.level), books: books ?? [], tracks: tracks ?? [] };
 }

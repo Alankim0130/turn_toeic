@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
+import { InstructorCameo } from "@/components/ui/InstructorCameo";
 import { FeatureCard } from "@/components/student/FeatureCard";
 import { UnlockActions, unlockState } from "@/components/student/unlock";
 import { getStudentAccess, type StudentAccess } from "@/lib/auth";
@@ -76,20 +77,29 @@ export default async function StudentHubPage({ searchParams }: { searchParams: P
       </div>
 
       <div className="container-x py-10 sm:py-14">
-        <header className="max-w-2xl">
-          <p className="chip animate-fade-up">
-            <Icon name={STUDENT_HUB.icon} size={18} />
-            {STUDENT_HUB.label}
-          </p>
-          <h1 className="mt-4 animate-fade-up text-3xl font-black leading-tight tracking-tight text-ink sm:text-5xl" style={{ animationDelay: "80ms" }}>
-            수강생만 누리는
-            <br />
-            <span className="text-gradient-brand">{STUDENT_FEATURES.length}가지 학습 공간</span>
-          </h1>
-          <p className="mt-4 animate-fade-up leading-relaxed text-slate sm:text-lg" style={{ animationDelay: "160ms" }}>
-            수업이 끝나도 점수는 계속 올라가야 하니까. 역전토익 수강생에게만 열리는 기능을 한곳에 모았어요.
-          </p>
-        </header>
+        {/* 제목 오른쪽에서 환영하는 강사. 사진 아래는 상태 배너 위에서 흐려진다 */}
+        <div className="flex items-end justify-between gap-3">
+          <header className="max-w-2xl">
+            <p className="chip animate-fade-up">
+              <Icon name={STUDENT_HUB.icon} size={18} />
+              {STUDENT_HUB.label}
+            </p>
+            <h1 className="mt-4 animate-fade-up text-3xl font-black leading-tight tracking-tight text-ink sm:text-5xl" style={{ animationDelay: "80ms" }}>
+              수강생만 누리는
+              <br />
+              <span className="text-gradient-brand">{STUDENT_FEATURES.length}가지 학습 공간</span>
+            </h1>
+            <p className="mt-4 animate-fade-up leading-relaxed text-slate sm:text-lg" style={{ animationDelay: "160ms" }}>
+              수업이 끝나도 점수는 계속 올라가야 하니까. 역전토익 수강생에게만 열리는 기능을 한곳에 모았어요.
+            </p>
+          </header>
+          <InstructorCameo
+            name="이영수"
+            pose="tablet"
+            sizes="(min-width: 1024px) 240px, 110px"
+            className="-mb-8 h-40 shrink-0 animate-fade-up sm:h-56 lg:mr-8 lg:h-80"
+          />
+        </div>
 
         <div className="mt-8 animate-fade-up" style={{ animationDelay: "220ms" }}>
           <StatusBanner access={access} />

@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
-import { formatDate, formatWon, TRACK_LABEL, COURSE_TYPE_LABEL } from "@/lib/utils";
+import { cn, formatDate, formatWon, TRACK_LABEL, COURSE_TYPE_LABEL } from "@/lib/utils";
 import { SectionEditForm } from "@/components/admin/sections/SectionEditForm";
 import { LiveLinkForm } from "@/components/admin/sections/LiveLinkForm";
 import { DeleteSectionButton } from "@/components/admin/sections/DeleteSectionButton";
@@ -25,7 +25,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
   const supabase = await createClient();
   const { data: section } = await supabase
     .from("class_sections")
-    .select("*, course:courses(id, name, course_type, target_score), term:terms(id, year, month), instructor:profiles(id, name)")
+    .select("*, course:courses(id, name, course_type, target_score, program, includes_levels), term:terms(id, year, month), instructor:profiles(id, name)")
     .eq("id", id)
     .maybeSingle();
   if (!section || !section.term) notFound();
@@ -41,6 +41,14 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
       ? supabase.from("profiles").select("id, name, role").in("role", ["instructor", "admin"]).order("name")
       : Promise.resolve({ data: null }),
   ]);
+
+  // 스파르타 반: 이 반 학생에게 함께 열리는 점수보장반 (DB 의 private.section_includes 와 같은 판정)
+  const isSparta = section.course?.program === "sparta";
+  const { data: includeRows } = isSparta ? await supabase.rpc("term_section_includes", { p_term_id: section.term.id }) : { data: [] };
+  const includedIds = (includeRows ?? []).filter((r) => r.section_id === id).map((r) => r.included_id);
+  const { data: includedSections } = includedIds.length
+    ? await supabase.from("class_sections").select("id, track, time_block, book_set, course:courses(name)").in("id", includedIds).order("time_block")
+    : { data: [] as { id: number; track: string; time_block: string | null; book_set: string | null; course: { name: string } | null }[] };
 
   const canManage = isAdmin(profile.role) || section.instructor_id === user.id;
   const sessionList = sessions ?? [];
@@ -89,6 +97,43 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
           </div>
         ))}
       </section>
+
+      {/* 스파르타 반 권한: 함께 열리는 반 */}
+      {isSparta && (
+        <section aria-labelledby="includes-title" className="card p-5 sm:p-6">
+          <h2 id="includes-title" className="flex flex-wrap items-center gap-2 text-lg font-black text-ink">
+            <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-black text-brand-700">스파르타반</span>
+            이 반 학생에게 함께 열리는 반
+          </h2>
+          <p className="mt-1 text-sm text-slate">
+            {[section.course?.target_score, ...(section.course?.includes_levels ?? [])].filter(Boolean).join(" + ")} 반 중 {termLabel}
+            {" "}
+            {TRACK_LABEL[section.track] ?? section.track}·{section.time_block ?? "시간대 없음"}과 시간이 겹치는 반입니다. 이 반들의 수업일·다시보기·불라방 링크·LC 음원을 함께 볼 수 있어요.
+            녹화본은 아래 반에 올리면 되고 스파르타 반에 따로 올리지 않아도 됩니다.
+          </p>
+          {(includedSections ?? []).length === 0 ? (
+            <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              아직 함께 열릴 반이 없어요. 같은 트랙·시간대의 {(section.course?.includes_levels ?? []).join("·")} 반과 {section.course?.target_score} 반을 먼저 개설해 주세요.
+            </p>
+          ) : (
+            <ul className="mt-3 divide-y divide-line rounded-xl2 border border-line">
+              {(includedSections ?? []).map((inc) => (
+                <li key={inc.id}>
+                  <Link href={`/admin/sections/${inc.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm hover:bg-brand-50/50">
+                    <span className="font-black text-ink">{inc.course?.name ?? "강좌"}</span>
+                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold text-white", inc.track === "mwf" ? "bg-brand-500" : "bg-ink")}>
+                      {TRACK_LABEL[inc.track] ?? inc.track}
+                    </span>
+                    {inc.time_block && <span className="font-bold tabular-nums text-ink-soft">{inc.time_block}</span>}
+                    {inc.book_set && <span className="text-xs font-bold text-slate">LC 교재 {inc.book_set}반</span>}
+                    <span className="ml-auto text-xs font-bold text-brand-600">반 보기 →</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {/* 수업일 (달력에서 파생) */}
       <section aria-labelledby="sessions-title" className="card overflow-hidden">
@@ -174,7 +219,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
           <div>
             <dt className="text-xs text-mist">수강료 (현장 / 불라방)</dt>
             <dd className="font-semibold text-ink">
-              {formatWon(section.tuition)} / {section.live_tuition != null ? formatWon(section.live_tuition) : "미운영"}
+              {section.tuition != null ? formatWon(section.tuition) : "미입력"} / {section.live_tuition != null ? formatWon(section.live_tuition) : "미운영"}
             </dd>
           </div>
           <div>
@@ -187,9 +232,10 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
             id={section.id}
             values={{
               capacity: section.capacity != null ? String(section.capacity) : "",
-              tuition: String(section.tuition),
+              tuition: section.tuition != null ? String(section.tuition) : "",
               live_tuition: section.live_tuition != null ? String(section.live_tuition) : "",
               status: section.status,
+              book_set: section.book_set ?? "",
               instructor_id: section.instructor_id ?? "",
             }}
             instructors={instructors ?? null}

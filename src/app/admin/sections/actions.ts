@@ -220,7 +220,7 @@ export async function createCourse(_prev: ActionState, formData: FormData): Prom
 }
 
 /* ─── 반 개설 · 수정 공통 필드 (수강료 · 정원 · 상태) ─────────────────────── */
-type SectionFields = { capacity: number | null; tuition: number; live_tuition: number | null; status: string };
+type SectionFields = { capacity: number | null; tuition: number | null; live_tuition: number | null; status: string; book_set: string | null };
 
 function parseSectionFields(formData: FormData, allowedStatus: string[]): { fields?: SectionFields; error?: string; values: Record<string, string> } {
   const values = {
@@ -228,16 +228,22 @@ function parseSectionFields(formData: FormData, allowedStatus: string[]): { fiel
     tuition: str(formData, "tuition"),
     live_tuition: str(formData, "live_tuition"),
     status: str(formData, "status") || "draft",
+    book_set: str(formData, "book_set"),
   };
   const capacity = toInt(values.capacity);
   if (capacity !== null && capacity < 1) return { error: "정원은 1명 이상이어야 해요.", values };
+  // 수강료는 선택 — 등록은 YBM 에서 한다 (2026-09-16 Alan)
   const tuition = toInt(values.tuition);
-  if (tuition === null || tuition < 0) return { error: "현장 수강료를 입력해 주세요. (숫자만)", values };
+  if (tuition !== null && tuition < 0) return { error: "현장 수강료는 0 이상이어야 해요.", values };
   const live = toInt(values.live_tuition);
   if (live !== null && live < 0) return { error: "불라방 수강료는 0 이상이어야 해요.", values };
   if (!allowedStatus.includes(values.status)) return { error: "상태 값이 올바르지 않아요.", values };
 
-  return { values, fields: { capacity, tuition, live_tuition: live, status: values.status } };
+  // LC 교재 세트는 비워 둘 수 있다 (미지정이면 화면이 달 홀짝으로 짐작한다)
+  const bookSet = values.book_set === "A" || values.book_set === "B" ? values.book_set : null;
+  if (values.book_set && !bookSet) return { error: "교재 세트는 A 또는 B 만 고를 수 있어요.", values };
+
+  return { values, fields: { capacity, tuition, live_tuition: live, status: values.status, book_set: bookSet } };
 }
 
 /* ─── 반 개설: 개강일·종강일·수업일은 그 달 달력에서 가져온다 ───────────── */
