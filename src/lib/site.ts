@@ -17,18 +17,28 @@ export const site = {
     address: "부산광역시 부산진구 서면",
   },
   // 강사 사진: 배경 투명 PNG. 두 장 모두 머리 크기(380px)·구도가 같고 얼굴이 가로 중앙이라 나란히 둬도 맞는다
+  // casual: 원본 얼굴을 유지한 채 힉스필드(Nano Banana Pro)로 의상·자세만 바꾸고 배경을 지운 컷. 무릎 위까지라
+  //         설명 구간 곳곳에 <InstructorCameo /> 로 등장시킨다. 손짓 방향은 모두 화면 왼쪽 → 콘텐츠 오른쪽에 둔다
   instructors: [
     {
       name: "이혜영",
       part: "LC",
       desc: "미국 Brigham Young University 영어교육학 전공. 역전토익 대표 강사.",
       photo: { src: "/instructors/lee-hyeyoung.png", width: 827, height: 1500 },
+      casual: [
+        { pose: "point", src: "/instructors/casual/lee-hyeyoung-point.png", width: 655, height: 1400 },
+        { pose: "notebook", src: "/instructors/casual/lee-hyeyoung-notebook.png", width: 623, height: 1400 },
+      ],
     },
     {
       name: "이영수",
       part: "RC",
       desc: "부산대학교 영어영문학과 전공. 역전토익 대표 강사.",
       photo: { src: "/instructors/lee-yeongsu.png", width: 1233, height: 1500 },
+      casual: [
+        { pose: "thumbsup", src: "/instructors/casual/lee-yeongsu-thumbsup.png", width: 681, height: 1400 },
+        { pose: "tablet", src: "/instructors/casual/lee-yeongsu-tablet.png", width: 888, height: 1400 },
+      ],
     },
   ],
   social: {

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
+import { InstructorCameo } from "@/components/ui/InstructorCameo";
 import { formatTime, todayKST, TRACK_LABEL, COURSE_TYPE_LABEL } from "@/lib/utils";
 import { SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
 
@@ -49,7 +50,14 @@ export async function Schedule() {
   }
 
   return (
-    <section aria-labelledby="schedule-title" className="container-x py-20">
+    <section aria-labelledby="schedule-title" className="container-x relative py-20">
+      {/* 가운데 제목 옆 여백이 충분한 lg 이상에서만, 시간표 쪽을 가리키는 강사 */}
+      <InstructorCameo
+        name="이혜영"
+        pose="point"
+        sizes="200px"
+        className="absolute right-4 top-10 hidden h-72 lg:block xl:right-10"
+      />
       <Reveal className="mx-auto max-w-2xl text-center">
         <p className="chip">수업시간표</p>
         <h2 id="schedule-title" className="mt-4 text-3xl font-black tracking-tight text-ink sm:text-4xl">
@@ -64,7 +72,7 @@ export async function Schedule() {
       </Reveal>
 
       {timetable.length > 0 && (
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
+        <div className="relative z-10 mt-10 grid gap-4 md:grid-cols-3">
           {timetable.map((t, i) => (
             <Reveal key={t.level} delay={i * 80} className="card flex flex-col p-6">
               <div className="flex items-center gap-3">
