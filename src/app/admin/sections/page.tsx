@@ -7,6 +7,8 @@ import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { formatDate, formatWon, TRACK_LABEL, COURSE_TYPE_LABEL, todayKST, cn } from "@/lib/utils";
 import { CreateSectionForm } from "@/components/admin/sections/CreateSectionForm";
+import { BulkCreateSections, type BulkSlot } from "@/components/admin/sections/BulkCreateSections";
+import { sectionKeyOf, timeBlockOf } from "@/components/admin/sections/bulk";
 import { TermCalendar, type TermSchedule, type OtherTermDate } from "@/components/admin/sections/TermCalendar";
 import { shiftMonth, termKey, ymd, daysInMonth } from "@/components/admin/sections/dates";
 import { StudyPlanner, type PlannerStudy } from "@/components/admin/studies/StudyPlanner";
@@ -43,13 +45,14 @@ export default async function AdminSectionsPage({
   const today = todayKST();
   const supabase = await createClient();
 
-  const [{ data: term }, { data: lecturers }, { data: courses }, { data: instructors }] = await Promise.all([
+  const [{ data: term }, { data: lecturers }, { data: courses }, { data: instructors }, { data: timetable }] = await Promise.all([
     supabase.from("terms").select("id, year, month, enrollment_opens_at, closes_at").eq("year", y).eq("month", m).maybeSingle(),
     supabase.from("lecturers").select("id, name").order("sort_order").order("name"),
     supabase.from("courses").select("id, code, name, course_type, target_score").eq("is_active", true).order("target_score").order("name"),
     isAdmin(profile.role)
       ? supabase.from("profiles").select("id, name, role").in("role", ["instructor", "admin"]).order("name")
       : Promise.resolve({ data: null }),
+    supabase.from("timetable_slots").select("id, level, start_time, end_time").order("level").order("start_time"),
   ]);
 
   const [{ data: classDates }, { data: lectureRows, error: lectureError }, { data: sections }, { data: studyRows }] = term
@@ -59,7 +62,7 @@ export default async function AdminSectionsPage({
         supabase
           .from("class_sections")
           .select(
-            "id, bundle_id, track, capacity, tuition, live_tuition, status, instructor_id, course:courses(name, course_type, target_score), instructor:profiles(name), session_dates(count), section_live_links(section_id)",
+            "id, bundle_id, track, time_block, course_id, capacity, tuition, live_tuition, status, instructor_id, course:courses(name, course_type, target_score), instructor:profiles(name), session_dates(count), section_live_links(section_id)",
           )
           .eq("term_id", term.id)
           .order("course_id")
@@ -110,6 +113,12 @@ export default async function AdminSectionsPage({
     })),
   };
   const hasSaved = !!term?.enrollment_opens_at && !!term?.closes_at;
+
+  // 시간표 기준 일괄 개설용: 레벨별 시간대와 이미 만들어진 (강좌·트랙·시간대) 조합
+  const bulkSlots: BulkSlot[] = (timetable ?? [])
+    .map((s) => ({ id: s.id, level: s.level, label: timeBlockOf(s.start_time, s.end_time) ?? "" }))
+    .filter((s) => s.label);
+  const existingKeys = (sections ?? []).map((s) => sectionKeyOf(s.course_id, s.track, s.time_block));
 
   const studies: PlannerStudy[] = (studyRows ?? []).map((s) => ({
     id: s.id,
@@ -230,6 +239,7 @@ export default async function AdminSectionsPage({
                                   <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold text-white", s.track === "mwf" ? "bg-brand-500" : "bg-ink")}>
                                     {TRACK_LABEL[s.track] ?? s.track}
                                   </span>
+                                  {s.time_block && <span className="ml-2 font-bold tabular-nums text-ink-soft">{s.time_block}</span>}
                                   <span className={cn("ml-2 font-black", count > 0 ? "text-brand-600" : "text-amber-600")}>
                                     수업일 {count}회{count === 0 && " — 달력에 이 트랙 날짜가 없어요"}
                                   </span>
@@ -286,6 +296,27 @@ export default async function AdminSectionsPage({
           </h2>
           {hasSaved ? (
             <>
+              {/* 시간표 기준 일괄 개설 — 한 달에 열리는 반이 수십 개라 하나씩 만들지 않는다 */}
+              {(courses ?? []).length > 0 && (
+                <div className="mb-8">
+                  <p className="mt-1 text-sm text-slate">
+                    시간표의 시간대와 강좌를 엮어 한 번에 개설합니다. 불라방은 따로 만들지 않고, 반마다 불라방 수강료를 넣으면 같은 반을 불라방으로 들을 수 있어요.
+                  </p>
+                  <div className="mt-4">
+                    <BulkCreateSections
+                      termId={term.id}
+                      termLabel={termLabel}
+                      courses={courses ?? []}
+                      slots={bulkSlots}
+                      existingKeys={existingKeys}
+                      instructors={instructors ?? null}
+                      currentUserId={user.id}
+                      isAdmin={isAdmin(profile.role)}
+                    />
+                  </div>
+                  <h3 className="mt-8 border-t border-line pt-6 text-base font-black text-ink">하나씩 만들기</h3>
+                </div>
+              )}
               <p className="mt-1 text-sm text-slate">
                 트랙을 “주5일(월수금+화목금)”로 고르면 같은 조건의 반 두 개가 묶음으로 만들어져요. 개강일(
                 {formatDate(term.enrollment_opens_at!, { month: "numeric", day: "numeric" })})·종강일(
