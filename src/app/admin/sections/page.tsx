@@ -146,6 +146,10 @@ export default async function AdminSectionsPage({
         title="반 편성"
         description="달력에서 개강일·종강일·월수금·화목금 수업일·특강을 찍어 주세요. 항목마다 따로 저장할 수 있고, 강의가 다음 달까지 이어지면 앞뒤 달 날짜도 찍을 수 있어요."
       >
+        <Link href={`/admin/lectures?term=${key}`} className="btn-secondary">
+          <Icon name="bolt" size={18} />
+          특강 신청
+        </Link>
         <Link href="/admin/replays" className="btn-secondary">
           <Icon name="replay" size={18} />
           다시보기 등록
