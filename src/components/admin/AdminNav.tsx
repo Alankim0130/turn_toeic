@@ -11,11 +11,15 @@ export function isAdminActive(pathname: string, href: string) {
   return href === "/admin" ? pathname === "/admin" : pathname === href || pathname.startsWith(href + "/");
 }
 
-/** 데스크톱 사이드바 */
+/**
+ * 데스크톱 사이드바.
+ * 메뉴가 화면보다 길면 사이드바 안에서만 스크롤한다 — 휠이 메뉴 위에 있으면 메뉴가 내려가고,
+ * 끝에 닿아도 본문으로 스크롤이 넘어가지 않는다(overscroll-contain).
+ */
 export function AdminSidebar({ name, roleLabel }: { name: string; roleLabel: string }) {
   const pathname = usePathname();
   return (
-    <aside className="sticky top-20 hidden self-start md:block">
+    <aside className="sticky top-20 hidden max-h-[calc(100dvh-6rem)] self-start overflow-y-auto overscroll-contain md:block">
       <div className="card p-3">
         <div className="mb-2 flex items-center gap-3 rounded-xl bg-brand-50 px-3 py-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-paper ring-1 ring-brand-100">

@@ -69,7 +69,9 @@ export function DonutChart({
             </li>
           ))}
         </ul>
-        <table className={cn("mt-3 w-full text-xs", table === "sr-only" && "sr-only")}>
+        {/* w-full 과 sr-only 를 같이 주면 w-full 이 sr-only 의 width:1px 를 덮어써서
+            화면 밖에 폭 넓은 표가 남고 가로 스크롤이 생긴다. 둘 중 하나만 준다. */}
+        <table className={cn("mt-3 text-xs", table === "sr-only" ? "sr-only" : "w-full")}>
           <caption className="mb-1 text-left font-bold text-slate">{title}</caption>
           <thead>
             <tr className="text-left text-mist">
