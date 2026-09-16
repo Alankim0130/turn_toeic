@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { isAuthWeakPasswordError } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { site } from "@/lib/site";
@@ -43,9 +44,10 @@ export async function signUp(_prev: AuthState, formData: FormData): Promise<Auth
     university: v("university"),
     department: v("department"),
     gender: v("gender") || "undisclosed",
+    agree: formData.get("agree") === "on" ? "on" : "", // 오류로 돌아와도 체크가 풀리지 않게
   };
   const password = String(formData.get("password") ?? "");
-  const agree = formData.get("agree") === "on";
+  const agree = values.agree === "on";
 
   if (values.name.length < 2) return { error: "실명을 정확히 입력해 주세요. 수강증의 이름과 같아야 등업이 됩니다.", values };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) return { error: "이메일 형식을 확인해 주세요.", values };
@@ -74,9 +76,11 @@ export async function signUp(_prev: AuthState, formData: FormData): Promise<Auth
     const msg =
       error.code === "user_already_exists" || /already/i.test(error.message)
         ? "이미 가입된 이메일입니다. 로그인해 주세요."
-        : error.code === "weak_password"
-          ? "더 안전한 비밀번호를 사용해 주세요."
-          : "가입 처리 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.";
+        : isAuthWeakPasswordError(error) && error.reasons.includes("pwned")
+          ? "이 비밀번호는 다른 곳에서 유출된 적이 있어 쓸 수 없어요. 다른 비밀번호를 사용해 주세요."
+          : error.code === "weak_password"
+            ? "더 안전한 비밀번호를 사용해 주세요."
+            : "가입 처리 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.";
     return { error: msg, values };
   }
 
