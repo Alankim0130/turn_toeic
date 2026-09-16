@@ -12,6 +12,17 @@ export const isAdmin = (role?: UserRole | null) => role === "admin";
 /** student 이상 = student · instructor · admin (alumni 는 아님) */
 export const isStudentPlus = (role?: UserRole | null) => role === "student" || isStaff(role);
 
+/**
+ * 테스터(2026-09-16 Alan 요청): 강사·관리자 계정은 테스트 등급(profiles.test_role)을 켜서 학생처럼 볼 수 있다.
+ * 켜져 있으면 DB 의 private.user_role() 도 그 값을 돌려줘 RLS 가 그 등급으로 판정한다.
+ * 학생 화면의 판정은 effectiveRole 을, 관리자 화면에 들어갈 수 있는지(진짜 등급)는 profile.role 을 쓴다.
+ */
+export const TEST_ROLES = ["member", "student", "alumni"] as const satisfies readonly UserRole[];
+export type TestRole = (typeof TEST_ROLES)[number];
+export const isTestRole = (v: unknown): v is TestRole => typeof v === "string" && (TEST_ROLES as readonly string[]).includes(v);
+export const effectiveRole = (profile?: { role: UserRole; test_role?: UserRole | null } | null): UserRole | null =>
+  profile ? (profile.test_role ?? profile.role) : null;
+
 /** 요청당 1회만 조회되도록 캐시 */
 export const getSessionProfile = cache(async () => {
   const supabase = await createClient();
@@ -62,7 +73,8 @@ export const getStudentAccess = cache(async (): Promise<StudentAccess> => {
   const { user, profile } = await getSessionProfile();
   if (!user) return { signedIn: false, role: null, active: false, enrollee: false, opensOn: null, until: null };
 
-  const role = profile?.role ?? null;
+  // 테스트 등급을 켠 스태프는 그 등급의 학생처럼 판정한다 (RLS 도 같은 등급으로 본다)
+  const role = effectiveRole(profile);
   if (isStaff(role)) return { signedIn: true, role, active: true, enrollee: true, opensOn: null, until: null };
 
   const supabase = await createClient();

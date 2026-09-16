@@ -8,6 +8,7 @@ import { FilterTabs } from "@/components/admin/FilterTabs";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { TableWrap, Th, Td } from "@/components/admin/Table";
 import { getRosterSets, sectionSummary } from "../_lib/queries";
+import { ROLE_LABEL } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "학생명단", robots: { index: false } };
 
@@ -15,9 +16,12 @@ const TABS = [
   { value: "active", label: "등록생" },
   { value: "preliminary", label: "예비등록생" },
   { value: "alumni", label: "졸업생" },
+  // 강사·관리자 계정 — 테스트 등급을 켜서 학생 화면을 확인한다 (2026-09-16 Alan 요청)
+  { value: "testers", label: "테스터" },
   // 등급을 바꾸려면 아직 등록이 없는 사람(가입만 한 회원·강사)도 찾을 수 있어야 한다
   { value: "all", label: "전체" },
 ];
+const STAFF_ROLES = ["instructor", "admin"] as const;
 
 export default async function StudentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string }> }) {
   const { tab: tabParam, q: qParam } = await searchParams;
@@ -29,8 +33,9 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   const roster = await getRosterSets(supabase, today);
 
   // 대상 프로필
-  let profileQuery = supabase.from("profiles").select("id, name, phone, role, university, created_at").order("name").limit(300);
+  let profileQuery = supabase.from("profiles").select("id, name, phone, role, test_role, university, created_at").order("name").limit(300);
   if (tab === "alumni") profileQuery = profileQuery.eq("role", "alumni");
+  else if (tab === "testers") profileQuery = profileQuery.in("role", [...STAFF_ROLES]);
   else if (tab === "all") {
     // 걸러내지 않는다 — 이름 검색으로 좁힌다
   } else {
@@ -42,7 +47,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   const { data: profiles } = await profileQuery;
   const ids = (profiles ?? []).map((p) => p.id);
 
-  const [{ data: enrollments }, { data: expiredOrders }] = await Promise.all([
+  const [{ data: enrollments }, { data: expiredOrders }, { count: testerCount }] = await Promise.all([
     ids.length
       ? supabase
           .from("enrollments")
@@ -53,6 +58,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
     tab === "alumni" && ids.length
       ? supabase.from("enrollment_orders").select("user_id, access_until").in("user_id", ids).order("access_until", { ascending: false })
       : Promise.resolve({ data: [] as { user_id: string; access_until: string }[] }),
+    supabase.from("profiles").select("id", { count: "exact", head: true }).in("role", [...STAFF_ROLES]),
   ]);
 
   const enrollByUser = new Map<string, NonNullable<typeof enrollments>>();
@@ -77,8 +83,17 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
         paramKey="tab"
         current={tab}
         keep={{ q }}
-        tabs={TABS.map((t) => ({ ...t, count: t.value === "active" ? counts.active : t.value === "preliminary" ? counts.preliminary : undefined }))}
+        tabs={TABS.map((t) => ({
+          ...t,
+          count: t.value === "active" ? counts.active : t.value === "preliminary" ? counts.preliminary : t.value === "testers" ? (testerCount ?? undefined) : undefined,
+        }))}
       />
+      {tab === "testers" && (
+        <p className="mb-4 rounded-xl2 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          강사·관리자 계정이에요. 이름을 눌러 <b>테스트 등급</b>(회원 · 수강생 · 졸업생)을 켜고 반을 배정하면, 진짜 등급은 그대로 둔 채 학생이 보는 화면을 확인할 수 있어요.
+          테스터는 등록생 · 예비등록생 수에 세지 않습니다.
+        </p>
+      )}
 
       {(profiles ?? []).length === 0 ? (
         <EmptyState icon="students" title={q ? `“${q}” 검색 결과가 없습니다` : "해당하는 학생이 없습니다"} description={tab === "active" ? "수강증 승인 후 개강일이 지나면 등록생으로 표시됩니다." : undefined} />
@@ -106,6 +121,12 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
                     <Link href={`/admin/students/${p.id}`} className="text-brand-600 hover:underline">
                       {p.name || "이름 없음"}
                     </Link>
+                    {(p.role === "instructor" || p.role === "admin") && (
+                      <span className="ml-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-black text-amber-800">테스터</span>
+                    )}
+                    {p.test_role && (
+                      <span className="ml-1 rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-black text-white">{ROLE_LABEL[p.test_role]} 테스트 중</span>
+                    )}
                   </Td>
                   <Td className="whitespace-nowrap">{p.phone ? <a href={`tel:${p.phone}`} className="text-brand-600 hover:underline">{p.phone}</a> : "-"}</Td>
                   <Td><StatusBadge status={p.role} /></Td>

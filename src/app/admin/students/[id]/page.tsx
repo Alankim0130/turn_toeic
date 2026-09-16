@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { isAdmin, requireStaff, ROLE_LABEL, type UserRole } from "@/lib/auth";
+import { isAdmin, isStaff, requireStaff, ROLE_LABEL, TEST_ROLES, type UserRole } from "@/lib/auth";
+import { TestRoleSelect, type TestRoleOption } from "@/components/admin/students/TestRoleSelect";
 import { todayKST, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/admin/StatusBadge";
@@ -37,7 +38,7 @@ export default async function StudentDetailPage({
 
   const { data: student } = await supabase
     .from("profiles")
-    .select("id, name, phone, role, university, department, gender, created_at")
+    .select("id, name, phone, role, test_role, university, department, gender, created_at")
     .eq("id", id)
     .maybeSingle();
   if (!student) notFound();
@@ -72,6 +73,20 @@ export default async function StudentDetailPage({
 
   const roleOptions: RoleOption[] = (Object.keys(ROLE_LABEL) as UserRole[]).map((r) => ({ value: r, label: ROLE_LABEL[r], hint: ROLE_HINT[r] }));
   const canChangeRole = isAdmin(me.role);
+
+  // 테스터: 강사·관리자 계정은 진짜 등급을 그대로 두고 테스트 등급으로 학생 화면을 확인한다 (2026-09-16 Alan)
+  const tester = isStaff(student.role);
+  const canSetTest = tester && (student.id === me.id || isAdmin(me.role));
+  const TEST_HINT: Record<string, string> = {
+    "": "진짜 등급으로 모든 화면을 봐요.",
+    member: "가입만 한 회원처럼 보여요. 개강 전인 달의 반에 배정하면 예비등록생 화면이 나와요.",
+    student: "배정된 반의 수강생전용만 열려요. 스파르타 반에 배정하면 함께 듣는 650·750·850 반도 열려요.",
+    alumni: "종강한 학생처럼 수강생전용이 잠겨요.",
+  };
+  const testOptions: TestRoleOption[] = [
+    { value: "", label: "테스트 안 함", hint: TEST_HINT[""] },
+    ...TEST_ROLES.map((r) => ({ value: r, label: `${ROLE_LABEL[r]}으로 테스트`, hint: TEST_HINT[r] })),
+  ];
 
   const info: { label: string; value: string }[] = [
     { label: "연락처", value: student.phone || "-" },
@@ -117,7 +132,35 @@ export default async function StudentDetailPage({
           <p className="mt-3 text-xs text-mist">
             등급을 올려도 반이 배정돼 있지 않으면 내 시간표·다시보기에는 아무것도 나오지 않아요. 아래에서 반을 함께 배정해 주세요.
           </p>
+          {tester && (
+            <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+              테스터 계정이에요. 진짜 등급을 학생으로 내리면 관리자 화면을 잃어요 — 테스트는 아래 <b>테스트 등급</b>으로 하세요.
+            </p>
+          )}
         </section>
+
+        {/* 테스터: 테스트 등급 */}
+        {tester && (
+          <section aria-labelledby="tester-title" className="card border-amber-200 p-5 lg:col-span-2">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-black text-amber-800">테스터</span>
+              <h2 id="tester-title" className="text-lg font-black text-ink">테스트 등급</h2>
+              {student.test_role && (
+                <span className="rounded-full bg-amber-500 px-2.5 py-0.5 text-xs font-black text-white">지금 {ROLE_LABEL[student.test_role]}으로 테스트 중</span>
+              )}
+            </div>
+            <p className="mb-4 text-sm text-slate">
+              진짜 등급({ROLE_LABEL[student.role]})은 그대로 두고, 학생 화면과 데이터 권한을 이 등급의 학생처럼 바꿔요.
+              아래 <b>반 배정</b>으로 반을 붙이면 그 반 학생이 보는 화면 그대로 확인할 수 있습니다.
+              테스트 중에는 모든 화면 위에 <b>테스트 끝내기</b> 띠가 뜨고, 관리자 화면의 데이터는 끝낸 뒤에 다시 보여요.
+            </p>
+            {canSetTest ? (
+              <TestRoleSelect id={student.id} current={student.test_role ?? ""} options={testOptions} />
+            ) : (
+              <p className="rounded-xl bg-brand-50/60 px-4 py-4 text-sm text-slate">다른 사람의 테스트 등급은 관리자만 바꿀 수 있어요.</p>
+            )}
+          </section>
+        )}
 
         {/* 반 배정 */}
         <section aria-labelledby="enroll-title" className="card p-5 lg:col-span-2">

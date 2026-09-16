@@ -3,6 +3,7 @@ import "./globals.css";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { Footer } from "@/components/layout/Footer";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { TestModeBanner } from "@/components/layout/TestModeBanner";
 import { getSessionProfile, getStudentAccess } from "@/lib/auth";
 import { site } from "@/lib/site";
 
@@ -58,6 +59,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
       </head>
       <body className="min-h-dvh">
+        <TestModeBanner profile={profile} />
         <SiteHeader profile={profile} signedIn={!!user} access={access} />
         <main className="has-bottom-nav min-h-[70vh]">{children}</main>
         <Footer />

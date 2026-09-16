@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { BookCover } from "@/components/lc/BookCover";
-import { getSessionProfile, isStaff } from "@/lib/auth";
+import { effectiveRole, getSessionProfile, isStaff } from "@/lib/auth";
 import { cn, todayKST } from "@/lib/utils";
 import {
   BOOK_SET_LABEL,
@@ -34,7 +34,8 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
     getMyLcAudio(),
     getMyOrders(),
   ]);
-  const staff = isStaff(profile?.role);
+  // 테스트 등급을 켠 테스터는 학생처럼 내 반 레벨만 본다
+  const staff = isStaff(effectiveRole(profile));
   const header = (
     <PageHeader icon="headphones" title="LC 음원듣기" description="내 교재를 누르면 수업 날짜에 맞춰 음원이 열려요." />
   );

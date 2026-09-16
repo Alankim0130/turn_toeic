@@ -74,12 +74,14 @@ export type RosterSets = {
 export async function getRosterSets(supabase: DB, today: string): Promise<RosterSets> {
   const { data } = await supabase
     .from("enrollment_orders")
-    .select("user_id, status, activates_on, access_until")
+    .select("user_id, status, activates_on, access_until, profile:profiles!enrollment_orders_user_id_fkey(role)")
     .in("status", ["active", "preliminary"]);
   const active = new Set<string>();
   const prelim = new Set<string>();
   const ordersByUser = new Map<string, { status: string; activates_on: string; access_until: string }[]>();
   for (const o of data ?? []) {
+    // 테스터(강사·관리자 계정)의 테스트용 반 배정은 등록생 · 예비등록생 수에 세지 않는다
+    if (o.profile?.role === "instructor" || o.profile?.role === "admin") continue;
     ordersByUser.set(o.user_id, [...(ordersByUser.get(o.user_id) ?? []), o]);
     if (o.status === "active" && o.activates_on <= today && today <= o.access_until) active.add(o.user_id);
     if (o.status === "preliminary") prelim.add(o.user_id);

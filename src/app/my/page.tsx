@@ -4,7 +4,7 @@ import { Alert } from "@/components/ui/Alert";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
-import { getStudentAccess, requireUser, ROLE_LABEL } from "@/lib/auth";
+import { effectiveRole, getStudentAccess, requireUser, ROLE_LABEL } from "@/lib/auth";
 import { cn, formatDate, formatTimeRange, MODE_LABEL, TRACK_LABEL } from "@/lib/utils";
 import {
   getMyOrders,
@@ -42,7 +42,8 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
   ]);
 
   const name = profile?.name || user.email || "회원";
-  const role = profile?.role ?? "member";
+  // 테스터가 테스트 등급을 켜 두었으면 그 등급으로 보여 준다
+  const role = effectiveRole(profile) ?? "member";
   const latestVerification = verifications[0];
   const empty = orders.length === 0 && verifications.length === 0;
 
