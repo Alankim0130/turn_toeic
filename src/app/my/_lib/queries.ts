@@ -4,7 +4,7 @@ import { todayKST } from "@/lib/utils";
 /** 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다. */
 
 const SECTION_COLS = `
-  id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status, book_set,
+  id, course_id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status, book_set,
   course:courses(name, course_type, target_score, program, includes_levels),
   term:terms(year, month)
 ` as const;

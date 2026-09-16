@@ -53,3 +53,18 @@ export function planSubjects(sections: SubjectSection[]): SubjectPlan {
 /** 반 하나의 과목 — 일괄 개설처럼 아직 id 가 없을 때 쓴다 */
 export const subjectOf = (opts: { bookSet: string | null; isPackage: boolean; groupHasBook: boolean }): Subject | null =>
   opts.isPackage || !opts.groupHasBook ? null : opts.bookSet ? "lc" : "rc";
+
+/**
+ * 함께 듣는 시간들의 과목 (2026-09-16 Alan 요청 — 내 시간표에 "10:00–11:00 LC / 11:10–12:10 RC" 로 보여 준다).
+ *
+ * `planSubjects` 는 같은 강좌·시간대의 **두 트랙**을 짝지어 본다 (강사 배정용).
+ * 학생 화면은 트랙 하나로 **여러 시간**을 이어 듣는 쪽이라 짝이 다르다 —
+ * 그래서 함께 듣는 반 묶음을 통째로 받아, **그중 하나라도 LC 교재가 있을 때만** 읽는다.
+ * 하나도 없으면 "RC 뿐" 인지 "아직 안 골랐는지" 구분할 수 없으니 아무것도 말하지 않는다.
+ */
+export function subjectsWithin<T extends { id: number; book_set: string | null }>(list: T[]): Map<number, Subject> {
+  const out = new Map<number, Subject>();
+  if (!list.some((s) => s.book_set)) return out;
+  for (const s of list) out.set(s.id, s.book_set ? "lc" : "rc");
+  return out;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planSubjects, subjectOf, type SubjectSection } from "./instructor-subject";
+import { planSubjects, subjectOf, subjectsWithin, type SubjectSection } from "./instructor-subject";
 
 /**
  * 2026년 9월 편성표 그대로 (CLAUDE.md 미확정 1 "평달 (9·10월)").
@@ -110,5 +110,34 @@ describe("subjectOf — 반을 만들 때 (아직 id 가 없다)", () => {
   });
   it("교재를 아무도 안 골랐으면 정하지 않는다", () => {
     expect(subjectOf({ bookSet: null, isPackage: false, groupHasBook: false })).toBeNull();
+  });
+});
+
+describe("subjectsWithin — 내 시간표의 함께 듣는 시간", () => {
+  it("120분 묶음 학생: 교재 있는 시간이 LC, 나머지가 RC", () => {
+    // 9월 650 월수금 = 10:00 RC · 11:10 LC(B 교재)
+    const m = subjectsWithin([
+      { id: 1, book_set: null },
+      { id: 2, book_set: "B" },
+    ]);
+    expect(m.get(1)).toBe("rc");
+    expect(m.get(2)).toBe("lc");
+  });
+
+  it("스파르타처럼 세 시간을 들어도 각자 제 교재로 읽는다", () => {
+    const m = subjectsWithin([
+      { id: 1, book_set: null },
+      { id: 2, book_set: "B" },
+      { id: 3, book_set: "A" },
+    ]);
+    expect([...m.values()]).toEqual(["rc", "lc", "lc"]);
+  });
+
+  it("아무도 교재를 안 골랐으면 아무 말도 하지 않는다", () => {
+    expect(subjectsWithin([{ id: 1, book_set: null }, { id: 2, book_set: null }]).size).toBe(0);
+  });
+
+  it("빈 목록도 안전하다", () => {
+    expect(subjectsWithin([]).size).toBe(0);
   });
 });
