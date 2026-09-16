@@ -227,13 +227,22 @@
 
 - **숙제제출**: 비대면 자료(날짜)마다 1건, 사진·PDF 여러 장(최대 20개, 파일당 20MB).
   강사가 `/admin/homework` 에서 점검완료로 바꾸면 학생은 더 이상 파일을 바꾸거나 지울 수 없다. 점수·코멘트는 없다.
-- **LC 음원**: **레벨(650 · 750 · 850) × 반(A · B) × 권**으로 나눈다 (2026-09-15 Alan 요청).
-  레벨마다 **A반 교재 2권 + B반 교재 2권 = 4권**. **홀수달은 A반, 짝수달은 B반** 교재로 수업한다.
+- **LC 음원**: **레벨(650 · 750 · 850) × 반(A · B)** 으로 나눈다 (2026-09-15 Alan 요청).
+  레벨마다 **A반 1권 + B반 1권**이라 **전체 6권**이다 (2026-09-16 Alan 정정 — 그전에는 반마다 2권이었다).
+  **홀수달은 A반, 짝수달은 B반** 교재로 수업한다.
   - 교재 한 권(`lc_books`)마다 표지 이미지 1장 + 교재명 + 짧은 설명(200자), 음원은 교재에 속한다.
-  - 레벨 목록은 `lc_levels` 에서 읽고, 레벨을 추가하면 트리거가 A·B 1~2권 칸을 만든다.
-  - 학생 화면: 레벨 카드 → A반·B반 책장(큰 표지 + 설명) → 교재를 누르면 그 교재 음원. "이번 달 교재"는 월의 홀짝으로 표시,
-    기본 레벨은 지금 듣는 강좌의 `courses.target_score`, 기본 교재는 이번 달 반 1권.
-  - 열람은 지금 수강 중인 수강생 전체(레벨·반으로 막지 않음). 음원 목록은 제목의 숫자 순서(Unit 1, 2, 10)로 정렬.
+    레벨 × 반이 곧 교재 한 권이라 `lc_books` 에 권 컬럼은 없다 (마이그레이션 20260916140000).
+  - **음원은 교재마다 Day 1~9 아홉 칸**이다 (2026-09-16 Alan 요청). 자유 제목이 아니라 `lc_audio_tracks.day` 가 자리를 정하고
+    한 칸에 파일 하나만 들어간다(`unique(book_id, day)`). 강사는 빈 칸을 채우거나 기존 파일을 바꾼다 —
+    여러 개를 한 번에 고르면 파일명의 숫자 순서대로 빈 Day 칸을 채운다. Day 개수는 `src/lib/lc-audio.ts` 의 `DAYS` 한곳에서 관리하고
+    DB 의 `day between 1 and 9` check 와 값이 같아야 한다.
+  - 레벨 목록은 `lc_levels` 에서 읽고, 레벨을 추가하면 트리거가 A·B 두 칸을 만든다.
+  - 학생 화면: 레벨 카드 → A반·B반 교재(큰 표지 + 설명) → 교재를 누르면 그 교재의 Day 1~9. "이번 달 교재"는 월의 홀짝으로 표시,
+    기본 레벨은 지금 듣는 강좌의 `courses.target_score`, 기본 교재는 이번 달 반.
+    아직 안 올라온 Day 도 칸으로 보여 준다 (몇 개 중 몇 개인지 알 수 있게).
+  - 열람은 지금 수강 중인 수강생 전체(레벨·반으로 막지 않음). 음원 목록은 Day 번호 순서.
+  - **음원 파일은 저장소에 그대로 올린다** (2026-09-16 Alan 확인). 외부 링크(드랍박스 등)를 쓰지 않는다 —
+    수강생전용을 지키려면 private 버킷 + 서명 URL 이어야 하고, 공유 링크는 한 번 새면 누구나 받을 수 있다.
 - 파일은 전부 private 버킷(`study-materials`, `homework`, `lc-audio`, `lc-textbooks`). 화면은 `/files/{material|homework|audio|textbook}/{id}` 로
   서명 URL 로 리다이렉트한다 — 행 RLS 와 storage 정책이 같은 규칙으로 막는다.
 - 서버 액션 본문 한도(1MB) 때문에 파일은 **브라우저 → Storage 직접 업로드**, 서버 액션은 경로·이름만 등록한다.
@@ -568,22 +577,22 @@ create table lc_levels (                   -- LC 음원·교재 레벨 (마이�
   sort_order int default 0
 );
 
-create table lc_books (                    -- LC 교재 (마이그레이션 20260915110833)
+create table lc_books (                    -- LC 교재 (20260915110833 · 20260916140000)
   id          bigint primary key,
   level       int not null references lc_levels,
   book_set    text not null,               -- 'A'(홀수달) | 'B'(짝수달)
-  volume      int not null,                -- 권 (1, 2)
-  title       text,                        -- 교재명 (60자, 비우면 "A반 1권")
+  title       text,                        -- 교재명 (60자, 비우면 "A반 교재")
   description text,                        -- 짧은 설명 (200자)
   cover_path text unique, cover_name text, cover_size bigint, cover_type text,
-  unique(level, book_set, volume)          -- 칸은 레벨 트리거가 만들고 화면은 수정만
-);
+  unique(level, book_set)                  -- 레벨 × 반 = 한 권. 칸은 레벨 트리거가 만들고 화면은 수정만
+);                                         -- 레벨 3개(650·750·850) × 2반 = 전체 6권
 
-create table lc_audio_tracks (             -- LC 음원
+create table lc_audio_tracks (             -- LC 음원. 교재마다 Day 1~9
   id        bigint primary key,
   book_id   bigint references lc_books,    -- 음원은 교재에 속한다
-  title     text not null,                 -- 숫자 순서로 정렬 (Unit 1, 2, 10)
-  file_path text unique, file_name text, file_size bigint, content_type text
+  day       int not null check (day between 1 and 9),
+  file_path text unique, file_name text, file_size bigint, content_type text,
+  unique(book_id, day)                     -- 한 Day 에 파일 하나. 다시 올리면 바뀐다
 );
 -- 구버전 study_applications(비회원 자유 양식 신청)·lc_textbook_images(레벨별 이미지 묶음)는
 -- 배포 후 정리 마이그레이션 20260915112851 에서 삭제했다.
@@ -670,7 +679,7 @@ where p.role='student'
 | `/my/replay` | 강의 다시보기. 종강일까지 | student |
 | `/my/study` | 내 스터디: 신청한 스터디·시간대, 비대면 자료 받기(해당 날짜부터) | 그 달 수강생 |
 | `/my/homework` | 숙제업로드: 비대면 자료별 사진·PDF 업로드, 점검 상태 | student |
-| `/my/lc-audio` | LC 음원듣기: 레벨 카드 → A반·B반 교재 책장(표지·설명) → 교재별 음원 재생 | student |
+| `/my/lc-audio` | LC 음원듣기: 레벨 카드 → A반·B반 교재(표지·설명) → 교재의 Day 1~9 음원 재생 | student |
 
 **관리자 `/admin`**
 
@@ -688,7 +697,7 @@ where p.role='student'
 | `/admin/study` | 스터디 신청자 명단 (월 · 유형 · 시간대별, 비대면은 숙제 제출 수) | instructor |
 | `/admin/study-materials` | 비대면 자료 날짜별 등록·교체·삭제 (수업일 기준) | instructor |
 | `/admin/homework` | 숙제점검: 날짜별 제출물·미제출자, 점검완료 | instructor |
-| `/admin/lc-audio` | 레벨 탭 → A반·B반 교재 4권의 표지·교재명·설명, 교재별 음원 등록 | instructor |
+| `/admin/lc-audio` | 레벨 탭 → A반·B반 교재 2권의 표지·교재명·설명, 교재별 Day 1~9 음원 등록·교체 | instructor |
 | `/admin/contacts` | 문의 처리 | instructor |
 | `/admin/notifications` | 알림 설정: 이 기기에서 푸시 받기, 알림 종류 켜기·끄기, 네이버 예약 연결 주소·코드(관리자만) | instructor |
 
@@ -771,7 +780,8 @@ where p.role='student'
 - **대면·단어 시간대**: 그 달 내내 같은 시간대(요일·장소는 안내 문구에 적는다). 정원은 선택
 - **비대면 자료**: 해당 날짜 00:00(KST)부터 공개, 날짜마다 파일 1개. 목록은 그 달 반들의 수업일(session_dates) 합집합 + 직접 고른 날짜
 - **숙제제출**: 비대면스터디 자료에 대한 제출만 (정규 수업 숙제 아님). 점검 전 / 점검완료 2단계
-- **LC 음원**: 지금 수강 중인 수강생은 모든 레벨·반의 교재 음원을 들을 수 있다(기본 선택만 내 레벨·이번 달 반). 페이지에서 재생, 별도 다운로드 버튼 없음
+- **LC 음원**: 지금 수강 중인 수강생은 모든 레벨·반의 교재 음원을 들을 수 있다(기본 선택만 내 레벨·이번 달 반). 페이지에서 재생, 별도 다운로드 버튼 없음.
+  파일당 50MB 이하(`lc-audio` 버킷 한도)이고, 교재 6권 × Day 9 = 최대 54개다
 - **교재 이미지**: LC 음원 페이지의 교재 표지 (교재신청 화면용 아님). 교재 한 권에 1장, 이미지당 10MB
 - **연락하기**: 비회원 가능. 이름 + (전화 또는 이메일) + 메시지. 스태프만 열람
 - **현장/불라방 구분**: `enrollments.mode` (onsite | live). OCR 은 수강료가 `tuition` 이면 onsite, `live_tuition` 이면 live 로 판정.

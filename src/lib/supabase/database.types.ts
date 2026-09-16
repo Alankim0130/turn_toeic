@@ -475,11 +475,11 @@ export type Database = {
           book_id: number
           content_type: string | null
           created_at: string
+          day: number
           file_name: string
           file_path: string
           file_size: number | null
           id: number
-          title: string
           updated_at: string
           uploaded_by: string | null
         }
@@ -487,11 +487,11 @@ export type Database = {
           book_id: number
           content_type?: string | null
           created_at?: string
+          day: number
           file_name: string
           file_path: string
           file_size?: number | null
           id?: number
-          title: string
           updated_at?: string
           uploaded_by?: string | null
         }
@@ -499,11 +499,11 @@ export type Database = {
           book_id?: number
           content_type?: string | null
           created_at?: string
+          day?: number
           file_name?: string
           file_path?: string
           file_size?: number | null
           id?: number
-          title?: string
           updated_at?: string
           uploaded_by?: string | null
         }
@@ -537,7 +537,6 @@ export type Database = {
           title: string | null
           updated_at: string
           updated_by: string | null
-          volume: number
         }
         Insert: {
           book_set: string
@@ -551,7 +550,6 @@ export type Database = {
           title?: string | null
           updated_at?: string
           updated_by?: string | null
-          volume: number
         }
         Update: {
           book_set?: string
@@ -565,7 +563,6 @@ export type Database = {
           title?: string | null
           updated_at?: string
           updated_by?: string | null
-          volume?: number
         }
         Relationships: [
           {

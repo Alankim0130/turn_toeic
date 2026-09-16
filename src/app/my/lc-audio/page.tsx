@@ -7,7 +7,7 @@ import { Icon } from "@/components/ui/Icon";
 import { BookCover } from "@/components/lc/BookCover";
 import { getSessionProfile, isStaff } from "@/lib/auth";
 import { cn, todayKST } from "@/lib/utils";
-import { BOOK_SET_LABEL, BOOK_SET_MONTHS, BOOK_SETS, bookLabel, bookSetForMonth, coverSrc, pickBook, pickLevel, sortBooks, sortTracks } from "@/lib/lc-audio";
+import { BOOK_SET_LABEL, BOOK_SET_MONTHS, BOOK_SETS, DAYS, DAY_COUNT, bookLabel, bookSetForMonth, coverSrc, dayLabel, pickBook, pickLevel, sortBooks } from "@/lib/lc-audio";
 import { getMyLcAudio, getMyOrders, getMyStudyEligibility } from "../_lib/queries";
 
 export const metadata: Metadata = {
@@ -62,7 +62,8 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
 
   const levelBooks = books.filter((b) => b.level === level);
   const selected = pickBook(sp.book, levelBooks, currentSet);
-  const selectedTracks = selected ? sortTracks(tracks.filter((t) => t.book_id === selected.id)) : [];
+  const selectedTracks = selected ? tracks.filter((t) => t.book_id === selected.id) : [];
+  const trackByDay = new Map(selectedTracks.map((t) => [t.day, t]));
 
   return (
     <div className="space-y-8">
@@ -109,69 +110,61 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
         </span>
       </p>
 
-      {/* A반 · B반 교재 */}
-      {BOOK_SETS.map((set) => {
-        const setBooks = levelBooks.filter((b) => b.book_set === set);
-        if (setBooks.length === 0) return null;
-        const current = set === currentSet;
-        return (
-          <section
-            key={set}
-            aria-labelledby={`set-${set}`}
-            className={cn("rounded-xl3 border p-5 sm:p-8", current ? "border-brand-200 bg-gradient-to-br from-brand-50 via-paper to-paper" : "border-line bg-paper")}
-          >
-            <div className="grid gap-6 lg:grid-cols-[12rem_1fr] lg:gap-10">
-              <header className="lg:pt-2">
-                <p className="text-[11px] font-black tracking-[0.25em] text-brand-600">SET {set}</p>
-                <h2 id={`set-${set}`} className="mt-1 text-2xl font-black tracking-tight text-ink">
-                  {BOOK_SET_LABEL[set]} 교재
-                </h2>
-                <p className="mt-1 text-sm text-slate">{BOOK_SET_MONTHS[set]}</p>
-                {current && <span className="mt-4 inline-flex rounded-full bg-brand-500 px-3 py-1 text-xs font-black text-white shadow-pink">이번 달 교재</span>}
-              </header>
+      {/* A반 · B반 교재 — 반마다 한 권 */}
+      <ul className="grid gap-5 sm:grid-cols-2 sm:gap-8">
+        {BOOK_SETS.map((set) => {
+          const b = levelBooks.find((x) => x.book_set === set);
+          if (!b) return null;
+          const current = set === currentSet;
+          const isSelected = b.id === selected?.id;
+          const count = countByBook.get(b.id) ?? 0;
+          return (
+            <li key={set}>
+              <section
+                aria-labelledby={`set-${set}`}
+                className={cn("h-full rounded-xl3 border p-5 sm:p-6", current ? "border-brand-200 bg-gradient-to-br from-brand-50 via-paper to-paper" : "border-line bg-paper")}
+              >
+                <header className="mb-5">
+                  <p className="text-[11px] font-black tracking-[0.25em] text-brand-600">SET {set}</p>
+                  <h2 id={`set-${set}`} className="mt-1 text-2xl font-black tracking-tight text-ink">
+                    {BOOK_SET_LABEL[set]} 교재
+                  </h2>
+                  <p className="mt-1 text-sm text-slate">{BOOK_SET_MONTHS[set]}</p>
+                  {current && <span className="mt-4 inline-flex rounded-full bg-brand-500 px-3 py-1 text-xs font-black text-white shadow-pink">이번 달 교재</span>}
+                </header>
 
-              <ul className="grid grid-cols-2 gap-x-4 gap-y-8 sm:gap-x-8 lg:max-w-[42rem]">
-                {setBooks.map((b) => {
-                  const isSelected = b.id === selected?.id;
-                  const count = countByBook.get(b.id) ?? 0;
-                  return (
-                    <li key={b.id}>
-                      <Link
-                        href={`/my/lc-audio?level=${level}&book=${b.id}#tracks`}
-                        aria-current={isSelected ? "true" : undefined}
-                        className="group block rounded-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-200"
-                      >
-                        <BookCover
-                          src={b.cover_name ? coverSrc(b, 640) : null}
-                          alt={`${level} ${bookLabel(b)} 표지`}
-                          selected={isSelected}
-                          className="group-hover:-translate-y-1.5 group-hover:shadow-[0_32px_56px_-24px_rgba(255,46,136,0.45)]"
-                        />
-                        <div className="mt-4">
-                          <p className="text-[11px] font-black tracking-[0.18em] text-brand-600">
-                            {BOOK_SET_LABEL[b.book_set]} · {b.volume}권
-                          </p>
-                          <h3 className="mt-1 text-base font-black leading-snug text-ink sm:text-lg">{b.title || bookLabel(b)}</h3>
-                          {b.description && <p className="mt-1.5 line-clamp-3 text-sm leading-relaxed text-slate">{b.description}</p>}
-                          <span
-                            className={cn(
-                              "mt-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ring-1 transition",
-                              isSelected ? "bg-brand-500 text-white ring-brand-500" : "bg-paper text-ink-soft ring-line group-hover:text-brand-600",
-                            )}
-                          >
-                            <Icon name="headphones" size={14} className={cn(isSelected && "brightness-0 invert")} />
-                            음원 {count}개
-                          </span>
-                        </div>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          </section>
-        );
-      })}
+                <Link
+                  href={`/my/lc-audio?level=${level}&book=${b.id}#tracks`}
+                  aria-current={isSelected ? "true" : undefined}
+                  className="group block rounded-lg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-200"
+                >
+                  <div className="mx-auto max-w-[15rem]">
+                    <BookCover
+                      src={b.cover_name ? coverSrc(b, 640) : null}
+                      alt={`${level} ${bookLabel(b)} 표지`}
+                      selected={isSelected}
+                      className="group-hover:-translate-y-1.5 group-hover:shadow-[0_32px_56px_-24px_rgba(255,46,136,0.45)]"
+                    />
+                  </div>
+                  <div className="mt-4">
+                    <h3 className="text-base font-black leading-snug text-ink sm:text-lg">{b.title || bookLabel(b)}</h3>
+                    {b.description && <p className="mt-1.5 line-clamp-3 text-sm leading-relaxed text-slate">{b.description}</p>}
+                    <span
+                      className={cn(
+                        "mt-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ring-1 transition",
+                        isSelected ? "bg-brand-500 text-white ring-brand-500" : "bg-paper text-ink-soft ring-line group-hover:text-brand-600",
+                      )}
+                    >
+                      <Icon name="headphones" size={14} className={cn(isSelected && "brightness-0 invert")} />
+                      음원 {count}/{DAY_COUNT}개
+                    </span>
+                  </div>
+                </Link>
+              </section>
+            </li>
+          );
+        })}
+      </ul>
 
       {/* 고른 교재의 음원 */}
       {selected && (
@@ -188,22 +181,25 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
                 {selected.title || bookLabel(selected)} 음원
               </h2>
             </div>
-            <span className="ml-auto shrink-0 text-sm font-semibold text-slate">{selectedTracks.length}개</span>
+            <span className="ml-auto shrink-0 text-sm font-semibold tabular-nums text-slate">{selectedTracks.length}/{DAY_COUNT}개</span>
           </div>
-          {selectedTracks.length === 0 ? (
-            <p className="px-5 py-10 text-center text-sm text-slate">이 교재의 음원이 아직 없어요. 강사가 올리면 여기에서 바로 들을 수 있어요.</p>
-          ) : (
-            <ul className="divide-y divide-line">
-              {selectedTracks.map((t) => (
-                <li key={t.id} className="grid gap-3 px-5 py-4 md:grid-cols-[16rem_1fr] md:items-center">
-                  <p className="min-w-0 font-bold text-ink">{t.title}</p>
-                  <audio controls preload="none" src={`/files/audio/${t.id}`} className="w-full">
-                    브라우저가 음원 재생을 지원하지 않아요.
-                  </audio>
+          <ul className="divide-y divide-line">
+            {DAYS.map((day) => {
+              const t = trackByDay.get(day);
+              return (
+                <li key={day} className="grid gap-3 px-5 py-4 md:grid-cols-[6rem_1fr] md:items-center">
+                  <p className={cn("text-sm font-black tabular-nums", t ? "text-brand-600" : "text-mist")}>{dayLabel(day)}</p>
+                  {t ? (
+                    <audio controls preload="none" src={`/files/audio/${t.id}`} className="w-full">
+                      브라우저가 음원 재생을 지원하지 않아요.
+                    </audio>
+                  ) : (
+                    <p className="text-sm text-mist">아직 올라오지 않았어요.</p>
+                  )}
                 </li>
-              ))}
-            </ul>
-          )}
+              );
+            })}
+          </ul>
         </section>
       )}
 
