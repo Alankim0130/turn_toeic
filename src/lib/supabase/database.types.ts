@@ -599,6 +599,42 @@ export type Database = {
         }
         Relationships: []
       }
+      lecture_signups: {
+        Row: {
+          created_at: string
+          id: number
+          lecture_id: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          lecture_id: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          lecture_id?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lecture_signups_lecture_id_fkey"
+            columns: ["lecture_id"]
+            isOneToOne: false
+            referencedRelation: "special_lectures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lecture_signups_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lecturers: {
         Row: {
           id: number
@@ -883,30 +919,42 @@ export type Database = {
       }
       special_lectures: {
         Row: {
+          applied_count: number
+          capacity: number | null
           content: string | null
           created_at: string
           date: string
           id: number
           kinds: string[]
           lecturer_id: number
+          signup: boolean
+          signup_opens_at: string | null
           term_id: number
         }
         Insert: {
+          applied_count?: number
+          capacity?: number | null
           content?: string | null
           created_at?: string
           date: string
           id?: number
           kinds?: string[]
           lecturer_id: number
+          signup?: boolean
+          signup_opens_at?: string | null
           term_id: number
         }
         Update: {
+          applied_count?: number
+          capacity?: number | null
           content?: string | null
           created_at?: string
           date?: string
           id?: number
           kinds?: string[]
           lecturer_id?: number
+          signup?: boolean
+          signup_opens_at?: string | null
           term_id?: number
         }
         Relationships: [

@@ -12,7 +12,8 @@ import { downloadCalendarImage } from "./calendarImage";
 
 type Mode = "opens" | "closes" | "mwf" | "ttf" | "lecture";
 type Track = "mwf" | "ttf";
-export type TermLecture = { date: string; lecturerId: number; content: string; kinds: string[] };
+/** id 는 이미 저장된 특강. 신청자·정원이 붙어 있으므로 저장할 때 그대로 돌려줘야 한다 */
+export type TermLecture = { id: number | null; date: string; lecturerId: number; content: string; kinds: string[] };
 /** 다른 기수(월)가 이미 수업일로 쓰고 있는 날짜 — 이 달에는 쓸 수 없다 */
 export type OtherTermDate = { date: string; track: Track; year: number; month: number };
 export type TermSchedule = { opens: string | null; closes: string | null; mwf: string[]; ttf: string[]; lectures: TermLecture[] };
@@ -146,7 +147,7 @@ export function TermCalendar({
       closes,
       mwf: [...mwf],
       ttf: [...ttf],
-      lectures: lectures.map(({ date, lecturerId, content, kinds }) => ({ date, lecturerId, content, kinds })),
+      lectures: lectures.map(({ id, date, lecturerId, content, kinds }) => ({ id, date, lecturerId, content, kinds })),
     }),
     [opens, closes, mwf, ttf, lectures],
   );
@@ -260,7 +261,7 @@ export function TermCalendar({
       setNotice(null);
       return;
     }
-    setLectures([...lectures, { key: crypto.randomUUID(), date, lecturerId: brush.lecturerId, content, kinds }]);
+    setLectures([...lectures, { key: crypto.randomUUID(), id: null, date, lecturerId: brush.lecturerId, content, kinds }]);
     settle(spillNote(date, inMonth));
   };
 
@@ -318,7 +319,8 @@ export function TermCalendar({
         closes,
         mwf: [...mwf].sort(),
         ttf: [...ttf].sort(),
-        lectures: sortedLectures.map(({ date, lecturerId, content, kinds }) => ({
+        lectures: sortedLectures.map(({ id, date, lecturerId, content, kinds }) => ({
+          id,
           date,
           lecturerId,
           content: content.trim(),

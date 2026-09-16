@@ -100,7 +100,10 @@
    **종류**(`special_lectures.kinds`, 중복 선택: RC특강 `rc` · LC특강 `lc` · 1차 모의고사 `mock1` · 2차 모의고사 `mock2`),
    그리고 내용(메모, 선택, 1~100자). **종류를 고르거나 내용을 적거나 둘 중 하나는 있어야 한다.**
    종류 목록·라벨은 `src/lib/utils.ts` 의 `LECTURE_KINDS` 한곳에서 관리하고 DB check 제약과 값이 같아야 한다.
-   달력 칸에는 짧은 이름만 쌓아서 보여 준다 (1개면 `LC`, 2개면 `RC` / `1차 모의고사`. 좁은 화면은 `1차`)
+   달력 칸에는 짧은 이름만 쌓아서 보여 준다 (1개면 `LC`, 2개면 `RC` / `1차 모의고사`. 좁은 화면은 `1차`).
+   **특강은 id 로 유지된다** — 저장할 때 통째로 지우고 다시 넣지 않고 "있으면 수정, 없으면 추가, 빠지면 삭제" 로 움직인다.
+   신청자가 붙은 특강을 달력에서 빼려고 하면 저장 전체를 거부한다(`lecture_signup_block`).
+   **신청 설정(신청 받기·정원·신청 시작)은 달력이 아니라 `/admin/lectures` 에서 한다.** 달력이 특강을 저장해도 그 값은 그대로 남는다
 7. 일요일·공휴일은 빨간색이고 **무슨 날인지 칸 안에 이름을 적는다** (`추석 연휴`·`대체공휴일`·`한글날` …).
    좁은 화면은 두 줄까지, 넓으면 한 줄. 공휴일은 `src/lib/holidays.ts` (공휴일 법·대체공휴일 규정, 2024~2032).
    임시공휴일이 새로 지정되면 여기에 추가. 앞뒤 달 날짜는 `10/1` 처럼 달을 함께 적는다 (이미지 저장과 같은 표기)
@@ -190,6 +193,19 @@
 - 한 스터디에 신청은 1건. 시간대 변경은 같은 행의 `slot_id` 만 바꾼다. 정원(`capacity`, 선택)은
   트리거가 `applied_count` 를 조건부로 올려서 동시에 신청해도 넘지 않는다.
 - 신청자가 있는 시간대·스터디, 제출물이 있는 자료는 DB 가 삭제를 막는다 (학생 기록 보호).
+
+### 6-1. 특강 신청 (2026-09-16 Alan 요청)
+
+- 특강마다 **신청을 받을지** 정한다 (`special_lectures.signup`). 신청 받는 특강은 정원(`capacity`, 비우면 제한 없음)과
+  신청 시작(`signup_opens_at`, 비우면 바로)을 갖는다. 설정은 `/admin/lectures`, 특강 자체(날짜·강사·종류)는 반 편성 달력.
+- **신청 받는 기간: 신청 시작부터 특강 당일까지**, 정원이 차기 전까지. 별도 마감일은 두지 않는다.
+- **신청 자격은 스터디와 같다** — 그 달 반에 배정된 수강생 (`private.is_term_enrollee`, 예비등록생 포함).
+  신청 즉시 확정(스태프 승인 없음), 신청 받는 중에는 본인이 취소할 수 있다. 그 뒤에는 스태프가 명단에서 취소한다.
+- 정원은 트리거가 지킨다 — `applied_count` 를 조건부로 올려서 마지막 한 자리에 동시에 눌러도 넘지 않는다.
+- 화면 판정은 `src/lib/lecture.ts` 의 `lectureState()` 가 하고, DB 의 `private.lecture_signup_open()` 과 같은 규칙이다.
+  상태: `곧 시작`(신청 전) · `신청 받는 중` · `정원 마감` · `신청 마감`(날짜 지남).
+- 학생은 `/my/class` 맨 위 "특강 신청" 카드에서 신청·취소한다 (수강생전용 6개는 그대로 두고 메뉴를 늘리지 않는다).
+- **아직 없는 것**: 라이브 시청 링크, 특강 자료 배포, 후기 작성을 신청 조건으로 거는 것 (미확정 8).
 
 ### 7. 숙제제출 · LC 음원
 
@@ -332,13 +348,28 @@ create table special_lectures (            -- 특강. 수업일과 겹쳐도 되
   date        date not null,
   lecturer_id bigint references lecturers,
   kinds       text[] not null default '{}', -- 종류 중복 선택: rc | lc | mock1 | mock2 (LECTURE_KINDS)
-  content     text                          -- 메모 (선택, 1~100자). 종류나 내용 중 하나는 있어야 한다
+  content     text,                         -- 메모 (선택, 1~100자). 종류나 내용 중 하나는 있어야 한다
+  -- ─ 신청 (마이그레이션 20260916090000). 설정은 /admin/lectures 에서 ─
+  signup          boolean not null default false,  -- 신청을 받는 특강인가
+  capacity        int,                             -- 정원. null 이면 제한 없음
+  signup_opens_at timestamptz,                     -- 신청 시작. null 이면 바로. 마감은 특강 당일(KST)
+  applied_count   int not null default 0           -- lecture_signups 트리거가 유지 (직접 수정 불가)
+);
+
+create table lecture_signups (             -- 특강 신청. 한 특강에 한 사람 1건
+  id         bigint primary key,
+  lecture_id bigint references special_lectures,   -- 신청자가 있는 특강은 삭제 불가
+  user_id    uuid references profiles on delete cascade,
+  created_at timestamptz default now(),
+  unique(lecture_id, user_id)
 );
 -- 그 달 수강생도 조회할 수 있다 (private.is_term_enrollee) — 내 시간표에 함께 표시된다
 -- 저장: public.save_term_schedule(year, month, opens, closes, mwf[], ttf[], lectures jsonb, parts text[])
 --       — 스태프만, 한 트랜잭션. parts 는 'dates'|'mwf'|'ttf'|'lectures' 중 저장할 항목 (null 이면 전부).
 --       수업일·특강은 그 달 ±1개월까지 허용하고, 수업일이 다른 기수와 겹치면 거부한다.
---       특강 항목은 {"date","lecturer_id","kinds":[…],"content"} (마이그레이션 20260915131500 · 20260915140500).
+--       특강 항목은 {"id","date","lecturer_id","kinds":[…],"content"} — id 가 있으면 수정, 없으면 추가, 목록에서
+--       빠지면 삭제(신청자가 있으면 거부). signup·capacity·signup_opens_at 은 **넘어온 키만** 바꾼다
+--       (마이그레이션 20260915131500 · 20260915140500 · 20260916090000).
 -- 다시보기가 붙은 회차를 달력에서 빼면 저장 전체를 거부한다 (미확정 4 확정 전까지).
 
 create table courses (                     -- 강좌 마스터
@@ -589,7 +620,7 @@ where p.role='student'
 |---|---|---|
 | `/my` | 대시보드. 예비등록생이면 "N월 예비등록생" 표시. 스태프면 관리자 바로가기 버튼 | member |
 | `/my/verify` | 등업신청: 수강증만 업로드 → 자동 등업 (개월수·현장/불라방 선택 없음) | member |
-| `/my/class` | 내 시간표 — 반 편성 달력의 수업일 + **그 달 특강·모의고사** (주5일이면 두 트랙 합집합) | student |
+| `/my/class` | 내 시간표 — **특강 신청 카드** + 반 편성 달력의 수업일 + 그 달 특강·모의고사 (주5일이면 두 트랙 합집합) | student |
 | `/my/live` | 불라방 입장 | student |
 | `/my/textbook` | 불라방 교재주문 (불라방 수강생만) | student |
 | `/my/replay` | 강의 다시보기. 종강일까지 | student |
@@ -604,6 +635,7 @@ where p.role='student'
 | `/admin` | 대시보드: 학생명단 요약, 교재주문, 마케팅 분석 차트, 시간대별 인원수 위젯 | instructor |
 | `/admin/students` | 학생명단: 등록생 / 예비등록생 / 졸업생 탭 | instructor |
 | `/admin/sections` | 반 편성 달력(개강일·종강일·월수금·화목금·특강 → 항목별 저장 / 전체 저장, 이전/다음 달, 이미지 저장), 그 달 반 개설(강좌·트랙·수강료·정원·상태), 스터디 시간 설정 | instructor |
+| `/admin/lectures` | 특강 신청: 기수별 특강마다 신청 받기·정원·신청 시작 설정 + 신청자 명단(스태프 취소) | instructor |
 | `/admin/sections/[id]` | 반 상세: 달력에서 파생된 수업일(읽기 전용)·다시보기 여부, 불라방 링크, 수강료·정원·상태·강사 수정, 삭제 | instructor |
 | `/admin/replays` | 녹화본 등록·회차 연결 | instructor |
 | `/admin/verifications` | OCR 로그, 후보 점수, 오배정 정정 | instructor |
@@ -658,15 +690,15 @@ where p.role='student'
    - **👍 평가 태그의 출처.** YBM 원본에 있는 값인지, 첫토익이 자체로 붙인 것인지.
    - **매칭 실패 시 처리.** 이름이 마스킹(유\*빈)이라 동명이인·유사 이름이 겹친다. 스태프 확인인지, 학생이 직접 후기를 지목하는지.
    - **개인정보 보관 기준.** 마스킹된 이름·후기 본문을 우리 DB 에 둔다. 보관 기간을 수강증·네이버 예약과 같은 기준으로 정한다.
-   - **선행 조건: 특강 신청 기능이 아직 없다.** 특강은 달력 표시와 내 시간표 표시뿐이라 신청 흐름부터 만들어야 한다.
-     정원 · 신청 오픈 일시 · 신청 마감 · **후기 이벤트 대상 표시**(기수 마지막 3주차 특강)가 `special_lectures` 에 없다.
+   - ~~선행 조건: 특강 신청 기능~~ → **2026-09-16 완료** (도메인 규칙 6-1). 남은 것은 **후기 이벤트 대상 표시**
+     (기수 마지막 3주차 특강)와 신청 조건 연결, 그리고 라이브 시청 링크·특강 자료.
    - **수집 주기.** 평소 30분 / 특강 신청 기간 10분. "특강 신청 기간"의 정의. 분 단위 크론은 Vercel 요금제를 확인해야 한다
      (하루 요약은 Vercel Cron, 상태 전이는 pg_cron 을 쓰고 있으니 pg_cron + Edge Function 도 선택지다).
    - **후기를 어디에 보여줄지.** 지금 랜딩의 "누적 수강후기 7,356건" 은 `Stats.tsx`·`Marquee.tsx`·`Hero.tsx` 세 곳에 하드코딩되어 있다 (원칙 4 위반 상태).
 
 ### 아직 논의되지 않음 (임의 구현 금지)
 출결, 채점·점수(숙제제출은 점검완료 표시까지만), 성적·모의고사, 단어장, 오답노트, 일반 자료실, 학생 대상 알림 발송(문자·알림톡·학생 푸시),
-후기 작성 기능, **특강 신청** 및 **YBM 후기 수집**(미확정 8 — 사전 공유만 받았다)
+후기 작성 기능, **YBM 후기 수집**(미확정 8 — 사전 공유만 받았다), 특강 라이브 시청 링크·특강 자료 배포
 
 ### 확장 기능의 가정 (Alan 확인 전까지의 기본값)
 - **교재신청**: 불라방 수강생만, 본인 반 기준, 배송지 입력. 결제 없음(교재비는 YBM/현장 처리). 상태 requested → confirmed → shipped

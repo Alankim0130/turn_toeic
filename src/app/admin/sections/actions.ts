@@ -46,7 +46,8 @@ export type TermScheduleInput = {
   closes: string | null;
   mwf: string[];
   ttf: string[];
-  lectures: { date: string; lecturerId: number; content: string; kinds: string[] }[];
+  /** id 가 있으면 그 특강을 수정하고, 없으면 새로 만든다. 신청자가 붙은 특강을 지키려면 id 를 그대로 돌려줘야 한다 */
+  lectures: { id: number | null; date: string; lecturerId: number; content: string; kinds: string[] }[];
   /** 저장할 항목. 비우면 전부 */
   parts?: TermPart[];
 };
@@ -63,6 +64,7 @@ const RPC_ERROR: Record<string, string> = {
   class_date_out_of_range: "수업일·특강은 그 달과 앞뒤 한 달 안에서만 고를 수 있어요.",
   class_date_out_of_month: "수업일·특강은 그 달과 앞뒤 한 달 안에서만 고를 수 있어요.",
   invalid_lectures: "특강마다 종류를 하나 이상 고르거나 내용(1~100자)을 적어 주세요.",
+  lecture_capacity_below_applied: "이미 신청한 인원보다 정원을 적게 줄일 수 없어요.",
 };
 
 /** 수업일·특강을 찍을 수 있는 범위: 그 달 ± 1개월 (강의가 다음 달까지 이어질 수 있다) */
@@ -123,6 +125,7 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
   const rawLectures = parts.includes("lectures") && Array.isArray(input.lectures) ? input.lectures : [];
   if (rawLectures.length > 100) return { ok: false, error: "특강은 한 달에 100개까지 만들 수 있어요." };
   const lectures = rawLectures.map((l) => ({
+    id: Number.isInteger(l?.id) && Number(l.id) > 0 ? Number(l.id) : null,
     date: String(l?.date ?? ""),
     lecturer_id: Number(l?.lecturerId),
     content: String(l?.content ?? "").trim(),
@@ -167,6 +170,9 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
     }
     if (error.message === "track_overlap") {
       return { ok: false, error: `같은 날짜를 월수금과 화목금에 함께 넣을 수 없어요: ${listDates(error.details)}` };
+    }
+    if (error.message === "lecture_signup_block") {
+      return { ok: false, error: `신청자가 있는 특강은 뺄 수 없어요: ${listDates(error.details)}. 먼저 신청자를 정리해 주세요.` };
     }
     if (error.message === "date_in_other_term") {
       return { ok: false, error: `${listOtherTermDates(error.details)} 한 날짜는 한 기수(월)의 수업일로만 쓸 수 있어요. 그 달 달력에서 먼저 빼 주세요.` };

@@ -55,7 +55,7 @@ export default async function AdminSectionsPage({
   const [{ data: classDates }, { data: lectureRows, error: lectureError }, { data: sections }, { data: studyRows }] = term
     ? await Promise.all([
         supabase.from("term_class_dates").select("date, track").eq("term_id", term.id).order("date"),
-        supabase.from("special_lectures").select("date, lecturer_id, content, kinds").eq("term_id", term.id).order("date").order("id"),
+        supabase.from("special_lectures").select("id, date, lecturer_id, content, kinds, signup, capacity, signup_opens_at, applied_count").eq("term_id", term.id).order("date").order("id"),
         supabase
           .from("class_sections")
           .select(
@@ -102,6 +102,7 @@ export default async function AdminSectionsPage({
     mwf: (classDates ?? []).filter((d) => d.track === "mwf").map((d) => d.date),
     ttf: (classDates ?? []).filter((d) => d.track === "ttf").map((d) => d.date),
     lectures: (lectureRows ?? []).map((l) => ({
+      id: l.id,
       date: l.date,
       lecturerId: l.lecturer_id,
       content: l.content ?? "",
