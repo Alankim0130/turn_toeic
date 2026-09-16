@@ -193,7 +193,7 @@ export function MobileMenu({
 
         {/* 바닥 */}
         <div className="shrink-0 space-y-2 border-t border-line p-3">
-          <InstallApp variant="menu" />
+          <InstallApp variant="menu" onStart={() => setOpen(false)} />
           {staff && <StaffModeSwitch variant="panel" />}
           {signedIn && (
             <form action={signOut}>
