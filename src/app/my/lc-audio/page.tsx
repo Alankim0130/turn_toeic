@@ -12,6 +12,8 @@ import {
   BOOK_SET_MONTHS,
   bookLabel,
   bookSetForMonth,
+  bookSetOfSection,
+  type BookSet,
   coverSrc,
   lessonLabel,
   DAY_COUNT,
@@ -54,7 +56,6 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
 
   const today = todayKST();
   const month = Number(today.slice(5, 7));
-  const currentSet = bookSetForMonth(month);
   const books = sortBooks(bookRows);
   const countByBook = new Map<number, number>();
   for (const t of tracks) if (t.book_id) countByBook.set(t.book_id, (countByBook.get(t.book_id) ?? 0) + 1);
@@ -73,6 +74,20 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
         .filter((s): s is number => typeof s === "number" && levels.includes(s)),
     ),
   ];
+  /**
+   * 내 반이 쓰는 교재 반(A/B). 교재는 달이 아니라 **듣는 시간대**로 정해진다 (2026-09-16 Alan 확인) —
+   * 같은 9월에도 10:00 반은 A, 11:10 반은 B 다. 반에 지정이 없으면 달 홀짝으로 짐작한다.
+   */
+  const mySets = new Set(
+    orders
+      .filter((o) => o.status === "active")
+      .flatMap((o) => o.enrollments)
+      .filter((e) => e.status === "active" && e.section && today <= e.section.closes_at)
+      .map((e) => bookSetOfSection(e.section))
+      .filter((b): b is BookSet => b !== null),
+  );
+  const guessedSet = bookSetForMonth(month);
+
   const shownLevels = myLevels.length ? myLevels : levels;
   const level = shownLevels.includes(Number(sp.level)) ? Number(sp.level) : (shownLevels[0] ?? null);
 
@@ -112,14 +127,22 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
 
       <p className="flex flex-wrap items-center gap-1.5 text-sm text-slate">
         <Icon name="calendar" size={16} />
-        이번 달({month}월)은 <strong className="text-brand-600">{BOOK_SET_LABEL[currentSet]} 교재</strong>로 수업해요.
+        {mySets.size > 0 ? (
+          <>
+            내 반은 <strong className="text-brand-600">{[...mySets].sort().map((b) => BOOK_SET_LABEL[b]).join(" · ")} 교재</strong>로 수업해요.
+          </>
+        ) : (
+          <>
+            이번 달({month}월)은 <strong className="text-brand-600">{BOOK_SET_LABEL[guessedSet]} 교재</strong>일 거예요.
+          </>
+        )}
         {myLevels.length > 0 && <span className="text-mist">· 내 반 {level}</span>}
         {staff && myLevels.length === 0 && <span className="text-mist">· 강사는 모든 레벨이 보여요</span>}
       </p>
 
       <ul className="grid gap-4 sm:grid-cols-2">
         {levelBooks.map((b) => {
-          const current = b.book_set === currentSet;
+          const current = mySets.size > 0 ? mySets.has(b.book_set as BookSet) : b.book_set === guessedSet;
           const count = countByBook.get(b.id) ?? 0;
           return (
             <li key={b.id}>

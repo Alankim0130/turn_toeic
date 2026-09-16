@@ -42,6 +42,8 @@ export function BulkCreateSections({
   const router = useRouter();
   const [common, setCommon] = useState({ tuition: "", live: "", capacity: "", status: "open" });
   const [fees, setFees] = useState<Record<number, { tuition: string; live: string }>>({});
+  // LC 교재 세트는 시간대마다 정해진다 (2026-09-16 Alan) — 같은 시간대의 두 트랙은 같은 교재를 쓴다
+  const [bookSets, setBookSets] = useState<Record<string, string>>({});
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [instructorId, setInstructorId] = useState(currentUserId);
   const [busy, setBusy] = useState(false);
@@ -50,6 +52,7 @@ export function BulkCreateSections({
   const existing = useMemo(() => new Set(existingKeys), [existingKeys]);
   const slotsOf = (c: BulkCourse) => slots.filter((s) => c.target_score != null && s.level === c.target_score);
   const feeOf = (courseId: number) => fees[courseId] ?? { tuition: common.tuition, live: common.live };
+  const bookKey = (courseId: number, slotId: number | null) => `${courseId}:${slotId ?? 0}`;
 
   const toggle = (key: string, on: boolean) =>
     setChecked((prev) => {
@@ -96,6 +99,7 @@ export function BulkCreateSections({
             liveTuition: digits(fee.live) ? Number(digits(fee.live)) : null,
             capacity: digits(common.capacity) ? Number(digits(common.capacity)) : null,
             status: common.status,
+            bookSet: bookSets[bookKey(c.id, s?.id ?? null)] || null,
           });
         }
       }
@@ -240,6 +244,7 @@ export function BulkCreateSections({
                       {TRACKS.map((t) => (
                         <th key={t} className="py-1 text-center font-semibold">{TRACK_LABEL[t]}</th>
                       ))}
+                      <th className="py-1 text-right font-semibold">LC 교재</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
@@ -267,6 +272,21 @@ export function BulkCreateSections({
                             </td>
                           );
                         })}
+                        <td className="py-2 text-right">
+                          <label className="sr-only" htmlFor={`book-${bookKey(c.id, s?.id ?? null)}`}>
+                            {c.name} {s ? s.label : ""} LC 교재 세트
+                          </label>
+                          <select
+                            id={`book-${bookKey(c.id, s?.id ?? null)}`}
+                            value={bookSets[bookKey(c.id, s?.id ?? null)] ?? ""}
+                            onChange={(e) => setBookSets({ ...bookSets, [bookKey(c.id, s?.id ?? null)]: e.target.value })}
+                            className="input !w-24 !py-1 text-xs"
+                          >
+                            <option value="">미지정</option>
+                            <option value="A">A반</option>
+                            <option value="B">B반</option>
+                          </select>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

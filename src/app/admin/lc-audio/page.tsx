@@ -62,7 +62,7 @@ export default async function LcAudioAdminPage({ searchParams }: { searchParams:
       />
 
       <p className="mb-5 text-sm text-slate">
-        이번 달({month}월)은 <strong className="text-brand-600">{BOOK_SET_LABEL[currentSet]} 교재</strong>로 수업해요. 수강생 화면에도 “이번 달 교재”로 표시됩니다.
+        이번 달({month}월) 기본값은 <strong className="text-brand-600">{BOOK_SET_LABEL[currentSet]} 교재</strong>예요. 다만 <strong className="text-ink">교재는 시간대마다 다릅니다</strong> — 학생에게는 반 편성에서 지정한 그 반의 교재가 보입니다.
       </p>
 
       <ul className="grid gap-4 sm:grid-cols-2">

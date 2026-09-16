@@ -9,7 +9,7 @@ import { LessonCalendar, type LessonSlot, type LessonTrack } from "@/components/
 import { createClient } from "@/lib/supabase/server";
 import { todayKST, TRACK_LABEL } from "@/lib/utils";
 import { holidayNamesBetween } from "@/lib/holidays";
-import { BOOK_SET_LABEL, BOOK_SET_MONTHS, DAYS, DAY_COUNT, bookLabel, bookSetForMonth, coverSrc, lessonLabel, sortTracks } from "@/lib/lc-audio";
+import { BOOK_SET_LABEL, BOOK_SET_MONTHS, DAYS, DAY_COUNT, bookLabel, bookSetOfSection, coverSrc, lessonLabel, sortTracks } from "@/lib/lc-audio";
 import { getMySessions } from "../../_lib/queries";
 
 export const metadata: Metadata = { title: "LC 음원듣기", robots: { index: false } };
@@ -36,10 +36,10 @@ export default async function LcBookPage({ params }: { params: Promise<{ bookId:
     tracks.filter((t) => t.day === day && (t.kind ?? "lesson") === kind).map((t) => ({ id: t.id, kind: t.kind, label: t.label, file_name: t.file_name }));
 
   /**
-   * 이 교재를 쓰는 달의 내 수업일을 찾는다.
-   * A반 교재는 홀수달, B반 교재는 짝수달에 쓴다. 내 반의 회차(seq)가 곧 강 번호 칸이다.
+   * 이 교재를 쓰는 내 반의 수업일을 찾는다. 내 반의 회차(seq)가 곧 강 번호 칸이다.
+   * 교재는 달이 아니라 **듣는 시간대**로 정해진다 (2026-09-16 Alan 확인) — 반의 book_set 을 본다.
    */
-  const sameSet = sessions.filter((s) => s.section?.term && bookSetForMonth(s.section.term.month) === book.book_set);
+  const sameSet = sessions.filter((s) => s.section && bookSetOfSection(s.section) === book.book_set);
   const levelMatch = sameSet.filter((s) => s.section?.course?.target_score === book.level);
   const usable = levelMatch.length ? levelMatch : sameSet;
 
@@ -71,7 +71,8 @@ export default async function LcBookPage({ params }: { params: Promise<{ bookId:
   for (const [d, list] of names) if (list.length) holidays[d] = list[0];
 
   const total = tracks.length;
-  const thisMonth = bookSetForMonth(Number(todayKST().slice(5, 7))) === book.book_set;
+  // 내 반 중 이 교재를 쓰는 반이 있으면 "내 교재"
+  const isMine = sameSet.length > 0;
 
   return (
     <div className="space-y-6">
@@ -97,7 +98,7 @@ export default async function LcBookPage({ params }: { params: Promise<{ bookId:
           <h2 className="truncate text-lg font-black text-ink">{book.title || bookLabel(book)}</h2>
           <p className="mt-0.5 text-xs text-slate">
             음원 {total}개
-            {thisMonth && <span className="ml-1.5 rounded-full bg-brand-500 px-2 py-0.5 text-[10px] font-black text-white">이번 달 교재</span>}
+            {isMine && <span className="ml-1.5 rounded-full bg-brand-500 px-2 py-0.5 text-[10px] font-black text-white">내 반 교재</span>}
           </p>
         </div>
       </section>

@@ -17,8 +17,20 @@ export const BOOK_SET_MONTHS: Record<string, string> = {
   B: "짝수달 수업 · 2·4·6·8·10·12월",
 };
 
-/** 이번 달 교재 반: 홀수달 A, 짝수달 B */
+/**
+ * 달 홀짝으로 짐작한 교재 반 (홀수달 A, 짝수달 B).
+ * **진짜 기준이 아니다** — 2026-09-16 Alan 확인: 교재는 듣는 시간대로 정해져서 같은 달에도
+ * 10:00 반은 A, 11:10 반은 B 를 쓰고 다음 달에는 서로 뒤바뀐다.
+ * 반에 `book_set` 이 아직 없을 때만 쓰는 대비값이다.
+ */
 export const bookSetForMonth = (month: number): BookSet => (month % 2 === 1 ? "A" : "B");
+
+/** 이 반이 쓰는 교재 반. 반에 지정돼 있으면 그 값, 없으면 달 홀짝으로 짐작한다 */
+export const bookSetOfSection = (s?: { book_set?: string | null; term?: { month: number } | null } | null): BookSet | null => {
+  if (!s) return null;
+  if (s.book_set === "A" || s.book_set === "B") return s.book_set;
+  return s.term ? bookSetForMonth(s.term.month) : null;
+};
 
 export type BookLite = {
   id: number;

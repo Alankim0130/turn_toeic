@@ -190,6 +190,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
               tuition: section.tuition != null ? String(section.tuition) : "",
               live_tuition: section.live_tuition != null ? String(section.live_tuition) : "",
               status: section.status,
+              book_set: section.book_set ?? "",
               instructor_id: section.instructor_id ?? "",
             }}
             instructors={instructors ?? null}

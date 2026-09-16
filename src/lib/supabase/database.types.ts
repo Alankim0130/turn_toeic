@@ -41,6 +41,7 @@ export type Database = {
     Tables: {
       class_sections: {
         Row: {
+          book_set: string | null
           bundle_id: string | null
           capacity: number | null
           closes_at: string
@@ -60,6 +61,7 @@ export type Database = {
           tuition: number | null
         }
         Insert: {
+          book_set?: string | null
           bundle_id?: string | null
           capacity?: number | null
           closes_at: string
@@ -79,6 +81,7 @@ export type Database = {
           tuition?: number | null
         }
         Update: {
+          book_set?: string | null
           bundle_id?: string | null
           capacity?: number | null
           closes_at?: string

@@ -22,6 +22,8 @@ export type BulkRow = {
   liveTuition: number | null;
   capacity: number | null;
   status: string;
+  /** LC 교재 세트 (A|B). 시간대마다 정해지고 달마다 뒤바뀐다 */
+  bookSet?: string | null;
 };
 export type BulkResult = { ok: boolean; error?: string; created?: number; skipped?: number };
 
@@ -68,6 +70,8 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
     const capacity = r.capacity == null ? null : Number(r.capacity);
     if (capacity !== null && (!Number.isInteger(capacity) || capacity < 1)) return { ok: false, error: "정원은 1명 이상이어야 해요." };
 
+    const bookSet = r.bookSet === "A" || r.bookSet === "B" ? r.bookSet : null;
+
     const slot = r.slotId == null ? null : slotById.get(Number(r.slotId));
     if (r.slotId != null && !slot) return { ok: false, error: "시간대를 찾을 수 없어요. 새로고침한 뒤 다시 시도해 주세요." };
     const timeBlock = slot ? timeBlockOf(slot.start_time, slot.end_time) : null;
@@ -92,6 +96,7 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
       live_tuition: live,
       capacity,
       status: r.status,
+      book_set: bookSet,
       bundle_id: null,
     });
   }
