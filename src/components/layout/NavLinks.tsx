@@ -11,6 +11,25 @@ export function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(href + "/");
 }
 
+/** 새 창으로 나가는 링크 표시. 드롭다운 화살표처럼 CSS·SVG 로 그린 구조 기호라 힉스필드 아이콘을 쓰지 않는다 */
+export function ExternalMark({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 12 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={cn("h-3 w-3 shrink-0", className)}
+    >
+      <path d="M4.5 2.5h5v5" />
+      <path d="M9.5 2.5 2.5 9.5" />
+    </svg>
+  );
+}
+
 export function NavLinks({ items, className, onNavigate }: { items: NavItem[]; className?: string; onNavigate?: () => void }) {
   const pathname = usePathname();
   return (

@@ -8,7 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Logo } from "@/components/ui/Logo";
 import { canUseFeature, featureHref, NAV_MAIN, STUDENT_FEATURES, STUDENT_HUB } from "@/lib/site";
 import { cn } from "@/lib/utils";
-import { isActivePath } from "./NavLinks";
+import { ExternalMark, isActivePath } from "./NavLinks";
 import { isStudentAreaPath, type NavAccess } from "./DesktopNav";
 import { StaffModeSwitch } from "./StaffModeSwitch";
 import { InstallApp } from "@/components/pwa/InstallApp";
@@ -130,6 +130,25 @@ export function MobileMenu({
           <nav aria-label="모바일 메뉴">
             <ul className="space-y-1">
               {NAV_MAIN.map((item) => {
+                if (item.external) {
+                  // 네이버 상담예약처럼 바깥으로 나가는 링크. 새 창으로 열리므로 패널은 닫는다
+                  return (
+                    <li key={item.href}>
+                      <a
+                        href={item.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setOpen(false)}
+                        className={itemClass(false)}
+                      >
+                        <Icon name={item.icon} size={26} />
+                        {item.label}
+                        <ExternalMark className="ml-auto text-mist" />
+                        <span className="sr-only">(새 창)</span>
+                      </a>
+                    </li>
+                  );
+                }
                 if (item.group !== "student") {
                   const active = isActivePath(pathname, item.href);
                   return (

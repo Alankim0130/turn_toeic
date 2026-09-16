@@ -14,6 +14,9 @@ export const site = {
   academy: {
     name: "YBM어학원 부산서면센터",
     ybmUrl: "https://www.ybmedu.com/seomyon/winnertoeic",
+    // 네이버 예약 "역전토익 강사상담" 상품 (사업장 459658). 상단 메뉴의 "네이버 상담예약"이 새 창으로 연다
+    naverBookingUrl:
+      "https://m.booking.naver.com/booking/12/bizes/459658/items/4139011?area=bmp&lang=ko&service-target=map-pc&startDateTime=2026-09-16T00%3A00%3A00%2B09%3A00&theme=place",
     address: "부산광역시 부산진구 서면",
   },
   // 강사 사진: 배경 투명 PNG. 두 장 모두 머리 크기(380px)·구도가 같고 얼굴이 가로 중앙이라 나란히 둬도 맞는다
@@ -162,6 +165,8 @@ export type NavItem = {
   group?: "student";
   /** 수강생전용 기능이면 잠금 판정에 쓴다 */
   feature?: StudentFeatureKey;
+  /** 바깥 사이트로 나가는 링크. 새 창으로 열고 현재 페이지 표시를 하지 않는다 */
+  external?: true;
 };
 
 /** 상단 네비게이션 */
@@ -170,6 +175,7 @@ export const NAV_MAIN: NavItem[] = [
   { href: "/my/verify", label: "등업신청", icon: "verify", auth: "member" },
   { href: STUDENT_HUB.href, label: STUDENT_HUB.label, icon: STUDENT_HUB.icon, group: "student" },
   { href: "/contact", label: "연락하기", icon: "contact" },
+  { href: site.academy.naverBookingUrl, label: "네이버 상담예약", icon: "calendar", external: true },
 ];
 
 /** 모바일 하단 네비게이션 (5개) */
