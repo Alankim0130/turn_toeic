@@ -29,13 +29,15 @@ function revalidateStudent(id: string) {
 export async function updateStudentRole(_prev: StudentActionState, formData: FormData): Promise<StudentActionState> {
   const { profile } = await requireStaff();
   if (!isAdmin(profile.role)) return { error: "등급 변경은 관리자만 할 수 있어요." };
+  // 테스트 중에는 RLS 가 이 관리자를 학생으로 보므로 세션 UPDATE 가 막힌다 — 먼저 끄게 안내한다
+  if (profile.test_role) return { error: "테스트 중에는 등급을 바꿀 수 없어요. 화면 위 띠에서 테스트를 먼저 끝내 주세요." };
 
   const id = String(formData.get("id") ?? "");
   const role = String(formData.get("role") ?? "");
   if (!id || !isRole(role)) return { error: "잘못된 요청이에요." };
 
   const supabase = await createClient();
-  const { data: target } = await supabase.from("profiles").select("id, name, role").eq("id", id).maybeSingle();
+  const { data: target } = await supabase.from("profiles").select("id, name, role, test_role").eq("id", id).maybeSingle();
   if (!target) return { error: "학생을 찾을 수 없어요." };
   if (target.role === role) return { ok: true, message: `이미 ${ROLE_LABEL[role]}이에요.` };
 
@@ -45,12 +47,27 @@ export async function updateStudentRole(_prev: StudentActionState, formData: For
     if (!count) return { error: "마지막 관리자예요. 다른 사람을 먼저 관리자로 올린 뒤 바꿔 주세요." };
   }
 
+  // 테스트 중인 테스터를 강사·관리자가 아닌 등급으로 내리면 test_role 이 남아 DB check(테스트 등급은 스태프만)에 걸린다.
+  // test_role 은 서비스 롤만 바꿀 수 있어서 여기서 먼저 끈다 (호출한 사람이 관리자인지는 위에서 확인했다)
+  const endsTest = !!target.test_role && role !== "instructor" && role !== "admin";
+  if (endsTest) {
+    const { error: clearError } = await createAdminClient().from("profiles").update({ test_role: null }).eq("id", id);
+    if (clearError) return { error: "테스트 중인 계정이라 등급을 바꾸지 못했어요. 그 계정의 테스트를 먼저 끝내 주세요." };
+  }
+
   const { data, error } = await supabase.from("profiles").update({ role }).eq("id", id).select("id");
-  if (error) return { error: error.code === "42501" ? "권한이 없어요. 관리자만 등급을 바꿀 수 있어요." : `등급을 바꾸지 못했어요. ${error.message}` };
+  if (error) {
+    if (error.code === "42501") return { error: "권한이 없어요. 관리자만 등급을 바꿀 수 있어요." };
+    if (error.code === "23514") return { error: "테스트 중인 계정이라 등급을 바꾸지 못했어요. 그 계정의 테스트를 먼저 끝내 주세요." };
+    return { error: `등급을 바꾸지 못했어요. ${error.message}` };
+  }
   if (!data?.length) return { error: "등급을 바꾸지 못했어요. 관리자 권한을 확인해 주세요." };
 
   revalidateStudent(id);
-  return { ok: true, message: `${target.name || "학생"} 등급을 ${ROLE_LABEL[role]}(으)로 바꿨어요.` };
+  return {
+    ok: true,
+    message: `${target.name || "학생"} 등급을 ${ROLE_LABEL[role]}(으)로 바꿨어요.${endsTest ? " 켜져 있던 테스트 등급도 함께 껐어요." : ""}`,
+  };
 }
 
 /**
