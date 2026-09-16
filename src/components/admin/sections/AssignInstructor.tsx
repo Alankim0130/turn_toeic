@@ -2,39 +2,60 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { assignInstructor } from "@/app/admin/sections/actions";
+import { assignInstructor, autoAssignInstructors } from "@/app/admin/sections/actions";
 import { Icon } from "@/components/ui/Icon";
 import { Alert } from "@/components/ui/Alert";
 import { cn, TRACK_LABEL } from "@/lib/utils";
+import { planSubjects, SUBJECT_LABEL, type Subject } from "@/lib/instructor-subject";
 
 export type AssignRow = {
   id: number;
+  courseId: number;
   course: string;
   track: string;
   timeBlock: string | null;
+  bookSet: string | null;
   instructor: string | null;
-  /** 묶음 반(120분·140분)·스파르타 반은 한 시간씩 강사가 갈린다 — 안내만 띄운다 */
+  /** 묶음 반(120분·140분)·스파르타 반 — 두 과목을 이어 들어 담당이 한 명이 아니다 */
   package: boolean;
 };
-export type InstructorOption = { id: string; name: string };
+export type InstructorOption = { id: string; name: string; subject: Subject | null };
 
 const TRACKS = ["mwf", "ttf"] as const;
+const SUBJECT_CLASS: Record<Subject, string> = {
+  lc: "bg-brand-100 text-brand-700",
+  rc: "bg-ink/10 text-ink-soft",
+};
 
 /**
- * 담당 강사 일괄 지정 (2026-09-16 Alan 요청). 반이 한 달에 70개 안팎이라 하나씩 못 바꾼다.
- * 어느 반을 누가 맡는지는 그 달 편성표가 정하므로 **화면이 정해 주지 않는다** — 골라서 적용한다.
- * 대신 트랙·시간대로 좁혀 고를 수 있게 해서 36개를 몇 번에 끝낸다.
+ * 담당 강사 지정 (2026-09-16 Alan 요청).
+ *
+ * 1순위는 **편성표대로 채우기** — 반의 LC 교재(`book_set`)가 과목을 말해 주므로
+ * LC 는 이혜영, RC 는 이영수에게 저절로 간다 (`lib/instructor-subject.ts`).
+ * 규칙으로 정해지지 않는 것(묶음 반·LC 교재 미지정)만 손으로 고른다.
  */
-export function AssignInstructor({ rows, instructors, termLabel }: { rows: AssignRow[]; instructors: InstructorOption[]; termLabel: string }) {
+export function AssignInstructor({ rows, instructors, termLabel, termId }: { rows: AssignRow[]; instructors: InstructorOption[]; termLabel: string; termId: number }) {
   const router = useRouter();
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [track, setTrack] = useState<string | null>(null);
   const [instructorId, setInstructorId] = useState(instructors[0]?.id ?? "");
   const [pending, start] = useTransition();
-  const [msg, setMsg] = useState<{ kind: "success" | "warning"; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ kind: "success" | "warning" | "info"; text: string } | null>(null);
+
+  // 서버가 쓰는 규칙 그대로 — 화면은 미리 보여 주기만 하고 실제 판단은 서버가 다시 한다
+  const plan = useMemo(
+    () => planSubjects(rows.map((r) => ({ id: r.id, course_id: r.courseId, time_block: r.timeBlock, book_set: r.bookSet, package: r.package }))),
+    [rows],
+  );
+  const subjectOfId = useMemo(() => new Map(plan.assign.map((a) => [a.id, a.subject])), [plan]);
+  const clearSet = useMemo(() => new Set(plan.clear), [plan]);
+  const bySubject = useMemo(() => {
+    const m = new Map<Subject, InstructorOption>();
+    for (const i of instructors) if (i.subject && !m.has(i.subject)) m.set(i.subject, i);
+    return m;
+  }, [instructors]);
 
   const shown = useMemo(() => rows.filter((r) => !track || r.track === track), [rows, track]);
-  // 시간대로 묶어서 보여 준다 — 편성표가 시간대 × 트랙으로 강사를 정하기 때문
   const groups = useMemo(() => {
     const map = new Map<string, AssignRow[]>();
     for (const r of shown) {
@@ -54,6 +75,20 @@ export function AssignInstructor({ rows, instructors, termLabel }: { rows: Assig
       return next;
     });
 
+  const auto = () =>
+    start(async () => {
+      setMsg(null);
+      const res = await autoAssignInstructors({ termId });
+      if (!res.ok) return setMsg({ kind: "warning", text: res.error ?? "채우지 못했어요." });
+      const bits = [`${res.assigned}개 반에 담당을 넣었어요`];
+      if (res.cleared) bits.push(`묶음·스파르타 ${res.cleared}개는 비웠어요`);
+      if (res.missing?.length) bits.push(`${res.missing.join("·")} 강사 계정이 아직 없어 그 반은 그대로 뒀어요`);
+      if (res.unknown) bits.push(`LC 교재가 안 정해진 ${res.unknown}개는 건드리지 않았어요`);
+      setPicked(new Set());
+      setMsg({ kind: res.missing?.length || res.unknown ? "info" : "success", text: bits.join(". ") + "." });
+      router.refresh();
+    });
+
   const apply = () =>
     start(async () => {
       setMsg(null);
@@ -66,119 +101,134 @@ export function AssignInstructor({ rows, instructors, termLabel }: { rows: Assig
 
   if (rows.length === 0) return null;
 
-  const onlyMe = instructors.length <= 1;
   const allOn = shown.length > 0 && shown.every((r) => picked.has(r.id));
+  const autoCount = plan.assign.filter((a) => bySubject.has(a.subject)).length;
+  const missingSubjects = [...new Set(plan.assign.map((a) => a.subject))].filter((s) => !bySubject.has(s));
 
   return (
     <div className="space-y-4">
-      {onlyMe && (
-        <Alert kind="warning">
-          지금 고를 수 있는 담당이 <strong>{instructors[0]?.name ?? "없음"}</strong> 뿐이에요. 학생명단 → 전체 탭에서
-          <strong> 이혜영·이영수 계정의 등급을 “강사”로</strong> 올리면 여기 목록에 나옵니다.
-        </Alert>
-      )}
-
-      <p className="text-sm text-slate">
-        {termLabel} 반 {rows.length}개. 트랙을 고르고 시간대 줄을 눌러 한 번에 담으세요 —{" "}
-        <strong className="text-ink">누가 무엇을 맡는지는 그 달 편성표</strong>를 보고 정합니다.
-      </p>
-
-      {/* 트랙 좁히기 */}
-      <div className="flex flex-wrap gap-1.5">
-        {[{ key: null, label: "전체" }, ...TRACKS.map((t) => ({ key: t as string | null, label: TRACK_LABEL[t] }))].map((t) => (
-          <button
-            key={t.label}
-            type="button"
-            onClick={() => setTrack(t.key)}
-            className={cn(
-              "rounded-full border px-3.5 py-1.5 text-sm font-bold transition",
-              track === t.key ? "border-brand-500 bg-brand-500 text-white" : "border-line bg-paper text-ink-soft hover:border-brand-300",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-        <button type="button" onClick={() => setMany(shown, !allOn)} className="btn-ghost ml-auto !px-3 !py-1.5 text-xs">
-          {allOn ? "보이는 것 전체 해제" : "보이는 것 전체 선택"}
+      {/* ─── 편성표대로 채우기 ─── */}
+      <div className="rounded-xl2 border border-brand-200 bg-brand-50/60 p-4">
+        <p className="text-sm font-bold text-ink">편성표대로 채우기</p>
+        <p className="mt-1 text-sm text-ink-soft">
+          반에 정해 둔 <strong>LC 교재</strong>가 그 시간의 과목을 말해 줘요 — 교재가 있으면 LC, 없으면 RC 입니다. 그대로{" "}
+          {[...bySubject.entries()].map(([s, i]) => `${SUBJECT_LABEL[s]} ${i.name}`).join(" · ") || "각 과목 강사"} 에게 맡깁니다.
+        </p>
+        <ul className="mt-2 space-y-0.5 text-xs text-slate">
+          <li>· 담당이 정해지는 반 <strong className="text-ink-soft">{autoCount}개</strong></li>
+          {plan.clear.length > 0 && (
+            <li>
+              · 묶음·스파르타 <strong className="text-ink-soft">{plan.clear.length}개</strong>는 두 과목을 이어 들어서 <strong className="text-ink-soft">담당을 비웁니다</strong>
+            </li>
+          )}
+          {plan.unknown.length > 0 && <li>· LC 교재가 안 정해진 {plan.unknown.length}개는 건드리지 않아요 (반 상세에서 교재를 먼저 고르세요)</li>}
+          {missingSubjects.length > 0 && (
+            <li className="text-brand-700">
+              · {missingSubjects.map((s) => SUBJECT_LABEL[s]).join("·")} 강사 계정이 아직 없어 그 반은 그대로 둡니다 — 가입하시면 이 버튼을 다시 누르세요
+            </li>
+          )}
+        </ul>
+        <button type="button" onClick={auto} disabled={pending || autoCount + plan.clear.length === 0} className="btn-primary mt-3 !py-2" aria-busy={pending}>
+          <Icon name="bolt" size={18} className="brightness-0 invert" />
+          {pending ? "채우는 중…" : "편성표대로 채우기"}
         </button>
       </div>
 
-      {/* 시간대별 묶음 */}
-      <div className="max-h-[26rem] space-y-3 overflow-y-auto rounded-xl2 border border-line bg-surface p-3">
-        {groups.map(([block, list]) => {
-          const on = list.every((r) => picked.has(r.id));
-          return (
-            <div key={block}>
-              <div className="mb-1.5 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setMany(list, !on)}
-                  className={cn(
-                    "rounded-lg px-2 py-1 text-sm font-black tabular-nums transition",
-                    on ? "bg-brand-500 text-white" : "bg-brand-50 text-brand-700 hover:bg-brand-100",
-                  )}
-                >
-                  {block}
-                </button>
-                <span className="text-xs text-mist">{list.length}개</span>
-              </div>
-              <ul className="grid gap-1.5 sm:grid-cols-2">
-                {list.map((r) => {
-                  const checked = picked.has(r.id);
-                  return (
-                    <li key={r.id}>
-                      <label
-                        className={cn(
-                          "flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition",
-                          checked ? "border-brand-400 bg-brand-50 font-bold text-ink" : "border-line bg-paper text-ink-soft hover:border-brand-300",
-                        )}
-                      >
-                        <input type="checkbox" checked={checked} onChange={() => setMany([r], !checked)} className="size-4 shrink-0 accent-[#ff2e88]" />
-                        <span className="min-w-0 flex-1 truncate">
-                          {r.course}
-                          <span className="ml-1 text-xs text-slate">{TRACK_LABEL[r.track] ?? r.track}</span>
-                          {r.package && <span className="ml-1 rounded bg-ink/10 px-1 text-[0.65rem] font-bold text-ink-soft">묶음</span>}
-                        </span>
-                        <span className="shrink-0 text-xs text-mist">{r.instructor ?? "미지정"}</span>
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          );
-        })}
-        {groups.length === 0 && <p className="py-6 text-center text-sm text-slate">이 트랙에는 반이 없어요.</p>}
-      </div>
+      {msg && <Alert kind={msg.kind === "info" ? "warning" : msg.kind}>{msg.text}</Alert>}
 
-      <p className="text-xs text-slate">
-        <strong className="text-ink-soft">묶음</strong> 표시가 붙은 120분·140분 반과 스파르타 반은 한 시간씩 강사가 갈려요 —
-        담당은 한 명만 들어가니, 실제 수업은 안에 든 시간 단위 반에 넣은 강사가 맞습니다.
-      </p>
+      {/* ─── 손으로 고치기 ─── */}
+      <details className="group">
+        <summary className="cursor-pointer list-none text-sm font-bold text-ink-soft hover:text-brand-600">
+          <Icon name="students" size={16} className="mr-1 inline" />
+          손으로 골라 바꾸기 <span className="text-slate">({termLabel} 반 {rows.length}개)</span>
+        </summary>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
-        <label htmlFor="assign-instructor" className="sr-only">
-          담당 강사
-        </label>
-        <select
-          id="assign-instructor"
-          value={instructorId}
-          onChange={(e) => setInstructorId(e.target.value)}
-          className="input !w-auto !py-2 text-sm font-bold"
-        >
-          {instructors.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.name}
-            </option>
-          ))}
-        </select>
-        <button type="button" onClick={apply} disabled={pending || picked.size === 0} className="btn-primary !py-2" aria-busy={pending}>
-          <Icon name="students" size={18} className="brightness-0 invert" />
-          {pending ? "바꾸는 중…" : picked.size ? `${picked.size}개 반에 적용` : "반을 골라 주세요"}
-        </button>
-      </div>
+        <div className="mt-3 space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            {[{ key: null, label: "전체" }, ...TRACKS.map((t) => ({ key: t as string | null, label: TRACK_LABEL[t] }))].map((t) => (
+              <button
+                key={t.label}
+                type="button"
+                onClick={() => setTrack(t.key)}
+                className={cn(
+                  "rounded-full border px-3.5 py-1.5 text-sm font-bold transition",
+                  track === t.key ? "border-brand-500 bg-brand-500 text-white" : "border-line bg-paper text-ink-soft hover:border-brand-300",
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+            <button type="button" onClick={() => setMany(shown, !allOn)} className="btn-ghost ml-auto !px-3 !py-1.5 text-xs">
+              {allOn ? "보이는 것 전체 해제" : "보이는 것 전체 선택"}
+            </button>
+          </div>
 
-      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+          <div className="max-h-[26rem] space-y-3 overflow-y-auto rounded-xl2 border border-line bg-surface p-3">
+            {groups.map(([block, list]) => {
+              const on = list.every((r) => picked.has(r.id));
+              return (
+                <div key={block}>
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMany(list, !on)}
+                      className={cn(
+                        "rounded-lg px-2 py-1 text-sm font-black tabular-nums transition",
+                        on ? "bg-brand-500 text-white" : "bg-brand-50 text-brand-700 hover:bg-brand-100",
+                      )}
+                    >
+                      {block}
+                    </button>
+                    <span className="text-xs text-mist">{list.length}개</span>
+                  </div>
+                  <ul className="grid gap-1.5 sm:grid-cols-2">
+                    {list.map((r) => {
+                      const checked = picked.has(r.id);
+                      const subject = subjectOfId.get(r.id);
+                      return (
+                        <li key={r.id}>
+                          <label
+                            className={cn(
+                              "flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition",
+                              checked ? "border-brand-400 bg-brand-50 font-bold text-ink" : "border-line bg-paper text-ink-soft hover:border-brand-300",
+                            )}
+                          >
+                            <input type="checkbox" checked={checked} onChange={() => setMany([r], !checked)} className="size-4 shrink-0 accent-[#ff2e88]" />
+                            <span className="min-w-0 flex-1 truncate">
+                              {r.course}
+                              <span className="ml-1 text-xs text-slate">{TRACK_LABEL[r.track] ?? r.track}</span>
+                            </span>
+                            {subject && <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[0.65rem] font-black", SUBJECT_CLASS[subject])}>{SUBJECT_LABEL[subject]}</span>}
+                            {clearSet.has(r.id) && <span className="shrink-0 rounded bg-ink/10 px-1.5 py-0.5 text-[0.65rem] font-bold text-ink-soft">묶음</span>}
+                            <span className="shrink-0 text-xs text-mist">{r.instructor ?? "미지정"}</span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              );
+            })}
+            {groups.length === 0 && <p className="py-6 text-center text-sm text-slate">이 트랙에는 반이 없어요.</p>}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label htmlFor="assign-instructor" className="sr-only">
+              담당 강사
+            </label>
+            <select id="assign-instructor" value={instructorId} onChange={(e) => setInstructorId(e.target.value)} className="input !w-auto !py-2 text-sm font-bold">
+              {instructors.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.name} {i.subject ? `(${SUBJECT_LABEL[i.subject]} 강사)` : "(관리자 — 수업을 맡지 않아요)"}
+                </option>
+              ))}
+            </select>
+            <button type="button" onClick={apply} disabled={pending || picked.size === 0} className="btn-primary !py-2" aria-busy={pending}>
+              {pending ? "바꾸는 중…" : picked.size ? `${picked.size}개 반에 적용` : "반을 골라 주세요"}
+            </button>
+          </div>
+        </div>
+      </details>
     </div>
   );
 }

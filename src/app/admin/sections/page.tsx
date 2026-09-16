@@ -59,7 +59,7 @@ export default async function AdminSectionsPage({
       .order("target_score")
       .order("name"),
     isAdmin(profile.role)
-      ? supabase.from("profiles").select("id, name, role").in("role", ["instructor", "admin"]).order("name")
+      ? supabase.from("profiles").select("id, name, role, subject").in("role", ["instructor", "admin"]).order("name")
       : Promise.resolve({ data: null }),
     supabase.from("timetable_slots").select("id, level, program, season, start_time, end_time").order("level").order("start_time").order("end_time"),
   ]);
@@ -255,12 +255,18 @@ export default async function AdminSectionsPage({
           <div className="mt-4">
             <AssignInstructor
               termLabel={termLabel}
-              instructors={(instructors ?? []).map((i) => ({ id: i.id, name: i.name }))}
+              termId={term.id}
+              // 과목이 있는 강사(이혜영 LC · 이영수 RC)를 앞에 둔다 — 관리자는 수업을 맡지 않는다
+              instructors={(instructors ?? [])
+                .map((i) => ({ id: i.id, name: i.name, subject: i.subject === "lc" ? ("lc" as const) : i.subject === "rc" ? ("rc" as const) : null }))
+                .sort((a, b) => Number(!a.subject) - Number(!b.subject))}
               rows={sorted.map((s) => ({
                 id: s.id,
+                courseId: s.course_id,
                 course: s.course?.name ?? "강좌",
                 track: s.track,
                 timeBlock: s.time_block,
+                bookSet: s.book_set,
                 instructor: s.instructor?.name ?? null,
                 // 묶음 반(안에 시간 단위 반이 든 반)·스파르타 반은 한 시간씩 강사가 갈린다
                 package: (packages.get(s.id)?.parts.length ?? 0) > 0 || s.course?.program === "sparta",

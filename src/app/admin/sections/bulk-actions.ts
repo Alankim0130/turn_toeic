@@ -7,6 +7,7 @@ import type { Database } from "@/lib/supabase/database.types";
 import { sectionKeyOf, timeBlockOf } from "@/components/admin/sections/bulk";
 import { SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
 import { blockContains } from "@/lib/time-blocks";
+import { subjectOf } from "@/lib/instructor-subject";
 
 /**
  * 반 일괄 개설: 시간표(레벨·시간대) × 강좌 × 트랙 조합에서 고른 것만 한 번에 만든다.
@@ -38,12 +39,14 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
   if (rows.length > 200) return { ok: false, error: "한 번에 200개까지 만들 수 있어요." };
 
   const supabase = await createClient();
-  const [{ data: term }, { data: classDates }, { data: slots }, { data: courses }, { data: existing }] = await Promise.all([
+  const [{ data: term }, { data: classDates }, { data: slots }, { data: courses }, { data: existing }, { data: teachers }] = await Promise.all([
     supabase.from("terms").select("year, month, enrollment_opens_at, closes_at").eq("id", termId).maybeSingle(),
     supabase.from("term_class_dates").select("track").eq("term_id", termId),
     supabase.from("timetable_slots").select("id, level, program, season, start_time, end_time"),
     supabase.from("courses").select("id, program, target_score").eq("is_active", true),
     supabase.from("class_sections").select("course_id, track, time_block").eq("term_id", termId),
+    // 과목이 정해진 강사 (이혜영 LC · 이영수 RC) — 반의 LC 교재로 담당을 저절로 정한다
+    supabase.from("profiles").select("id, subject").in("role", ["instructor", "admin"]).not("subject", "is", null),
   ]);
   if (!term) return { ok: false, error: "기수(월)를 찾을 수 없어요." };
   if (!term.enrollment_opens_at || !term.closes_at) {
@@ -56,7 +59,25 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
   const courseById = new Map((courses ?? []).map((c) => [c.id, c]));
   const taken = new Set((existing ?? []).map((s) => sectionKeyOf(s.course_id, s.track, s.time_block)));
   const sessionsOf = (t: string) => (classDates ?? []).filter((d) => d.track === t).length || 1;
-  const instructorId = isAdmin(profile.role) && input.instructorId ? input.instructorId : user.id;
+  const fallbackInstructor = isAdmin(profile.role) && input.instructorId ? input.instructorId : user.id;
+  // 과목 → 강사. 반의 LC 교재(book_set)가 그 시간의 과목을 말해 준다 (lib/instructor-subject.ts)
+  const bySubject = new Map<string, string>();
+  for (const t of teachers ?? []) if (t.subject) bySubject.set(t.subject, t.id);
+  // 같은 강좌·시간대 묶음에 LC 교재가 하나라도 있어야 과목을 읽을 수 있다 (한쪽이 LC 면 반대쪽이 RC)
+  const groupHasBook = new Set(
+    rows.filter((r) => r.bookSet === "A" || r.bookSet === "B").map((r) => `${Number(r.courseId)}|${r.slotId ?? ""}`),
+  );
+
+  /**
+   * 담당 강사 (2026-09-16 Alan "자동으로 LC 이혜영, RC 이영수").
+   * 묶음 반·스파르타 반은 두 과목을 이어 들어 담당이 한 명이 아니므로 비운다 —
+   * 만든 사람을 넣어 두면 학생에게 틀린 이름이 보인다. 과목 강사가 아직 없으면 고른 사람으로 둔다.
+   */
+  const instructorOf = (courseId: number, slotId: number | null, bookSet: string | null, isPackage: boolean) => {
+    const subject = subjectOf({ bookSet, isPackage, groupHasBook: groupHasBook.has(`${courseId}|${slotId ?? ""}`) });
+    if (!subject) return isPackage ? null : fallbackInstructor;
+    return bySubject.get(subject) ?? fallbackInstructor;
+  };
 
   const inserts: SectionInsert[] = [];
   let skipped = 0;
@@ -109,7 +130,7 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
       enrollment_opens_at: term.enrollment_opens_at,
       closes_at: term.closes_at,
       target_sessions: sessionsOf(r.track),
-      instructor_id: instructorId,
+      instructor_id: instructorOf(courseId, r.slotId == null ? null : Number(r.slotId), bookSet, isPackage),
       tuition,
       live_tuition: live,
       capacity,

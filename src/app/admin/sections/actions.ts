@@ -7,6 +7,8 @@ import { requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import { isYmd, labelKo } from "@/components/admin/sections/dates";
 import { isLectureKind, sortLectureKinds } from "@/lib/utils";
+import { sectionPackages } from "@/lib/time-blocks";
+import { planSubjects, SUBJECT_LABEL } from "@/lib/instructor-subject";
 
 type SectionInsert = Database["public"]["Tables"]["class_sections"]["Insert"];
 type SectionUpdate = Database["public"]["Tables"]["class_sections"]["Update"];
@@ -404,4 +406,76 @@ export async function assignInstructor(input: { sectionIds: number[]; instructor
   revalidatePath("/admin/sections");
   revalidatePath("/admin");
   return { ok: true, count: data?.length ?? 0 };
+}
+
+/**
+ * 담당 강사 편성표대로 채우기 (2026-09-16 Alan 요청 "자동으로 LC 이혜영, RC 이영수").
+ *
+ * 규칙은 `src/lib/instructor-subject.ts` 한곳 — 반의 `book_set`(LC 교재) 유무로 과목을 읽고
+ * 그 과목의 강사(`profiles.subject`)에게 맡긴다. **화면이 보낸 배정은 믿지 않고 서버가 다시 계산한다.**
+ * 묶음 반·스파르타 반은 두 과목을 이어 들어 담당이 한 명이 아니므로 **비운다** — 알런(만든 사람)이
+ * 담당으로 남아 있으면 학생에게 틀린 이름이 보인다.
+ */
+export async function autoAssignInstructors(
+  input: { termId: number },
+): Promise<{ ok: boolean; error?: string; assigned?: number; cleared?: number; unknown?: number; missing?: string[] }> {
+  const { profile } = await requireStaff();
+  if (!isAdmin(profile.role)) return { ok: false, error: "강사·관리자만 바꿀 수 있어요." };
+  const termId = Number(input.termId);
+  if (!Number.isInteger(termId) || termId <= 0) return { ok: false, error: "기수(월)가 선택되지 않았어요." };
+
+  const supabase = await createClient();
+  const [{ data: sections }, { data: people }] = await Promise.all([
+    supabase
+      .from("class_sections")
+      .select("id, course_id, term_id, track, time_block, book_set, course:courses(program)")
+      .eq("term_id", termId),
+    supabase.from("profiles").select("id, name, subject").in("role", ["instructor", "admin"]).not("subject", "is", null),
+  ]);
+  if (!sections?.length) return { ok: false, error: "이 달에 개설된 반이 없어요." };
+
+  // 묶음 판정은 화면·DB 와 같은 규칙 (private.time_block_contains = blockContains)
+  const packages = sectionPackages(sections);
+  const plan = planSubjects(
+    sections.map((s) => ({
+      id: s.id,
+      course_id: s.course_id,
+      time_block: s.time_block,
+      book_set: s.book_set,
+      package: (packages.get(s.id)?.parts.length ?? 0) > 0 || s.course?.program === "sparta",
+    })),
+  );
+
+  const bySubject = new Map<string, string>();
+  for (const p of people ?? []) if (p.subject) bySubject.set(p.subject, p.id);
+
+  // 계정이 아직 없는 과목은 건너뛴다 (이영수 가입 전 등) — 알런으로 두느니 그대로 남긴다
+  const missing: string[] = [];
+  const idsFor = new Map<string, number[]>();
+  for (const a of plan.assign) {
+    const who = bySubject.get(a.subject);
+    if (!who) {
+      if (!missing.includes(SUBJECT_LABEL[a.subject])) missing.push(SUBJECT_LABEL[a.subject]);
+      continue;
+    }
+    idsFor.set(who, [...(idsFor.get(who) ?? []), a.id]);
+  }
+
+  let assigned = 0;
+  for (const [who, ids] of idsFor) {
+    const { data, error } = await supabase.from("class_sections").update({ instructor_id: who }).in("id", ids).select("id");
+    if (error) return { ok: false, error: `강사를 바꾸지 못했어요. ${error.message}` };
+    assigned += data?.length ?? 0;
+  }
+
+  let cleared = 0;
+  if (plan.clear.length) {
+    const { data, error } = await supabase.from("class_sections").update({ instructor_id: null }).in("id", plan.clear).select("id");
+    if (error) return { ok: false, error: `묶음 반의 담당을 비우지 못했어요. ${error.message}` };
+    cleared = data?.length ?? 0;
+  }
+
+  revalidatePath("/admin/sections");
+  revalidatePath("/admin");
+  return { ok: true, assigned, cleared, unknown: plan.unknown.length, missing };
 }
