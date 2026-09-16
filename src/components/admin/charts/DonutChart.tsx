@@ -60,12 +60,13 @@ export function DonutChart({
         </text>
       </svg>
       <div className="w-full">
-        <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+        {/* 칸이 좁으면 한 줄씩 내려온다. grid-cols-2 로 못박으면 좁은 카드에서 글자가 한 자씩 접힌다 */}
+        <ul className="grid gap-x-4 gap-y-1.5 text-sm" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(9rem, 1fr))" }}>
           {data.map((d, i) => (
             <li key={d.label} className="flex items-center gap-2">
               <span className="h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: SERIES[i % SERIES.length] }} aria-hidden />
-              <span className="truncate font-semibold text-ink-soft">{d.label}</span>
-              <span className="ml-auto text-xs font-bold tabular-nums text-slate">{pct(d.value, total)}%</span>
+              <span className="min-w-0 truncate font-semibold text-ink-soft">{d.label}</span>
+              <span className="ml-auto shrink-0 whitespace-nowrap text-xs font-bold tabular-nums text-slate">{pct(d.value, total)}%</span>
             </li>
           ))}
         </ul>
