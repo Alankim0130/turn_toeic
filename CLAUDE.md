@@ -77,6 +77,13 @@
   목록은 `src/lib/site.ts` 의 `navAdminFor(role)` 한곳이 정한다 — 조교에게 열어 줄 항목에는 `NavItem.crew` 를 붙인다.
   관리자 화면의 좌측 메뉴(`AdminNav`)·하단 바(`AdminBottomNav`)도 같은 함수를 쓴다.
   **메뉴에서 빼는 것으로 권한을 막지 않는다** — 화면마다 `requireStaff()`/`requireCrew()` 가 진짜 가드다
+- **`Reveal`(스크롤 페이드업)의 `threshold` 를 올리지 말 것** (2026-09-16, 실제로 내 시간표가 통째로 빈 화면이 됐다).
+  `.reveal` 은 `opacity:0` 으로 시작해 IntersectionObserver 가 `.is-visible` 을 붙여야 보인다. 그런데
+  `threshold` 는 **"대상의 몇 %가 보이나"** 라서 **화면보다 긴 카드는 그 비율에 닿지 못한다** —
+  화면 700px 에서 4000px 짜리 카드는 최대 16%, 5000px 면 12% 라 `threshold: 0.15` 로는 영원히 안 나타난다.
+  그래서 `threshold: 0`(한 픽셀이라도 걸치면 켬)을 쓰고 등장 시점은 `rootMargin` 이 정한다.
+  IntersectionObserver 가 없으면 바로 보여 준다 — 안 켜 주면 화면이 빈 채로 남는 구조라, 실패는 늘 "보이는" 쪽이어야 한다.
+  **긴 목록을 `Reveal` 로 감쌀 때 특히 주의** (18개 파일이 쓴다)
 - **기본 이모지 절대 금지.** 아이콘·일러스트는 힉스필드(Higgsfield)로 제작해 `public/` 에 저장한 자산만 사용.
   아이콘은 `<Icon name="…" />` 로만 쓴다 — Tailwind preflight 의 `img { height: auto }` 때문에 flex 안에서 세로로 늘어나므로
   `Icon`·`Symbol` 이 가로·세로를 CSS 로 못박는다. 새 이미지 컴포넌트를 만들 때도 같은 처리를 할 것
