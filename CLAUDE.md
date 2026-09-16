@@ -20,7 +20,13 @@
 
 - **Next.js** (App Router) + TypeScript
 - **Supabase** — Auth, Postgres, Storage, Edge Functions, RLS
-- 배포: Vercel
+- 배포: Vercel (`main` 에 푸시하면 자동 배포)
+- **DB 마이그레이션도 `main` 에 머지하면 자동 적용된다** (2026-09-16 Alan 설정 — Supabase 의 GitHub 연동:
+  Deploy to production 켬 / production branch `main` / working directory `.`).
+  그래서 `supabase/migrations/` 에 파일을 더하고 머지하면 끝이다 — **노트북에서 `supabase db push` 를 따로 하지 않는다.**
+  적용 결과는 Supabase 대시보드 `Database → Migrations` 에서 확인한다.
+  마이그레이션이 실패하면 그 푸시의 배포가 실패로 뜨므로, 파일을 올리기 전에 문법·데이터 안전성을 확인할 것.
+  **미리보기 브랜치(Preview branches)는 켜지 않는다** — Branching Compute 는 별도 과금이다.
 - OCR: 외부 OCR API 호출 (엔진 미확정)
 
 ---
