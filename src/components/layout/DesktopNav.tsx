@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
 import { canUseFeature, featureHref, NAV_MAIN, STUDENT_FEATURES, STUDENT_HUB } from "@/lib/site";
 import { cn } from "@/lib/utils";
-import { isActivePath } from "./NavLinks";
+import { ExternalMark, isActivePath } from "./NavLinks";
 
 export type NavAccess = { active: boolean; enrollee: boolean };
 
@@ -35,6 +35,18 @@ export function DesktopNav({ access }: { access: NavAccess }) {
           return (
             <li key={item.href}>
               <StudentDropdown access={access} pathname={pathname} />
+            </li>
+          );
+        }
+        if (item.external) {
+          // 네이버 상담예약처럼 바깥으로 나가는 링크. 새 창으로 열고 현재 페이지 표시는 없다
+          return (
+            <li key={item.href}>
+              <a href={item.href} target="_blank" rel="noopener noreferrer" className={cn(linkClass(false), "gap-1")}>
+                {item.label}
+                <ExternalMark className="text-mist" />
+                <span className="sr-only">(새 창)</span>
+              </a>
             </li>
           );
         }
