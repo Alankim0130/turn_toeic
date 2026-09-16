@@ -480,6 +480,9 @@ export type Database = {
           file_path: string
           file_size: number | null
           id: number
+          kind: string
+          label: string | null
+          sort_order: number
           updated_at: string
           uploaded_by: string | null
         }
@@ -492,6 +495,9 @@ export type Database = {
           file_path: string
           file_size?: number | null
           id?: number
+          kind?: string
+          label?: string | null
+          sort_order?: number
           updated_at?: string
           uploaded_by?: string | null
         }
@@ -504,6 +510,9 @@ export type Database = {
           file_path?: string
           file_size?: number | null
           id?: number
+          kind?: string
+          label?: string | null
+          sort_order?: number
           updated_at?: string
           uploaded_by?: string | null
         }
@@ -533,6 +542,7 @@ export type Database = {
           cover_type: string | null
           description: string | null
           id: number
+          lesson_offset: number
           level: number
           title: string | null
           updated_at: string
@@ -546,6 +556,7 @@ export type Database = {
           cover_type?: string | null
           description?: string | null
           id?: number
+          lesson_offset?: number
           level: number
           title?: string | null
           updated_at?: string
@@ -559,6 +570,7 @@ export type Database = {
           cover_type?: string | null
           description?: string | null
           id?: number
+          lesson_offset?: number
           level?: number
           title?: string | null
           updated_at?: string

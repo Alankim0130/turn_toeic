@@ -19,8 +19,8 @@ export default async function LcAudioAdminPage({ searchParams }: { searchParams:
 
   const [{ data: levelRows }, { data: bookRows }, { data: trackRows }] = await Promise.all([
     supabase.from("lc_levels").select("level").order("sort_order").order("level"),
-    supabase.from("lc_books").select("id, level, book_set, title, description, cover_name, updated_at"),
-    supabase.from("lc_audio_tracks").select("id, day, book_id, file_name, file_size"),
+    supabase.from("lc_books").select("id, level, book_set, title, description, cover_name, lesson_offset, updated_at"),
+    supabase.from("lc_audio_tracks").select("id, day, kind, label, sort_order, book_id, file_name, file_size"),
   ]);
   const levels = (levelRows ?? []).map((l) => l.level);
   const books = sortBooks(bookRows ?? []);
@@ -31,7 +31,7 @@ export default async function LcAudioAdminPage({ searchParams }: { searchParams:
     <PageHeader
       icon="headphones"
       title="LC 음원"
-      description={`레벨마다 A반(홀수달)·B반(짝수달) 교재 한 권씩이고, 교재마다 Day 1~${DAY_COUNT} 음원을 올립니다. 수강생은 LC 음원듣기에서 교재를 골라 들어요.`}
+      description={`레벨마다 A반(홀수달)·B반(짝수달) 교재 한 권씩이고, 교재마다 수업 음원과 숙제 음원을 강(${DAY_COUNT}칸)별로 올립니다. 한 강에 파일이 여러 개여도 됩니다.`}
     />
   );
 
@@ -113,14 +113,18 @@ export default async function LcAudioAdminPage({ searchParams }: { searchParams:
               </p>
               <h2 id="tracks-title" className="truncate text-lg font-black text-ink">
                 {selected.title || bookLabel(selected)} 음원{" "}
-                <span className="tabular-nums text-slate">
-                  ({selectedTracks.length}/{DAY_COUNT})
-                </span>
+                <span className="tabular-nums text-slate">({selectedTracks.length}개)</span>
               </h2>
             </div>
           </div>
 
-          <AudioDays key={selected.id} bookId={selected.id} label={`${level} ${bookLabel(selected)}`} tracks={selectedTracks} />
+          <AudioDays
+            key={selected.id}
+            bookId={selected.id}
+            label={`${level} ${bookLabel(selected)}`}
+            lessonOffset={selected.lesson_offset ?? 0}
+            tracks={selectedTracks}
+          />
         </section>
       )}
     </>

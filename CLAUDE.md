@@ -250,15 +250,26 @@
   **홀수달은 A반, 짝수달은 B반** 교재로 수업한다.
   - 교재 한 권(`lc_books`)마다 표지 이미지 1장 + 교재명 + 짧은 설명(200자), 음원은 교재에 속한다.
     레벨 × 반이 곧 교재 한 권이라 `lc_books` 에 권 컬럼은 없다 (마이그레이션 20260916140000).
-  - **음원은 교재마다 Day 1~9 아홉 칸**이다 (2026-09-16 Alan 요청). 자유 제목이 아니라 `lc_audio_tracks.day` 가 자리를 정하고
-    한 칸에 파일 하나만 들어간다(`unique(book_id, day)`). 강사는 빈 칸을 채우거나 기존 파일을 바꾼다 —
-    여러 개를 한 번에 고르면 파일명의 숫자 순서대로 빈 Day 칸을 채운다. Day 개수는 `src/lib/lc-audio.ts` 의 `DAYS` 한곳에서 관리하고
-    DB 의 `day between 1 and 9` check 와 값이 같아야 한다.
+  - **음원은 교재마다 종류(수업·숙제) × 강 아홉 칸**이다 (2026-09-16 Alan 요청, 마이그레이션 20260916150000).
+    - **수업 음원 / 숙제 음원**(`lc_audio_tracks.kind` = `lesson` | `homework`)을 학생 화면에서 나눠 보여 준다.
+      숙제 음원은 지금 650 에만 있지만 레벨로 막지 않는다 — 다른 레벨에 생기면 올리기만 하면 된다.
+    - **강 번호는 교재마다 다르게 시작한다.** 칸은 늘 1~9 이고, `lc_books.lesson_offset` 을 더해 화면에 보여 준다.
+      650A 는 1강~9강(offset 0), **650B 는 11강~19강(offset 10)**, 750A·750B 는 각각 1강~9강이다. 화면에서 고칠 수 있다.
+    - **한 강에 파일이 여러 개일 수 있다** (650A 3강 = 교과서 현재진행형 + 영국발음, 650A 9강 = 9강 + 10강, 750A 9강 = 팟3 + 음성).
+      그래서 `unique(book_id, day)` 를 풀었고, 같은 칸 안 순서는 `sort_order`, 구분 이름은 `label`(40자) 이다.
+      올리면 **덮어쓰지 않고 뒤에 더한다** — 바꾸려면 지우고 다시 올린다.
+    - 여러 개를 한 번에 고르면 파일명 숫자 순서로 1강부터 배치하고, 칸보다 파일이 많으면 남는 파일은 마지막 칸에 함께 넣는다.
+      **올리기 전에 배치를 화면에서 고칠 수 있다** (파일 10개를 9칸에 넣는 경우가 실제로 있다).
+    - 칸 개수는 `src/lib/lc-audio.ts` 의 `DAYS` 한곳에서 관리하고 DB 의 `day between 1 and 9` check 와 값이 같아야 한다.
   - 레벨 목록은 `lc_levels` 에서 읽고, 레벨을 추가하면 트리거가 A·B 두 칸을 만든다.
-  - 학생 화면: 레벨 카드 → A반·B반 교재(큰 표지 + 설명) → 교재를 누르면 그 교재의 Day 1~9. "이번 달 교재"는 월의 홀짝으로 표시,
-    기본 레벨은 지금 듣는 강좌의 `courses.target_score`, 기본 교재는 이번 달 반.
-    아직 안 올라온 Day 도 칸으로 보여 준다 (몇 개 중 몇 개인지 알 수 있게).
-  - 열람은 지금 수강 중인 수강생 전체(레벨·반으로 막지 않음). 음원 목록은 Day 번호 순서.
+  - 학생 화면: 레벨 카드 → A반·B반 교재(큰 표지 + 설명) → 교재를 누르면 **수업 음원 · 숙제 음원 구역**이 차례로 나온다.
+    "이번 달 교재"는 월의 홀짝으로 표시, 기본 레벨은 지금 듣는 강좌의 `courses.target_score`, 기본 교재는 이번 달 반.
+    아직 안 올라온 강도 칸으로 보여 준다 (몇 강까지 있는지 알 수 있게).
+  - **재생은 토익 전용 플레이어**(`src/components/lc/AudioPlayer.tsx`, 2026-09-16 Alan 요청)로 한다.
+    재생 · 일시정지 · 정지 · ±5초 · **배속 0.5~2배** · **구간반복(A 지점 → B 지점)**. 한 화면에서 다른 음원을 누르면 먼저 것은 멈춘다.
+    파일은 재생을 누를 때 처음 받는다(`preload="none"`) — 방학에 학생이 600명이라 전송량을 아낀다.
+    재생 버튼 도형은 이 파일 안 `Glyph` 에 모여 있다 (PNG 아이콘은 작은 크기에서 흐리고 버튼 색을 따라가지 못해 도형으로 그렸다. 이모지는 쓰지 않는다).
+  - 열람은 지금 수강 중인 수강생 전체(레벨·반으로 막지 않음). 음원 목록은 강 번호 → 같은 강 안에서는 올린 순서.
   - **음원 파일은 저장소에 그대로 올린다** (2026-09-16 Alan 확인). 외부 링크(드랍박스 등)를 쓰지 않는다 —
     수강생전용을 지키려면 private 버킷 + 서명 URL 이어야 하고, 공유 링크는 한 번 새면 누구나 받을 수 있다.
 - 파일은 전부 private 버킷(`study-materials`, `homework`, `lc-audio`, `lc-textbooks`). 화면은 `/files/{material|homework|audio|textbook}/{id}` 로
@@ -602,16 +613,20 @@ create table lc_books (                    -- LC 교재 (20260915110833 · 20260
   title       text,                        -- 교재명 (60자, 비우면 "A반 교재")
   description text,                        -- 짧은 설명 (200자)
   cover_path text unique, cover_name text, cover_size bigint, cover_type text,
+  lesson_offset int not null default 0,    -- 첫 강 번호 - 1. 650B 는 11강부터라 10 (마이그레이션 20260916150000)
   unique(level, book_set)                  -- 레벨 × 반 = 한 권. 칸은 레벨 트리거가 만들고 화면은 수정만
 );                                         -- 레벨 3개(650·750·850) × 2반 = 전체 6권
 
-create table lc_audio_tracks (             -- LC 음원. 교재마다 Day 1~9
+create table lc_audio_tracks (             -- LC 음원. 교재 × 종류 × 강 1~9 (마이그레이션 20260916150000)
   id        bigint primary key,
   book_id   bigint references lc_books,    -- 음원은 교재에 속한다
-  day       int not null check (day between 1 and 9),
-  file_path text unique, file_name text, file_size bigint, content_type text,
-  unique(book_id, day)                     -- 한 Day 에 파일 하나. 다시 올리면 바뀐다
-);
+  kind      text not null default 'lesson' -- lesson(수업 시간) | homework(숙제)
+              check (kind in ('lesson','homework')),
+  day       int not null check (day between 1 and 9),   -- 칸. 화면에는 (lesson_offset + day)강 으로 보인다
+  label     text,                          -- 같은 강에 파일이 여러 개일 때 구분 이름 (예: 영국발음, 팟3). 40자
+  sort_order int not null default 0,       -- 같은 강 안에서의 순서
+  file_path text unique, file_name text, file_size bigint, content_type text
+);                                         -- 한 강에 파일 여러 개 가능 — unique(book_id, day) 는 없다
 -- 구버전 study_applications(비회원 자유 양식 신청)·lc_textbook_images(레벨별 이미지 묶음)는
 -- 배포 후 정리 마이그레이션 20260915112851 에서 삭제했다.
 
@@ -697,7 +712,7 @@ where p.role='student'
 | `/my/replay` | 강의 다시보기. 종강일까지 | student |
 | `/my/study` | 내 스터디: 신청한 스터디·시간대, 비대면 자료 받기(해당 날짜부터) | 그 달 수강생 |
 | `/my/homework` | 숙제업로드: 비대면 자료별 사진·PDF 업로드, 점검 상태 | student |
-| `/my/lc-audio` | LC 음원듣기: 레벨 카드 → A반·B반 교재(표지·설명) → 교재의 Day 1~9 음원 재생 | student |
+| `/my/lc-audio` | LC 음원듣기: 레벨 카드 → A반·B반 교재(표지·설명) → 수업 음원·숙제 음원을 강별로, 토익 전용 플레이어(배속·구간반복)로 재생 | student |
 
 **관리자 `/admin`**
 
@@ -715,7 +730,7 @@ where p.role='student'
 | `/admin/study` | 스터디 신청자 명단 (월 · 유형 · 시간대별, 비대면은 숙제 제출 수) | instructor |
 | `/admin/study-materials` | 비대면 자료 날짜별 등록·교체·삭제 (수업일 기준) | instructor |
 | `/admin/homework` | 숙제점검: 날짜별 제출물·미제출자, 점검완료 | instructor |
-| `/admin/lc-audio` | 레벨 탭 → A반·B반 교재 2권의 표지·교재명·설명, 교재별 Day 1~9 음원 등록·교체 | instructor |
+| `/admin/lc-audio` | 레벨 탭 → A반·B반 교재 2권의 표지·교재명·설명, 교재별 수업/숙제 음원 등록(강별, 한 강에 여러 개, 올리기 전 배치 확인) | instructor |
 | `/admin/contacts` | 문의 처리 | instructor |
 | `/admin/notifications` | 알림 설정: 이 기기에서 푸시 받기, 알림 종류 켜기·끄기, 네이버 예약 연결 주소·코드(관리자만) | instructor |
 

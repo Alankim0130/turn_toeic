@@ -198,8 +198,8 @@ export async function getMyLcAudio() {
   const supabase = await createClient();
   const [{ data: levels }, { data: books }, { data: tracks }] = await Promise.all([
     supabase.from("lc_levels").select("level").order("sort_order").order("level"),
-    supabase.from("lc_books").select("id, level, book_set, title, description, cover_name, updated_at"),
-    supabase.from("lc_audio_tracks").select("id, day, book_id"),
+    supabase.from("lc_books").select("id, level, book_set, title, description, cover_name, lesson_offset, updated_at"),
+    supabase.from("lc_audio_tracks").select("id, day, kind, label, sort_order, book_id"),
   ]);
   return { levels: (levels ?? []).map((l) => l.level), books: books ?? [], tracks: tracks ?? [] };
 }

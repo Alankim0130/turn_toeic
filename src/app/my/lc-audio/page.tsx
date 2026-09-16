@@ -7,7 +7,24 @@ import { Icon } from "@/components/ui/Icon";
 import { BookCover } from "@/components/lc/BookCover";
 import { getSessionProfile, isStaff } from "@/lib/auth";
 import { cn, todayKST } from "@/lib/utils";
-import { BOOK_SET_LABEL, BOOK_SET_MONTHS, BOOK_SETS, DAYS, DAY_COUNT, bookLabel, bookSetForMonth, coverSrc, dayLabel, pickBook, pickLevel, sortBooks } from "@/lib/lc-audio";
+import { AudioPlayer } from "@/components/lc/AudioPlayer";
+import {
+  AUDIO_KINDS,
+  AUDIO_KIND_HINT,
+  AUDIO_KIND_LABEL,
+  BOOK_SET_LABEL,
+  BOOK_SET_MONTHS,
+  BOOK_SETS,
+  DAYS,
+  bookLabel,
+  bookSetForMonth,
+  coverSrc,
+  groupByDay,
+  lessonLabel,
+  pickBook,
+  pickLevel,
+  sortBooks,
+} from "@/lib/lc-audio";
 import { getMyLcAudio, getMyOrders, getMyStudyEligibility } from "../_lib/queries";
 
 export const metadata: Metadata = {
@@ -63,7 +80,11 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
   const levelBooks = books.filter((b) => b.level === level);
   const selected = pickBook(sp.book, levelBooks, currentSet);
   const selectedTracks = selected ? tracks.filter((t) => t.book_id === selected.id) : [];
-  const trackByDay = new Map(selectedTracks.map((t) => [t.day, t]));
+  const offset = selected?.lesson_offset ?? 0;
+  // 수업 음원 · 숙제 음원을 따로 보여준다 (2026-09-16 Alan). 없는 종류는 칸을 만들지 않는다
+  const kindSections = AUDIO_KINDS.map((k) => ({ kind: k, byDay: groupByDay(selectedTracks, k) })).filter(
+    (s) => s.byDay.size > 0 || s.kind === "lesson",
+  );
 
   return (
     <div className="space-y-8">
@@ -156,7 +177,7 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
                       )}
                     >
                       <Icon name="headphones" size={14} className={cn(isSelected && "brightness-0 invert")} />
-                      음원 {count}/{DAY_COUNT}개
+                      음원 {count}개
                     </span>
                   </div>
                 </Link>
@@ -181,25 +202,45 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
                 {selected.title || bookLabel(selected)} 음원
               </h2>
             </div>
-            <span className="ml-auto shrink-0 text-sm font-semibold tabular-nums text-slate">{selectedTracks.length}/{DAY_COUNT}개</span>
+            <span className="ml-auto shrink-0 text-sm font-semibold tabular-nums text-slate">{selectedTracks.length}개</span>
           </div>
-          <ul className="divide-y divide-line">
-            {DAYS.map((day) => {
-              const t = trackByDay.get(day);
-              return (
-                <li key={day} className="grid gap-3 px-5 py-4 md:grid-cols-[6rem_1fr] md:items-center">
-                  <p className={cn("text-sm font-black tabular-nums", t ? "text-brand-600" : "text-mist")}>{dayLabel(day)}</p>
-                  {t ? (
-                    <audio controls preload="none" src={`/files/audio/${t.id}`} className="w-full">
-                      브라우저가 음원 재생을 지원하지 않아요.
-                    </audio>
-                  ) : (
-                    <p className="text-sm text-mist">아직 올라오지 않았어요.</p>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+
+          {kindSections.map(({ kind, byDay }) => (
+            <div key={kind} className="border-b border-line last:border-b-0">
+              <div className="flex items-center gap-2 bg-surface px-5 py-2.5">
+                <Icon name={kind === "homework" ? "homework" : "headphones"} size={18} />
+                <h3 className="text-sm font-black text-ink">{AUDIO_KIND_LABEL[kind]}</h3>
+                <span className="text-xs text-mist">{AUDIO_KIND_HINT[kind]}</span>
+                <span className="ml-auto text-xs font-bold tabular-nums text-slate">
+                  {[...byDay.values()].reduce((n, l) => n + l.length, 0)}개
+                </span>
+              </div>
+              <ul className="divide-y divide-line">
+                {DAYS.map((day) => {
+                  const list = byDay.get(day) ?? [];
+                  return (
+                    <li key={day} className="grid gap-3 px-5 py-4 md:grid-cols-[5rem_1fr] md:items-start">
+                      <p className={cn("text-sm font-black tabular-nums", list.length ? "text-brand-600" : "text-mist")}>{lessonLabel(day, offset)}</p>
+                      {list.length ? (
+                        <div className="space-y-2">
+                          {list.map((t) => (
+                            <AudioPlayer
+                              key={t.id}
+                              src={`/files/audio/${t.id}`}
+                              title={`${lessonLabel(day, offset)}${t.label ? ` · ${t.label}` : ""}`}
+                              note={list.length > 1 ? (t.label ?? null) : null}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-mist">아직 올라오지 않았어요.</p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
         </section>
       )}
 
