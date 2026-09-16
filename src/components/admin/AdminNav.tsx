@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
-import { NAV_ADMIN } from "@/lib/site";
+import { navAdminFor } from "@/lib/site";
 import { cn } from "@/lib/utils";
 import { signOut } from "@/app/(auth)/actions";
 
@@ -16,8 +16,9 @@ export function isAdminActive(pathname: string, href: string) {
  * 메뉴가 화면보다 길면 사이드바 안에서만 스크롤한다 — 휠이 메뉴 위에 있으면 메뉴가 내려가고,
  * 끝에 닿아도 본문으로 스크롤이 넘어가지 않는다(overscroll-contain).
  */
-export function AdminSidebar({ name, roleLabel }: { name: string; roleLabel: string }) {
+export function AdminSidebar({ name, roleLabel, role }: { name: string; roleLabel: string; role?: string | null }) {
   const pathname = usePathname();
+  const items = navAdminFor(role);
   return (
     <aside className="sticky top-20 hidden max-h-[calc(100dvh-6rem)] self-start overflow-y-auto overscroll-contain md:block">
       <div className="card p-3">
@@ -32,7 +33,7 @@ export function AdminSidebar({ name, roleLabel }: { name: string; roleLabel: str
         </div>
         <nav aria-label="관리자 메뉴">
           <ul className="space-y-0.5">
-            {NAV_ADMIN.map((item) => {
+            {items.map((item) => {
               const active = isAdminActive(pathname, item.href);
               return (
                 <li key={item.href}>
@@ -70,12 +71,13 @@ export function AdminSidebar({ name, roleLabel }: { name: string; roleLabel: str
 }
 
 /** 모바일 상단 가로 스크롤 탭 */
-export function AdminMobileTabs() {
+export function AdminMobileTabs({ role }: { role?: string | null }) {
   const pathname = usePathname();
+  const items = navAdminFor(role);
   return (
     <nav aria-label="관리자 메뉴" className="-mx-4 mb-5 overflow-x-auto px-4 md:hidden">
       <ul className="flex w-max gap-2 pb-1">
-        {NAV_ADMIN.map((item) => {
+        {items.map((item) => {
           const active = isAdminActive(pathname, item.href);
           return (
             <li key={item.href}>

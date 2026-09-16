@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireStaff } from "@/lib/auth";
+import { requireCrew } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -10,7 +10,7 @@ const STATUSES = new Set(["requested", "confirmed", "shipped", "cancelled"]);
 
 /** 교재주문 상태 변경 (확인 / 발송+송장 / 취소) */
 export async function updateTextbookOrder(formData: FormData) {
-  await requireStaff();
+  await requireCrew();
   const id = Number(formData.get("order_id"));
   const status = String(formData.get("status") ?? "");
   const trackingNo = String(formData.get("tracking_no") ?? "").trim() || null;

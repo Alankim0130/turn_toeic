@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { Logo } from "@/components/ui/Logo";
 import { Icon } from "@/components/ui/Icon";
-import { isStaff, type Profile, type StudentAccess } from "@/lib/auth";
+import { isCrew, type Profile, type StudentAccess } from "@/lib/auth";
 import { MobileMenu } from "./MobileMenu";
 import { StaffModeSwitch } from "./StaffModeSwitch";
 import { DesktopNav } from "./DesktopNav";
 import { signOut } from "@/app/(auth)/actions";
 
 export function SiteHeader({ profile, signedIn, access }: { profile: Profile | null; signedIn: boolean; access: StudentAccess }) {
-  const staff = isStaff(profile?.role);
+  // 조교도 모드를 오간다 (2026-09-16 Alan)
+  const staff = isCrew(profile?.role);
   const navAccess = { active: access.active, enrollee: access.enrollee };
 
   return (
@@ -23,7 +24,7 @@ export function SiteHeader({ profile, signedIn, access }: { profile: Profile | n
 
         <div className="hidden shrink-0 items-center gap-2 lg:flex">
           {/* 스태프는 관리자 화면과 학생 화면을 여기서 오간다 (관리자 바로가기 겸용) */}
-          {staff && <StaffModeSwitch />}
+          {staff && <StaffModeSwitch role={profile?.role} />}
           {signedIn ? (
             <>
               <Link href="/my" className="btn-ghost whitespace-nowrap !px-3 !py-2">
@@ -49,7 +50,7 @@ export function SiteHeader({ profile, signedIn, access }: { profile: Profile | n
         </div>
 
         {/* 모바일·태블릿: 오른쪽 슬라이드 메뉴 */}
-        <MobileMenu signedIn={signedIn} staff={staff} name={profile?.name ?? null} access={navAccess} />
+        <MobileMenu signedIn={signedIn} staff={staff} role={profile?.role ?? null} name={profile?.name ?? null} access={navAccess} />
       </div>
     </header>
   );

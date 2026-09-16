@@ -7,10 +7,19 @@ import type { Database } from "@/lib/supabase/database.types";
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type UserRole = Database["public"]["Enums"]["user_role"];
 
+/** 강사·관리자. 관리자 화면 전체 */
 export const isStaff = (role?: UserRole | null) => role === "instructor" || role === "admin";
-export const isAdmin = (role?: UserRole | null) => role === "admin";
-/** student 이상 = student · instructor · admin (alumni 는 아님) */
-export const isStudentPlus = (role?: UserRole | null) => role === "student" || isStaff(role);
+/**
+ * 관리자 권한. **강사도 포함한다** (2026-09-16 Alan: "강사 권한은 관리자랑 똑같이").
+ * DB 의 private.is_admin() 과 같은 집합이어야 한다.
+ */
+export const isAdmin = (role?: UserRole | null) => isStaff(role);
+/** 조교. 학생 모드는 전부, 관리자 모드는 교재주문·스터디 신청자만 */
+export const isAssistant = (role?: UserRole | null) => role === "assistant";
+/** 스태프 + 조교. 조교에게 열어 준 곳에만 쓴다 (DB 의 private.is_crew()) */
+export const isCrew = (role?: UserRole | null) => isStaff(role) || isAssistant(role);
+/** student 이상 = student · 조교 · instructor · admin (alumni 는 아님) */
+export const isStudentPlus = (role?: UserRole | null) => role === "student" || isCrew(role);
 
 /**
  * 테스터(2026-09-16 Alan 요청): 강사·관리자 계정은 테스트 등급(profiles.test_role)을 켜서 학생처럼 볼 수 있다.
@@ -47,6 +56,17 @@ export async function requireStaff() {
   return s as { user: NonNullable<typeof s.user>; profile: Profile };
 }
 
+/**
+ * 조교에게도 열린 관리자 화면 (교재주문 · 스터디 신청자) 전용.
+ * 나머지 관리자 화면은 그대로 requireStaff() 를 쓴다 — 조교가 주소로 들어와도 막힌다.
+ * 진짜 등급으로 본다 (테스트 등급 중에도 관리자 화면에는 들어올 수 있어야 끌 수 있다).
+ */
+export async function requireCrew() {
+  const s = await requireUser("/admin");
+  if (!isCrew(s.profile?.role)) redirect("/my?denied=admin");
+  return s as { user: NonNullable<typeof s.user>; profile: Profile };
+}
+
 /** 수강생전용 기능을 쓸 수 있는지. 클라이언트 컴포넌트에도 그대로 넘길 수 있는 평범한 객체 */
 export type StudentAccess = {
   signedIn: boolean;
@@ -75,7 +95,8 @@ export const getStudentAccess = cache(async (): Promise<StudentAccess> => {
 
   // 테스트 등급을 켠 스태프는 그 등급의 학생처럼 판정한다 (RLS 도 같은 등급으로 본다)
   const role = effectiveRole(profile);
-  if (isStaff(role)) return { signedIn: true, role, active: true, enrollee: true, opensOn: null, until: null };
+  // 조교도 학생 모드는 전부 열린다 (2026-09-16 Alan)
+  if (isCrew(role)) return { signedIn: true, role, active: true, enrollee: true, opensOn: null, until: null };
 
   const supabase = await createClient();
   const { data } = await supabase
@@ -103,5 +124,6 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   student: "수강생",
   alumni: "졸업생",
   instructor: "강사",
+  assistant: "조교",
   admin: "관리자",
 };

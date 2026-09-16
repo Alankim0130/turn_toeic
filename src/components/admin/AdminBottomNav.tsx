@@ -3,16 +3,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
-import { NAV_ADMIN } from "@/lib/site";
+import { navAdminFor } from "@/lib/site";
 import { cn } from "@/lib/utils";
 import { isAdminActive } from "./AdminNav";
 
 const BOTTOM_HREFS = ["/admin", "/admin/students", "/admin/sections", "/admin/verifications", "/admin/textbook-orders"];
 
 /** 관리자 모바일 하단 네비 (5개) */
-export function AdminBottomNav() {
+export function AdminBottomNav({ role }: { role?: string | null }) {
   const pathname = usePathname();
-  const items = BOTTOM_HREFS.map((h) => NAV_ADMIN.find((n) => n.href === h)!).filter(Boolean);
+  // 조교는 쓸 수 있는 메뉴만 (2026-09-16 Alan)
+  const allowed = navAdminFor(role);
+  const items = BOTTOM_HREFS.map((h) => allowed.find((n) => n.href === h)).filter((n) => !!n);
 
   return (
     <nav
@@ -20,7 +22,7 @@ export function AdminBottomNav() {
       className="fixed inset-x-0 bottom-0 z-40 border-t border-line/80 glass md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
-      <ul className="grid h-[4.25rem] grid-cols-5">
+      <ul className="grid h-[4.25rem]" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
         {items.map((item) => {
           const active = isAdminActive(pathname, item.href);
           return (

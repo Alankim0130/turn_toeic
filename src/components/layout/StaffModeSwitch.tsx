@@ -8,9 +8,13 @@ import { cn } from "@/lib/utils";
 /** 지금 보고 있는 화면이 관리자 화면인가 */
 export const isStaffMode = (pathname: string) => pathname === "/admin" || pathname.startsWith("/admin/");
 
-const MODES: { key: "student" | "staff"; label: string; href: string; icon: IconName }[] = [
+/** 관리자 쪽 칸의 이름은 그 사람 등급을 따른다 (2026-09-16 Alan) */
+const STAFF_LABEL: Record<string, string> = { admin: "관리자 모드", instructor: "강사 모드", assistant: "조교 모드" };
+const staffLabelOf = (role?: string | null) => STAFF_LABEL[role ?? ""] ?? "강사 모드";
+
+const modesFor = (role?: string | null): { key: "student" | "staff"; label: string; href: string; icon: IconName }[] => [
   { key: "student", label: "학생 모드", href: "/my", icon: "profile" },
-  { key: "staff", label: "강사 모드", href: "/admin", icon: "admin" },
+  { key: "staff", label: staffLabelOf(role), href: "/admin", icon: "admin" },
 ];
 
 /**
@@ -20,9 +24,10 @@ const MODES: { key: "student" | "staff"; label: string; href: string; icon: Icon
  * 저장해 두면 새로고침·뒤로가기·다른 기기에서 배지와 실제 화면이 어긋나는데, 주소로 정하면 그럴 일이 없다.
  * 화면을 바꿀 뿐이라 권한은 그대로다 — 학생 모드에서도 스태프는 수강생전용을 열어 볼 수 있다.
  */
-export function StaffModeSwitch({ variant = "header", className }: { variant?: "header" | "panel"; className?: string }) {
+export function StaffModeSwitch({ variant = "header", role, className }: { variant?: "header" | "panel"; role?: string | null; className?: string }) {
   const pathname = usePathname();
   const staffMode = isStaffMode(pathname);
+  const MODES = modesFor(role);
   const panel = variant === "panel";
 
   return (

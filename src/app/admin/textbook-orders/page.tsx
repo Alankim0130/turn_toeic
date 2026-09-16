@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/admin/StatusBadge";
 import { TableWrap, Th, Td } from "@/components/admin/Table";
 import { termLabel } from "../_lib/queries";
 import { updateTextbookOrder } from "./actions";
+import { requireCrew } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "교재주문", robots: { index: false } };
 
@@ -21,6 +22,8 @@ const TABS = [
 ];
 
 export default async function TextbookOrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; ok?: string; error?: string }> }) {
+  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
+  await requireCrew();
   const { status: statusParam, ok, error } = await searchParams;
   const status = TABS.some((t) => t.value === statusParam) ? (statusParam as string) : "requested";
   const supabase = await createClient();

@@ -8,10 +8,13 @@ import { AudioDays } from "@/components/admin/lc-audio/AudioDays";
 import { BookEditorCard } from "@/components/admin/lc-audio/BookEditorCard";
 import { BookCover } from "@/components/lc/BookCover";
 import { BOOK_SET_LABEL, BOOK_SET_MONTHS, BOOK_SETS, DAY_COUNT, bookLabel, bookSetForMonth, coverSrc, pickBook, pickLevel, sortBooks, sortTracks } from "@/lib/lc-audio";
+import { requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "LC 음원", robots: { index: false } };
 
 export default async function LcAudioAdminPage({ searchParams }: { searchParams: Promise<{ level?: string; book?: string }> }) {
+  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
+  await requireStaff();
   const sp = await searchParams;
   const supabase = await createClient();
   const month = Number(todayKST().slice(5, 7));

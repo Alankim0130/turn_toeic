@@ -379,3 +379,29 @@ export async function upsertLiveLink(_prev: ActionState, formData: FormData): Pr
   revalidatePath("/admin/sections");
   return { ok: true, message: "불라방 링크를 저장했어요.", values: { live_url: url } };
 }
+
+/**
+ * 강사 일괄 지정 (2026-09-16 Alan 요청 — 반이 한 달에 70개 안팎이라 하나씩 못 바꾼다).
+ * 고른 반들의 담당 강사를 한 번에 바꾼다. 강사·관리자만 (isAdmin 은 2026-09-16 부터 강사도 참).
+ */
+export async function assignInstructor(input: { sectionIds: number[]; instructorId: string }): Promise<{ ok: boolean; error?: string; count?: number }> {
+  const { profile } = await requireStaff();
+  if (!isAdmin(profile.role)) return { ok: false, error: "강사·관리자만 바꿀 수 있어요." };
+
+  const ids = [...new Set((input.sectionIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  const instructorId = String(input.instructorId ?? "");
+  if (ids.length === 0) return { ok: false, error: "반을 하나 이상 골라 주세요." };
+  if (ids.length > 300) return { ok: false, error: "한 번에 300개까지 바꿀 수 있어요." };
+  if (!instructorId) return { ok: false, error: "강사를 골라 주세요." };
+
+  const supabase = await createClient();
+  const { data: target } = await supabase.from("profiles").select("id, name, role").eq("id", instructorId).maybeSingle();
+  if (!target || !["instructor", "admin"].includes(target.role)) return { ok: false, error: "강사·관리자 계정만 담당으로 둘 수 있어요." };
+
+  const { data, error } = await supabase.from("class_sections").update({ instructor_id: instructorId }).in("id", ids).select("id");
+  if (error) return { ok: false, error: `강사를 바꾸지 못했어요. ${error.message}` };
+
+  revalidatePath("/admin/sections");
+  revalidatePath("/admin");
+  return { ok: true, count: data?.length ?? 0 };
+}

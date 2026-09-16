@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/admin/StatusBadge";
 import type { PickerSection } from "@/components/admin/SectionPicker";
 import { sectionSummary, termLabel } from "../../_lib/queries";
 import { DecisionForms, type Candidate, type OrderInfo } from "./DecisionForms";
+import { requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "등업 검토", robots: { index: false } };
 
@@ -25,6 +26,8 @@ export default async function VerificationDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ done?: string }>;
 }) {
+  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
+  await requireStaff();
   const { id: idParam } = await params;
   const { done } = await searchParams;
   const id = Number(idParam);

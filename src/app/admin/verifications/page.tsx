@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { TableWrap, Th, Td } from "@/components/admin/Table";
+import { requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "등업 로그", robots: { index: false } };
 
@@ -17,6 +18,8 @@ const TABS = [
 ];
 
 export default async function VerificationsPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
+  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
+  await requireStaff();
   const { status: statusParam } = await searchParams;
   const status = TABS.some((t) => t.value === statusParam) ? (statusParam as string) : "pending";
   const supabase = await createClient();

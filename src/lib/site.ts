@@ -167,6 +167,8 @@ export type NavItem = {
   feature?: StudentFeatureKey;
   /** 바깥 사이트로 나가는 링크. 새 창으로 열고 현재 페이지 표시를 하지 않는다 */
   external?: true;
+  /** 관리자 메뉴에서 조교도 쓸 수 있는 항목 (2026-09-16 Alan) */
+  crew?: true;
 };
 
 /** 상단 네비게이션 */
@@ -188,19 +190,29 @@ export const NAV_BOTTOM: NavItem[] = [
 ];
 
 /** 관리자 네비게이션 */
+/**
+ * 관리자 메뉴. `crew: true` 인 항목은 **조교도** 쓸 수 있다 (2026-09-16 Alan:
+ * 조교는 불라방 교재주문 · 스터디 신청자만). 나머지는 강사·관리자 전용이고
+ * 화면마다 requireStaff() 가 한 번 더 막는다.
+ */
 export const NAV_ADMIN: NavItem[] = [
   { href: "/admin", label: "대시보드", icon: "analytics" },
   { href: "/admin/students", label: "학생명단", icon: "students" },
   { href: "/admin/sections", label: "반 편성", icon: "calendar" },
   { href: "/admin/lectures", label: "특강 신청", icon: "bolt" },
   { href: "/admin/verifications", label: "등업 로그", icon: "verify" },
-  { href: "/admin/textbook-orders", label: "교재주문", icon: "orders" },
+  { href: "/admin/textbook-orders", label: "교재주문", icon: "orders", crew: true },
   { href: "/admin/replays", label: "다시보기", icon: "replay" },
   { href: "/admin/analytics", label: "마케팅 분석", icon: "analytics" },
-  { href: "/admin/study", label: "스터디 신청자", icon: "study" },
+  { href: "/admin/study", label: "스터디 신청자", icon: "study", crew: true },
   { href: "/admin/study-materials", label: "비대면 자료", icon: "online" },
   { href: "/admin/homework", label: "숙제점검", icon: "homework" },
   { href: "/admin/lc-audio", label: "LC 음원", icon: "headphones" },
   { href: "/admin/contacts", label: "문의", icon: "contact" },
   { href: "/admin/notifications", label: "알림 설정", icon: "bell" },
 ];
+
+/** 그 등급이 쓸 수 있는 관리자 메뉴. 조교는 crew 항목만 */
+export function navAdminFor(role?: string | null): NavItem[] {
+  return role === "assistant" ? NAV_ADMIN.filter((n) => n.crew) : NAV_ADMIN;
+}

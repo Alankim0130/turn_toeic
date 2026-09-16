@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireStaff } from "@/lib/auth";
+import { requireCrew, requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { isStudyKind, studyErrorMessage } from "@/lib/study";
 import { isHm } from "@/components/admin/sections/dates";
@@ -135,7 +135,8 @@ export async function deleteSlot(id: number): Promise<StudyActionState> {
 
 /* ─── 스태프가 신청 취소 (학생 요청 대응) ───────────────────────────────── */
 export async function cancelSignupByStaff(id: number): Promise<StudyActionState> {
-  await requireStaff();
+  // 신청자 명단은 조교도 본다 (2026-09-16 Alan) — 취소도 함께 연다
+  await requireCrew();
   if (!Number.isInteger(id)) return { error: "잘못된 요청이에요." };
 
   const supabase = await createClient();

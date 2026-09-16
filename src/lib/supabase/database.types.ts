@@ -1418,6 +1418,7 @@ export type Database = {
         | "student"
         | "alumni"
         | "instructor"
+        | "assistant"
         | "admin"
     }
     CompositeTypes: {
@@ -1555,6 +1556,7 @@ export const Constants = {
         "student",
         "alumni",
         "instructor",
+        "assistant",
         "admin",
       ],
     },

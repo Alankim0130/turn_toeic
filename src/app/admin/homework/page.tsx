@@ -8,6 +8,7 @@ import { FilterTabs } from "@/components/admin/FilterTabs";
 import { HomeworkCheckButton } from "@/components/admin/studies/HomeworkCheckButton";
 import { HOMEWORK_SUBJECTS, homeworkLabel, isSubject, SUBJECT_LABEL } from "@/lib/homework";
 import { isImageType } from "@/lib/upload";
+import { requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "숙제점검", robots: { index: false } };
 
@@ -19,6 +20,8 @@ const STATUS_TABS = [
 const LIMIT = 300;
 
 export default async function HomeworkAdminPage({ searchParams }: { searchParams: Promise<{ level?: string; subject?: string; status?: string }> }) {
+  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
+  await requireStaff();
   const sp = await searchParams;
   const supabase = await createClient();
   const status = STATUS_TABS.some((t) => t.value === sp.status) ? (sp.status as string) : "submitted";

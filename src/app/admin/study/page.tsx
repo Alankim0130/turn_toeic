@@ -11,12 +11,15 @@ import { TableWrap, Th, Td } from "@/components/admin/Table";
 import { CancelSignupButton } from "@/components/admin/studies/CancelSignupButton";
 import { isSlotKind, slotTime, sortSlots, STUDY_KIND_LABEL, STUDY_STATUS_LABEL, termParam } from "@/lib/study";
 import { pickTerm, termLabel } from "../_lib/queries";
+import { requireCrew } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "스터디 신청자", robots: { index: false } };
 
 const KIND_ORDER = ["offline", "vocab", "online"] as const;
 
 export default async function StudyRosterPage({ searchParams }: { searchParams: Promise<{ term?: string; kind?: string }> }) {
+  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
+  await requireCrew();
   const sp = await searchParams;
   const supabase = await createClient();
   const today = todayKST();

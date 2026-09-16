@@ -9,6 +9,7 @@ import { BarChart } from "@/components/admin/charts/BarChart";
 import { NaverReservationsWidget } from "@/components/admin/NaverReservationsWidget";
 import { koreanTime } from "@/lib/naver-reservation";
 import { countBy, GENDER_LABEL, getCurrentOrUpcomingTerm, getRosterSets, termLabel } from "./_lib/queries";
+import { requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "대시보드", robots: { index: false } };
 
@@ -21,6 +22,8 @@ const slotKey = (label: string) => {
 const slotShort = (label: string) => label.match(/\d{1,2}:\d{2}/)?.[0] ?? label;
 
 export default async function AdminDashboardPage() {
+  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
+  await requireStaff();
   const supabase = await createClient();
   const today = todayKST();
 

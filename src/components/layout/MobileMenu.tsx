@@ -6,11 +6,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
 import { Logo } from "@/components/ui/Logo";
-import { canUseFeature, featureHref, NAV_MAIN, STUDENT_FEATURES, STUDENT_HUB } from "@/lib/site";
+import { canUseFeature, featureHref, NAV_MAIN, navAdminFor, STUDENT_FEATURES, STUDENT_HUB } from "@/lib/site";
 import { cn } from "@/lib/utils";
 import { ExternalMark, isActivePath } from "./NavLinks";
 import { isStudentAreaPath, type NavAccess } from "./DesktopNav";
-import { StaffModeSwitch } from "./StaffModeSwitch";
+import { StaffModeSwitch, isStaffMode } from "./StaffModeSwitch";
 import { InstallApp } from "@/components/pwa/InstallApp";
 import { signOut } from "@/app/(auth)/actions";
 
@@ -23,16 +23,19 @@ const noopSubscribe = () => () => {};
 export function MobileMenu({
   signedIn,
   staff,
+  role,
   name,
   access,
 }: {
   signedIn: boolean;
   staff: boolean;
+  role?: string | null;
   name: string | null;
   access: NavAccess;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const adminMode = isStaffMode(pathname);
   const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -127,6 +130,21 @@ export function MobileMenu({
             )}
           </div>
 
+          {/* 관리자·강사·조교 모드에서는 그 모드의 메뉴를 보여 준다 (2026-09-16 Alan) */}
+          {adminMode ? (
+            <nav aria-label="관리자 메뉴">
+              <ul className="space-y-1">
+                {navAdminFor(role).map((item) => (
+                  <li key={item.href}>
+                    <Link href={item.href} className={itemClass(isActivePath(pathname, item.href))}>
+                      <Icon name={item.icon} size={26} />
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          ) : (
           <nav aria-label="모바일 메뉴">
             <ul className="space-y-1">
               {NAV_MAIN.map((item) => {
@@ -208,12 +226,13 @@ export function MobileMenu({
               })}
             </ul>
           </nav>
+          )}
         </div>
 
         {/* 바닥 */}
         <div className="shrink-0 space-y-2 border-t border-line p-3">
           <InstallApp variant="menu" onStart={() => setOpen(false)} />
-          {staff && <StaffModeSwitch variant="panel" />}
+          {staff && <StaffModeSwitch variant="panel" role={role} />}
           {signedIn && (
             <form action={signOut}>
               <button type="submit" className="btn-ghost w-full">

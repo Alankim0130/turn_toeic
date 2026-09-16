@@ -9,10 +9,13 @@ import { CreateStudyCard } from "@/components/admin/studies/StudyKindCard";
 import { AddMaterialForm, MaterialRow } from "@/components/admin/studies/MaterialRow";
 import { STUDY_STATUS_LABEL, termParam } from "@/lib/study";
 import { pickTerm, termLabel } from "../_lib/queries";
+import { requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "비대면 자료", robots: { index: false } };
 
 export default async function StudyMaterialsPage({ searchParams }: { searchParams: Promise<{ term?: string }> }) {
+  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
+  await requireStaff();
   const sp = await searchParams;
   const supabase = await createClient();
   const today = todayKST();

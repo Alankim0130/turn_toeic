@@ -8,7 +8,7 @@ import { FilterTabs } from "@/components/admin/FilterTabs";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { TableWrap, Th, Td } from "@/components/admin/Table";
 import { getRosterSets, sectionSummary } from "../_lib/queries";
-import { ROLE_LABEL } from "@/lib/auth";
+import { ROLE_LABEL, requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "학생명단", robots: { index: false } };
 
@@ -24,6 +24,8 @@ const TABS = [
 const STAFF_ROLES = ["instructor", "admin"] as const;
 
 export default async function StudentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string }> }) {
+  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
+  await requireStaff();
   const { tab: tabParam, q: qParam } = await searchParams;
   const tab = TABS.some((t) => t.value === tabParam) ? (tabParam as string) : "active";
   const q = (qParam ?? "").trim();

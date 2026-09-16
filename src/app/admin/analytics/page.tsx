@@ -7,6 +7,7 @@ import { DonutChart } from "@/components/admin/charts/DonutChart";
 import { BarChart } from "@/components/admin/charts/BarChart";
 import { ColumnChart } from "@/components/admin/charts/ColumnChart";
 import { countBy, GENDER_LABEL } from "../_lib/queries";
+import { requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "마케팅 분석", robots: { index: false } };
 
@@ -16,6 +17,8 @@ const SCOPES = [
 ];
 
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<{ scope?: string }> }) {
+  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
+  await requireStaff();
   const { scope: scopeParam } = await searchParams;
   const scope = scopeParam === "students" ? "students" : "all";
   const supabase = await createClient();
