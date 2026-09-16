@@ -287,7 +287,7 @@
 | 유형 (`studies.kind`) | 신청 | 운영 |
 |---|---|---|
 | 대면스터디 `offline` | 시간대(`study_slots`)를 골라 신청 | 강사가 그 달 편성 때 시간대를 정한다. 하루 2타임·3타임 등 개수 자유 |
-| 비대면스터디 `online` | 시간대 없이 신청 | 수업일마다 하루 하나씩 자료(`study_materials`). 학생은 해당 날짜부터 받고, 풀이는 숙제제출에 올린다 |
+| 비대면스터디 `online` | 시간대 없이 신청 | 수업일마다 하루 하나씩 자료(`study_materials`). 학생은 해당 날짜부터 받고, 풀이는 숙제업로드(레벨 × RC/LC)에 사진으로 올린다 |
 | 단어스터디 `vocab` | 대면처럼 시간대를 골라 신청 | 정해진 시간에 단어 점검 |
 
 - 스터디는 **기수(월) × 유형**당 하나. 시간대는 매달 달라지므로 코드에 두지 않고
@@ -316,8 +316,20 @@
 
 ### 7. 숙제제출 · LC 음원
 
-- **숙제제출**: 비대면 자료(날짜)마다 1건, 사진·PDF 여러 장(최대 20개, 파일당 20MB).
-  강사가 `/admin/homework` 에서 점검완료로 바꾸면 학생은 더 이상 파일을 바꾸거나 지울 수 없다. 점수·코멘트는 없다.
+- **숙제업로드** (2026-09-16 Alan 요청, 마이그레이션 20260916223000 · 정리 20260916224500): **레벨(650·750·850) × 과목(RC·LC)** 단위로 낸다.
+  비대면 자료·날짜와 묶지 않는다 (예전 "자료마다 1건" 설계는 폐기).
+  - 흐름은 **세 페이지**: `/my/homework`(레벨) → `/my/homework/[level]`(RC/LC) → `/my/homework/[level]/[subject]`(사진·질문).
+    한 페이지에서 다 하지 않는다. 페이지가 바뀔 때마다 `template.tsx`(`StepTransition`)가 앞으로는 오른쪽에서, 돌아가면 왼쪽에서
+    밀려 들어오는 전환을 재생하고, `layout.tsx` 의 `StepHeader` 가 주소에서 단계를 읽어 진행 막대를 이어서 움직인다.
+  - 1단계는 **내 레벨**(`my_section_ids()` 의 반 → `courses.target_score` + `includes_levels`, 스파르타면 둘 다)을 앞에 크게 두고
+    나머지 레벨은 "다른 레벨 숙제 올리기"로 접어 둔다 (LC 음원듣기의 "내 레벨" 기준과 같다).
+  - 제출 1건 = **사진 1~10장**(사진만, 장당 20MB, 다중 선택) + **질문**(선택, 500자). 같은 레벨·과목에 여러 번 제출할 수 있다.
+    저장 경로 `homework/{uid}/{레벨}-{과목}/{uuid}.ext`, 버킷 mime 은 `image/*`.
+  - 자격은 정책이 직접 본다: 본인 + `private.has_term_access(null)`(지금 수강 중, 개강일~종강일). **예비등록생은 못 낸다** —
+    스터디 신청의 `is_term_enrollee`(예비등록생 포함)와 다르다.
+  - 점검 전에는 본인이 제출을 취소할 수 있다(사진도 삭제). 강사가 `/admin/homework` 에서 점검완료로 바꾸면 손댈 수 없다. 점수·코멘트는 없다.
+  - 관리자 숙제점검은 **레벨 × 과목 × 상태 필터 + 최근순 목록 + 학생 질문**. 미제출자 목록은 없다 (기준 미확정 — 미확정 9).
+  - 과목·한도·라벨은 `src/lib/homework.ts` 한곳. 레벨 목록은 `lc_levels`.
 - **LC 음원**: **레벨(650 · 750 · 850) × 반(A · B)** 으로 나눈다 (2026-09-15 Alan 요청).
   레벨마다 **A반 1권 + B반 1권**이라 **전체 6권**이다 (2026-09-16 Alan 정정 — 그전에는 반마다 2권이었다).
   - **학생이 쓰는 교재(A/B)는 듣는 시간대로 정해진다** (2026-09-16 Alan 확정, 마이그레이션 20260916160000).
@@ -732,15 +744,19 @@ create table study_materials (             -- 비대면 자료. 하루 하나
   unique(study_id, date)
 );
 
-create table homework_submissions (        -- 자료별 숙제 제출
+create table homework_submissions (        -- 숙제 제출 (20260916223000: 레벨 × 과목 단위)
   id          bigint primary key,
-  material_id bigint references study_materials,
   user_id     uuid references profiles,
+  level       int not null references lc_levels,   -- 학생이 1단계에서 고른 레벨
+  subject     text not null,               -- rc | lc (src/lib/homework.ts 의 HOMEWORK_SUBJECTS)
+  question    text,                        -- 강사에게 하는 질문 (선택, 500자)
   status      text default 'submitted',    -- submitted | checked
   checked_by  uuid references profiles,
   checked_at  timestamptz,
-  unique(material_id, user_id)
+  created_at  timestamptz
 );
+-- 제출 자격은 정책이 직접 본다: 본인 + private.has_term_access(null). 같은 레벨·과목에 여러 번 제출 가능 (unique 없음).
+-- 자료 연결 컬럼 material_id 는 정리 마이그레이션 20260916224500 에서 지웠다.
 
 create table homework_files (              -- 제출 파일 (여러 장)
   id            bigint primary key,
@@ -858,7 +874,7 @@ where p.role='student'
 | `/my/textbook` | 불라방 교재주문 (불라방 수강생만) | student |
 | `/my/replay` | 강의 다시보기. 종강일까지 | student |
 | `/my/study` | 내 스터디: 신청한 스터디·시간대, 비대면 자료 받기(해당 날짜부터) | 그 달 수강생 |
-| `/my/homework` | 숙제업로드: 비대면 자료별 사진·PDF 업로드, 점검 상태 | student |
+| `/my/homework` → `/[level]` → `/[level]/[subject]` | 숙제업로드 3단계: 레벨(내 레벨 우선) → RC/LC → 사진 최대 10장 + 질문(선택), 완료 화면. 내 제출 내역·점검 상태 | student |
 | `/my/lc-audio` | LC 음원듣기: **내 레벨 교재 두 권(A·B)** 만 | student |
 | `/my/lc-audio/[bookId]` | 그 교재의 **수업일 달력** → 날짜를 누르면 그 강의 수업 음원·숙제 음원 (토익 전용 플레이어: 배속·구간반복) | student |
 
@@ -876,9 +892,9 @@ where p.role='student'
 | `/admin/verifications` | OCR 로그, 후보 점수, 오배정 정정 | instructor |
 | `/admin/textbook-orders` | 교재주문 처리 | instructor |
 | `/admin/analytics` | 마케팅 분석 (대학·학과·성별) | instructor |
-| `/admin/study` | 스터디 신청자 명단 (월 · 유형 · 시간대별, 비대면은 숙제 제출 수) | instructor |
+| `/admin/study` | 스터디 신청자 명단 (월 · 유형 · 시간대별) | instructor |
 | `/admin/study-materials` | 비대면 자료 날짜별 등록·교체·삭제 (수업일 기준) | instructor |
-| `/admin/homework` | 숙제점검: 날짜별 제출물·미제출자, 점검완료 | instructor |
+| `/admin/homework` | 숙제점검: 레벨 × 과목(RC·LC) × 상태 필터, 최근순 목록, 학생 질문 표시, 점검완료 | instructor |
 | `/admin/lc-audio` | 레벨 탭 → A반·B반 교재 2권의 표지·교재명·설명, 교재별 수업/숙제 음원 등록(강별, 한 강에 여러 개, 올리기 전 배치 확인) | instructor |
 | `/admin/contacts` | 문의 처리 | instructor |
 | `/admin/notifications` | 알림 설정: 이 기기에서 푸시 받기, 알림 종류 켜기·끄기, 네이버 예약 연결 주소·코드(관리자만) | instructor |
@@ -1006,8 +1022,11 @@ where p.role='student'
      (하루 요약은 Vercel Cron, 상태 전이는 pg_cron 을 쓰고 있으니 pg_cron + Edge Function 도 선택지다).
    - **후기를 어디에 보여줄지.** 지금 랜딩의 "누적 수강후기 7,356건" 은 `Stats.tsx`·`Marquee.tsx`·`Hero.tsx` 세 곳에 하드코딩되어 있다 (원칙 4 위반 상태).
 
+9. **숙제 미제출자 기준** (2026-09-16) — 숙제가 레벨 × 과목 단위이고 여러 번 낼 수 있어서 "누가 안 냈는가"의 기준(기간? 회차?)이 없다.
+   관리자 숙제점검에 미제출자 목록을 넣으려면 Alan 이 기준을 정해야 한다. 그때까지 제출 목록만 보여 준다.
+
 ### 아직 논의되지 않음 (임의 구현 금지)
-출결, 채점·점수(숙제제출은 점검완료 표시까지만), 성적·모의고사, 단어장, 오답노트, 일반 자료실, 학생 대상 알림 발송(문자·알림톡·학생 푸시),
+출결, 채점·점수(숙제업로드는 점검완료 표시까지만), 성적·모의고사, 단어장, 오답노트, 일반 자료실, 학생 대상 알림 발송(문자·알림톡·학생 푸시),
 후기 작성 기능, **YBM 후기 수집**(미확정 8 — 사전 공유만 받았다), 특강 라이브 시청 링크·특강 자료 배포
 
 ### 확장 기능의 가정 (Alan 확인 전까지의 기본값)
@@ -1016,7 +1035,7 @@ where p.role='student'
 - **스터디 신청 방식**: 신청 즉시 확정(스태프 승인 없음). 유형마다 시간대 1개. 본인 취소는 '신청 받는 중'일 때만, 그 뒤엔 스태프가 명단에서 취소
 - **대면·단어 시간대**: 그 달 내내 같은 시간대(요일·장소는 안내 문구에 적는다). 정원은 선택
 - **비대면 자료**: 해당 날짜 00:00(KST)부터 공개, 날짜마다 파일 1개. 목록은 그 달 반들의 수업일(session_dates) 합집합 + 직접 고른 날짜
-- **숙제제출**: 비대면스터디 자료에 대한 제출만 (정규 수업 숙제 아님). 점검 전 / 점검완료 2단계
+- **숙제업로드**: 레벨 × RC/LC 단위, 사진 최대 10장 + 질문(선택). 점검 전 / 점검완료 2단계. 비대면 자료·날짜와 묶지 않는다 (2026-09-16 Alan 확정)
 - **LC 음원**: 지금 수강 중인 수강생은 모든 레벨·반의 교재 음원을 들을 수 있다(기본 선택만 내 레벨·이번 달 반). 페이지에서 재생, 별도 다운로드 버튼 없음.
   파일당 50MB 이하(`lc-audio` 버킷 한도)이고, 교재 6권 × Day 9 = 최대 54개다
 - **교재 이미지**: LC 음원 페이지의 교재 표지 (교재신청 화면용 아님). 교재 한 권에 1장, 이미지당 10MB
