@@ -10,6 +10,7 @@ import { canUseFeature, featureHref, NAV_MAIN, STUDENT_FEATURES, STUDENT_HUB } f
 import { cn } from "@/lib/utils";
 import { isActivePath } from "./NavLinks";
 import { isStudentAreaPath, type NavAccess } from "./DesktopNav";
+import { StaffModeSwitch } from "./StaffModeSwitch";
 import { signOut } from "@/app/(auth)/actions";
 
 const noopSubscribe = () => () => {};
@@ -191,12 +192,7 @@ export function MobileMenu({
 
         {/* 바닥 */}
         <div className="shrink-0 space-y-2 border-t border-line p-3">
-          {staff && (
-            <Link href="/admin" className="btn-primary w-full">
-              <Icon name="admin" size={20} className="brightness-0 invert" />
-              관리자 페이지로 이동
-            </Link>
-          )}
+          {staff && <StaffModeSwitch variant="panel" />}
           {signedIn && (
             <form action={signOut}>
               <button type="submit" className="btn-ghost w-full">

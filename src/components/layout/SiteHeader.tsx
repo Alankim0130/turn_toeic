@@ -3,6 +3,7 @@ import { Logo } from "@/components/ui/Logo";
 import { Icon } from "@/components/ui/Icon";
 import { isStaff, type Profile, type StudentAccess } from "@/lib/auth";
 import { MobileMenu } from "./MobileMenu";
+import { StaffModeSwitch } from "./StaffModeSwitch";
 import { DesktopNav } from "./DesktopNav";
 import { signOut } from "@/app/(auth)/actions";
 
@@ -21,12 +22,8 @@ export function SiteHeader({ profile, signedIn, access }: { profile: Profile | n
         </nav>
 
         <div className="hidden shrink-0 items-center gap-2 lg:flex">
-          {staff && (
-            <Link href="/admin" className="btn-primary whitespace-nowrap !px-4 !py-2">
-              <Icon name="admin" size={18} className="brightness-0 invert" />
-              관리자
-            </Link>
-          )}
+          {/* 스태프는 관리자 화면과 학생 화면을 여기서 오간다 (관리자 바로가기 겸용) */}
+          {staff && <StaffModeSwitch />}
           {signedIn ? (
             <>
               <Link href="/my" className="btn-ghost whitespace-nowrap !px-3 !py-2">
