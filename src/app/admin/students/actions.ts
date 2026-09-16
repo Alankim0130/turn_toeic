@@ -58,6 +58,8 @@ export async function updateStudentRole(_prev: StudentActionState, formData: For
   const { data, error } = await supabase.from("profiles").update({ role }).eq("id", id).select("id");
   if (error) {
     if (error.code === "42501") return { error: "권한이 없어요. 관리자만 등급을 바꿀 수 있어요." };
+    // 새 등급(조교)을 넣었는데 DB 마이그레이션이 아직 안 올라간 동안 — 무슨 일인지 알려 준다
+    if (error.code === "22P02") return { error: `${ROLE_LABEL[role]} 등급이 아직 서버에 올라가지 않았어요. 잠시 뒤 다시 해 주세요.` };
     if (error.code === "23514") return { error: "테스트 중인 계정이라 등급을 바꾸지 못했어요. 그 계정의 테스트를 먼저 끝내 주세요." };
     return { error: `등급을 바꾸지 못했어요. ${error.message}` };
   }
