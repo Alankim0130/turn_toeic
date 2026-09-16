@@ -96,11 +96,14 @@ export function AudioPlayer({ src, title, note, className }: { src: string; titl
     const a = el();
     if (!a) return;
     setError(null);
+    // preload="none" 이라 누르기 전에는 아무것도 받지 않는다 — 누른 뒤에만 "불러오는 중" 을 보여 준다
+    if (!a.readyState) setLoading(true);
     window.dispatchEvent(new CustomEvent(PLAY_EVENT, { detail: id }));
     try {
       a.playbackRate = rate;
       await a.play();
     } catch {
+      setLoading(false);
       setError("재생하지 못했어요. 잠시 뒤 다시 눌러 주세요.");
     }
   }, [id, rate]);
@@ -152,13 +155,12 @@ export function AudioPlayer({ src, title, note, className }: { src: string; titl
         ref={audioRef}
         src={src}
         preload="none"
-        onLoadStart={() => setLoading(true)}
         onLoadedMetadata={(e) => {
-          setLoading(false);
           setDuration(e.currentTarget.duration || 0);
           e.currentTarget.playbackRate = rate;
         }}
         onCanPlay={() => setLoading(false)}
+        onPlaying={() => setLoading(false)}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => {
