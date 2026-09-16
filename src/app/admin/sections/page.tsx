@@ -246,6 +246,30 @@ export default async function AdminSectionsPage({
         </div>
       )}
 
+      {/* 담당 강사 지정 — 개설 반 목록보다 위에 둔다. 반이 70개라 아래에 두면 모바일에서 못 찾는다 (2026-09-16 Alan) */}
+      {term && isAdmin(profile.role) && (sections?.length ?? 0) > 0 && (
+        <section aria-labelledby="assign-instructor-title" className="card p-5 sm:p-7">
+          <h2 id="assign-instructor-title" className="text-lg font-black text-ink">
+            담당 강사 지정 <span className="text-sm font-semibold text-slate">— {termLabel}</span>
+          </h2>
+          <div className="mt-4">
+            <AssignInstructor
+              termLabel={termLabel}
+              instructors={(instructors ?? []).map((i) => ({ id: i.id, name: i.name }))}
+              rows={sorted.map((s) => ({
+                id: s.id,
+                course: s.course?.name ?? "강좌",
+                track: s.track,
+                timeBlock: s.time_block,
+                instructor: s.instructor?.name ?? null,
+                // 묶음 반(안에 시간 단위 반이 든 반)·스파르타 반은 한 시간씩 강사가 갈린다
+                package: (packages.get(s.id)?.parts.length ?? 0) > 0 || s.course?.program === "sparta",
+              }))}
+            />
+          </div>
+        </section>
+      )}
+
       {/* 개설 반 */}
       {term && (
         <section id="sections" aria-labelledby="section-list-title" className="scroll-mt-20">
@@ -364,28 +388,6 @@ export default async function AdminSectionsPage({
               })}
             </div>
           )}
-        </section>
-      )}
-
-      {/* 강사 일괄 지정 — 반이 한 달에 70개 안팎이라 하나씩 못 바꾼다 (2026-09-16 Alan) */}
-      {term && isAdmin(profile.role) && (sections?.length ?? 0) > 0 && (
-        <section aria-labelledby="assign-instructor-title" className="card p-5 sm:p-7">
-          <h2 id="assign-instructor-title" className="text-lg font-black text-ink">
-            담당 강사 지정 <span className="text-sm font-semibold text-slate">— {termLabel}</span>
-          </h2>
-          <div className="mt-4">
-            <AssignInstructor
-              termLabel={termLabel}
-              instructors={(instructors ?? []).map((i) => ({ id: i.id, name: i.name }))}
-              rows={sorted.map((s) => ({
-                id: s.id,
-                course: s.course?.name ?? "강좌",
-                track: s.track,
-                timeBlock: s.time_block,
-                instructor: s.instructor?.name ?? null,
-              }))}
-            />
-          </div>
         </section>
       )}
 
