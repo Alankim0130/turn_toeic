@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import { signUp, type AuthState } from "../actions";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
@@ -15,6 +15,14 @@ const GENDERS = [
 export function SignupForm() {
   const [state, action] = useActionState<AuthState, FormData>(signUp, {});
   const v = state.values ?? {};
+  const errorRef = useRef<HTMLDivElement>(null);
+
+  // 서버가 거부하면 안내는 폼 맨 위에 뜨는데, 모바일은 가입 버튼까지 내려가 있어 보이지 않는다. 안내로 올려 준다
+  useEffect(() => {
+    if (!state.error) return;
+    errorRef.current?.focus({ preventScroll: true });
+    errorRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [state]);
 
   if (state.message) {
     return <Alert kind="success" title="인증 메일을 보냈어요">{state.message}</Alert>;
@@ -22,7 +30,11 @@ export function SignupForm() {
 
   return (
     <form action={action} className="space-y-4">
-      {state.error && <Alert kind="warning">{state.error}</Alert>}
+      {state.error && (
+        <div ref={errorRef} tabIndex={-1} className="scroll-mt-24 outline-none">
+          <Alert kind="warning">{state.error}</Alert>
+        </div>
+      )}
 
       <div>
         <label htmlFor="name" className="label">실명</label>
@@ -67,7 +79,7 @@ export function SignupForm() {
       </fieldset>
 
       <label className="flex items-start gap-2 text-sm text-slate">
-        <input type="checkbox" name="agree" className="mt-1 h-4 w-4 accent-brand-500" required />
+        <input type="checkbox" name="agree" className="mt-1 h-4 w-4 accent-brand-500" required defaultChecked={v.agree === "on"} />
         <span>
           수강 관리와 학습 안내를 위해 실명·연락처·대학·학과·성별을 수집·이용하는 데 동의합니다. 대학·학과·성별은 통계 목적으로만 사용됩니다.
         </span>
