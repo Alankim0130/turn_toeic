@@ -12,7 +12,7 @@ import {
   BOOK_SET_MONTHS,
   bookLabel,
   bookSetForMonth,
-  bookSetOfSection,
+  bookSetsOfSections,
   type BookSet,
   coverSrc,
   lessonLabel,
@@ -76,15 +76,10 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
   ];
   /**
    * 내 반이 쓰는 교재 반(A/B). 교재는 달이 아니라 **듣는 시간대 · 트랙**으로 정해진다 (2026-09-16 편성표) —
-   * 같은 9월에도 650 월수금 반은 B, 화목금 반은 A 다. 반에 지정이 없으면 달 홀짝으로 짐작한다.
-   * 스파르타 반 자체는 교재가 없고, 함께 듣는 점수보장반의 교재를 쓴다.
+   * 같은 9월에도 650 월수금 반은 B, 화목금 반은 A 다. 교재는 LC 시간 단위 반에만 붙어 있고
+   * 묶음 반(120분) · RC 시간 · 스파르타 반은 비어 있다 — 접근 가능한 반(시간 단위 포함) 중 지정된 것만 모은다.
    */
-  const mySets = new Set(
-    mySections
-      .filter((s) => s.course?.program !== "sparta")
-      .map((s) => bookSetOfSection(s))
-      .filter((b): b is BookSet => b !== null),
-  );
+  const mySets = bookSetsOfSections(mySections.filter((s) => s.course?.program !== "sparta"));
   const guessedSet = bookSetForMonth(month);
 
   const shownLevels = myLevels.length ? myLevels : levels;

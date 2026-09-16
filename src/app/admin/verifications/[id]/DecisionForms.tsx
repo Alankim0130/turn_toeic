@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { approveVerification, rejectVerification, updateEnrollment, type ActionState } from "../actions";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
 import { StatusBadge } from "@/components/admin/StatusBadge";
+import { SectionPicker, type PickerSection } from "@/components/admin/SectionPicker";
 
 export type Candidate = { id: number; label: string };
 export type OrderInfo = {
@@ -19,15 +20,20 @@ export function DecisionForms({
   verificationId,
   result,
   candidates,
+  pickerSections,
   order,
 }: {
   verificationId: number;
   result: string | null;
+  /** 배정 수정(select)용 라벨 목록 */
   candidates: Candidate[];
+  /** 승인 화면의 반 고르기 (강좌 · 시간대 · 주5일) */
+  pickerSections: PickerSection[];
   order: OrderInfo | null;
 }) {
   const [approveState, approveAction] = useActionState<ActionState, FormData>(approveVerification, {});
   const [rejectState, rejectAction] = useActionState<ActionState, FormData>(rejectVerification, {});
+  const [picked, setPicked] = useState<number[]>([]);
 
   if (result === "approved") {
     return (
@@ -54,7 +60,8 @@ export function DecisionForms({
       <section className="card p-5">
         <h2 className="mb-1 font-black text-ink">수동 승인</h2>
         <p className="mb-4 text-sm text-slate">
-          수강증에 적힌 반을 아래에서 고르세요. 주5일이면 월수금·화목금 두 반을 모두 체크합니다. 개강일 전이면 예비등록생으로 만들어지고 개강일에 자동 전환됩니다.
+          수강증에 적힌 반을 아래에서 고르세요. 주5일이면 [주5일] 버튼으로 월수금·화목금이 함께 골라지고, 60분 반은 시간대 아래 ↳ 줄에서 고릅니다.
+          개강일 전이면 예비등록생으로 만들어지고 개강일에 자동 전환됩니다.
         </p>
         <form action={approveAction} className="space-y-4">
           <input type="hidden" name="verification_id" value={verificationId} />
@@ -62,19 +69,12 @@ export function DecisionForms({
 
           <fieldset>
             <legend className="label">배정할 반 (열려 있는 반만 표시)</legend>
-            {candidates.length === 0 ? (
+            {pickerSections.length === 0 ? (
               <p className="rounded-xl bg-brand-50/60 px-4 py-4 text-sm text-slate">열려 있는 반이 없습니다. 먼저 반 편성에서 반을 개설해 주세요.</p>
             ) : (
-              <ul className="max-h-72 space-y-1.5 overflow-y-auto rounded-xl border border-line p-2">
-                {candidates.map((c) => (
-                  <li key={c.id}>
-                    <label className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-brand-50">
-                      <input type="checkbox" name="section_ids" value={c.id} className="mt-1 h-4 w-4 accent-brand-500" />
-                      <span className="text-ink-soft">{c.label}</span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
+              <div className="max-h-[28rem] overflow-y-auto rounded-xl border border-line p-2">
+                <SectionPicker sections={pickerSections} value={picked} onChange={setPicked} />
+              </div>
             )}
           </fieldset>
 

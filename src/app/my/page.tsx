@@ -155,8 +155,10 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
                                 <span className="rounded-full bg-ink px-2 py-0.5 text-xs font-bold text-white">
                                   {TRACK_LABEL[e.section.track] ?? e.section.track}
                                 </span>
-                                {e.section.start_time && e.section.end_time && (
+                                {e.section.start_time && e.section.end_time ? (
                                   <span className="text-slate">{formatTimeRange(e.section.start_time, e.section.end_time)}</span>
+                                ) : (
+                                  e.section.time_block && <span className="tabular-nums text-slate">{e.section.time_block}</span>
                                 )}
                                 <span className={cn("text-xs font-bold", e.mode === "live" ? "text-brand-600" : "text-slate")}>
                                   {MODE_LABEL[e.mode]}

@@ -5,6 +5,8 @@ import { Icon } from "@/components/ui/Icon";
 import { InstructorCameo } from "@/components/ui/InstructorCameo";
 import { formatTime, todayKST, TRACK_LABEL, COURSE_TYPE_LABEL } from "@/lib/utils";
 import { PROGRAMS, SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
+import { blockMinutes, buildBlockTree, dashLabel, minutesLabel } from "@/lib/time-blocks";
+import { timeBlockOf } from "@/components/admin/sections/bulk";
 
 /**
  * 목표 점수반별 수업 시간 (timetable_levels · timetable_slots). 매달 편성하는 반과 별개인 대표 시간표.
@@ -97,15 +99,28 @@ export async function Schedule() {
                   <span className="ml-0.5 text-lg">반</span>
                 </h3>
               </div>
+              {/* 등록 단위(120분 · 140분)를 크게, 그 안의 60분 · 70분 시간 단위를 아래에 — 60분만 듣는 반도 있다 (2026-09-16 Alan) */}
               <ul className="mt-5 space-y-2">
-                {t.timetable_slots.map((s) => (
-                  <li
-                    key={`${s.start_time}-${s.end_time}`}
-                    className="rounded-xl bg-brand-50 px-4 py-3 text-center text-xl font-black tabular-nums text-brand-600"
-                  >
-                    {formatTime(s.start_time)} ~ {formatTime(s.end_time)}
-                  </li>
-                ))}
+                {buildBlockTree(
+                  t.timetable_slots.map((s) => timeBlockOf(s.start_time, s.end_time)),
+                  { nest: t.program === "score" },
+                ).map((node) => {
+                  const minutes = minutesLabel(blockMinutes(node));
+                  return (
+                    <li key={node.label} className="rounded-xl bg-brand-50 px-4 py-3 text-center">
+                      <p className="text-xl font-black tabular-nums text-brand-600">
+                        {formatTime(node.label.slice(0, 5))} ~ {formatTime(node.label.slice(6))}
+                        {minutes && <span className="ml-1.5 align-middle text-xs font-black text-brand-700">{minutes}</span>}
+                      </p>
+                      {node.parts.length > 0 && (
+                        <p className="mt-1 text-xs font-semibold text-slate">
+                          {node.parts.map((p) => `${dashLabel(p.label)}${minutesLabel(blockMinutes(p)) ? ` (${minutesLabel(blockMinutes(p))})` : ""}`).join(" · ")}
+                          <span className="block text-[11px] font-normal text-mist">한 시간만 듣는 반도 있어요</span>
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
               {t.note && (
                 <p className="mt-3 rounded-xl border border-brand-200 px-4 py-2.5 text-center text-sm font-bold text-brand-700">

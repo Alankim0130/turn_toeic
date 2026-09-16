@@ -9,7 +9,7 @@ import { LessonCalendar, type LessonSlot, type LessonTrack } from "@/components/
 import { createClient } from "@/lib/supabase/server";
 import { todayKST, TRACK_LABEL } from "@/lib/utils";
 import { holidayNamesBetween } from "@/lib/holidays";
-import { BOOK_SET_LABEL, BOOK_SET_MONTHS, DAYS, DAY_COUNT, bookLabel, bookSetOfSection, coverSrc, lessonLabel, sortTracks } from "@/lib/lc-audio";
+import { BOOK_SET_LABEL, BOOK_SET_MONTHS, DAYS, DAY_COUNT, bookLabel, bookSetOfSection, coverSrc, explicitBookSet, lessonLabel, sortTracks } from "@/lib/lc-audio";
 import { getMySessions } from "../../_lib/queries";
 
 export const metadata: Metadata = { title: "LC 음원듣기", robots: { index: false } };
@@ -39,8 +39,11 @@ export default async function LcBookPage({ params }: { params: Promise<{ bookId:
    * 이 교재를 쓰는 내 반의 수업일을 찾는다. 내 반의 회차(seq)가 곧 강 번호 칸이다.
    * 교재는 달이 아니라 **듣는 시간대**로 정해진다 (2026-09-16 Alan 확인) — 반의 book_set 을 본다.
    */
-  // 스파르타 반 자체는 교재가 없다 — 함께 듣는 점수보장반(RLS 로 같이 내려온다)의 수업일을 쓴다
-  const sameSet = sessions.filter((s) => s.section && s.section.course?.program !== "sparta" && bookSetOfSection(s.section) === book.book_set);
+  // 스파르타 반 자체는 교재가 없다 — 함께 듣는 점수보장반(RLS 로 같이 내려온다)의 수업일을 쓴다.
+  // 교재는 LC 시간 단위 반에만 지정돼 있다. 지정된 반이 하나도 없는 예전 데이터일 때만 달 홀짝으로 짐작한다
+  const scoreSessions = sessions.filter((s) => s.section && s.section.course?.program !== "sparta");
+  const anyExplicit = scoreSessions.some((s) => explicitBookSet(s.section));
+  const sameSet = scoreSessions.filter((s) => (anyExplicit ? explicitBookSet(s.section) : bookSetOfSection(s.section)) === book.book_set);
   const levelMatch = sameSet.filter((s) => s.section?.course?.target_score === book.level);
   const usable = levelMatch.length ? levelMatch : sameSet;
 

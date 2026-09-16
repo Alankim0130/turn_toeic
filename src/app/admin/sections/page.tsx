@@ -13,6 +13,7 @@ import { TermCalendar, type TermSchedule, type OtherTermDate } from "@/component
 import { shiftMonth, termKey, ymd, daysInMonth } from "@/components/admin/sections/dates";
 import { StudyPlanner, type PlannerStudy } from "@/components/admin/studies/StudyPlanner";
 import { SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
+import { blockMinutes, buildBlockTree, dashLabel, minutesLabel, parseTimeBlock, sectionPackages } from "@/lib/time-blocks";
 
 export const metadata: Metadata = { title: "반 편성", robots: { index: false } };
 
@@ -117,6 +118,20 @@ export default async function AdminSectionsPage({
     const label = [inc.course?.name ?? "강좌", inc.time_block].filter(Boolean).join(" ");
     includedBySection.set(r.section_id, [...(includedBySection.get(r.section_id) ?? []), label]);
   }
+  // 묶음 반(120분·140분) ↔ 시간 단위 반(60분·70분): 같은 강좌·트랙에서 시간이 안에 들어오는 반 (2026-09-16 Alan)
+  const packages = sectionPackages(sections ?? []);
+  // 시간대 라벨 → "120분" 같은 분량 (묶음은 안에 든 시간 단위의 합)
+  const minutesOf = new Map<string, string | null>();
+  for (const c of new Set((sections ?? []).map((s) => s.course_id))) {
+    const mine = (sections ?? []).filter((s) => s.course_id === c);
+    const walk = (nodes: ReturnType<typeof buildBlockTree>) => {
+      for (const n of nodes) {
+        minutesOf.set(`${c}|${n.label}`, minutesLabel(blockMinutes(n)));
+        walk(n.parts);
+      }
+    };
+    walk(buildBlockTree(mine.map((s) => s.time_block), { nest: mine[0]?.course?.program === "score" }));
+  }
 
   const saved: TermSchedule = {
     opens: term?.enrollment_opens_at ?? null,
@@ -153,11 +168,21 @@ export default async function AdminSectionsPage({
     materialCount: s.study_materials?.[0]?.count ?? 0,
   }));
 
-  // 주5일 묶음(bundle) 끼리 모아 보여준다
+  // 주5일 = 같은 강좌·시간대의 월수금 + 화목금. 그 둘을 한 묶음으로 모아 보여준다 (시간대가 없는 반은 하나씩 만들기의 bundle_id 로)
   type Sec = NonNullable<typeof sections>[number];
   const groups = new Map<string, Sec[]>();
-  for (const s of sections ?? []) {
-    const k = s.bundle_id ?? `single-${s.id}`;
+  const order = (s: Sec) => {
+    const span = parseTimeBlock(s.time_block);
+    return [s.course?.program === "sparta" ? 1 : 0, s.course?.target_score ?? 0, span?.start ?? 9999, -(span?.end ?? 0), s.track === "mwf" ? 0 : 1];
+  };
+  const sorted = [...(sections ?? [])].sort((a, b) => {
+    const oa = order(a);
+    const ob = order(b);
+    for (let i = 0; i < oa.length; i++) if (oa[i] !== ob[i]) return oa[i] - ob[i];
+    return a.id - b.id;
+  });
+  for (const s of sorted) {
+    const k = s.time_block ? `${s.course_id}|${s.time_block}` : (s.bundle_id ?? `single-${s.id}`);
     groups.set(k, [...(groups.get(k) ?? []), s]);
   }
   const termLabel = `${y}년 ${m}월`;
@@ -236,18 +261,25 @@ export default async function AdminSectionsPage({
             <div className="space-y-4">
               {[...groups.entries()].map(([k, list]) => {
                 const bundled = list.length > 1;
+                const head = list[0];
+                const minutes = head.time_block ? minutesOf.get(`${head.course_id}|${head.time_block}`) : null;
+                const isPackage = (packages.get(head.id)?.parts.length ?? 0) > 0;
                 return (
                   <div key={k} className={cn(bundled && "rounded-xl3 border border-brand-200 bg-brand-50/40 p-3")}>
                     {bundled && (
-                      <p className="mb-2 flex items-center gap-2 px-1 text-xs font-black text-brand-700">
+                      <p className="mb-2 flex flex-wrap items-center gap-2 px-1 text-xs font-black text-brand-700">
                         <Icon name="bolt" size={16} />
                         주5일 묶음 — 월수금 + 화목금
+                        {head.time_block && <span className="rounded-full bg-paper px-2 py-0.5 tabular-nums text-ink">{head.time_block}</span>}
+                        {minutes && <span className="rounded-full bg-paper px-2 py-0.5 text-ink">{minutes}</span>}
+                        {isPackage && <span className="font-semibold text-slate">묶음 반 · 안에 든 60분·70분 반을 함께 들어요</span>}
                       </p>
                     )}
                     <div className={cn("grid gap-3", bundled && "sm:grid-cols-2")}>
                       {list.map((s) => {
                         const count = s.session_dates?.[0]?.count ?? 0;
                         const hasLive = !!s.section_live_links;
+                        const pk = packages.get(s.id);
                         return (
                           <Link
                             key={s.id}
@@ -267,11 +299,24 @@ export default async function AdminSectionsPage({
                                     {TRACK_LABEL[s.track] ?? s.track}
                                   </span>
                                   {s.time_block && <span className="ml-2 font-bold tabular-nums text-ink-soft">{s.time_block}</span>}
+                                  {!bundled && minutes && <span className="ml-1 rounded-full bg-brand-50 px-1.5 py-0.5 text-[11px] font-black text-brand-700">{minutes}</span>}
                                   <span className={cn("ml-2 font-black", count > 0 ? "text-brand-600" : "text-amber-600")}>
                                     수업일 {count}회{count === 0 && " — 달력에 이 트랙 날짜가 없어요"}
                                   </span>
                                   {s.book_set && <span className="ml-2 text-xs font-bold text-slate">LC 교재 {s.book_set}반</span>}
                                 </p>
+                                {pk && pk.parts.length > 0 && (
+                                  <p className="mt-2 text-xs text-slate">
+                                    <span className="mr-1 rounded-full bg-ink px-2 py-0.5 font-black text-white">묶음 반</span>
+                                    이 반 학생이 함께 듣는 시간: <strong className="text-ink">{pk.parts.map((p) => dashLabel(p.time_block!)).sort().join(" · ")}</strong>
+                                    <span className="block text-mist">녹화본 · 불라방 링크 · LC 교재는 그 시간 단위 반에 올리면 이 반 학생도 봐요.</span>
+                                  </p>
+                                )}
+                                {pk && pk.parts.length === 0 && pk.parents.length > 0 && (
+                                  <p className="mt-2 text-xs text-slate">
+                                    묶음 반 <strong className="text-ink">{pk.parents.map((p) => p.time_block).sort().join(" · ")}</strong> 학생도 이 시간을 함께 들어요.
+                                  </p>
+                                )}
                                 {s.course?.program === "sparta" && (
                                   <p className="mt-2 text-xs text-slate">
                                     <span className="mr-1 rounded-full bg-brand-50 px-2 py-0.5 font-black text-brand-700">스파르타반</span>
@@ -338,6 +383,10 @@ export default async function AdminSectionsPage({
                   <p className="mt-1 text-sm text-slate">
                     시간표의 시간대와 강좌를 엮어 한 번에 개설합니다. 불라방은 따로 만들지 않고, 반마다 불라방 수강료를 넣으면 같은 반을 불라방으로 들을 수 있어요.
                     {term && <> 지금은 <strong className="text-ink">{term.month}월 · {SEASON_LABEL[season]} 시간표</strong>를 씁니다.</>}
+                  </p>
+                  <p className="mt-1 text-sm text-slate">
+                    <strong className="text-ink">주5일</strong> 칸을 누르면 월수금·화목금이 함께 골라져요. 120분·140분은 <strong className="text-ink">묶음 반</strong>이고 그 아래 ↳ 줄이
+                    실제 수업인 60분·70분 반이라, 묶음 반 학생은 안에 든 반을 자동으로 함께 들어요. LC 교재는 LC 를 듣는 시간 단위 반에만 고릅니다.
                   </p>
                   {seasonHasNoSlots && (
                     <div className="mt-3">

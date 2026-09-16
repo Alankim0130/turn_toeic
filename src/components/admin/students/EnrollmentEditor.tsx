@@ -5,17 +5,12 @@ import { useRouter } from "next/navigation";
 import { assignSections, removeEnrollment, type StudentActionState } from "@/app/admin/students/actions";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Icon } from "@/components/ui/Icon";
-import { cn } from "@/lib/utils";
+import { SectionPicker, type PickerSection } from "@/components/admin/SectionPicker";
 
-export type SectionOption = { id: number; label: string; taken: boolean };
-
-/** 반 배정 추가 — 주5일이면 월수금·화목금 두 반을 함께 고른다 */
-export function AssignSections({ id, sections }: { id: string; sections: SectionOption[] }) {
+/** 반 배정 추가 — 강좌 · 시간대별로 월수금 / 화목금 / 주5일(둘 다) 을 고른다 */
+export function AssignSections({ id, sections }: { id: string; sections: PickerSection[] }) {
   const [state, action] = useActionState<StudentActionState, FormData>(assignSections, {});
   const [picked, setPicked] = useState<number[]>([]);
-
-  const toggle = (sectionId: number) =>
-    setPicked((prev) => (prev.includes(sectionId) ? prev.filter((n) => n !== sectionId) : [...prev, sectionId]));
 
   // 저장에 성공하면 고른 것을 비운다 (렌더 중 파생 상태 갱신)
   const [seen, setSeen] = useState(state);
@@ -31,29 +26,8 @@ export function AssignSections({ id, sections }: { id: string; sections: Section
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="id" value={id} />
-      {picked.map((n) => (
-        <input key={n} type="hidden" name="section_ids" value={n} />
-      ))}
 
-      <ul className="grid gap-2 sm:grid-cols-2">
-        {sections.map((s) => {
-          const on = picked.includes(s.id);
-          return (
-            <li key={s.id}>
-              <label
-                className={cn(
-                  "flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition",
-                  s.taken ? "cursor-not-allowed border-line bg-surface text-mist" : on ? "border-brand-400 bg-brand-50 font-bold text-ink" : "border-line bg-paper text-ink-soft hover:border-brand-300",
-                )}
-              >
-                <input type="checkbox" checked={on} disabled={s.taken} onChange={() => toggle(s.id)} className="size-4 accent-[#ff2e88]" />
-                <span className="min-w-0 flex-1">{s.label}</span>
-                {s.taken && <span className="shrink-0 text-xs font-bold">배정됨</span>}
-              </label>
-            </li>
-          );
-        })}
-      </ul>
+      <SectionPicker sections={sections} value={picked} onChange={setPicked} />
 
       <fieldset className="flex flex-wrap items-center gap-3">
         <legend className="sr-only">수강 방식</legend>
