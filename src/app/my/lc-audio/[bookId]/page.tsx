@@ -8,9 +8,10 @@ import { BookCover } from "@/components/lc/BookCover";
 import { LessonCalendar, type LessonSlot, type LessonTrack } from "@/components/lc/LessonCalendar";
 import { createClient } from "@/lib/supabase/server";
 import { todayKST, TRACK_LABEL } from "@/lib/utils";
+import { studentTrackLabel } from "@/lib/week5";
 import { holidayNamesBetween } from "@/lib/holidays";
 import { BOOK_SET_LABEL, BOOK_SET_MONTHS, DAYS, DAY_COUNT, bookLabel, bookSetOfSection, coverSrc, explicitBookSet, lessonLabel, sortTracks } from "@/lib/lc-audio";
-import { getMySessions } from "../../_lib/queries";
+import { getMySessions, getMyWeek5 } from "../../_lib/queries";
 
 export const metadata: Metadata = { title: "LC 음원듣기", robots: { index: false } };
 
@@ -23,10 +24,11 @@ export default async function LcBookPage({ params }: { params: Promise<{ bookId:
   if (!Number.isInteger(id) || id <= 0) notFound();
 
   const supabase = await createClient();
-  const [{ data: book }, { data: trackRows }, sessions] = await Promise.all([
+  const [{ data: book }, { data: trackRows }, sessions, week5] = await Promise.all([
     supabase.from("lc_books").select("id, level, book_set, title, description, cover_name, lesson_offset, updated_at").eq("id", id).maybeSingle(),
     supabase.from("lc_audio_tracks").select("id, day, kind, label, file_name, sort_order").eq("book_id", id),
     getMySessions(),
+    getMyWeek5(),
   ]);
   if (!book) notFound();
 
@@ -113,7 +115,7 @@ export default async function LcBookPage({ params }: { params: Promise<{ bookId:
         month={month}
         today={todayKST()}
         holidays={holidays}
-        trackLabel={section?.track ? (TRACK_LABEL[section.track] ?? section.track) : null}
+        trackLabel={section ? studentTrackLabel(section, week5, TRACK_LABEL) : null}
       />
 
       <p className="text-xs text-mist">음원과 교재 이미지는 수강생 본인만 이용할 수 있습니다. 파일을 외부에 공유하지 마세요.</p>

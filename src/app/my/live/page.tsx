@@ -6,7 +6,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
 import { formatDate, formatTime, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
-import { getMyLiveLinks, getNextSessionBySection, termLabel } from "../_lib/queries";
+import { studentTrackLabel } from "@/lib/week5";
+import { getMyLiveLinks, getMyWeek5, getNextSessionBySection, termLabel } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "불라방",
@@ -19,6 +20,7 @@ export default async function LivePage() {
   if (locked) return locked;
 
   const links = (await getMyLiveLinks()).filter((l) => l.section);
+  const week5 = await getMyWeek5();
   const next = await getNextSessionBySection(links.map((l) => l.section_id));
 
   return (
@@ -44,7 +46,7 @@ export default async function LivePage() {
                   <div className="relative">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="chip">{termLabel(s.term)}</span>
-                      <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-bold text-white">{TRACK_LABEL[s.track] ?? s.track}</span>
+                      <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-bold text-white">{studentTrackLabel(s, week5, TRACK_LABEL)}</span>
                     </div>
                     <h2 className="mt-3 text-xl font-black text-ink">{s.course?.name ?? "강좌"}</h2>
                     {(s.start_time || s.time_block) && (

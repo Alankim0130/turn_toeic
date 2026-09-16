@@ -7,6 +7,7 @@ import { Reveal } from "@/components/ui/Reveal";
 import { InstallApp } from "@/components/pwa/InstallApp";
 import { effectiveRole, getStudentAccess, requireUser, ROLE_LABEL } from "@/lib/auth";
 import { cn, formatDate, formatTimeRange, MODE_LABEL, TRACK_LABEL } from "@/lib/utils";
+import { collapseWeek5, pairKey, studentTrackLabel, type Week5Section } from "@/lib/week5";
 import {
   getMyOrders,
   getMyVerifications,
@@ -14,6 +15,7 @@ import {
   ORDER_STATUS_LABEL,
   termLabel,
   VERIFICATION_STATUS_LABEL,
+  getMyWeek5,
 } from "./_lib/queries";
 
 export const metadata: Metadata = {
@@ -33,13 +35,32 @@ const QUICK: { href: string; label: string; desc: string; icon: IconName }[] = [
   { href: "/my/lc-audio", label: "LC음원듣기", desc: "레벨별 음원", icon: "headphones" },
 ];
 
+/**
+ * 주5일 한 줄에 적을 수강 방식. 두 줄을 한 줄로 합쳤으니 **두 트랙의 방식이 다르면 둘 다 적는다** —
+ * 한쪽만 적으면 없는 말이 된다 (월수금 현장 + 화목금 불라방 같은 등록이 있을 수 있다).
+ */
+function modeLabelOf(
+  enrollments: { mode: string; section: Week5Section | null }[],
+  mode: string,
+  section: Week5Section,
+  week5: Set<number>,
+) {
+  if (!week5.has(section.id)) return MODE_LABEL[mode] ?? mode;
+  const key = pairKey(section);
+  const modes = new Set(
+    enrollments.filter((x) => x.section && week5.has(x.section.id) && pairKey(x.section) === key).map((x) => x.mode),
+  );
+  return [...modes].map((m) => MODE_LABEL[m] ?? m).join(" · ");
+}
+
 export default async function MyPage({ searchParams }: { searchParams: Promise<{ welcome?: string; denied?: string }> }) {
-  const [{ profile, user }, sp, orders, verifications, access] = await Promise.all([
+  const [{ profile, user }, sp, orders, verifications, access, week5] = await Promise.all([
     requireUser("/my"),
     searchParams,
     getMyOrders(),
     getMyVerifications(),
     getStudentAccess(),
+    getMyWeek5(),
   ]);
 
   const name = profile?.name || user.email || "회원";
@@ -147,13 +168,14 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
                         )}
 
                         <ul className="mt-3 space-y-2">
-                          {o.enrollments.map((e) =>
+                          {/* 주5일은 월수금·화목금 두 줄이 아니라 한 줄로 (2026-09-16 Alan) */}
+                          {collapseWeek5(o.enrollments, (e) => e.section, week5).map((e) =>
                             e.section ? (
                               <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                                 <span className="font-black text-ink">{termLabel(e.section.term)}</span>
                                 <span className="font-semibold text-ink">{e.section.course?.name ?? "강좌"}</span>
                                 <span className="rounded-full bg-ink px-2 py-0.5 text-xs font-bold text-white">
-                                  {TRACK_LABEL[e.section.track] ?? e.section.track}
+                                  {studentTrackLabel(e.section, week5, TRACK_LABEL)}
                                 </span>
                                 {e.section.start_time && e.section.end_time ? (
                                   <span className="text-slate">{formatTimeRange(e.section.start_time, e.section.end_time)}</span>
@@ -161,7 +183,7 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
                                   e.section.time_block && <span className="tabular-nums text-slate">{e.section.time_block}</span>
                                 )}
                                 <span className={cn("text-xs font-bold", e.mode === "live" ? "text-brand-600" : "text-slate")}>
-                                  {MODE_LABEL[e.mode]}
+                                  {modeLabelOf(o.enrollments, e.mode, e.section, week5)}
                                 </span>
                               </li>
                             ) : null,

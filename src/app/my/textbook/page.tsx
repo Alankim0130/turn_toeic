@@ -6,7 +6,8 @@ import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
 import { requireUser } from "@/lib/auth";
 import { cn, formatDate, formatTime, TRACK_LABEL } from "@/lib/utils";
-import { getMyLiveEnrollments, getMyTextbookOrders, termLabel, TEXTBOOK_STATUS_LABEL } from "../_lib/queries";
+import { studentTrackLabel } from "@/lib/week5";
+import { getMyLiveEnrollments, getMyTextbookOrders, getMyWeek5, termLabel, TEXTBOOK_STATUS_LABEL } from "../_lib/queries";
 import { TextbookForm, type EligibleSection } from "./TextbookForm";
 import { cancelTextbookOrder } from "./actions";
 
@@ -20,13 +21,13 @@ export default async function TextbookPage() {
   const locked = await studentGate("textbook");
   if (locked) return locked;
 
-  const [{ profile }, enrollments, orders] = await Promise.all([requireUser("/my/textbook"), getMyLiveEnrollments(), getMyTextbookOrders()]);
+  const [{ profile }, enrollments, orders, week5] = await Promise.all([requireUser("/my/textbook"), getMyLiveEnrollments(), getMyTextbookOrders(), getMyWeek5()]);
 
   const sections: EligibleSection[] = enrollments.map((e) => {
     const s = e.section!;
     return {
       id: s.id,
-      label: `${termLabel(s.term)} · ${s.course?.name ?? "강좌"} · ${[TRACK_LABEL[s.track] ?? s.track, formatTime(s.start_time)].filter(Boolean).join(" ")}`,
+      label: `${termLabel(s.term)} · ${s.course?.name ?? "강좌"} · ${[studentTrackLabel(s, week5, TRACK_LABEL), formatTime(s.start_time)].filter(Boolean).join(" ")}`,
     };
   });
 

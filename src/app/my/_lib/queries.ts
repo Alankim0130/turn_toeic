@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { todayKST } from "@/lib/utils";
+import { week5SectionIds } from "@/lib/week5";
 
 /** 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다. */
 
@@ -21,6 +22,14 @@ export async function getMyAccessibleSections() {
   return data ?? [];
 }
 export type MyAccessibleSection = Awaited<ReturnType<typeof getMyAccessibleSections>>[number];
+
+/**
+ * 내 반 중 **주5일인 반의 id** (2026-09-16 Alan: 학생에게는 월수금·화목금 대신 "주5일" 로 보여 준다).
+ * 접근 가능한 반 전체로 판정한다 — 다시보기처럼 일부만 나오는 화면에서도 같은 이름이 나와야 한다.
+ */
+export async function getMyWeek5(sections?: MyAccessibleSection[]) {
+  return week5SectionIds(sections ?? (await getMyAccessibleSections()));
+}
 
 export async function getMyOrders() {
   const supabase = await createClient();

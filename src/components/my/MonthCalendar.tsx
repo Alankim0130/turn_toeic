@@ -1,6 +1,9 @@
 import { cn } from "@/lib/utils";
 
-/** track: 'mwf' | 'ttf' 는 수업일, 'lecture' 는 특강 */
+/**
+ * track: `mwf` | `ttf` 는 수업일, `lecture` 는 특강,
+ * `mine` 은 **주5일 학생의 수업일**이다 (2026-09-16 Alan — 월수금·화목금으로 갈라 보여 주지 않는다).
+ */
 export type CalendarMark = { date: string; label: string; track: string };
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -26,9 +29,17 @@ export function MonthCalendar({ year, month, marks, today }: { year: number; mon
         <p className="font-black text-ink">
           {year}년 {month}월
         </p>
+        {/* 있는 것만 적는다 — 주5일 학생에게 월수금·화목금 두 줄을 보여 주면 제 수업이 갈라져 보인다 */}
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold text-slate">
-          <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-brand-500" />월수금</span>
-          <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-ink" />화목금</span>
+          {marks.some((m) => m.track === "mine") && (
+            <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-brand-500" />내 수업</span>
+          )}
+          {marks.some((m) => m.track === "mwf") && (
+            <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-brand-500" />월수금</span>
+          )}
+          {marks.some((m) => m.track === "ttf") && (
+            <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-ink" />화목금</span>
+          )}
           {marks.some((m) => m.track === "lecture") && (
             <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-violet-500" />특강</span>
           )}
@@ -63,7 +74,7 @@ export function MonthCalendar({ year, month, marks, today }: { year: number; mon
                         title={m.label}
                         className={cn(
                           "block h-1.5 w-full max-w-8 rounded-full sm:h-auto sm:max-w-none sm:px-1 sm:py-0.5 sm:text-[10px] sm:font-bold sm:text-white",
-                          m.track === "mwf" ? "bg-brand-500" : m.track === "lecture" ? "bg-violet-500" : "bg-ink",
+                          m.track === "ttf" ? "bg-ink" : m.track === "lecture" ? "bg-violet-500" : "bg-brand-500",
                           past && "opacity-40",
                         )}
                       >

@@ -9,6 +9,7 @@ import { cn, formatDate, formatTime, formatTimeRange, todayKST, TRACK_LABEL } fr
 import { lectureTitle } from "@/lib/lecture";
 import { dashLabel, parseTimeBlock, sectionPackages } from "@/lib/time-blocks";
 import { subjectsWithin, SUBJECT_LABEL, type Subject } from "@/lib/instructor-subject";
+import { studentTrackLabel, week5SectionIds } from "@/lib/week5";
 import { getMyLectures, getMyLectureSignupIds, getMyOrders, getMySessions, termLabel } from "../_lib/queries";
 
 /** 함께 듣는 시간 한 줄 — 시간대 · 과목 · (다른 강좌면) 강좌 이름 */
@@ -21,6 +22,8 @@ export const metadata: Metadata = {
 
 export default async function ClassPage() {
   const [sessionRows, lectures, mySignups, orders] = await Promise.all([getMySessions(), getMyLectures(), getMyLectureSignupIds(), getMyOrders()]);
+  // 학생에게는 월수금·화목금 대신 "주5일" 로 보여 준다 (2026-09-16 Alan) — 판정은 lib/week5.ts
+  const week5 = week5SectionIds(sessionRows.filter((s) => s.section).map((s) => s.section!));
   /**
    * 묶음 반(120분) · 스파르타반 학생은 함께 열리는 반(60분 시간 단위, 650·850 …)의 수업일이 같은 날 함께 내려온다.
    * 시간표에는 **내가 등록한 반**(직접 배정된 반) 줄만 두고, 함께 열리는 반은 그 줄의 설명으로 붙인다 —
@@ -121,7 +124,7 @@ export default async function ClassPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader icon="calendar" title="내 시간표" description="주5일 수강생은 월수금·화목금 두 트랙이 함께 표시됩니다.">
+      <PageHeader icon="calendar" title="내 시간표" description="이번 달 수업일이에요. 주5일 수강생은 두 타임의 수업일이 모두 표시됩니다.">
         <span className="chip">
           <Icon name="success" size={16} />
           {done} / {total}회 진행
@@ -150,7 +153,8 @@ export default async function ClassPage() {
         const marks: CalendarMark[] = [
           ...g.list.map((s) => ({
             date: s.date,
-            track: s.section!.track,
+            // 주5일이면 트랙을 나누지 않고 "내 수업" 한 가지로 (2026-09-16 Alan)
+            track: week5.has(s.section!.id) ? "mine" : s.section!.track,
             label: [s.section!.course?.name ?? "수업", formatTime(s.start_time) || s.section!.time_block].filter(Boolean).join(" "),
           })),
           ...g.lectures.map((l) => ({ date: l.date, track: "lecture", label: lectureTitle(l) })),
@@ -189,7 +193,7 @@ export default async function ClassPage() {
                         s.section!.time_block && <span className="tabular-nums text-slate">{s.section!.time_block}</span>
                       )}
                       <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold text-white", s.section!.track === "mwf" ? "bg-brand-500" : "bg-ink")}>
-                        {TRACK_LABEL[s.section!.track] ?? s.section!.track}
+                        {studentTrackLabel(s.section!, week5, TRACK_LABEL)}
                       </span>
                       <span className="text-slate">{s.section!.course?.name ?? termLabel(s.section!.term)}</span>
                       {isToday && <span className="ml-auto rounded-full bg-brand-500 px-2 py-0.5 text-xs font-black text-white">오늘</span>}

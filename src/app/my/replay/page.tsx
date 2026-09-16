@@ -6,7 +6,8 @@ import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
 import { VideoEmbed } from "@/components/my/VideoEmbed";
 import { formatDate, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
-import { getMyReplays, termLabel, type MyReplay } from "../_lib/queries";
+import { studentTrackLabel } from "@/lib/week5";
+import { getMyReplays, getMyWeek5, termLabel, type MyReplay } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "강의 다시보기",
@@ -19,6 +20,7 @@ export default async function ReplayPage() {
   if (locked) return locked;
 
   const replays = (await getMyReplays()).filter((r) => r.session?.section);
+  const week5 = await getMyWeek5();
 
   if (replays.length === 0) {
     return (
@@ -53,7 +55,7 @@ export default async function ReplayPage() {
           <section className="card overflow-hidden">
             <div className="flex flex-wrap items-center gap-2 border-b border-line bg-brand-50/60 px-5 py-3">
               <span className="chip">{termLabel(g.section.term)}</span>
-              <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-bold text-white">{TRACK_LABEL[g.section.track] ?? g.section.track}</span>
+              <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-bold text-white">{studentTrackLabel(g.section, week5, TRACK_LABEL)}</span>
               <p className="font-black text-ink">{g.section.course?.name ?? "강좌"}</p>
               {/* 60분 반은 같은 강좌가 시간마다 따로 있다 — 시간대로 구분한다 */}
               {g.section.time_block && <span className="text-sm font-bold tabular-nums text-ink-soft">{g.section.time_block}</span>}
