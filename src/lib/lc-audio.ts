@@ -25,12 +25,25 @@ export const BOOK_SET_MONTHS: Record<string, string> = {
  */
 export const bookSetForMonth = (month: number): BookSet => (month % 2 === 1 ? "A" : "B");
 
+/** 반에 지정된 교재 반. 없으면 null — LC 를 듣지 않는 시간(RC 시간 · 묶음 반 · 스파르타 반)은 비어 있다 */
+export const explicitBookSet = (s?: { book_set?: string | null } | null): BookSet | null => (s?.book_set === "A" || s?.book_set === "B" ? s.book_set : null);
+
 /** 이 반이 쓰는 교재 반. 반에 지정돼 있으면 그 값, 없으면 달 홀짝으로 짐작한다 */
 export const bookSetOfSection = (s?: { book_set?: string | null; term?: { month: number } | null } | null): BookSet | null => {
   if (!s) return null;
-  if (s.book_set === "A" || s.book_set === "B") return s.book_set;
-  return s.term ? bookSetForMonth(s.term.month) : null;
+  return explicitBookSet(s) ?? (s.term ? bookSetForMonth(s.term.month) : null);
 };
+
+/**
+ * 내 반들이 쓰는 교재 반 집합. 지정된 반이 하나라도 있으면 그것만 믿는다 —
+ * 60분 반 도입 뒤로 지정이 없는 반은 "LC 가 없는 시간"이지 "미지정"이 아니다 (2026-09-16).
+ * 아무 반에도 지정이 없을 때만 (예전 데이터) 달 홀짝으로 짐작한다.
+ */
+export function bookSetsOfSections(sections: Array<{ book_set?: string | null; term?: { month: number } | null }>): Set<BookSet> {
+  const explicit = new Set(sections.map(explicitBookSet).filter((b): b is BookSet => b !== null));
+  if (explicit.size > 0) return explicit;
+  return new Set(sections.map(bookSetOfSection).filter((b): b is BookSet => b !== null));
+}
 
 export type BookLite = {
   id: number;

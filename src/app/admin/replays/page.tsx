@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { formatDate, formatTime, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
 import { SectionSelect } from "@/components/admin/replays/SectionSelect";
 import { ReplayRow } from "@/components/admin/replays/ReplayRow";
+import { sectionPackages } from "@/lib/time-blocks";
 
 export const metadata: Metadata = { title: "다시보기 등록", robots: { index: false } };
 
@@ -18,11 +19,13 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
 
   const { data: sections } = await supabase
     .from("class_sections")
-    .select("id, track, start_time, end_time, time_block, status, closes_at, instructor_id, course:courses(name), term:terms(year, month)")
+    .select("id, term_id, course_id, track, start_time, end_time, time_block, status, closes_at, instructor_id, course:courses(name, program), term:terms(year, month)")
     .order("id", { ascending: false })
     .limit(200);
 
   const list = sections ?? [];
+  // 묶음 반(120분·140분)에는 녹화본을 올리지 않는다 — 안에 든 시간 단위 반에 올리면 묶음 반 학생도 본다
+  const packages = sectionPackages(list);
   const requested = Number(sectionParam);
   const selected =
     (Number.isInteger(requested) && list.find((s) => s.id === requested)) ||
@@ -36,13 +39,16 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
 
   const options = list.map((s) => ({
     id: s.id,
-    label: [s.course?.name ?? "강좌", TRACK_LABEL[s.track] ?? s.track, formatTime(s.start_time), s.time_block].filter(Boolean).join(" · "),
+    label: [s.course?.name ?? "강좌", TRACK_LABEL[s.track] ?? s.track, formatTime(s.start_time), s.time_block, (packages.get(s.id)?.parts.length ?? 0) > 0 ? "묶음 반" : null]
+      .filter(Boolean)
+      .join(" · "),
     group: s.term ? `${s.term.year}년 ${s.term.month}월` : "기수 미지정",
     status: s.status,
   }));
 
   const canManage = selected ? profile.role === "admin" || selected.instructor_id === user.id : false;
   const registered = (sessions ?? []).filter((s) => (s.replays?.length ?? 0) > 0).length;
+  const selectedParts = selected ? (packages.get(selected.id)?.parts ?? []) : [];
 
   return (
     <div className="space-y-8">
@@ -79,6 +85,24 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
 
           {selected && !canManage && (
             <Alert kind="warning" title="열람만 가능해요">이 반의 담당 강사만 다시보기를 등록·수정할 수 있어요.</Alert>
+          )}
+
+          {selectedParts.length > 0 && (
+            <Alert kind="warning" title="묶음 반이에요 — 녹화본은 시간 단위 반에 올려 주세요">
+              이 반 학생은 안에 든{" "}
+              {selectedParts
+                .slice()
+                .sort((a, b) => (a.time_block ?? "").localeCompare(b.time_block ?? ""))
+                .map((p, i) => (
+                  <span key={p.id}>
+                    {i > 0 && " · "}
+                    <Link href={`/admin/replays?section=${p.id}`} className="font-bold text-brand-600 hover:underline">
+                      {p.time_block}
+                    </Link>
+                  </span>
+                ))}{" "}
+              반의 다시보기를 그대로 봅니다. 시간마다 강사가 다르니 그 반에 각각 올리면 60분만 듣는 학생도 자기 시간만 보게 돼요.
+            </Alert>
           )}
 
           {selected && (sessions?.length ?? 0) === 0 && (

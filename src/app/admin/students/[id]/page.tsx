@@ -9,7 +9,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { TermChips } from "@/components/admin/TermChips";
 import { RoleSelect, type RoleOption } from "@/components/admin/students/RoleSelect";
-import { AssignSections, RemoveEnrollment, type SectionOption } from "@/components/admin/students/EnrollmentEditor";
+import { AssignSections, RemoveEnrollment } from "@/components/admin/students/EnrollmentEditor";
+import type { PickerSection } from "@/components/admin/SectionPicker";
 import { GENDER_LABEL, pickTerm, sectionSummary, termLabel } from "../../_lib/queries";
 import { termParam } from "@/lib/study";
 
@@ -57,19 +58,15 @@ export default async function StudentDetailPage({
   const { data: termSections } = term
     ? await supabase
         .from("class_sections")
-        .select("id, track, start_time, end_time, time_block, term:terms(year, month), course:courses(name)")
+        .select("id, track, time_block, term:terms(year, month), course:courses(id, name, program, target_score)")
         .eq("term_id", term.id)
         .neq("status", "draft")
-        .order("start_time")
+        .order("time_block")
         .order("track")
     : { data: [] };
 
   const takenIds = new Set((enrollments ?? []).map((e) => e.section?.id).filter(Boolean));
-  const sectionOptions: SectionOption[] = (termSections ?? []).map((s) => ({
-    id: s.id,
-    label: sectionSummary(s, null, { withEnd: true }),
-    taken: takenIds.has(s.id),
-  }));
+  const sectionOptions: PickerSection[] = (termSections ?? []).map((s) => ({ ...s, taken: takenIds.has(s.id) }));
 
   const roleOptions: RoleOption[] = (Object.keys(ROLE_LABEL) as UserRole[]).map((r) => ({ value: r, label: ROLE_LABEL[r], hint: ROLE_HINT[r] }));
   const canChangeRole = isAdmin(me.role);
@@ -190,7 +187,7 @@ export default async function StudentDetailPage({
           <div className="mt-6 border-t border-line pt-5">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-black text-ink">반 배정 추가</h3>
-              <p className="text-xs text-slate">주5일이면 월수금·화목금 두 반을 함께 고르세요</p>
+              <p className="text-xs text-slate">주5일은 [주5일] 버튼으로 월수금·화목금이 함께 골라져요. 60분 반은 시간대 아래 ↳ 줄에서 고르세요</p>
             </div>
             {(terms ?? []).length === 0 ? (
               <p className="rounded-xl bg-brand-50/60 px-4 py-6 text-center text-sm text-slate">

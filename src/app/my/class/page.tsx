@@ -7,7 +7,8 @@ import { Icon } from "@/components/ui/Icon";
 import { MonthCalendar, type CalendarMark } from "@/components/my/MonthCalendar";
 import { cn, formatDate, formatTime, formatTimeRange, todayKST, TRACK_LABEL } from "@/lib/utils";
 import { lectureTitle } from "@/lib/lecture";
-import { getMyLectures, getMyLectureSignupIds, getMySessions, termLabel } from "../_lib/queries";
+import { dashLabel } from "@/lib/time-blocks";
+import { getMyLectures, getMyLectureSignupIds, getMyOrders, getMySessions, termLabel } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "내 시간표",
@@ -15,11 +16,41 @@ export const metadata: Metadata = {
 };
 
 export default async function ClassPage() {
-  const [sessionRows, lectures, mySignups] = await Promise.all([getMySessions(), getMyLectures(), getMyLectureSignupIds()]);
-  // 스파르타반 학생은 스파르타 반과 함께 듣는 반(650·850 …)의 수업일이 같은 날 함께 내려온다 —
-  // 같은 날·같은 트랙에 실제 수업(점수보장반)이 있으면 스파르타 반 줄은 겹치므로 뺀다
-  const realDays = new Set(sessionRows.filter((s) => s.section && s.section.course?.program !== "sparta").map((s) => `${s.date}|${s.section!.track}`));
-  const sessions = sessionRows.filter((s) => s.section && !(s.section.course?.program === "sparta" && realDays.has(`${s.date}|${s.section.track}`)));
+  const [sessionRows, lectures, mySignups, orders] = await Promise.all([getMySessions(), getMyLectures(), getMyLectureSignupIds(), getMyOrders()]);
+  /**
+   * 묶음 반(120분) · 스파르타반 학생은 함께 열리는 반(60분 시간 단위, 650·850 …)의 수업일이 같은 날 함께 내려온다.
+   * 시간표에는 **내가 등록한 반**(직접 배정된 반) 줄만 두고, 함께 열리는 반은 그 줄의 설명으로 붙인다 —
+   * 120분 주5일 학생이 하루에 60분 줄 두 개를 보면 회차 수가 두 배로 보인다.
+   */
+  const direct = new Set(
+    orders.flatMap((o) => (o.status === "active" || o.status === "preliminary" ? o.enrollments.filter((e) => e.status === "active" && e.section).map((e) => e.section!.id) : [])),
+  );
+  const rows = sessionRows.filter((s) => s.section);
+  const byDay = new Map<string, typeof rows>();
+  for (const s of rows) {
+    const k = `${s.date}|${s.section!.track}`;
+    byDay.set(k, [...(byDay.get(k) ?? []), s]);
+  }
+  const partsOf = new Map<number, string[]>();
+  const sessions: typeof rows = [];
+  for (const list of byDay.values()) {
+    const own = direct.size ? list.filter((s) => direct.has(s.section!.id)) : [];
+    if (own.length === 0) {
+      // 등록 정보를 못 읽은 경우: 같은 날 실제 수업(점수보장반)이 있으면 스파르타 반 줄만 뺀다
+      const hasReal = list.some((s) => s.section!.course?.program !== "sparta");
+      sessions.push(...list.filter((s) => !(hasReal && s.section!.course?.program === "sparta")));
+      continue;
+    }
+    const others = list.filter((s) => !direct.has(s.section!.id)).sort((a, b) => (a.section!.time_block ?? "").localeCompare(b.section!.time_block ?? ""));
+    for (const o of own) {
+      const parts = others
+        .map((s) => [s.section!.course?.name !== o.section!.course?.name ? s.section!.course?.name : null, s.section!.time_block ? dashLabel(s.section!.time_block) : null].filter(Boolean).join(" "))
+        .filter(Boolean);
+      if (parts.length) partsOf.set(o.id, parts);
+      sessions.push(o);
+    }
+  }
+  sessions.sort((a, b) => a.date.localeCompare(b.date) || (a.section!.time_block ?? "").localeCompare(b.section!.time_block ?? ""));
   const today = todayKST();
 
   // 신청을 받는 특강은 위로 따로 모아 보여 준다 (지난 특강은 빼고)
@@ -136,6 +167,9 @@ export default async function ClassPage() {
                       <span className="text-slate">{s.section!.course?.name ?? termLabel(s.section!.term)}</span>
                       {isToday && <span className="ml-auto rounded-full bg-brand-500 px-2 py-0.5 text-xs font-black text-white">오늘</span>}
                       {isNext && <span className="ml-auto rounded-full bg-ink px-2 py-0.5 text-xs font-black text-white">다음 수업</span>}
+                      {partsOf.has(s.id) && (
+                        <span className="basis-full pl-12 text-xs text-mist">함께 듣는 시간: {partsOf.get(s.id)!.join(" · ")}</span>
+                      )}
                     </li>
                   );
                 })}

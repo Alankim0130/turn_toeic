@@ -55,6 +55,8 @@ export default async function ReplayPage() {
               <span className="chip">{termLabel(g.section.term)}</span>
               <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-bold text-white">{TRACK_LABEL[g.section.track] ?? g.section.track}</span>
               <p className="font-black text-ink">{g.section.course?.name ?? "강좌"}</p>
+              {/* 60분 반은 같은 강좌가 시간마다 따로 있다 — 시간대로 구분한다 */}
+              {g.section.time_block && <span className="text-sm font-bold tabular-nums text-ink-soft">{g.section.time_block}</span>}
               <p className="ml-auto flex items-center gap-1 text-xs font-semibold text-slate">
                 <Icon name="timeslot" size={16} />
                 종강일 {formatDate(g.section.closes_at, { month: "long", day: "numeric" })}까지 시청 가능

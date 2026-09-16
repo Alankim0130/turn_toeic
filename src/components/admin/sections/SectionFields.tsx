@@ -1,7 +1,10 @@
 "use client";
 
-/** 반 개설/수정 폼의 공통 입력 필드 (수강료·정원·LC 교재 세트·상태). 수업일·개강일·종강일은 반 편성 달력에서 정한다 */
-export function SectionFields({ values, mode }: { values: Record<string, string | undefined>; mode: "create" | "edit" }) {
+/**
+ * 반 개설/수정 폼의 공통 입력 필드 (수강료·정원·LC 교재 세트·상태). 수업일·개강일·종강일은 반 편성 달력에서 정한다.
+ * bookSetNote 가 있으면 교재를 고를 수 없는 반(묶음 반 · 스파르타 반)이라 라디오 대신 안내만 보여 준다.
+ */
+export function SectionFields({ values, mode, bookSetNote }: { values: Record<string, string | undefined>; mode: "create" | "edit"; bookSetNote?: string }) {
   const v = values;
   return (
     <>
@@ -26,6 +29,13 @@ export function SectionFields({ values, mode }: { values: Record<string, string 
         </div>
       </div>
 
+      {bookSetNote ? (
+        <div>
+          <p className="label">LC 교재</p>
+          <input type="hidden" name="book_set" value="" />
+          <p className="rounded-xl bg-brand-50/60 px-4 py-3 text-sm text-slate">{bookSetNote}</p>
+        </div>
+      ) : (
       <fieldset>
         <legend className="label">
           LC 교재 <span className="font-normal text-mist">(선택)</span>
@@ -46,9 +56,11 @@ export function SectionFields({ values, mode }: { values: Record<string, string 
           ))}
         </div>
         <p className="mt-1.5 text-xs text-slate">
-          이 반이 이번 달에 쓰는 LC 교재예요. <strong className="text-ink">시간대마다 다르고 달마다 뒤바뀝니다</strong> — 9월 10:00 반이 A면 11:10 반은 B, 10월에는 서로 바뀝니다.
+          이 반이 이번 달에 쓰는 LC 교재예요. <strong className="text-ink">LC 를 듣는 시간에만 고르고, 시간대·트랙마다 다르며 달마다 뒤바뀝니다</strong> — 9월 650 은 10:00 화목금이 A, 11:10 월수금이 B 이고 10월에는 서로 바뀝니다.
+          RC 만 듣는 시간이면 미지정으로 두세요.
         </p>
       </fieldset>
+      )}
 
       <fieldset>
         <legend className="label">상태</legend>

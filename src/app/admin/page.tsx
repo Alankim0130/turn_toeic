@@ -54,26 +54,44 @@ export default async function AdminDashboardPage() {
   const slotLabels = new Set<string>();
   const courseNames = new Set<string>();
   const courseScore = new Map<string, number>();
+  let rolledUp = false;
   if (term) {
-    const [{ data: counts }, { data: sections }] = await Promise.all([
+    const [{ data: counts }, { data: sections }, { data: includeRows }] = await Promise.all([
       supabase.from("section_headcounts").select("section_id, onsite_count, live_count").eq("term_id", term.id),
       supabase
         .from("class_sections")
         .select("id, time_block, start_time, end_time, course:courses(name, target_score)")
         .eq("term_id", term.id)
         .neq("status", "draft"),
+      // 묶음 반(120분·140분) · 스파르타반 → 그 학생이 실제로 앉아 있는 시간 단위 반
+      supabase.rpc("term_section_includes", { p_term_id: term.id }),
     ]);
     const countMap = new Map((counts ?? []).map((c) => [c.section_id, c]));
+    // 시간 단위 반마다 "그 시간에 교실에 있는" 인원 = 직접 배정 + 이 반을 품는 묶음 반·스파르타 반의 배정.
+    // 묶음 반은 열을 따로 두지 않는다 — 10:00 교실 인원이 60분 열과 120분 열로 갈라지면 셀 수 없다
+    const parentsOf = new Map<number, number[]>();
+    const packageIds = new Set<number>();
+    for (const r of includeRows ?? []) {
+      packageIds.add(r.section_id);
+      parentsOf.set(r.included_id, [...(parentsOf.get(r.included_id) ?? []), r.section_id]);
+    }
+    rolledUp = packageIds.size > 0;
     for (const s of sections ?? []) {
+      if (packageIds.has(s.id)) continue;
       // 반 편성 달력은 시간을 받지 않으므로 시간이 없는 반이 있다 — 강좌 이름으로 묶고 "시간 미정" 칸에 넣는다
       const slot = s.time_block || formatTimeRange(s.start_time, s.end_time) || "시간 미정";
       const course = s.course?.name ?? "강좌";
       slotLabels.add(slot);
       courseNames.add(course);
       if (typeof s.course?.target_score === "number") courseScore.set(course, s.course.target_score);
-      const c = countMap.get(s.id);
+      let onsite = countMap.get(s.id)?.onsite_count ?? 0;
+      let live = countMap.get(s.id)?.live_count ?? 0;
+      for (const p of parentsOf.get(s.id) ?? []) {
+        onsite += countMap.get(p)?.onsite_count ?? 0;
+        live += countMap.get(p)?.live_count ?? 0;
+      }
       const prev = cells.get(`${course}|${slot}`) ?? { onsite: 0, live: 0 };
-      cells.set(`${course}|${slot}`, { onsite: prev.onsite + (c?.onsite_count ?? 0), live: prev.live + (c?.live_count ?? 0) });
+      cells.set(`${course}|${slot}`, { onsite: prev.onsite + onsite, live: prev.live + live });
     }
   }
   const slots = [...slotLabels].sort((a, b) => slotKey(a) - slotKey(b) || a.localeCompare(b, "ko"));
@@ -200,7 +218,10 @@ export default async function AdminDashboardPage() {
         ) : (
           <div className="-mx-5 overflow-x-auto px-5">
             <table className="w-full min-w-max border-collapse text-sm">
-              <caption className="caption-bottom pt-3 text-left text-xs text-mist">현장 인원, 괄호 안은 불라방 인원 (명)</caption>
+              <caption className="caption-bottom pt-3 text-left text-xs text-mist">
+                현장 인원, 괄호 안은 불라방 인원 (명)
+                {rolledUp && " · 묶음 반(120분·140분)과 스파르타반 학생은 그 시간에 듣는 시간 단위 반마다 세었어요"}
+              </caption>
               <thead>
                 <tr className="border-b border-line">
                   <th scope="col" className="py-2 pr-4 text-left text-xs font-bold text-slate">강좌</th>

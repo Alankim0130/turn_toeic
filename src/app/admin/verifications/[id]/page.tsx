@@ -6,6 +6,7 @@ import { todayKST, formatDate, formatTimeRange, formatWon, TRACK_LABEL } from "@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { StatusBadge } from "@/components/admin/StatusBadge";
+import type { PickerSection } from "@/components/admin/SectionPicker";
 import { sectionSummary, termLabel } from "../../_lib/queries";
 import { DecisionForms, type Candidate, type OrderInfo } from "./DecisionForms";
 
@@ -43,11 +44,11 @@ export default async function VerificationDetailPage({
     supabase.storage.from("receipts").createSignedUrl(v.file_path, 600),
     supabase
       .from("class_sections")
-      .select("id, track, start_time, end_time, time_block, tuition, live_tuition, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(name)")
+      .select("id, track, start_time, end_time, time_block, tuition, live_tuition, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(id, name, program, target_score)")
       .eq("status", "open")
       .gte("closes_at", today)
       .order("enrollment_opens_at")
-      .order("start_time"),
+      .order("time_block"),
     supabase
       .from("enrollment_orders")
       .select("id, status, activates_on, access_until, enrollments(id, mode, status, section_id, section:class_sections!enrollments_section_id_fkey(track, start_time, time_block, term:terms(year, month), course:courses(name)))")
@@ -73,6 +74,8 @@ export default async function VerificationDetailPage({
       .filter(Boolean)
       .join(" · "),
   }));
+  // 승인 화면의 반 고르기 — 강좌 · 시간대별 월수금 / 화목금 / 주5일
+  const pickerSections: PickerSection[] = (sections ?? []).map((s) => ({ id: s.id, track: s.track, time_block: s.time_block, course: s.course, term: s.term }));
 
   const orderInfo: OrderInfo | null = order
     ? {
@@ -159,7 +162,7 @@ export default async function VerificationDetailPage({
               </dl>
             </section>
           )}
-          <DecisionForms verificationId={v.id} result={v.result} candidates={candidates} order={orderInfo} />
+          <DecisionForms verificationId={v.id} result={v.result} candidates={candidates} pickerSections={pickerSections} order={orderInfo} />
         </div>
       </div>
     </>

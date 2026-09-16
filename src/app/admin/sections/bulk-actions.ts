@@ -6,6 +6,7 @@ import { requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import { sectionKeyOf, timeBlockOf } from "@/components/admin/sections/bulk";
 import { SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
+import { blockContains } from "@/lib/time-blocks";
 
 /**
  * 반 일괄 개설: 시간표(레벨·시간대) × 강좌 × 트랙 조합에서 고른 것만 한 번에 만든다.
@@ -74,11 +75,16 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
     const capacity = r.capacity == null ? null : Number(r.capacity);
     if (capacity !== null && (!Number.isInteger(capacity) || capacity < 1)) return { ok: false, error: "정원은 1명 이상이어야 해요." };
 
-    // 스파르타 반은 교재를 두지 않는다 — 함께 듣는 점수보장반의 교재를 쓴다
-    const bookSet = course.program !== "sparta" && (r.bookSet === "A" || r.bookSet === "B") ? r.bookSet : null;
-
     const slot = r.slotId == null ? null : slotById.get(Number(r.slotId));
     if (r.slotId != null && !slot) return { ok: false, error: "시간대를 찾을 수 없어요. 새로고침한 뒤 다시 시도해 주세요." };
+    // 묶음 시간대(120분 · 140분: 같은 레벨 시간표에 안에 들어오는 시간 단위가 있는 것)에는 교재를 두지 않는다 —
+    // 묶음 반 학생은 안에 든 시간 단위 반의 교재를 쓴다. 스파르타 반도 함께 듣는 점수보장반의 교재를 쓴다
+    const isPackage =
+      !!slot &&
+      (slots ?? []).some(
+        (o) => o.id !== slot.id && o.level === slot.level && o.program === slot.program && o.season === slot.season && blockContains(timeBlockOf(slot.start_time, slot.end_time), timeBlockOf(o.start_time, o.end_time)),
+      );
+    const bookSet = course.program !== "sparta" && !isPackage && (r.bookSet === "A" || r.bookSet === "B") ? r.bookSet : null;
     // 점수보장반 시간대로 스파르타 반을 만들거나 그 반대가 되면 반의 시간·권한 판정이 틀어진다
     if (slot && (slot.program !== course.program || slot.level !== course.target_score)) {
       return { ok: false, error: "강좌와 맞지 않는 시간대예요. 새로고침한 뒤 다시 시도해 주세요." };
