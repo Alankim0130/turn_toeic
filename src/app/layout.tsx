@@ -5,6 +5,7 @@ import { Footer } from "@/components/layout/Footer";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { TestModeBanner } from "@/components/layout/TestModeBanner";
 import { PwaRegister } from "@/components/pwa/PwaRegister";
+import { PullToRefresh } from "@/components/pwa/PullToRefresh";
 import { getSessionProfile, getStudentAccess } from "@/lib/auth";
 import { site } from "@/lib/site";
 
@@ -60,6 +61,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
       </head>
       <body className="min-h-dvh">
+        {/* 홈 화면 앱에는 주소창이 없다 — 맨 위에서 당기면 새로고침 (2026-09-16 Alan) */}
+        <PullToRefresh />
         <TestModeBanner profile={profile} />
         <SiteHeader profile={profile} signedIn={!!user} access={access} />
         <main className="has-bottom-nav min-h-[70vh]">{children}</main>

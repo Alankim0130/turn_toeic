@@ -12,6 +12,7 @@ import { ExternalMark, isActivePath } from "./NavLinks";
 import { isStudentAreaPath, type NavAccess } from "./DesktopNav";
 import { StaffModeSwitch, isStaffMode } from "./StaffModeSwitch";
 import { InstallApp } from "@/components/pwa/InstallApp";
+import { RefreshButton } from "@/components/pwa/RefreshButton";
 import { signOut } from "@/app/(auth)/actions";
 
 const noopSubscribe = () => () => {};
@@ -231,6 +232,8 @@ export function MobileMenu({
 
         {/* 바닥 */}
         <div className="shrink-0 space-y-2 border-t border-line p-3">
+          {/* 홈 화면 앱은 주소창이 없어 새로고침할 길이 없다 (2026-09-16 Alan) — 앱으로 열었을 때만 보인다 */}
+          <RefreshButton onStart={() => setOpen(false)} />
           <InstallApp variant="menu" onStart={() => setOpen(false)} />
           {staff && <StaffModeSwitch variant="panel" role={role} />}
           {signedIn && (
