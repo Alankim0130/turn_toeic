@@ -155,6 +155,7 @@ export const NAV_ADMIN: NavItem[] = [
   { href: "/admin", label: "대시보드", icon: "analytics" },
   { href: "/admin/students", label: "학생명단", icon: "students" },
   { href: "/admin/sections", label: "반 편성", icon: "calendar" },
+  { href: "/admin/lectures", label: "특강 신청", icon: "bolt" },
   { href: "/admin/verifications", label: "등업 로그", icon: "verify" },
   { href: "/admin/textbook-orders", label: "교재주문", icon: "orders" },
   { href: "/admin/replays", label: "다시보기", icon: "replay" },

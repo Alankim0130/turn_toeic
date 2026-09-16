@@ -55,12 +55,19 @@ export async function getMyLectures() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("special_lectures")
-    .select("id, term_id, date, content, kinds, lecturer:lecturers(name), term:terms(year, month)")
+    .select("id, term_id, date, content, kinds, signup, capacity, signup_opens_at, applied_count, lecturer:lecturers(name), term:terms(year, month)")
     .order("date", { ascending: true })
     .order("id", { ascending: true });
   return data ?? [];
 }
 export type MyLecture = Awaited<ReturnType<typeof getMyLectures>>[number];
+
+/** 내가 신청한 특강 id 집합 */
+export async function getMyLectureSignupIds() {
+  const supabase = await createClient();
+  const { data } = await supabase.from("lecture_signups").select("lecture_id");
+  return new Set((data ?? []).map((r) => r.lecture_id));
+}
 
 export async function getMyLiveLinks() {
   const supabase = await createClient();

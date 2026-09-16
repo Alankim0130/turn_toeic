@@ -4,26 +4,25 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
 import { MonthCalendar, type CalendarMark } from "@/components/my/MonthCalendar";
-import { cn, formatDate, formatTime, formatTimeRange, todayKST, TRACK_LABEL, lectureKindLabel, sortLectureKinds } from "@/lib/utils";
-import { getMyLectures, getMySessions, termLabel } from "../_lib/queries";
+import { cn, formatDate, formatTime, formatTimeRange, todayKST, TRACK_LABEL } from "@/lib/utils";
+import { formatKstDateTime, LECTURE_STATE_CLASS, LECTURE_STATE_LABEL, lectureState, lectureTitle, seatsLeft } from "@/lib/lecture";
+import { LectureCancelButton, LectureSignupButton, SignupOpensIn } from "@/components/my/LectureSignup";
+import { getMyLectures, getMyLectureSignupIds, getMySessions, termLabel } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "내 시간표",
   robots: { index: false },
 };
 
-/** 특강 한 건을 한 줄로: "RC특강 · 1차 모의고사 — 파트5 집중 (이혜영)" */
-function lectureTitle(l: { kinds: string[] | null; content: string | null }) {
-  const kinds = sortLectureKinds(l.kinds ?? []).map(lectureKindLabel);
-  const memo = l.content?.trim();
-  if (kinds.length === 0) return memo || "특강";
-  return memo ? `${kinds.join(" · ")} — ${memo}` : kinds.join(" · ");
-}
-
 export default async function ClassPage() {
-  const [sessionRows, lectures] = await Promise.all([getMySessions(), getMyLectures()]);
+  const [sessionRows, lectures, mySignups] = await Promise.all([getMySessions(), getMyLectures(), getMyLectureSignupIds()]);
   const sessions = sessionRows.filter((s) => s.section);
   const today = todayKST();
+
+  // 신청을 받는 특강은 위로 따로 모아 보여 준다 (지난 특강은 빼고)
+  const signupLectures = lectures
+    .filter((l) => l.signup && (today <= l.date || mySignups.has(l.id)))
+    .sort((a, b) => a.date.localeCompare(b.date));
 
   if (sessions.length === 0 && lectures.length === 0) {
     return (
@@ -67,6 +66,75 @@ export default async function ClassPage() {
           {done} / {total}회 진행
         </span>
       </PageHeader>
+
+      {signupLectures.length > 0 && (
+        <section aria-labelledby="lecture-signup-title" className="space-y-3">
+          <h2 id="lecture-signup-title" className="text-lg font-black text-ink">
+            특강 신청 <span className="text-sm font-semibold text-slate">— 신청을 받는 특강이에요</span>
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {signupLectures.map((l) => {
+              const state = lectureState(l, today);
+              const applied = mySignups.has(l.id);
+              const left = seatsLeft(l);
+              const pct = l.capacity ? Math.min(100, Math.round((l.applied_count / l.capacity) * 100)) : 0;
+              return (
+                <article key={l.id} className={cn("card flex flex-col gap-3 p-4", applied && "border-brand-300 bg-brand-50/40")}>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-black text-ink">{lectureTitle(l)}</p>
+                      <p className="mt-0.5 text-sm text-slate">
+                        {formatDate(l.date)}
+                        {l.lecturer?.name && <span className="ml-2 font-bold text-violet-700">{l.lecturer.name}</span>}
+                      </p>
+                    </div>
+                    <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-bold", applied ? "bg-brand-500 text-white" : LECTURE_STATE_CLASS[state])}>
+                      {applied ? "신청 완료" : LECTURE_STATE_LABEL[state]}
+                    </span>
+                  </div>
+
+                  <div>
+                    <p className="flex items-baseline justify-between text-sm">
+                      <span className="font-semibold text-slate">신청 현황</span>
+                      <span className="font-black tabular-nums text-brand-600">
+                        {l.applied_count}
+                        {l.capacity !== null && <span className="text-ink"> / {l.capacity}명</span>}
+                        {l.capacity === null && <span className="text-ink">명</span>}
+                      </span>
+                    </p>
+                    {l.capacity !== null && (
+                      <>
+                        <span className="mt-1.5 block h-2 w-full overflow-hidden rounded-full bg-line">
+                          <span className="block h-full rounded-full bg-brand-500 transition-all" style={{ width: `${pct}%` }} />
+                        </span>
+                        {left !== null && left > 0 && <p className="mt-1 text-xs font-bold text-emerald-600">{left}자리 남았어요</p>}
+                      </>
+                    )}
+                  </div>
+
+                  {state === "not_open" && l.signup_opens_at && (
+                    <SignupOpensIn opensAt={l.signup_opens_at} label={formatKstDateTime(l.signup_opens_at)} />
+                  )}
+
+                  <div className="mt-auto flex flex-wrap items-center justify-end gap-2">
+                    {applied ? (
+                      state === "open" || state === "full" ? (
+                        <LectureCancelButton lectureId={l.id} />
+                      ) : (
+                        <p className="text-xs text-slate">신청이 마감돼 직접 취소할 수 없어요. 강사에게 말씀해 주세요.</p>
+                      )
+                    ) : state === "open" || state === "full" ? (
+                      <LectureSignupButton lectureId={l.id} full={state === "full"} />
+                    ) : (
+                      <p className="text-xs font-semibold text-slate">{state === "closed" ? "신청이 마감됐어요" : "아직 신청 전이에요"}</p>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {ordered.map((g, gi) => {
         const marks: CalendarMark[] = [
@@ -128,6 +196,7 @@ export default async function ClassPage() {
                       >
                         <span className="font-semibold text-ink">{formatDate(l.date)}</span>
                         <span className="min-w-0 flex-1 text-slate">{lectureTitle(l)}</span>
+                        {mySignups.has(l.id) && <span className="rounded-full bg-brand-500 px-2 py-0.5 text-xs font-bold text-white">신청함</span>}
                         {l.lecturer?.name && <span className="text-xs font-bold text-violet-700">{l.lecturer.name}</span>}
                         {l.date === today && <span className="rounded-full bg-violet-600 px-2 py-0.5 text-xs font-black text-white">오늘</span>}
                       </li>
