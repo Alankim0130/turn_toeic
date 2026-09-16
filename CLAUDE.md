@@ -263,6 +263,19 @@
 - `/admin` 레이아웃은 `requireCrew()` 로 조교를 들여보내되, **화면마다 `requireStaff()` 를 한 번 더 부른다.**
   레이아웃만 믿으면 조교가 주소를 직접 쳐서 들어온다 — 새 관리자 화면을 만들면 맨 위에 가드를 꼭 넣을 것.
 
+**강사 계정은 이혜영·이영수로 고정** (2026-09-16 Alan 요청, 마이그레이션 20260916250000)
+- 강사는 이 둘뿐이다. 이름을 `private.reserved_staff` 에 예약해 두고, 그 이름으로 가입하면
+  가입 트리거(`private.handle_new_user`)가 **처음부터 강사 등급**을 준다. 나중에 손으로 올릴 필요가 없다.
+- **예약은 한 번 쓰면 잠긴다** (`claimed_by`). 같은 이름으로 또 가입해도 두 번째부터는 평범한 회원이다.
+  이름만으로 등급을 주는 구조라 이 잠금이 유일한 방어선이다 — 두 분이 다 가입하면 열린 예약이 없어져 위험도 사라진다.
+- Alan 확인: "학생들에게 배포를 아직 안했으니 다른사람 가입할 걱정은 없어". **학생에게 주소를 알린 뒤에
+  새 이름을 예약하지 말 것** — 그 이름으로 먼저 가입한 사람이 강사가 된다.
+- `private` 스키마라 앱에서 못 읽고 못 쓴다. 손볼 일이 있으면 Supabase SQL 편집기에서:
+  `insert into private.reserved_staff(name, role) values ('…','instructor');` /
+  다시 열기 `update private.reserved_staff set claimed_by = null, claimed_at = null where name = '…';` /
+  끄기 `delete from private.reserved_staff;`
+- 마이그레이션이 이미 가입해 있던 **이혜영을 관리자 → 강사로** 내렸다 (권한은 같다). 단 그가 마지막 관리자면 그대로 둔다.
+
 **테스터 — 강사·관리자 계정의 테스트 등급** (2026-09-16 Alan 요청 "강사·관리자 계정도 학생명단에 테스터로, 등급을 임의로 바꿔 테스트")
 - 진짜 등급을 학생으로 내리면 관리자 화면을 잃고 스스로 되돌릴 수 없다. 그래서 스태프 계정에만 **`profiles.test_role`**
   (회원 `member` · 수강생 `student` · 졸업생 `alumni`) 을 따로 둔다 (마이그레이션 20260916190000, DB check: 스태프만 · 낮은 등급만).
@@ -604,6 +617,15 @@ create type user_role as enum
 -- assistant(조교) 는 마이그레이션 20260916230000 에서 더했다. Postgres 는 새 enum 값을
 -- **추가한 트랜잭션 안에서 쓸 수 없어서**(55P04) 값 추가는 그 파일 하나에 혼자 두고,
 -- 실제로 쓰는 정책·함수는 20260916240000 에 뒀다. enum 값을 더할 때마다 이렇게 파일을 나눈다.
+
+-- 가입하면 그 등급으로 시작하는 이름 (마이그레이션 20260916250000). 강사 이혜영·이영수 전용.
+-- private 스키마 = 앱에서 못 읽는다. 한 번 쓰면 claimed_by 가 박혀 두 번째 가입자는 평범한 회원이다
+create table private.reserved_staff (
+  name       text primary key,
+  role       user_role not null,
+  claimed_by uuid references auth.users on delete set null,
+  claimed_at timestamptz
+);
 
 create table profiles (
   id          uuid primary key references auth.users on delete cascade,
