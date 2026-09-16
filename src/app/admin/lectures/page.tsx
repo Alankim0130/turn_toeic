@@ -5,6 +5,7 @@ import { requireStaff } from "@/lib/auth";
 import { cn, formatDate, todayKST } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { TermChips } from "@/components/admin/TermChips";
 import { LectureSignupForm } from "@/components/admin/lectures/LectureSignupForm";
@@ -28,8 +29,21 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
   const supabase = await createClient();
   const today = todayKST();
 
-  // 특강이 있는 기수만 고른다
-  const { data: allLectures } = await supabase.from("special_lectures").select("term_id, term:terms(id, year, month)");
+  // 특강이 있는 기수만 고른다. signup 은 신청 마이그레이션에서 생긴 칸이라, 없으면 아직 적용 전이다
+  const { data: allLectures, error: lectureError } = await supabase
+    .from("special_lectures")
+    .select("term_id, signup, term:terms(id, year, month)");
+  const needsMigration = !!lectureError && (lectureError.code === "42703" || lectureError.code === "PGRST204" || /signup/.test(lectureError.message ?? ""));
+
+  const migrationNotice = needsMigration ? (
+    <Alert kind="warning" title="데이터베이스 업데이트가 아직 적용되지 않았어요" className="mb-4">
+      <p>특강 신청은 새 마이그레이션이 적용된 뒤에 동작합니다. 적용 전에는 특강이 하나도 보이지 않아요.</p>
+      <p className="mt-1">
+        터미널에서 <code className="rounded bg-ink/5 px-1 py-0.5 font-mono text-xs">npx supabase db push --linked</code> 를 실행하거나, Supabase 대시보드의 SQL
+        Editor 에서 <code className="rounded bg-ink/5 px-1 py-0.5 font-mono text-xs">supabase/migrations</code> 의 최신 파일들을 실행해 주세요.
+      </p>
+    </Alert>
+  ) : null;
   const termMap = new Map<number, { id: number; year: number; month: number }>();
   for (const l of allLectures ?? []) if (l.term) termMap.set(l.term.id, l.term);
   const terms = [...termMap.values()].sort((a, b) => b.year * 12 + b.month - (a.year * 12 + a.month));
@@ -39,6 +53,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
     return (
       <>
         <PageHeader icon="bolt" title="특강 신청" description="특강마다 신청을 받을지, 정원과 신청 시작을 정하고 신청자를 확인해요." />
+        {migrationNotice}
         <EmptyState
           icon="calendar"
           title="아직 만든 특강이 없어요"
@@ -83,6 +98,8 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
           반 편성
         </Link>
       </PageHeader>
+
+      {migrationNotice}
 
       <TermChips basePath="/admin/lectures" terms={terms} current={termKey} />
 
