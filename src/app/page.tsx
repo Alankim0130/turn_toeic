@@ -35,7 +35,12 @@ function JsonLd() {
     description: site.description,
     parentOrganization: { "@type": "Organization", name: site.academy.name, url: site.academy.ybmUrl },
     address: { "@type": "PostalAddress", addressLocality: "부산진구", addressRegion: "부산광역시", addressCountry: "KR" },
-    employee: site.instructors.map((t) => ({ "@type": "Person", name: t.name, jobTitle: `토익 ${t.part} 강사` })),
+    employee: site.instructors.map((t) => ({
+      "@type": "Person",
+      name: t.name,
+      jobTitle: `토익 ${t.part} 강사`,
+      image: `${site.url}${t.photo.src}`,
+    })),
     offers: [650, 750, 850].map((score) => ({
       "@type": "Course",
       name: `역전토익 ${score} 목표반`,

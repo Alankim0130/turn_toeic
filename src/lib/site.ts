@@ -16,9 +16,20 @@ export const site = {
     ybmUrl: "https://www.ybmedu.com/seomyon/winnertoeic",
     address: "부산광역시 부산진구 서면",
   },
+  // 강사 사진: 배경 투명 PNG. 두 장 모두 머리 크기(380px)·구도가 같고 얼굴이 가로 중앙이라 나란히 둬도 맞는다
   instructors: [
-    { name: "이혜영", part: "LC", desc: "미국 Brigham Young University 영어교육학 전공. 역전토익 대표 강사." },
-    { name: "이영수", part: "RC", desc: "부산대학교 영어영문학과 전공. 역전토익 대표 강사." },
+    {
+      name: "이혜영",
+      part: "LC",
+      desc: "미국 Brigham Young University 영어교육학 전공. 역전토익 대표 강사.",
+      photo: { src: "/instructors/lee-hyeyoung.png", width: 827, height: 1500 },
+    },
+    {
+      name: "이영수",
+      part: "RC",
+      desc: "부산대학교 영어영문학과 전공. 역전토익 대표 강사.",
+      photo: { src: "/instructors/lee-yeongsu.png", width: 1233, height: 1500 },
+    },
   ],
   social: {
     instagram: "",

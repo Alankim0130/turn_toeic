@@ -51,6 +51,10 @@
   아이콘은 `<Icon name="…" />` 로만 쓴다 — Tailwind preflight 의 `img { height: auto }` 때문에 flex 안에서 세로로 늘어나므로
   `Icon`·`Symbol` 이 가로·세로를 CSS 로 못박는다. 새 이미지 컴포넌트를 만들 때도 같은 처리를 할 것
 - 브랜드 로고도 힉스필드로 제작 (`public/brand/`)
+- **강사 사진은 예외로 실사**를 쓴다 (2026-09-16 Alan 제공). `public/instructors/lee-hyeyoung.png`(LC)·`lee-yeongsu.png`(RC),
+  배경 투명 PNG, 두 장 모두 높이 1500px·머리 380px·얼굴이 가로 중앙이라 같은 높이로 나란히 두면 구도가 맞는다.
+  경로·크기는 `site.instructors[].photo` 한곳에서 읽는다. 원본은 OneDrive `바탕 화면/역전토익/강사프로필/` (이영수는 검정·파란 의상도 있음).
+  흰 재킷(이혜영)은 핫핑크 배경, 핫핑크 재킷(이영수)은 잉크 배경에서 살아난다
 - Downloads 의 첫토익 자료(노랑/연두, 파스텔 핑크 시간표·교재 표지)는 **다른 브랜드**. 참고 금지
 
 ### 관리자 대시보드 항목
