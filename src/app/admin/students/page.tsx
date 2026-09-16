@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { todayKST, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -14,6 +15,8 @@ const TABS = [
   { value: "active", label: "등록생" },
   { value: "preliminary", label: "예비등록생" },
   { value: "alumni", label: "졸업생" },
+  // 등급을 바꾸려면 아직 등록이 없는 사람(가입만 한 회원·강사)도 찾을 수 있어야 한다
+  { value: "all", label: "전체" },
 ];
 
 export default async function StudentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string }> }) {
@@ -28,7 +31,9 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   // 대상 프로필
   let profileQuery = supabase.from("profiles").select("id, name, phone, role, university, created_at").order("name").limit(300);
   if (tab === "alumni") profileQuery = profileQuery.eq("role", "alumni");
-  else {
+  else if (tab === "all") {
+    // 걸러내지 않는다 — 이름 검색으로 좁힌다
+  } else {
     const ids = tab === "active" ? roster.activeIds : roster.preliminaryIds;
     if (ids.length === 0) profileQuery = profileQuery.in("id", ["00000000-0000-0000-0000-000000000000"]);
     else profileQuery = profileQuery.in("id", ids);
@@ -59,7 +64,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <PageHeader icon="students" title="학생명단" description="등록생은 개강일~종강일 사이, 예비등록생은 개강 전 등록 완료, 졸업생은 종강일 경과 기준입니다.">
+      <PageHeader icon="students" title="학생명단" description="등록생은 개강일~종강일 사이, 예비등록생은 개강 전 등록 완료, 졸업생은 종강일 경과 기준입니다. 이름을 누르면 등급·반 배정을 바꿉니다.">
         <form method="get" className="flex gap-2">
           <input type="hidden" name="tab" value={tab} />
           <input name="q" defaultValue={q} placeholder="이름 검색" className="input !w-40 !py-2 sm:!w-52" aria-label="이름 검색" />
@@ -97,7 +102,11 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
               const myEnroll = enrollByUser.get(p.id) ?? [];
               return (
                 <tr key={p.id} className="hover:bg-brand-50/40">
-                  <Td className="whitespace-nowrap font-bold">{p.name || "-"}</Td>
+                  <Td className="whitespace-nowrap font-bold">
+                    <Link href={`/admin/students/${p.id}`} className="text-brand-600 hover:underline">
+                      {p.name || "이름 없음"}
+                    </Link>
+                  </Td>
                   <Td className="whitespace-nowrap">{p.phone ? <a href={`tel:${p.phone}`} className="text-brand-600 hover:underline">{p.phone}</a> : "-"}</Td>
                   <Td><StatusBadge status={p.role} /></Td>
                   <Td>
