@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import { sectionKeyOf, timeBlockOf } from "@/components/admin/sections/bulk";
+import { SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
 
 /**
  * 반 일괄 개설: 시간표(레벨·시간대) × 강좌 × 트랙 조합에서 고른 것만 한 번에 만든다.
@@ -39,7 +40,7 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
   const [{ data: term }, { data: classDates }, { data: slots }, { data: courses }, { data: existing }] = await Promise.all([
     supabase.from("terms").select("year, month, enrollment_opens_at, closes_at").eq("id", termId).maybeSingle(),
     supabase.from("term_class_dates").select("track").eq("term_id", termId),
-    supabase.from("timetable_slots").select("id, level, start_time, end_time"),
+    supabase.from("timetable_slots").select("id, level, season, start_time, end_time"),
     supabase.from("courses").select("id").eq("is_active", true),
     supabase.from("class_sections").select("course_id, track, time_block").eq("term_id", termId),
   ]);
@@ -48,6 +49,8 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
     return { ok: false, error: "먼저 달력에서 개강일·종강일을 찍고 생성하기를 눌러 주세요." };
   }
 
+  // 평달과 방학달은 시간대가 다르다 (2026-09-16 Alan) — 이 기수의 계절에 맞는 시간대만 쓴다
+  const season = seasonOfMonth(term.month);
   const slotById = new Map((slots ?? []).map((s) => [s.id, s]));
   const courseIds = new Set((courses ?? []).map((c) => c.id));
   const taken = new Set((existing ?? []).map((s) => sectionKeyOf(s.course_id, s.track, s.time_block)));
@@ -74,6 +77,9 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
 
     const slot = r.slotId == null ? null : slotById.get(Number(r.slotId));
     if (r.slotId != null && !slot) return { ok: false, error: "시간대를 찾을 수 없어요. 새로고침한 뒤 다시 시도해 주세요." };
+    if (slot && slot.season !== season) {
+      return { ok: false, error: `${term.month}월은 ${SEASON_LABEL[season]}이라 ${SEASON_LABEL[slot.season as "regular" | "vacation"] ?? slot.season} 시간대로는 반을 만들 수 없어요. 새로고침한 뒤 다시 시도해 주세요.` };
+    }
     const timeBlock = slot ? timeBlockOf(slot.start_time, slot.end_time) : null;
 
     const key = sectionKeyOf(courseId, r.track, timeBlock);

@@ -1311,18 +1311,21 @@ export type Database = {
           end_time: string
           id: number
           level: number
+          season: string
           start_time: string
         }
         Insert: {
           end_time: string
           id?: number
           level: number
+          season?: string
           start_time: string
         }
         Update: {
           end_time?: string
           id?: number
           level?: number
+          season?: string
           start_time?: string
         }
         Relationships: [

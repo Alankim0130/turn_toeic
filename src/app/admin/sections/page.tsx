@@ -12,6 +12,7 @@ import { sectionKeyOf, timeBlockOf } from "@/components/admin/sections/bulk";
 import { TermCalendar, type TermSchedule, type OtherTermDate } from "@/components/admin/sections/TermCalendar";
 import { shiftMonth, termKey, ymd, daysInMonth } from "@/components/admin/sections/dates";
 import { StudyPlanner, type PlannerStudy } from "@/components/admin/studies/StudyPlanner";
+import { SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
 
 export const metadata: Metadata = { title: "반 편성", robots: { index: false } };
 
@@ -52,7 +53,7 @@ export default async function AdminSectionsPage({
     isAdmin(profile.role)
       ? supabase.from("profiles").select("id, name, role").in("role", ["instructor", "admin"]).order("name")
       : Promise.resolve({ data: null }),
-    supabase.from("timetable_slots").select("id, level, start_time, end_time").order("level").order("start_time"),
+    supabase.from("timetable_slots").select("id, level, season, start_time, end_time").order("level").order("start_time"),
   ]);
 
   const [{ data: classDates }, { data: lectureRows, error: lectureError }, { data: sections }, { data: studyRows }] = term
@@ -114,10 +115,14 @@ export default async function AdminSectionsPage({
   };
   const hasSaved = !!term?.enrollment_opens_at && !!term?.closes_at;
 
-  // 시간표 기준 일괄 개설용: 레벨별 시간대와 이미 만들어진 (강좌·트랙·시간대) 조합
+  // 시간표 기준 일괄 개설용: 레벨별 시간대와 이미 만들어진 (강좌·트랙·시간대) 조합.
+  // 평달과 방학달은 시간대가 다르다 (2026-09-16 Alan) — 이 기수의 계절에 맞는 시간대만 쓴다
+  const season = term ? seasonOfMonth(term.month) : "regular";
   const bulkSlots: BulkSlot[] = (timetable ?? [])
+    .filter((s) => s.season === season)
     .map((s) => ({ id: s.id, level: s.level, label: timeBlockOf(s.start_time, s.end_time) ?? "" }))
     .filter((s) => s.label);
+  const seasonHasNoSlots = term != null && bulkSlots.length === 0 && (timetable ?? []).length > 0;
   const existingKeys = (sections ?? []).map((s) => sectionKeyOf(s.course_id, s.track, s.time_block));
 
   const studies: PlannerStudy[] = (studyRows ?? []).map((s) => ({
@@ -305,7 +310,17 @@ export default async function AdminSectionsPage({
                 <div className="mb-8">
                   <p className="mt-1 text-sm text-slate">
                     시간표의 시간대와 강좌를 엮어 한 번에 개설합니다. 불라방은 따로 만들지 않고, 반마다 불라방 수강료를 넣으면 같은 반을 불라방으로 들을 수 있어요.
+                    {term && <> 지금은 <strong className="text-ink">{term.month}월 · {SEASON_LABEL[season]} 시간표</strong>를 씁니다.</>}
                   </p>
+                  {seasonHasNoSlots && (
+                    <div className="mt-3">
+                      <Alert kind="warning">
+                        {term?.month}월은 <strong>{SEASON_LABEL[season]}</strong>인데 {SEASON_LABEL[season]} 시간대가 아직 등록돼 있지 않아요.
+                        평달 시간대로 만들면 반의 시간이 틀리게 박히므로 표에 아무것도 띄우지 않았습니다.
+                        그 달 레벨별 실제 시간을 알려 주시면 넣어 드릴게요.
+                      </Alert>
+                    </div>
+                  )}
                   <div className="mt-4">
                     <BulkCreateSections
                       termId={term.id}

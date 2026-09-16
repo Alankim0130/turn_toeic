@@ -2,17 +2,30 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
-import { formatTime, TRACK_LABEL, COURSE_TYPE_LABEL } from "@/lib/utils";
+import { formatTime, todayKST, TRACK_LABEL, COURSE_TYPE_LABEL } from "@/lib/utils";
+import { SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
 
-/** 목표 점수반별 수업 시간 (timetable_levels · timetable_slots). 매달 편성하는 반과 별개인 대표 시간표 */
+/**
+ * 목표 점수반별 수업 시간 (timetable_levels · timetable_slots). 매달 편성하는 반과 별개인 대표 시간표.
+ * 평달과 방학달(1·2·7·8월)은 시간대가 다르다 (2026-09-16 Alan) — 이번 달에 맞는 쪽을 보여 준다.
+ * 그 계절 시간대가 아직 없으면 평달 것을 보여 주되 **평달 기준이라고 밝힌다** (잘못된 시간을 그냥 내보내지 않는다).
+ */
 async function loadTimetable() {
   const supabase = await createClient();
+  const season = seasonOfMonth(Number(todayKST().slice(5, 7)));
   const { data } = await supabase
     .from("timetable_levels")
-    .select("level, note, timetable_slots(start_time, end_time)")
+    .select("level, note, timetable_slots(season, start_time, end_time)")
     .order("sort_order")
     .order("start_time", { referencedTable: "timetable_slots" });
-  return data ?? [];
+
+  const rows = data ?? [];
+  const pick = (want: string) =>
+    rows.map((t) => ({ ...t, timetable_slots: t.timetable_slots.filter((s) => s.season === want) })).filter((t) => t.timetable_slots.length > 0);
+
+  const wanted = pick(season);
+  if (wanted.length > 0) return { levels: wanted, season, fallback: false };
+  return { levels: pick("regular"), season, fallback: season !== "regular" };
 }
 
 /** DB 의 열린 반을 읽어 이번 달 시간표를 보여준다 (하드코딩 금지) */
@@ -28,7 +41,7 @@ async function loadOpenSections() {
 }
 
 export async function Schedule() {
-  const [timetable, sections] = await Promise.all([loadTimetable(), loadOpenSections()]);
+  const [{ levels: timetable, season, fallback }, sections] = await Promise.all([loadTimetable(), loadOpenSections()]);
   const byTerm = new Map<string, typeof sections>();
   for (const s of sections) {
     const key = s.term ? `${s.term.year}년 ${s.term.month}월` : "개설 예정";
@@ -43,6 +56,11 @@ export async function Schedule() {
           내 일정에 맞는 시간을 고르세요
         </h2>
         <p className="mt-3 text-slate">목표 점수반마다 수업 시간이 정해져 있어요. 주3일과 주5일, 반 편성은 매달 강사가 직접 짜서 공개합니다.</p>
+        {timetable.length > 0 && (
+          <p className="mt-2 text-sm font-semibold text-brand-600">
+            {fallback ? `평달 기준 시간표예요. ${SEASON_LABEL[season]} 시간표는 공지를 확인해 주세요.` : `${SEASON_LABEL[season]} 기준 시간표예요.`}
+          </p>
+        )}
       </Reveal>
 
       {timetable.length > 0 && (
