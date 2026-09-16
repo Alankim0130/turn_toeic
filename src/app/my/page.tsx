@@ -23,6 +23,7 @@ export const metadata: Metadata = {
 const QUICK: { href: string; label: string; desc: string; icon: IconName }[] = [
   { href: "/my/verify", label: "등업신청", desc: "수강증 올리기", icon: "verify" },
   { href: "/my/class", label: "내 시간표", desc: "수업일 확인", icon: "calendar" },
+  { href: "/my/lecture", label: "특강신청", desc: "특강·모의고사", icon: "bolt" },
   { href: "/my/live", label: "불라방", desc: "실시간 입장", icon: "live" },
   { href: "/my/textbook", label: "교재주문", desc: "불라방 교재 배송", icon: "textbook" },
   { href: "/my/replay", label: "다시보기", desc: "종강일까지 시청", icon: "replay" },

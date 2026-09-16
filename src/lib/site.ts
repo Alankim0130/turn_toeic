@@ -29,7 +29,7 @@ export const site = {
 // ─── 수강생전용 ─────────────────────────────────────────────────────────────
 // 메뉴에는 누구에게나 보이고, 수강생이 아니면 잠금 표시와 함께 소개 페이지(/student)로 안내한다.
 
-export type StudentFeatureKey = "live" | "replay" | "homework" | "study" | "textbook" | "lc-audio";
+export type StudentFeatureKey = "live" | "replay" | "homework" | "study" | "lecture" | "textbook" | "lc-audio";
 
 export type StudentFeature = {
   key: StudentFeatureKey;
@@ -86,6 +86,16 @@ export const STUDENT_FEATURES: StudentFeature[] = [
     summary: "대면·비대면·단어 스터디",
     desc: "매달 열리는 대면·비대면·단어 스터디 중 나에게 맞는 스터디를 골라 신청해요.",
     points: ["강사가 정한 시간대 중 선택", "예비등록생도 개강 전에 미리 신청"],
+    access: "enrollee",
+  },
+  {
+    key: "lecture",
+    href: "/my/lecture",
+    label: "특강신청",
+    icon: "bolt",
+    summary: "특강·모의고사 신청",
+    desc: "그 달에 열리는 특강과 모의고사를 신청해요. 정원이 있는 특강은 먼저 신청한 순서대로 자리가 찹니다.",
+    points: ["신청 시작 시각까지 남은 시간 표시", "신청 받는 중에는 언제든 취소"],
     access: "enrollee",
   },
   {
