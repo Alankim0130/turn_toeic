@@ -19,7 +19,7 @@ import {
   DAY_COUNT,
   sortBooks,
 } from "@/lib/lc-audio";
-import { getMyLcAudio, getMyOrders, getMyStudyEligibility } from "../_lib/queries";
+import { getMyAccessibleSections, getMyLcAudio, getMyOrders, getMyStudyEligibility } from "../_lib/queries";
 
 export const metadata: Metadata = { title: "LC 음원듣기", robots: { index: false } };
 
@@ -63,27 +63,25 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
   /**
    * 내 수업 등급에 맞는 레벨만 보여 준다 (2026-09-16 Alan 요청).
    * 650 반이면 650 교재 두 권만 나온다. 스태프와 배정이 없는 경우에만 전체를 보여 준다.
+   * **스파르타반은 함께 듣는 레벨이 모두 열린다** (650+ 중급속성 = 650 + 850) — 접근 가능한 반은 DB 가 정한다.
    */
+  const mySections = await getMyAccessibleSections();
   const myLevels = [
     ...new Set(
-      orders
-        .filter((o) => o.status === "active")
-        .flatMap((o) => o.enrollments)
-        .filter((e) => e.status === "active" && e.section && today <= e.section.closes_at)
-        .map((e) => e.section!.course?.target_score)
-        .filter((s): s is number => typeof s === "number" && levels.includes(s)),
+      mySections
+        .flatMap((s) => [s.course?.target_score, ...(s.course?.includes_levels ?? [])])
+        .filter((l): l is number => typeof l === "number" && levels.includes(l)),
     ),
   ];
   /**
-   * 내 반이 쓰는 교재 반(A/B). 교재는 달이 아니라 **듣는 시간대**로 정해진다 (2026-09-16 Alan 확인) —
-   * 같은 9월에도 10:00 반은 A, 11:10 반은 B 다. 반에 지정이 없으면 달 홀짝으로 짐작한다.
+   * 내 반이 쓰는 교재 반(A/B). 교재는 달이 아니라 **듣는 시간대 · 트랙**으로 정해진다 (2026-09-16 편성표) —
+   * 같은 9월에도 650 월수금 반은 B, 화목금 반은 A 다. 반에 지정이 없으면 달 홀짝으로 짐작한다.
+   * 스파르타 반 자체는 교재가 없고, 함께 듣는 점수보장반의 교재를 쓴다.
    */
   const mySets = new Set(
-    orders
-      .filter((o) => o.status === "active")
-      .flatMap((o) => o.enrollments)
-      .filter((e) => e.status === "active" && e.section && today <= e.section.closes_at)
-      .map((e) => bookSetOfSection(e.section))
+    mySections
+      .filter((s) => s.course?.program !== "sparta")
+      .map((s) => bookSetOfSection(s))
       .filter((b): b is BookSet => b !== null),
   );
   const guessedSet = bookSetForMonth(month);

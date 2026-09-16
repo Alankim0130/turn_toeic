@@ -39,7 +39,8 @@ export default async function LcBookPage({ params }: { params: Promise<{ bookId:
    * 이 교재를 쓰는 내 반의 수업일을 찾는다. 내 반의 회차(seq)가 곧 강 번호 칸이다.
    * 교재는 달이 아니라 **듣는 시간대**로 정해진다 (2026-09-16 Alan 확인) — 반의 book_set 을 본다.
    */
-  const sameSet = sessions.filter((s) => s.section && bookSetOfSection(s.section) === book.book_set);
+  // 스파르타 반 자체는 교재가 없다 — 함께 듣는 점수보장반(RLS 로 같이 내려온다)의 수업일을 쓴다
+  const sameSet = sessions.filter((s) => s.section && s.section.course?.program !== "sparta" && bookSetOfSection(s.section) === book.book_set);
   const levelMatch = sameSet.filter((s) => s.section?.course?.target_score === book.level);
   const usable = levelMatch.length ? levelMatch : sameSet;
 

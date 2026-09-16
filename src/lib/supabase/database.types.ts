@@ -170,24 +170,30 @@ export type Database = {
           code: string
           course_type: string
           id: number
+          includes_levels: number[]
           is_active: boolean
           name: string
+          program: string
           target_score: number | null
         }
         Insert: {
           code: string
           course_type: string
           id?: number
+          includes_levels?: number[]
           is_active?: boolean
           name: string
+          program?: string
           target_score?: number | null
         }
         Update: {
           code?: string
           course_type?: string
           id?: number
+          includes_levels?: number[]
           is_active?: boolean
           name?: string
+          program?: string
           target_score?: number | null
         }
         Relationships: []
@@ -1311,6 +1317,7 @@ export type Database = {
           end_time: string
           id: number
           level: number
+          program: string
           season: string
           start_time: string
         }
@@ -1318,6 +1325,7 @@ export type Database = {
           end_time: string
           id?: number
           level: number
+          program?: string
           season?: string
           start_time: string
         }
@@ -1325,6 +1333,7 @@ export type Database = {
           end_time?: string
           id?: number
           level?: number
+          program?: string
           season?: string
           start_time?: string
         }
@@ -1371,6 +1380,7 @@ export type Database = {
       }
     }
     Functions: {
+      my_section_ids: { Args: never; Returns: number[] }
       save_term_schedule: {
         Args: {
           p_closes: string | null
@@ -1383,6 +1393,13 @@ export type Database = {
           p_year: number
         }
         Returns: Json
+      }
+      term_section_includes: {
+        Args: { p_term_id: number }
+        Returns: {
+          included_id: number
+          section_id: number
+        }[]
       }
     }
     Enums: {

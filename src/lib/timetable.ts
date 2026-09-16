@@ -20,3 +20,15 @@ export const SEASON_LABEL: Record<Season, string> = { regular: "평달", vacatio
 export const seasonOfMonth = (month: number): Season => (VACATION_MONTHS.includes(month) ? "vacation" : "regular");
 
 export const isSeason = (v: unknown): v is Season => typeof v === "string" && (SEASONS as readonly string[]).includes(v);
+
+/**
+ * 과정 (2026-09-16 Alan — 브로슈어의 두 과정). `courses.program` · `timetable_slots.program` 이 이 값을 담는다.
+ * 같은 650 이라도 점수보장반(10:00~12:10)과 스파르타반(10:00~13:40)은 시간대가 달라 과정으로 나눈다.
+ * 스파르타반은 `courses.includes_levels`(예: 850)의 점수보장반 권한을 함께 받는다 — DB 의 private.section_includes.
+ */
+export const PROGRAMS = ["score", "sparta"] as const;
+export type Program = (typeof PROGRAMS)[number];
+
+export const PROGRAM_LABEL: Record<Program, string> = { score: "한 달 점수보장반", sparta: "스파르타반" };
+
+export const isProgram = (v: unknown): v is Program => typeof v === "string" && (PROGRAMS as readonly string[]).includes(v);

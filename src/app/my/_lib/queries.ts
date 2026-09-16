@@ -5,9 +5,22 @@ import { todayKST } from "@/lib/utils";
 
 const SECTION_COLS = `
   id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status, book_set,
-  course:courses(name, course_type, target_score),
+  course:courses(name, course_type, target_score, program, includes_levels),
   term:terms(year, month)
 ` as const;
+
+/**
+ * 지금 접근할 수 있는 반 — 직접 배정된 반 + 스파르타반이 함께 여는 점수보장반(예: 650 10:00 + 850 12:30).
+ * 어떤 반이 열리는지는 DB 의 my_section_ids() (private.section_includes) 가 정한다. 화면에서 따로 계산하지 말 것.
+ */
+export async function getMyAccessibleSections() {
+  const supabase = await createClient();
+  const { data: ids } = await supabase.rpc("my_section_ids");
+  if (!ids || ids.length === 0) return [];
+  const { data } = await supabase.from("class_sections").select(SECTION_COLS).in("id", ids);
+  return data ?? [];
+}
+export type MyAccessibleSection = Awaited<ReturnType<typeof getMyAccessibleSections>>[number];
 
 export async function getMyOrders() {
   const supabase = await createClient();

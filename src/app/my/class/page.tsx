@@ -16,7 +16,10 @@ export const metadata: Metadata = {
 
 export default async function ClassPage() {
   const [sessionRows, lectures, mySignups] = await Promise.all([getMySessions(), getMyLectures(), getMyLectureSignupIds()]);
-  const sessions = sessionRows.filter((s) => s.section);
+  // 스파르타반 학생은 스파르타 반과 함께 듣는 반(650·850 …)의 수업일이 같은 날 함께 내려온다 —
+  // 같은 날·같은 트랙에 실제 수업(점수보장반)이 있으면 스파르타 반 줄은 겹치므로 뺀다
+  const realDays = new Set(sessionRows.filter((s) => s.section && s.section.course?.program !== "sparta").map((s) => `${s.date}|${s.section!.track}`));
+  const sessions = sessionRows.filter((s) => s.section && !(s.section.course?.program === "sparta" && realDays.has(`${s.date}|${s.section.track}`)));
   const today = todayKST();
 
   // 신청을 받는 특강은 위로 따로 모아 보여 준다 (지난 특강은 빼고)
@@ -90,7 +93,7 @@ export default async function ClassPage() {
           ...g.list.map((s) => ({
             date: s.date,
             track: s.section!.track,
-            label: [s.section!.course?.name ?? "수업", formatTime(s.start_time)].filter(Boolean).join(" "),
+            label: [s.section!.course?.name ?? "수업", formatTime(s.start_time) || s.section!.time_block].filter(Boolean).join(" "),
           })),
           ...g.lectures.map((l) => ({ date: l.date, track: "lecture", label: lectureTitle(l) })),
         ];
@@ -122,7 +125,11 @@ export default async function ClassPage() {
                     >
                       <span className="w-12 font-black text-brand-600">{s.seq}회차</span>
                       <span className="font-semibold text-ink">{formatDate(s.date)}</span>
-                      {s.start_time && s.end_time && <span className="text-slate">{formatTimeRange(s.start_time, s.end_time)}</span>}
+                      {s.start_time && s.end_time ? (
+                        <span className="text-slate">{formatTimeRange(s.start_time, s.end_time)}</span>
+                      ) : (
+                        s.section!.time_block && <span className="tabular-nums text-slate">{s.section!.time_block}</span>
+                      )}
                       <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold text-white", s.section!.track === "mwf" ? "bg-brand-500" : "bg-ink")}>
                         {TRACK_LABEL[s.section!.track] ?? s.section!.track}
                       </span>
