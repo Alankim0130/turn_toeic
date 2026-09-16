@@ -258,7 +258,7 @@ export default async function AdminSectionsPage({
                               <div>
                                 <dt className="text-xs text-mist">수강료 (현장 / 불라방)</dt>
                                 <dd className="font-semibold text-ink">
-                                  {formatWon(s.tuition)} / {s.live_tuition != null ? formatWon(s.live_tuition) : "미운영"}
+                                  {s.tuition != null ? formatWon(s.tuition) : "미입력"} / {s.live_tuition != null ? formatWon(s.live_tuition) : "미운영"}
                                 </dd>
                               </div>
                               <div>

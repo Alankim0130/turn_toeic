@@ -174,7 +174,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
           <div>
             <dt className="text-xs text-mist">수강료 (현장 / 불라방)</dt>
             <dd className="font-semibold text-ink">
-              {formatWon(section.tuition)} / {section.live_tuition != null ? formatWon(section.live_tuition) : "미운영"}
+              {section.tuition != null ? formatWon(section.tuition) : "미입력"} / {section.live_tuition != null ? formatWon(section.live_tuition) : "미운영"}
             </dd>
           </div>
           <div>
@@ -187,7 +187,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
             id={section.id}
             values={{
               capacity: section.capacity != null ? String(section.capacity) : "",
-              tuition: String(section.tuition),
+              tuition: section.tuition != null ? String(section.tuition) : "",
               live_tuition: section.live_tuition != null ? String(section.live_tuition) : "",
               status: section.status,
               instructor_id: section.instructor_id ?? "",

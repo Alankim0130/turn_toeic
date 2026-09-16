@@ -220,7 +220,7 @@ export async function createCourse(_prev: ActionState, formData: FormData): Prom
 }
 
 /* ─── 반 개설 · 수정 공통 필드 (수강료 · 정원 · 상태) ─────────────────────── */
-type SectionFields = { capacity: number | null; tuition: number; live_tuition: number | null; status: string };
+type SectionFields = { capacity: number | null; tuition: number | null; live_tuition: number | null; status: string };
 
 function parseSectionFields(formData: FormData, allowedStatus: string[]): { fields?: SectionFields; error?: string; values: Record<string, string> } {
   const values = {
@@ -231,8 +231,9 @@ function parseSectionFields(formData: FormData, allowedStatus: string[]): { fiel
   };
   const capacity = toInt(values.capacity);
   if (capacity !== null && capacity < 1) return { error: "정원은 1명 이상이어야 해요.", values };
+  // 수강료는 선택 — 등록은 YBM 에서 한다 (2026-09-16 Alan)
   const tuition = toInt(values.tuition);
-  if (tuition === null || tuition < 0) return { error: "현장 수강료를 입력해 주세요. (숫자만)", values };
+  if (tuition !== null && tuition < 0) return { error: "현장 수강료는 0 이상이어야 해요.", values };
   const live = toInt(values.live_tuition);
   if (live !== null && live < 0) return { error: "불라방 수강료는 0 이상이어야 해요.", values };
   if (!allowedStatus.includes(values.status)) return { error: "상태 값이 올바르지 않아요.", values };

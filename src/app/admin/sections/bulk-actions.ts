@@ -18,7 +18,7 @@ export type BulkRow = {
   courseId: number;
   slotId: number | null;
   track: string;
-  tuition: number;
+  tuition: number | null;
   liveTuition: number | null;
   capacity: number | null;
   status: string;
@@ -60,8 +60,9 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
     if (r.track !== "mwf" && r.track !== "ttf") return { ok: false, error: "트랙 값이 올바르지 않아요." };
     if (!["draft", "open"].includes(r.status)) return { ok: false, error: "상태 값이 올바르지 않아요." };
 
-    const tuition = Number(r.tuition);
-    if (!Number.isInteger(tuition) || tuition < 0) return { ok: false, error: "현장 수강료를 숫자로 입력해 주세요." };
+    // 수강료는 선택 — 등록은 YBM 에서 한다 (2026-09-16 Alan)
+    const tuition = r.tuition == null ? null : Number(r.tuition);
+    if (tuition !== null && (!Number.isInteger(tuition) || tuition < 0)) return { ok: false, error: "현장 수강료는 0 이상 숫자로 입력해 주세요." };
     const live = r.liveTuition == null ? null : Number(r.liveTuition);
     if (live !== null && (!Number.isInteger(live) || live < 0)) return { ok: false, error: "불라방 수강료는 0 이상 숫자로 입력해 주세요." };
     const capacity = r.capacity == null ? null : Number(r.capacity);

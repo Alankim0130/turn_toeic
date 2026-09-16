@@ -87,16 +87,12 @@ export function BulkCreateSections({
       for (const s of cells) {
         for (const t of TRACKS) {
           if (!checked.has(cellKey(c.id, s?.id ?? null, t))) continue;
-          const tuition = Number(digits(fee.tuition));
-          if (!digits(fee.tuition)) {
-            setMsg({ kind: "warning", text: `${c.name} 의 현장 수강료를 입력해 주세요.` });
-            return;
-          }
           rows.push({
             courseId: c.id,
             slotId: s?.id ?? null,
             track: t,
-            tuition,
+            // 수강료는 선택 — 등록은 YBM 에서 한다 (2026-09-16 Alan)
+            tuition: digits(fee.tuition) ? Number(digits(fee.tuition)) : null,
             liveTuition: digits(fee.live) ? Number(digits(fee.live)) : null,
             capacity: digits(common.capacity) ? Number(digits(common.capacity)) : null,
             status: common.status,
@@ -133,13 +129,13 @@ export function BulkCreateSections({
     <div className="space-y-5">
       <div className="grid gap-3 rounded-xl2 border border-line bg-surface p-4 sm:grid-cols-2 lg:grid-cols-4">
         <div>
-          <label htmlFor="bulk-tuition" className="label !mb-1 text-xs">현장 수강료 <span className="font-normal text-mist">(기본값)</span></label>
+          <label htmlFor="bulk-tuition" className="label !mb-1 text-xs">현장 수강료 <span className="font-normal text-mist">(선택 · 기본값)</span></label>
           <input
             id="bulk-tuition"
             inputMode="numeric"
             value={common.tuition}
             onChange={(e) => setCommon({ ...common, tuition: digits(e.target.value) })}
-            placeholder="예: 250000"
+            placeholder="비워도 됩니다"
             className="input !py-2 text-sm"
           />
         </div>
@@ -211,7 +207,7 @@ export function BulkCreateSections({
                 </div>
                 <div className="flex flex-wrap items-end gap-2">
                   <div>
-                    <label htmlFor={`fee-${c.id}`} className="label !mb-1 text-xs">현장 수강료</label>
+                    <label htmlFor={`fee-${c.id}`} className="label !mb-1 text-xs">현장 수강료 <span className="font-normal text-mist">(선택)</span></label>
                     <input
                       id={`fee-${c.id}`}
                       inputMode="numeric"

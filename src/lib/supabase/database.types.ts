@@ -57,7 +57,7 @@ export type Database = {
           term_id: number
           time_block: string | null
           track: string
-          tuition: number
+          tuition: number | null
         }
         Insert: {
           bundle_id?: string | null
@@ -76,7 +76,7 @@ export type Database = {
           term_id: number
           time_block?: string | null
           track: string
-          tuition: number
+          tuition?: number | null
         }
         Update: {
           bundle_id?: string | null
@@ -95,7 +95,7 @@ export type Database = {
           term_id?: number
           time_block?: string | null
           track?: string
-          tuition?: number
+          tuition?: number | null
         }
         Relationships: [
           {

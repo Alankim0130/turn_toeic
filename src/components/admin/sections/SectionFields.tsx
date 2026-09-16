@@ -7,8 +7,10 @@ export function SectionFields({ values, mode }: { values: Record<string, string 
     <>
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
-          <label htmlFor="tuition" className="label">현장 수강료 (원)</label>
-          <input id="tuition" name="tuition" type="number" min={0} step={1000} required inputMode="numeric" className="input" placeholder="OCR 매칭 기준" defaultValue={v.tuition ?? ""} />
+          <label htmlFor="tuition" className="label">
+            현장 수강료 (원) <span className="font-normal text-mist">(선택)</span>
+          </label>
+          <input id="tuition" name="tuition" type="number" min={0} step={1000} inputMode="numeric" className="input" placeholder="비워도 됩니다" defaultValue={v.tuition ?? ""} />
         </div>
         <div>
           <label htmlFor="live_tuition" className="label">
