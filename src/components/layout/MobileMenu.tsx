@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { isActivePath } from "./NavLinks";
 import { isStudentAreaPath, type NavAccess } from "./DesktopNav";
 import { StaffModeSwitch } from "./StaffModeSwitch";
+import { InstallApp } from "@/components/pwa/InstallApp";
 import { signOut } from "@/app/(auth)/actions";
 
 const noopSubscribe = () => () => {};
@@ -192,6 +193,7 @@ export function MobileMenu({
 
         {/* 바닥 */}
         <div className="shrink-0 space-y-2 border-t border-line p-3">
+          <InstallApp variant="menu" />
           {staff && <StaffModeSwitch variant="panel" />}
           {signedIn && (
             <form action={signOut}>

@@ -4,6 +4,7 @@ import { Alert } from "@/components/ui/Alert";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
+import { InstallApp } from "@/components/pwa/InstallApp";
 import { effectiveRole, getStudentAccess, requireUser, ROLE_LABEL } from "@/lib/auth";
 import { cn, formatDate, formatTimeRange, MODE_LABEL, TRACK_LABEL } from "@/lib/utils";
 import {
@@ -82,6 +83,9 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
           강사 또는 관리자 계정으로만 이용할 수 있습니다.
         </Alert>
       )}
+
+      {/* 휴대폰에서 아직 홈 화면 앱으로 설치하지 않았을 때만 보인다 */}
+      <InstallApp variant="card" />
 
       {empty ? (
         <EmptyState

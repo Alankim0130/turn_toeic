@@ -74,6 +74,8 @@
 html {
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
+  /* 홈 화면 앱에서 누를 때 회색 네모가 번쩍이지 않게 (눌림 표시는 각 버튼의 active 스타일이 한다) */
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {

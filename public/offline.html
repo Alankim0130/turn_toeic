@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#ff2e88" />
+    <meta name="robots" content="noindex" />
+    <title>인터넷 연결 없음 | 역전토익</title>
+    <!-- 서비스 워커가 미리 저장해 두었다가 오프라인일 때 보여 주는 화면. 사용자 정보가 없는 정적 파일이어야 하고,
+         오프라인에서 다른 파일을 못 불러오므로 로고도 data URI 로 넣는다 -->
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+        background: radial-gradient(circle at 20% 10%, #ffe4ef 0, transparent 45%), radial-gradient(circle at 85% 90%, #ffc2da 0, transparent 40%), #fff8fb;
+        color: #17121f;
+        font-family: "Pretendard Variable", "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+        word-break: keep-all;
+        -webkit-tap-highlight-color: transparent;
+      }
+      main { width: 100%; max-width: 360px; text-align: center; }
+      img { width: 150px; height: auto; }
+      h1 { margin: 28px 0 8px; font-size: 22px; font-weight: 900; letter-spacing: -0.02em; }
+      p { margin: 0; color: #5b5563; font-size: 15px; line-height: 1.6; }
+      button {
+        margin-top: 28px;
+        width: 100%;
+        border: 0;
+        border-radius: 999px;
+        padding: 15px 20px;
+        background: #ff2e88;
+        color: #fff;
+        font: inherit;
+        font-size: 16px;
+        font-weight: 800;
+        box-shadow: 0 12px 32px -10px rgba(255, 46, 136, 0.45);
+        cursor: pointer;
+      }
+      button:active { transform: scale(0.98); background: #e61e75; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="data:image/png;base64,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" alt="역전토익" width="300" height="116" />
+      <h1>인터넷에 연결되어 있지 않아요</h1>
+      <p>와이파이나 모바일 데이터를 확인한 뒤<br />다시 시도해 주세요.</p>
+      <button type="button" onclick="location.reload()">다시 시도</button>
+    </main>
+    <script>
+      // 연결이 돌아오면 자동으로 다시 불러온다
+      window.addEventListener("online", function () { location.reload(); });
+    </script>
+  </body>
+</html>

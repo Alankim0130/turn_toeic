@@ -4,6 +4,7 @@ import { SiteHeader } from "@/components/layout/SiteHeader";
 import { Footer } from "@/components/layout/Footer";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { TestModeBanner } from "@/components/layout/TestModeBanner";
+import { PwaRegister } from "@/components/pwa/PwaRegister";
 import { getSessionProfile, getStudentAccess } from "@/lib/auth";
 import { site } from "@/lib/site";
 
@@ -64,6 +65,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <main className="has-bottom-nav min-h-[70vh]">{children}</main>
         <Footer />
         <BottomNav access={{ active: access.active, enrollee: access.enrollee }} />
+        <PwaRegister />
       </body>
     </html>
   );
