@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteMaterial, saveMaterial } from "@/app/admin/study-materials/actions";
@@ -56,18 +55,12 @@ export function MaterialRow({
   today,
   isClassDay,
   material,
-  submitted,
-  checked,
-  homeworkHref,
 }: {
   studyId: number;
   date: string;
   today: string;
   isClassDay: boolean;
   material: MaterialLite | null;
-  submitted: number;
-  checked: number;
-  homeworkHref: string;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<"view" | "upload" | "edit" | "confirm">("view");
@@ -128,10 +121,6 @@ export function MaterialRow({
                 {formatBytes(material.file_size)} · {shortDateTimeKST(material.updated_at)} 저장
               </p>
             </div>
-            <Link href={homeworkHref} className="rounded-full bg-surface px-2.5 py-1 text-xs font-bold text-ink-soft hover:text-brand-600">
-              숙제 {submitted}
-              {submitted > 0 && <span className="text-brand-600"> · 점검 {checked}</span>}
-            </Link>
             {mode === "view" && (
               <span className="flex gap-1">
                 <a href={`/files/material/${material.id}?download=1`} className="btn-ghost !px-3 !py-1.5 text-xs">
@@ -196,14 +185,12 @@ export function MaterialRow({
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50/60 p-3 text-sm">
           <Icon name="warning" size={20} />
           <span className="text-ink">
-            {submitted > 0 ? `제출된 숙제가 ${submitted}건 있어서 지울 수 없어요. 파일 교체는 '수정'에서 할 수 있어요.` : "이 날짜의 자료를 삭제할까요? 수강생은 더 이상 받을 수 없어요."}
+            이 날짜의 자료를 삭제할까요? 수강생은 더 이상 받을 수 없어요.
           </span>
           <span className="ml-auto flex gap-1">
-            {submitted === 0 && (
-              <button type="button" onClick={onDelete} disabled={pending} className="btn-dark !bg-red-600 !px-3 !py-1.5 text-xs hover:!bg-red-700">
-                {pending ? "삭제 중…" : "삭제 확정"}
-              </button>
-            )}
+            <button type="button" onClick={onDelete} disabled={pending} className="btn-dark !bg-red-600 !px-3 !py-1.5 text-xs hover:!bg-red-700">
+              {pending ? "삭제 중…" : "삭제 확정"}
+            </button>
             <button type="button" onClick={() => setMode("view")} className="btn-ghost !px-3 !py-1.5 text-xs">
               닫기
             </button>

@@ -19,7 +19,7 @@ const STATUS_OPTIONS = [
 const NOTICE_PLACEHOLDER: Record<string, string> = {
   offline: "예: 월~금 수업 후 7층 스터디룸 · 교재 지참",
   vocab: "예: 수업일마다 강의실 앞에서 단어 시험 · 단어장 범위는 수업 때 안내",
-  online: "예: 풀이한 페이지를 사진으로 찍어 다음 수업 전까지 숙제제출에 올려 주세요",
+  online: "예: 풀이한 페이지를 사진으로 찍어 다음 수업 전까지 숙제업로드에 올려 주세요",
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -118,7 +118,7 @@ export function StudyKindCard({ kind, study, termKey }: { kind: string; study: P
               <Icon name="upload" size={18} className="brightness-0 invert" />
               날짜별 자료 올리기
             </Link>
-            <Link href={`/admin/homework?term=${termKey}`} className="btn-secondary !py-2">
+            <Link href="/admin/homework" className="btn-secondary !py-2">
               <Icon name="homework" size={18} />
               숙제점검
             </Link>

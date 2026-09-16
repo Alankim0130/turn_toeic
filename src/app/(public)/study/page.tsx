@@ -114,7 +114,7 @@ export default async function StudyPage() {
           </Alert>
         ) : signups.length > 0 ? (
           <Alert kind="success" title="신청한 스터디는 내 스터디에서 확인할 수 있어요">
-            비대면스터디 자료 받기와 숙제제출도 그곳에서 이어집니다.{" "}
+            비대면스터디 자료 받기도 그곳에서 이어져요. 풀이는 숙제업로드에 사진으로 올립니다.{" "}
             <Link href="/my/study" className="font-bold text-brand-600 hover:underline">내 스터디 →</Link>
           </Alert>
         ) : null}
@@ -218,7 +218,7 @@ export default async function StudyPage() {
                                 </Link>
                                 <Link href="/my/homework" className="btn-secondary !px-3 !py-1.5 text-xs">
                                   <Icon name="homework" size={14} />
-                                  숙제제출
+                                  숙제업로드
                                 </Link>
                               </span>
                               {canAct && (

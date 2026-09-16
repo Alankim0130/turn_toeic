@@ -83,14 +83,12 @@ export async function saveMaterial(input: {
   return { ok: true };
 }
 
-/** 자료 삭제. 제출된 숙제가 있으면 막는다 (학생 제출물 보호) */
+/** 자료 삭제 (숙제는 자료와 별개라 막지 않는다) */
 export async function deleteMaterial(id: number): Promise<MaterialResult> {
   await requireStaff();
   if (!Number.isInteger(id)) return { ok: false, error: "잘못된 요청이에요." };
 
   const supabase = await createClient();
-  const { count } = await supabase.from("homework_submissions").select("id", { count: "exact", head: true }).eq("material_id", id);
-  if ((count ?? 0) > 0) return { ok: false, error: `이 자료에 제출된 숙제가 ${count}건 있어서 지울 수 없어요. 파일 교체는 '수정'에서 할 수 있어요.` };
 
   const { data, error } = await supabase.from("study_materials").delete().eq("id", id).select("file_path");
   if (error) return { ok: false, error: studyErrorMessage(error, "삭제하지 못했어요.") };

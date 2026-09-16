@@ -195,16 +195,27 @@ export async function getMyStudyMaterials() {
 }
 export type MyStudyMaterial = Awaited<ReturnType<typeof getMyStudyMaterials>>[number];
 
-/** 내 숙제 제출물과 파일 */
-export async function getMyHomework() {
+/** 내 숙제 제출물과 사진 (최근 순). 레벨·과목으로 좁힐 수 있다 */
+export async function getMyHomework(filter?: { level?: number; subject?: string }) {
   const supabase = await createClient();
-  const { data } = await supabase
+  let q = supabase
     .from("homework_submissions")
-    .select("id, material_id, status, created_at, checked_at, homework_files(id, file_name, file_size, content_type, created_at)")
-    .order("created_at", { ascending: false });
+    .select("id, level, subject, question, status, created_at, checked_at, homework_files(id, file_name, file_size, content_type, created_at)")
+    .order("created_at", { ascending: false })
+    .limit(60);
+  if (filter?.level) q = q.eq("level", filter.level);
+  if (filter?.subject) q = q.eq("subject", filter.subject);
+  const { data } = await q;
   return data ?? [];
 }
 export type MyHomework = Awaited<ReturnType<typeof getMyHomework>>[number];
+
+/** 숙제업로드 1단계 레벨 목록 (lc_levels — 레벨을 더하면 여기서도 늘어난다) */
+export async function getHomeworkLevels() {
+  const supabase = await createClient();
+  const { data } = await supabase.from("lc_levels").select("level").order("sort_order").order("level");
+  return (data ?? []).map((l) => l.level);
+}
 
 /** LC 음원듣기: 레벨 목록 + 교재(A·B반 권별) + 들을 수 있는 음원 (RLS: 지금 수강 중인 수강생) */
 export async function getMyLcAudio() {

@@ -433,8 +433,11 @@ export type Database = {
           checked_by: string | null
           created_at: string
           id: number
-          material_id: number
+          level: number | null
+          material_id: number | null
+          question: string | null
           status: string
+          subject: string | null
           user_id: string
         }
         Insert: {
@@ -442,8 +445,11 @@ export type Database = {
           checked_by?: string | null
           created_at?: string
           id?: number
-          material_id: number
+          level?: number | null
+          material_id?: number | null
+          question?: string | null
           status?: string
+          subject?: string | null
           user_id: string
         }
         Update: {
@@ -451,8 +457,11 @@ export type Database = {
           checked_by?: string | null
           created_at?: string
           id?: number
-          material_id?: number
+          level?: number | null
+          material_id?: number | null
+          question?: string | null
           status?: string
+          subject?: string | null
           user_id?: string
         }
         Relationships: [
@@ -462,6 +471,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "homework_submissions_level_fkey"
+            columns: ["level"]
+            isOneToOne: false
+            referencedRelation: "lc_levels"
+            referencedColumns: ["level"]
           },
           {
             foreignKeyName: "homework_submissions_material_id_fkey"

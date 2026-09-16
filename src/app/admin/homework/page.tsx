@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { cn, formatDate, todayKST } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { FilterTabs } from "@/components/admin/FilterTabs";
-import { TermChips } from "@/components/admin/TermChips";
 import { HomeworkCheckButton } from "@/components/admin/studies/HomeworkCheckButton";
-import { labelKo } from "@/components/admin/sections/dates";
-import { formatBytes, termParam } from "@/lib/study";
+import { HOMEWORK_SUBJECTS, homeworkLabel, isSubject, SUBJECT_LABEL } from "@/lib/homework";
 import { isImageType } from "@/lib/upload";
-import { pickTerm, termLabel } from "../_lib/queries";
 
 export const metadata: Metadata = { title: "숙제점검", robots: { index: false } };
 
@@ -20,184 +16,139 @@ const STATUS_TABS = [
   { value: "checked", label: "점검 완료" },
   { value: "all", label: "전체" },
 ];
+const LIMIT = 300;
 
-export default async function HomeworkAdminPage({ searchParams }: { searchParams: Promise<{ term?: string; date?: string; status?: string }> }) {
+export default async function HomeworkAdminPage({ searchParams }: { searchParams: Promise<{ level?: string; subject?: string; status?: string }> }) {
   const sp = await searchParams;
   const supabase = await createClient();
-  const today = todayKST();
   const status = STATUS_TABS.some((t) => t.value === sp.status) ? (sp.status as string) : "submitted";
 
-  // 비대면스터디가 있는 기수
-  const { data: online } = await supabase.from("studies").select("id, term:terms(id, year, month)").eq("kind", "online");
-  const studyByTerm = new Map<number, number>();
-  const terms: { id: number; year: number; month: number }[] = [];
-  for (const s of online ?? []) {
-    if (!s.term) continue;
-    studyByTerm.set(s.term.id, s.id);
-    terms.push(s.term);
-  }
-  terms.sort((a, b) => b.year * 12 + b.month - (a.year * 12 + a.month));
-  const term = pickTerm(terms, sp.term, today);
+  const { data: levelRows } = await supabase.from("lc_levels").select("level").order("sort_order").order("level");
+  const levels = (levelRows ?? []).map((l) => l.level);
+  const level = levels.includes(Number(sp.level)) ? Number(sp.level) : null;
+  const subject = sp.subject && isSubject(sp.subject) ? sp.subject : null;
 
-  const header = <PageHeader icon="homework" title="숙제점검" description="비대면스터디 수강생이 날짜별 자료를 풀고 올린 숙제입니다. 확인한 뒤 점검완료를 눌러 주세요." />;
-
-  if (!term) {
-    return (
-      <>
-        {header}
-        <EmptyState icon="homework" title="아직 비대면스터디가 없어요" description="반 편성 화면에서 그 달 비대면스터디를 열고 자료를 올리면, 제출된 숙제가 여기에 모여요." action={{ href: "/admin/sections", label: "스터디 열기" }} />
-      </>
-    );
-  }
-
-  const termKey = termParam(term.year, term.month);
-  const studyId = studyByTerm.get(term.id)!;
-  const [{ data: materials }, { data: signups }] = await Promise.all([
-    supabase.from("study_materials").select("id, date, title").eq("study_id", studyId).order("date", { ascending: false }),
-    supabase.from("study_signups").select("user_id, user:profiles!study_signups_user_id_fkey(name)").eq("study_id", studyId),
-  ]);
-
-  const materialList = materials ?? [];
-  const selected = materialList.find((m) => m.date === sp.date) ?? null;
-  const targetIds = selected ? [selected.id] : materialList.map((m) => m.id);
-
-  const { data: subs } = targetIds.length
-    ? await supabase
-        .from("homework_submissions")
-        .select(
-          "id, material_id, user_id, status, created_at, checked_at, user:profiles!homework_submissions_user_id_fkey(name, phone), checker:profiles!homework_submissions_checked_by_fkey(name), homework_files(id, file_name, content_type, file_size, created_at)",
-        )
-        .in("material_id", targetIds)
-        .order("created_at", { ascending: false })
-    : { data: [] as never[] };
-
-  const all = subs ?? [];
-  const list = status === "all" ? all : all.filter((s) => s.status === status);
-  const counts: Record<string, number> = {
-    submitted: all.filter((s) => s.status === "submitted").length,
-    checked: all.filter((s) => s.status === "checked").length,
-    all: all.length,
+  // 레벨·과목 필터를 공통으로 걸고, 상태별 건수는 따로 센다 (탭 숫자용)
+  const scoped = <T extends { eq: (col: string, v: string | number) => T }>(q: T) => {
+    let r = q;
+    if (level) r = r.eq("level", level);
+    if (subject) r = r.eq("subject", subject);
+    return r;
   };
-  const materialById = new Map(materialList.map((m) => [m.id, m]));
-  const submittedPerMaterial = new Map<number, number>();
-  if (!selected) for (const s of all) submittedPerMaterial.set(s.material_id, (submittedPerMaterial.get(s.material_id) ?? 0) + 1);
+  const count = (s: string) => scoped(supabase.from("homework_submissions").select("id", { count: "exact", head: true }).eq("status", s));
 
-  // 선택한 날짜의 미제출자
-  const submittedUsers = new Set(all.map((s) => s.user_id));
-  const missing = selected ? (signups ?? []).filter((g) => !submittedUsers.has(g.user_id)) : [];
+  let listQuery = scoped(
+    supabase
+      .from("homework_submissions")
+      .select(
+        "id, level, subject, question, status, created_at, checked_at, user:profiles!homework_submissions_user_id_fkey(name, phone), checker:profiles!homework_submissions_checked_by_fkey(name), homework_files(id, file_name, content_type, created_at)",
+      ),
+  );
+  if (status !== "all") listQuery = listQuery.eq("status", status);
+
+  const [{ data: subs }, submitted, checked] = await Promise.all([listQuery.order("created_at", { ascending: false }).limit(LIMIT), count("submitted"), count("checked")]);
+  const list = subs ?? [];
+  const counts: Record<string, number> = {
+    submitted: submitted.count ?? 0,
+    checked: checked.count ?? 0,
+    all: (submitted.count ?? 0) + (checked.count ?? 0),
+  };
+  const keep = { level: level ? String(level) : undefined, subject: subject ?? undefined, status };
 
   return (
     <>
-      {header}
-      <TermChips basePath="/admin/homework" terms={terms} current={termKey} keep={{ status }} />
+      <PageHeader icon="homework" title="숙제점검" description="수강생이 레벨·과목(RC·LC)을 골라 올린 풀이 사진입니다. 확인한 뒤 점검완료를 눌러 주세요. 질문이 있으면 카드 안에 보여요." />
 
-      {materialList.length === 0 ? (
-        <EmptyState icon="online" title={`${termLabel(term)} 비대면 자료가 아직 없어요`} description="자료를 올리면 수강생이 풀고 숙제를 제출할 수 있어요." action={{ href: `/admin/study-materials?term=${termKey}`, label: "자료 올리기" }} />
+      <FilterTabs
+        basePath="/admin/homework"
+        paramKey="level"
+        current={level ? String(level) : "all"}
+        keep={{ subject: keep.subject, status }}
+        tabs={[{ value: "all", label: "모든 레벨" }, ...levels.map((l) => ({ value: String(l), label: `${l}` }))]}
+      />
+      <FilterTabs
+        basePath="/admin/homework"
+        paramKey="subject"
+        current={subject ?? "all"}
+        keep={{ level: keep.level, status }}
+        tabs={[{ value: "all", label: "RC · LC" }, ...HOMEWORK_SUBJECTS.map((s) => ({ value: s, label: SUBJECT_LABEL[s] }))]}
+      />
+      <FilterTabs basePath="/admin/homework" paramKey="status" current={status} keep={{ level: keep.level, subject: keep.subject }} tabs={STATUS_TABS.map((t) => ({ ...t, count: counts[t.value] }))} />
+
+      {list.length === 0 ? (
+        <EmptyState icon="homework" title={status === "submitted" ? "점검할 숙제가 없어요" : "해당하는 숙제가 없어요"} description="수강생이 숙제업로드에서 사진을 올리면 여기에 모여요." />
       ) : (
         <>
-          <FilterTabs
-            basePath="/admin/homework"
-            paramKey="date"
-            current={selected?.date ?? "all"}
-            keep={{ term: termKey, status }}
-            tabs={[
-              { value: "all", label: "모든 날짜" },
-              ...materialList.map((m) => ({ value: m.date, label: `${Number(m.date.slice(5, 7))}/${Number(m.date.slice(8, 10))}` })),
-            ]}
-          />
-          <FilterTabs
-            basePath="/admin/homework"
-            paramKey="status"
-            current={status}
-            keep={{ term: termKey, date: selected?.date }}
-            tabs={STATUS_TABS.map((t) => ({ ...t, count: counts[t.value] }))}
-          />
-
-          {selected && (
-            <section className="card mb-5 p-4 text-sm">
-              <p className="font-black text-ink">
-                {labelKo(selected.date)} {selected.title && <span className="font-semibold text-slate">· {selected.title}</span>}
-              </p>
-              <p className="mt-1 text-slate">
-                제출 <strong className="text-brand-600">{all.length}</strong> / 신청 {signups?.length ?? 0}명
-                {missing.length > 0 && (
-                  <>
-                    {" "}· 미제출 {missing.length}명: <span className="text-ink">{missing.map((g) => g.user?.name || "이름 없음").join(", ")}</span>
-                  </>
-                )}
-              </p>
-            </section>
-          )}
-
-          {list.length === 0 ? (
-            <EmptyState icon="homework" title={status === "submitted" ? "점검할 숙제가 없어요" : "해당하는 숙제가 없어요"} />
-          ) : (
-            <ul className="grid gap-4 lg:grid-cols-2">
-              {list.map((s) => {
-                const m = materialById.get(s.material_id);
-                const files = [...(s.homework_files ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at));
-                const images = files.filter((f) => isImageType(f.content_type));
-                const others = files.filter((f) => !isImageType(f.content_type));
-                const checked = s.status === "checked";
-                return (
-                  <li key={s.id} className={cn("card flex flex-col p-4 sm:p-5", checked && "border-brand-200")}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-lg font-black text-ink">{s.user?.name || "이름 없음"}</p>
-                        <p className="text-xs text-slate">
-                          {m ? labelKo(m.date) : "자료"}
-                          {m?.title ? ` · ${m.title}` : ""}
-                        </p>
-                        <p className="mt-0.5 text-xs text-mist">
-                          {formatDate(s.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 제출 · 파일 {files.length}개
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1">
-                        {checked && (
-                          <span className="rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-bold text-brand-700">
-                            점검완료{s.checker?.name ? ` · ${s.checker.name}` : ""}
-                          </span>
+          <ul className="grid gap-4 lg:grid-cols-2">
+            {list.map((s) => {
+              const files = [...(s.homework_files ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id);
+              const images = files.filter((f) => isImageType(f.content_type));
+              const others = files.filter((f) => !isImageType(f.content_type));
+              const isChecked = s.status === "checked";
+              return (
+                <li key={s.id} className={cn("card flex flex-col p-4 sm:p-5", isChecked && "border-brand-200")}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-lg font-black text-ink">{s.user?.name || "이름 없음"}</p>
+                      <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                        {s.level != null && s.subject && <span className="rounded-full bg-ink px-2.5 py-0.5 font-black text-white">{homeworkLabel(s.level, s.subject)}</span>}
+                        {s.user?.phone && (
+                          <a href={`tel:${s.user.phone}`} className="text-brand-600 hover:underline">
+                            {s.user.phone}
+                          </a>
                         )}
-                        <HomeworkCheckButton id={s.id} checked={checked} />
-                      </div>
+                      </p>
+                      <p className="mt-1 text-xs text-mist">
+                        {formatDate(s.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 제출 · 사진 {files.length}장
+                      </p>
                     </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {isChecked && (
+                        <span className="rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-bold text-brand-700">
+                          점검완료{s.checker?.name ? ` · ${s.checker.name}` : ""}
+                        </span>
+                      )}
+                      <HomeworkCheckButton id={s.id} checked={isChecked} />
+                    </div>
+                  </div>
 
-                    {images.length > 0 && (
-                      <ul className="mt-3 grid grid-cols-3 gap-2">
-                        {images.map((f) => (
-                          <li key={f.id}>
-                            <a href={`/files/homework/${f.id}`} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl border border-line bg-surface" title={`${f.file_name} 크게 보기`}>
-                              {/* 비공개 서명 URL 로 리다이렉트되는 썸네일이라 next/image 최적화를 쓰지 않는다 */}
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={`/files/homework/${f.id}?w=400`} alt={`${s.user?.name ?? "수강생"} 숙제 사진`} loading="lazy" className="aspect-square w-full object-cover" />
-                            </a>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {others.length > 0 && (
-                      <ul className="mt-3 space-y-1.5">
-                        {others.map((f) => (
-                          <li key={f.id}>
-                            <a href={`/files/homework/${f.id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm hover:border-brand-300">
-                              <Icon name="textbook" size={18} />
-                              <span className="min-w-0 flex-1 truncate font-semibold text-ink">{f.file_name}</span>
-                              <span className="text-xs text-mist">{formatBytes(f.file_size)}</span>
-                            </a>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {!selected && m && (
-                      <Link href={`/admin/homework?term=${termKey}&date=${m.date}&status=${status}`} className="mt-3 self-start text-xs font-bold text-brand-600 hover:underline">
-                        이 날짜만 보기 ({submittedPerMaterial.get(m.id) ?? 0}건) →
-                      </Link>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                  {s.question && (
+                    <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/60 px-3 py-2 text-sm">
+                      <p className="text-xs font-bold text-brand-700">학생 질문</p>
+                      <p className="whitespace-pre-line text-ink">{s.question}</p>
+                    </div>
+                  )}
+
+                  {images.length > 0 && (
+                    <ul className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                      {images.map((f, i) => (
+                        <li key={f.id}>
+                          <a href={`/files/homework/${f.id}`} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl border border-line bg-surface" title={`${f.file_name} 크게 보기`}>
+                            {/* 비공개 서명 URL 로 리다이렉트되는 썸네일이라 next/image 최적화를 쓰지 않는다 */}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={`/files/homework/${f.id}?w=400`} alt={`${s.user?.name ?? "수강생"} 숙제 사진 ${i + 1}`} loading="lazy" className="aspect-square w-full object-cover" />
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {others.length > 0 && (
+                    <ul className="mt-3 space-y-1.5">
+                      {others.map((f) => (
+                        <li key={f.id}>
+                          <a href={`/files/homework/${f.id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm hover:border-brand-300">
+                            <Icon name="camera" size={18} />
+                            <span className="min-w-0 flex-1 truncate font-semibold text-ink">{f.file_name}</span>
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {list.length >= LIMIT && <p className="mt-4 text-center text-xs text-mist">최근 {LIMIT}건만 보여요. 레벨·과목·상태로 좁혀 주세요.</p>}
         </>
       )}
     </>

@@ -53,29 +53,11 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
   const kind = kinds.includes(sp.kind as (typeof KIND_ORDER)[number]) ? (sp.kind as string) : kinds[0];
   const study = byKind.get(kind)!;
 
-  const [{ data: signups }, { data: materials }] = await Promise.all([
-    supabase
-      .from("study_signups")
-      .select("id, slot_id, created_at, user:profiles!study_signups_user_id_fkey(id, name, phone)")
-      .eq("study_id", study.id)
-      .order("created_at"),
-    kind === "online" ? supabase.from("study_materials").select("id").eq("study_id", study.id) : Promise.resolve({ data: [] as { id: number }[] }),
-  ]);
-
-  // 비대면: 학생별 숙제 제출·점검 수
-  const homework = new Map<string, { submitted: number; checked: number }>();
-  if (kind === "online" && (materials ?? []).length > 0) {
-    const { data: subs } = await supabase
-      .from("homework_submissions")
-      .select("user_id, status")
-      .in("material_id", (materials ?? []).map((m) => m.id));
-    for (const s of subs ?? []) {
-      const h = homework.get(s.user_id) ?? { submitted: 0, checked: 0 };
-      h.submitted += 1;
-      if (s.status === "checked") h.checked += 1;
-      homework.set(s.user_id, h);
-    }
-  }
+  const { data: signups } = await supabase
+    .from("study_signups")
+    .select("id, slot_id, created_at, user:profiles!study_signups_user_id_fkey(id, name, phone)")
+    .eq("study_id", study.id)
+    .order("created_at");
 
   const rows = signups ?? [];
   const slots = sortSlots(study.study_slots ?? []);
@@ -166,24 +148,17 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
               <Th>이름</Th>
               <Th>연락처</Th>
               <Th>신청일</Th>
-              <Th>숙제 제출 / 자료</Th>
               <Th className="text-right">관리</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
             {rows.map((r, n) => {
-              const h = r.user ? homework.get(r.user.id) : undefined;
               return (
                 <tr key={r.id} className="hover:bg-brand-50/40">
                   <Td className="text-xs text-mist">{n + 1}</Td>
                   <Td className="font-bold">{r.user?.name || "-"}</Td>
                   <Td>{r.user?.phone ? <a href={`tel:${r.user.phone}`} className="text-brand-600 hover:underline">{r.user.phone}</a> : "-"}</Td>
                   <Td className="whitespace-nowrap text-xs text-slate">{formatDate(r.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
-                  <Td className="whitespace-nowrap">
-                    <span className="font-bold tabular-nums text-ink">{h?.submitted ?? 0}</span>
-                    <span className="text-slate"> / {(materials ?? []).length}</span>
-                    {h && h.checked > 0 && <span className="ml-2 text-xs font-semibold text-brand-600">점검 {h.checked}</span>}
-                  </Td>
                   <Td className="text-right"><CancelSignupButton id={r.id} name={r.user?.name ?? "수강생"} /></Td>
                 </tr>
               );

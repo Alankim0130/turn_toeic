@@ -10,7 +10,8 @@ export type IconName =
   | "students" | "orders" | "analytics" | "timeslot" | "profile" | "calendar" | "upload"
   | "success" | "warning" | "logout" | "login" | "location" | "rank1" | "target" | "bolt"
   | "offline" | "online" | "vocab" | "homework" | "headphones" | "download"
-  | "lock" | "exclusive" | "bell";
+  | "lock" | "exclusive" | "bell"
+  | "rc" | "lc" | "camera";
 
 export function Icon({
   name,

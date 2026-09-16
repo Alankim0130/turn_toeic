@@ -7,7 +7,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { cn, formatDate, todayKST } from "@/lib/utils";
 import { formatBytes, isSlotKind, slotTime, STUDY_KIND_ICON, STUDY_KIND_LABEL, STUDY_STATUS_LABEL, termIndex } from "@/lib/study";
-import { getMyHomework, getMyOrders, getMyStudyEligibility, getMyStudyMaterials, getMyStudySignups, termLabel } from "../_lib/queries";
+import { getMyOrders, getMyStudyEligibility, getMyStudyMaterials, getMyStudySignups, termLabel } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "내 스터디",
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 };
 
 export default async function MyStudyPage() {
-  const [orders, signups, materials, homework] = await Promise.all([getMyOrders(), getMyStudySignups(), getMyStudyMaterials(), getMyHomework()]);
+  const [orders, signups, materials] = await Promise.all([getMyOrders(), getMyStudySignups(), getMyStudyMaterials()]);
   const { accessTerms, opensOn } = await getMyStudyEligibility(orders);
   const today = todayKST();
 
@@ -44,7 +44,6 @@ export default async function MyStudyPage() {
 
   const sorted = [...signups].sort((a, b) => termIndex(b.study!.term ?? { year: 0, month: 0 }) - termIndex(a.study!.term ?? { year: 0, month: 0 }));
   const onlineSignups = sorted.filter((s) => s.study!.kind === "online");
-  const submissionByMaterial = new Map(homework.map((h) => [h.material_id, h]));
 
   return (
     <div className="space-y-8">
@@ -101,7 +100,7 @@ export default async function MyStudyPage() {
                 {termLabel(study.term)} 비대면스터디 자료
               </h2>
               <Link href="/my/homework" className="text-sm font-bold text-brand-600 hover:underline">
-                숙제제출로 →
+                풀이는 숙제업로드에 →
               </Link>
             </div>
 
@@ -116,8 +115,6 @@ export default async function MyStudyPage() {
             ) : (
               <ul className="divide-y divide-line">
                 {list.map((m) => {
-                  const sub = submissionByMaterial.get(m.id);
-                  const fileCount = sub?.homework_files?.length ?? 0;
                   const isToday = m.date === today;
                   return (
                     <li key={m.id} className={cn("flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center", isToday && "bg-brand-50/50")}>
@@ -132,15 +129,6 @@ export default async function MyStudyPage() {
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <Link
-                          href={`/my/homework#m-${m.id}`}
-                          className={cn(
-                            "rounded-full px-2.5 py-1 text-xs font-bold",
-                            sub?.status === "checked" ? "bg-brand-500 text-white" : sub ? "bg-ink text-white" : "bg-line text-slate hover:text-brand-600",
-                          )}
-                        >
-                          {sub?.status === "checked" ? "점검완료" : sub ? `숙제 제출 ${fileCount}개` : "숙제 미제출"}
-                        </Link>
                         <a href={`/files/material/${m.id}?download=1`} className="btn-primary !px-4 !py-2 text-sm">
                           <Icon name="download" size={18} className="brightness-0 invert" />
                           자료 받기

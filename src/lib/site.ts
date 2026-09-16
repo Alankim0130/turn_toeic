@@ -94,9 +94,9 @@ export const STUDENT_FEATURES: StudentFeature[] = [
     href: "/my/homework",
     label: "숙제업로드",
     icon: "homework",
-    summary: "풀이 사진·PDF 제출",
-    desc: "비대면스터디 자료를 풀고 풀이 사진이나 PDF를 올려요. 강사가 확인하면 점검완료로 바뀝니다.",
-    points: ["날짜별 자료마다 여러 장 제출", "점검 상태를 바로 확인"],
+    summary: "레벨·RC/LC별 풀이 사진 제출",
+    desc: "레벨과 RC·LC를 고르고 풀이 사진을 올려요. 궁금한 점도 함께 적을 수 있고, 강사가 확인하면 점검완료로 바뀝니다.",
+    points: ["레벨 → RC/LC → 사진 3단계", "질문도 함께, 점검 상태 바로 확인"],
     access: "active",
   },
   {

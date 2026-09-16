@@ -2,96 +2,99 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { homeworkFolder, isSubject, MAX_PHOTO_MB, MAX_PHOTOS, MAX_QUESTION } from "@/lib/homework";
 import { isSafeObjectPath, MB, type UploadedFile } from "@/lib/upload";
 
-export type HomeworkResult = { ok: boolean; error?: string };
+export type HomeworkResult = { ok: boolean; error?: string; id?: number };
 
 const BUCKET = "homework";
-const MAX_FILES = 20;
 
 function revalidateHomework() {
-  revalidatePath("/my/homework");
-  revalidatePath("/my/study");
+  revalidatePath("/my/homework", "layout"); // 1·2·3단계 전부
   revalidatePath("/admin/homework");
   revalidatePath("/admin");
 }
 
 /**
- * 브라우저가 homework/{내 id}/{자료 id}/ 에 올린 파일을 제출물로 등록한다.
- * 첫 파일이면 제출물(homework_submissions)을 만든다. 자료를 볼 수 있는지는 RLS 가 확인한다.
+ * 브라우저가 homework/{내 id}/{레벨}-{과목}/ 에 올린 사진을 제출 1건으로 등록한다.
+ * 지금 수강 중인지는 RLS(private.has_term_access)가 확인한다.
  */
-export async function registerHomeworkFiles(materialId: number, files: UploadedFile[]): Promise<HomeworkResult> {
+export async function submitHomework(input: { level: number; subject: string; question: string; files: UploadedFile[] }): Promise<HomeworkResult> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "로그인이 필요해요." };
 
-  if (!Number.isInteger(materialId) || !Array.isArray(files) || files.length === 0 || files.length > 10) {
-    return { ok: false, error: "한 번에 1~10개 파일을 올릴 수 있어요." };
-  }
-  const prefix = `${user.id}/${materialId}/`;
+  const level = Number(input.level);
+  const subject = String(input.subject ?? "");
+  const question = String(input.question ?? "").trim();
+  const files = Array.isArray(input.files) ? input.files : [];
+  if (!Number.isInteger(level) || !isSubject(subject)) return { ok: false, error: "레벨과 과목을 다시 골라 주세요." };
+  if (files.length === 0 || files.length > MAX_PHOTOS) return { ok: false, error: `사진은 1~${MAX_PHOTOS}장 올릴 수 있어요.` };
+  if (question.length > MAX_QUESTION) return { ok: false, error: `질문은 ${MAX_QUESTION}자 이내로 적어 주세요.` };
+
+  const folder = homeworkFolder(user.id, level, subject);
+  const prefix = `${folder}/`;
   for (const f of files) {
     if (!isSafeObjectPath(f.path, prefix) || f.path.slice(prefix.length).includes("/")) return { ok: false, error: "파일 경로가 올바르지 않아요." };
-    if (!(f.type?.startsWith("image/") || f.type === "application/pdf")) return { ok: false, error: "사진 또는 PDF 파일만 올릴 수 있어요." };
-    if (!(f.size > 0 && f.size <= 20 * MB)) return { ok: false, error: "파일은 20MB 이하만 올릴 수 있어요." };
+    if (!f.type?.startsWith("image/")) return { ok: false, error: "사진 파일만 올릴 수 있어요." };
+    if (!(f.size > 0 && f.size <= MAX_PHOTO_MB * MB)) return { ok: false, error: `사진은 ${MAX_PHOTO_MB}MB 이하만 올릴 수 있어요.` };
   }
 
-  // 실제로 올라간 파일인지 확인
-  const { data: listed, error: listError } = await supabase.storage.from(BUCKET).list(`${user.id}/${materialId}`, { limit: 200 });
-  const names = new Set((listed ?? []).map((o) => o.name));
-  if (listError || files.some((f) => !names.has(f.path.slice(prefix.length)))) {
-    return { ok: false, error: "업로드된 파일을 찾을 수 없어요. 다시 시도해 주세요." };
-  }
+  // 실제로 올라간 파일인지 확인 (폴더에 예전 제출 사진이 쌓이므로 이름으로 찾는다)
+  const found = await Promise.all(
+    files.map(async (f) => {
+      const name = f.path.slice(prefix.length);
+      const { data } = await supabase.storage.from(BUCKET).list(folder, { search: name, limit: 5 });
+      return (data ?? []).some((o) => o.name === name);
+    }),
+  );
+  if (found.some((ok) => !ok)) return { ok: false, error: "올린 사진을 찾을 수 없어요. 다시 시도해 주세요." };
 
-  const { data: existing } = await supabase
+  const { data: created, error } = await supabase
     .from("homework_submissions")
-    .select("id, status, homework_files(count)")
-    .eq("material_id", materialId)
-    .eq("user_id", user.id)
-    .maybeSingle();
-  if (existing?.status === "checked") return { ok: false, error: "점검이 끝난 숙제는 바꿀 수 없어요." };
-  if ((existing?.homework_files?.[0]?.count ?? 0) + files.length > MAX_FILES) return { ok: false, error: `한 숙제에 파일은 ${MAX_FILES}개까지 올릴 수 있어요.` };
-
-  let submissionId = existing?.id ?? null;
-  if (!submissionId) {
-    const { data: created, error } = await supabase.from("homework_submissions").insert({ material_id: materialId, user_id: user.id }).select("id").single();
-    if (error || !created) {
-      return { ok: false, error: error?.code === "42501" ? "지금은 이 자료에 숙제를 낼 수 없어요. 비대면스터디 신청과 수강 기간을 확인해 주세요." : "제출하지 못했어요. 잠시 후 다시 시도해 주세요." };
-    }
-    submissionId = created.id;
+    .insert({ user_id: user.id, level, subject, question: question || null })
+    .select("id")
+    .single();
+  if (error || !created) {
+    return {
+      ok: false,
+      error:
+        error?.code === "42501"
+          ? "지금은 숙제를 올릴 수 없어요. 수강 기간(개강일~종강일)인지 확인해 주세요."
+          : error?.code === "23503"
+            ? "없는 레벨이에요. 처음부터 다시 골라 주세요."
+            : "제출하지 못했어요. 잠시 후 다시 시도해 주세요.",
+    };
   }
 
   const { error: filesError } = await supabase.from("homework_files").insert(
-    files.map((f) => ({ submission_id: submissionId!, file_path: f.path, file_name: String(f.name).slice(0, 200), file_size: f.size, content_type: f.type })),
+    files.map((f) => ({ submission_id: created.id, file_path: f.path, file_name: String(f.name).slice(0, 200), file_size: f.size, content_type: f.type })),
   );
   if (filesError) {
-    if (!existing) await supabase.from("homework_submissions").delete().eq("id", submissionId);
-    return { ok: false, error: filesError.code === "42501" ? "점검이 끝난 숙제는 바꿀 수 없어요." : "제출하지 못했어요. 잠시 후 다시 시도해 주세요." };
+    await supabase.from("homework_submissions").delete().eq("id", created.id);
+    return { ok: false, error: "제출하지 못했어요. 잠시 후 다시 시도해 주세요." };
   }
 
   revalidateHomework();
-  return { ok: true };
+  return { ok: true, id: created.id };
 }
 
-/** 점검 전 파일 삭제. 마지막 파일이면 제출물도 지운다 */
-export async function deleteHomeworkFile(fileId: number): Promise<HomeworkResult> {
+/** 점검 전 제출 취소. 사진 파일도 함께 지운다 (점검이 끝난 제출은 RLS 가 삭제를 막는다) */
+export async function deleteHomeworkSubmission(id: number): Promise<HomeworkResult> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "로그인이 필요해요." };
-  if (!Number.isInteger(fileId)) return { ok: false, error: "잘못된 요청이에요." };
+  if (!Number.isInteger(id)) return { ok: false, error: "잘못된 요청이에요." };
 
-  const { data: deleted, error } = await supabase.from("homework_files").delete().eq("id", fileId).select("file_path, submission_id");
-  if (error) return { ok: false, error: "지우지 못했어요. 잠시 후 다시 시도해 주세요." };
-  if (!deleted?.length) return { ok: false, error: "점검이 끝난 숙제는 지울 수 없어요." };
-
-  const { file_path, submission_id } = deleted[0];
-  await supabase.storage.from(BUCKET).remove([file_path]);
-
-  const { count } = await supabase.from("homework_files").select("id", { count: "exact", head: true }).eq("submission_id", submission_id);
-  if ((count ?? 0) === 0) await supabase.from("homework_submissions").delete().eq("id", submission_id).eq("status", "submitted");
+  const { data: files } = await supabase.from("homework_files").select("file_path").eq("submission_id", id);
+  const { data: deleted, error } = await supabase.from("homework_submissions").delete().eq("id", id).select("id");
+  if (error) return { ok: false, error: "취소하지 못했어요. 잠시 후 다시 시도해 주세요." };
+  if (!deleted?.length) return { ok: false, error: "점검이 끝난 숙제는 취소할 수 없어요." };
+  if (files?.length) await supabase.storage.from(BUCKET).remove(files.map((f) => f.file_path));
 
   revalidateHomework();
   return { ok: true };

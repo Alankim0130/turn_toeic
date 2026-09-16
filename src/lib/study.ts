@@ -20,7 +20,7 @@ export const STUDY_KIND_ICON: Record<string, IconName> = {
 
 export const STUDY_KIND_DESC: Record<string, string> = {
   offline: "강사가 정한 시간대 중 하나를 골라 학원에서 함께 공부해요.",
-  online: "수업이 있는 날마다 그날의 스터디 자료를 받고, 풀이를 올려 숙제 점검을 받아요.",
+  online: "수업이 있는 날마다 그날의 스터디 자료를 받아요. 풀이는 숙제업로드에 사진으로 올려 점검을 받아요.",
   vocab: "정해진 시간에 강사에게 단어 점검을 받아요. 시간대를 골라 신청하세요.",
 };
 

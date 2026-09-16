@@ -56,18 +56,6 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
       : Promise.resolve({ data: [] as { id: number; date: string; title: string | null; file_name: string; file_size: number | null; updated_at: string }[] }),
   ]);
 
-  // 숙제 제출·점검 수
-  const counts = new Map<number, { submitted: number; checked: number }>();
-  if ((materials ?? []).length > 0) {
-    const { data: subs } = await supabase.from("homework_submissions").select("material_id, status").in("material_id", (materials ?? []).map((m) => m.id));
-    for (const s of subs ?? []) {
-      const c = counts.get(s.material_id) ?? { submitted: 0, checked: 0 };
-      c.submitted += 1;
-      if (s.status === "checked") c.checked += 1;
-      counts.set(s.material_id, c);
-    }
-  }
-
   // 수업일(이 달 반들의 수업일 합집합) + 자료가 있는 날짜
   const classDays = new Set((sessionDays ?? []).map((d) => d.date));
   const byDate = new Map((materials ?? []).map((m) => [m.date, m]));
@@ -114,7 +102,6 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
             <ul className="space-y-3">
               {dates.map((date) => {
                 const m = byDate.get(date) ?? null;
-                const c = m ? counts.get(m.id) : undefined;
                 return (
                   <MaterialRow
                     key={`${date}-${m?.id ?? "new"}`}
@@ -123,9 +110,6 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
                     today={today}
                     isClassDay={classDays.has(date)}
                     material={m}
-                    submitted={c?.submitted ?? 0}
-                    checked={c?.checked ?? 0}
-                    homeworkHref={`/admin/homework?term=${termKey}&date=${date}`}
                   />
                 );
               })}
