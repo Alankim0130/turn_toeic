@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Logo } from "@/components/ui/Logo";
+import { Icon } from "@/components/ui/Icon";
 import { site } from "@/lib/site";
 
 export function Footer() {
@@ -38,6 +39,18 @@ export function Footer() {
             <br />
             {site.academy.address}
           </p>
+          {/* 강사님들 인스타그램. 주소가 비면 그리지 않는다 (`site.social` 한곳에서 읽는다) */}
+          {site.social.instagram && (
+            <a
+              href={site.social.instagram}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600 underline-offset-2 hover:underline"
+            >
+              <Icon name="camera" size={18} />
+              인스타그램 {site.social.instagramHandle}
+            </a>
+          )}
         </div>
       </div>
       <div className="border-t border-line">

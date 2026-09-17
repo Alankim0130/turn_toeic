@@ -62,8 +62,16 @@ export const site = {
       ],
     },
   ],
+  /**
+   * 강사님들 인스타그램 (2026-09-17 Alan 제공). 랜딩 강사 소개와 푸터에서 읽는다.
+   *
+   * Alan 이 준 주소에는 개인 공유 토큰(`?stkn=…`)이 붙어 있었는데 **떼고 넣었다** —
+   * 공유한 사람에게 딸린 값이라 사이트에 박아 두면 그대로 드러나고, 만료되면 링크가 이상해진다.
+   * **빈 문자열이면 화면에 링크를 그리지 않는다** — 지웠을 때 빈 버튼이 남지 않게.
+   */
   social: {
-    instagram: "",
+    instagram: "https://www.instagram.com/ybm_winnertoeic/",
+    instagramHandle: "@ybm_winnertoeic",
     youtube: "",
   },
 } as const;

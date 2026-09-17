@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { Reveal } from "@/components/ui/Reveal";
+import { Icon } from "@/components/ui/Icon";
 import { site } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
@@ -97,6 +98,24 @@ export function Instructors() {
             );
           })}
         </div>
+
+        {/* 강사님들 인스타그램 (2026-09-17 Alan 제공). 주소가 비면 아예 그리지 않는다.
+            인스타 로고를 따라 그리지 않고 힉스필드 `camera` 아이콘을 쓴다 — 글자가 어디로 가는지 말해 준다 */}
+        {site.social.instagram && (
+          <Reveal delay={320} className="mt-10 text-center">
+            <a
+              href={site.social.instagram}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-secondary !py-2.5"
+            >
+              <Icon name="camera" size={20} />
+              강사님 인스타그램
+              {/* 계정명은 400px 부터 — 그보다 좁으면(320·360px) 버튼이 두 줄로 접힌다. 푸터에는 늘 적혀 있다 */}
+              <span className="hidden font-bold text-slate min-[400px]:inline">{site.social.instagramHandle}</span>
+            </a>
+          </Reveal>
+        )}
       </div>
     </section>
   );
