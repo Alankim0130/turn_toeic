@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils";
 
 /**
- * track: `mwf` | `ttf` 는 수업일, `lecture` 는 특강,
- * `mine` 은 **주5일 학생의 수업일**이다 (2026-09-16 Alan — 월수금·화목금으로 갈라 보여 주지 않는다).
+ * track: `mwf`(월수금, 분홍) · `ttf`(화목금, 잉크) 는 수업일, `lecture` 는 특강(보라).
+ * **주5일 학생도 두 색으로 나눠 칠한다** (2026-09-17 Alan — 그 전에는 `mine` 한 색이었다).
  */
 export type CalendarMark = { date: string; label: string; track: string };
 
@@ -49,11 +49,8 @@ export function MonthCalendar({
         <p className="font-black text-ink">
           {year}년 {month}월
         </p>
-        {/* 있는 것만 적는다 — 주5일 학생에게 월수금·화목금 두 줄을 보여 주면 제 수업이 갈라져 보인다 */}
+        {/* 있는 것만 적는다 */}
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold text-slate">
-          {marks.some((m) => m.track === "mine") && (
-            <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-brand-500" />내 수업</span>
-          )}
           {marks.some((m) => m.track === "mwf") && (
             <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-brand-500" />월수금</span>
           )}

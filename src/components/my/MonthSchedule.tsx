@@ -116,8 +116,9 @@ export function MonthSchedule({
                   {s.recorded && <span className="basis-full pl-12 text-xs text-violet-700">{RECORDED_NOTE}</span>}
                   {s.hours.length > 0 && (
                     <div className="basis-full pl-12">
-                      <p className="text-xs font-bold text-mist">함께 듣는 시간</p>
-                      <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                      {/* 제목 글자는 빼고 시간만 둔다 (2026-09-17 Alan). 눈으로는 시간·과목이면 충분하고,
+                          화면을 못 보는 사람에게는 `aria-label` 이 대신 말해 준다 */}
+                      <ul aria-label="함께 듣는 시간" className="mt-0.5 flex flex-wrap gap-x-4 gap-y-1">
                         {s.hours.map((p) => (
                           <li key={`${p.course}|${p.block}`} className="flex items-center gap-1.5 text-xs">
                             <span className="tabular-nums font-bold text-ink-soft">{p.block}</span>

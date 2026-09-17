@@ -139,8 +139,9 @@ export default async function ClassPage() {
         const marks: CalendarMark[] = [
           ...g.list.map((s) => ({
             date: s.date,
-            // 주5일이면 트랙을 나누지 않고 "내 수업" 한 가지로 (2026-09-16 Alan)
-            track: week5.has(s.section!.id) ? "mine" : s.section!.track,
+            // 달력은 주5일이어도 **트랙 색을 나눈다** (2026-09-17 Alan — 2026-09-16 의 "한 색" 을 뒤집었다).
+            // 줄의 배지는 그대로 `주5일` 이다 — 색은 "무슨 요일에 가나", 배지는 "무엇을 등록했나"
+            track: s.section!.track,
             label: [s.section!.course?.name ?? "수업", formatTime(s.start_time) || s.section!.time_block].filter(Boolean).join(" "),
           })),
           ...g.lectures.map((l) => ({ date: l.date, track: "lecture", label: lectureTitle(l) })),
