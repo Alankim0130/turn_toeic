@@ -24,11 +24,43 @@ const modesFor = (role?: string | null): { key: "student" | "staff"; label: stri
  * 저장해 두면 새로고침·뒤로가기·다른 기기에서 배지와 실제 화면이 어긋나는데, 주소로 정하면 그럴 일이 없다.
  * 화면을 바꿀 뿐이라 권한은 그대로다 — 학생 모드에서도 스태프는 수강생전용을 열어 볼 수 있다.
  */
-export function StaffModeSwitch({ variant = "header", role, className }: { variant?: "header" | "panel"; role?: string | null; className?: string }) {
+export function StaffModeSwitch({
+  variant = "header",
+  role,
+  className,
+}: {
+  variant?: "header" | "panel" | "compact";
+  role?: string | null;
+  className?: string;
+}) {
   const pathname = usePathname();
   const staffMode = isStaffMode(pathname);
   const MODES = modesFor(role);
   const panel = variant === "panel";
+
+  /**
+   * 좁은 화면(햄버거 옆)에는 **갈 곳 한 칸만** 둔다 (2026-09-17 Alan 요청 —
+   * "관리자페이지 버튼을 햄버거 메뉴 왼쪽에 … 바로 언제든지 스위칭이 가능하도록").
+   * 두 칸 토글은 로고·햄버거와 한 줄에 놓기엔 넓다. 글자는 갈 곳 이름이고,
+   * 지금 어느 쪽인지는 밑줄 친 화면이 말해 준다 (`aria-label` 에 풀어서 적는다).
+   */
+  if (variant === "compact") {
+    const target = staffMode ? MODES[0] : MODES[1];
+    const short = target.label.replace(" 모드", "");
+    return (
+      <Link
+        href={target.href}
+        aria-label={`${target.label}로 바꾸기`}
+        className={cn(
+          "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-surface px-2.5 py-1.5 text-xs font-black text-ink-soft ring-1 ring-line transition hover:text-brand-600 hover:ring-brand-300",
+          className,
+        )}
+      >
+        <Icon name={target.icon} size={16} />
+        {short}
+      </Link>
+    );
+  }
 
   return (
     <div
