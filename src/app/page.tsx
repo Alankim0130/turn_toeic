@@ -61,7 +61,8 @@ export default function HomePage() {
       <Marquee />
       <IntroVideo />
       <Stats />
-      <Reviews />
+      <Reviews kind="kakao" />
+      <Reviews kind="ybm" />
       <Features />
       <Curriculum />
       <Mode />

@@ -7,7 +7,40 @@ import { Reveal } from "@/components/ui/Reveal";
 import { site } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
-const REVIEWS = site.reviews;
+export type ReviewKind = "kakao" | "ybm";
+
+/**
+ * 두 갈래를 **따로 보여 준다** (2026-09-17 Alan 요청 — "지금은 두개가 붙어있어").
+ * 카톡은 학생이 선생님에게 보낸 사적인 메시지(점수가 바로 보인다), YBM 은 공식 게시판 후기라
+ * 출처가 서로 다르다. 한 줄에 섞어 두면 어느 것이 어디서 온 말인지 흐려진다.
+ * **카톡을 먼저 둔다** — 점수가 바로 보여서다.
+ */
+const SECTIONS: Record<ReviewKind, { chip: string; title: React.ReactNode; desc: string; id: string }> = {
+  kakao: {
+    id: "reviews-kakao",
+    chip: "학생 메시지",
+    title: (
+      <>
+        점수를 받은 학생들이
+        <br />
+        <span className="text-gradient-brand">선생님에게 보낸 카톡</span>
+      </>
+    ),
+    desc: "성적표와 함께 직접 보내 준 메시지예요. 눌러서 전체를 볼 수 있어요.",
+  },
+  ybm: {
+    id: "reviews-ybm",
+    chip: "공식 수강후기",
+    title: (
+      <>
+        YBM 홈페이지에
+        <br />
+        <span className="text-gradient-brand">직접 남긴 수강후기</span>
+      </>
+    ),
+    desc: "YBM 공식 홈페이지 수강후기 게시판에 올라온 글이에요. 눌러서 전체를 볼 수 있어요.",
+  },
+};
 
 /** 화살표 도형. 이모지를 쓰지 않고 버튼 색을 따라가도록 도형으로 그린다 (AudioPlayer 의 Glyph 와 같은 이유) */
 function Chevron({ back }: { back?: boolean }) {
@@ -27,9 +60,13 @@ function Chevron({ back }: { back?: boolean }) {
  * 카드는 **옆으로 넘겨 보고**(스크롤 스냅), 누르면 **전체가 팝업으로 열린다** — 캡쳐가 세로로 길어
  * 카드 안에서는 윗부분만 보이기 때문이다. 팝업 안에서는 ← → 로 다음 후기로 넘어간다.
  */
-export function Reviews() {
+export function Reviews({ kind }: { kind: ReviewKind }) {
   const [open, setOpen] = useState<number | null>(null);
   const trackRef = useRef<HTMLUListElement>(null);
+  // 이 구역의 후기만. 팝업의 ← → 도 이 안에서만 돈다 — 카톡을 보다가 YBM 으로 넘어가면 출처가 섞인다
+  const reviews = site.reviews.filter((r) => r.kind === kind);
+  const copy = SECTIONS[kind];
+  if (reviews.length === 0) return null;
 
   /** 카드 한 장 폭만큼 옆으로 */
   const slide = (dir: 1 | -1) => {
@@ -39,15 +76,13 @@ export function Reviews() {
   };
 
   return (
-    <section aria-labelledby="reviews-title" className="py-16">
+    <section aria-labelledby={copy.id} className="py-16">
       <Reveal className="container-x mx-auto max-w-2xl text-center">
-        <p className="chip">수강 후기</p>
-        <h2 id="reviews-title" className="mt-4 text-3xl font-black tracking-tight text-ink sm:text-4xl">
-          먼저 다녀간 수강생들이
-          <br />
-          <span className="text-gradient-brand">직접 남긴 이야기</span>
+        <p className="chip">{copy.chip}</p>
+        <h2 id={copy.id} className="mt-4 text-3xl font-black tracking-tight text-ink sm:text-4xl">
+          {copy.title}
         </h2>
-        <p className="mt-3 text-sm text-slate">학생들이 보내 준 메시지와 YBM 공식 홈페이지 후기예요. 눌러서 전체를 볼 수 있어요.</p>
+        <p className="mt-3 text-sm text-slate">{copy.desc}</p>
       </Reveal>
 
       <Reveal delay={80} className="relative mt-8">
@@ -71,7 +106,7 @@ export function Reviews() {
           ref={trackRef}
           className="flex snap-x snap-mandatory gap-4 overflow-x-auto px-[max(1rem,calc((100vw-72rem)/2))] pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
-          {REVIEWS.map((r, i) => (
+          {reviews.map((r, i) => (
             <li key={r.src} className="w-[76%] shrink-0 snap-center sm:w-64 lg:w-80">
               <button
                 type="button"
@@ -115,13 +150,13 @@ export function Reviews() {
         </ul>
       </Reveal>
 
-      {open !== null && <Lightbox index={open} onClose={() => setOpen(null)} onMove={(i) => setOpen(i)} />}
+      {open !== null && <Lightbox reviews={reviews} index={open} onClose={() => setOpen(null)} onMove={(i) => setOpen(i)} />}
     </section>
   );
 }
 
 /** 후기 전체를 띄우는 팝업. 캡쳐가 세로로 길어 안에서 스크롤한다 */
-function Lightbox({ index, onClose, onMove }: { index: number; onClose: () => void; onMove: (i: number) => void }) {
+function Lightbox({ reviews, index, onClose, onMove }: { reviews: (typeof site.reviews)[number][]; index: number; onClose: () => void; onMove: (i: number) => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   // createPortal 은 document 가 있어야 한다. 서버에서는 false, 화면에 붙은 뒤 true
   // (effect 안에서 setState 를 하지 않으려고 useSyncExternalStore 를 쓴다 — RefreshButton 과 같은 방법)
@@ -130,11 +165,11 @@ function Lightbox({ index, onClose, onMove }: { index: number; onClose: () => vo
     () => true,
     () => false,
   );
-  const r = REVIEWS[index];
+  const r = reviews[index];
 
   const move = useCallback(
-    (dir: 1 | -1) => onMove((index + dir + REVIEWS.length) % REVIEWS.length),
-    [index, onMove],
+    (dir: 1 | -1) => onMove((index + dir + reviews.length) % reviews.length),
+    [index, onMove, reviews.length],
   );
 
   useEffect(() => {
@@ -167,7 +202,7 @@ function Lightbox({ index, onClose, onMove }: { index: number; onClose: () => vo
             {r.title}
           </p>
           <p className="shrink-0 text-xs font-bold text-white/70">
-            {index + 1} / {REVIEWS.length}
+            {index + 1} / {reviews.length}
           </p>
           <button
             ref={closeRef}
