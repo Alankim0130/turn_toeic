@@ -167,6 +167,13 @@ body {
   @apply inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700;
 }
 
+/* 홈 화면 앱 첫 화면(스플래시). 하이드레이션 전에도 standalone 이면 바로 그려서 OS 첫 화면에서 끊김 없이 이어진다.
+   이번 세션에 이미 봤으면(html[data-splash-seen], AppSplash 의 인라인 스크립트) 새로고침에서 다시 깜빡이지 않는다 */
+.app-splash { display: none; }
+@media (display-mode: standalone) { .app-splash { display: flex; } }
+html[data-splash-seen] .app-splash { display: none; }
+html .app-splash[data-phase="play"], html .app-splash[data-phase="leave"] { display: flex; }
+
 /* 스크롤 진입 애니메이션 */
 .reveal {
   opacity: 0;

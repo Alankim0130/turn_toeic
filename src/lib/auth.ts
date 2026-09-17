@@ -44,9 +44,21 @@ export const getSessionProfile = cache(async () => {
   return { user, profile };
 });
 
+/**
+ * 가입 정보가 아직 없는 계정 — 구글 로그인으로 처음 들어온 사람 (2026-09-17 Alan 요청).
+ * 가입 트리거(private.handle_new_user)가 외부 로그인에는 이름을 비워 두므로, 실명·휴대폰이 없으면
+ * /signup/complete 에서 채운다. 실명은 수강증 대조 키(G3)라 이 값 없이는 등업이 안 된다.
+ * 프로필 행이 아예 없어도 같은 화면으로 보낸다 (public.complete_profile 이 행을 만든다).
+ */
+export const COMPLETE_PROFILE_PATH = "/signup/complete";
+export const isProfileIncomplete = (profile?: Pick<Profile, "name" | "phone"> | null) =>
+  !profile || profile.name.trim() === "" || !profile.phone;
+
 export async function requireUser(next?: string) {
   const s = await getSessionProfile();
   if (!s.user) redirect(`/login${next ? `?next=${encodeURIComponent(next)}` : ""}`);
+  // 구글로 들어와 실명·휴대폰이 없으면 먼저 채우게 한다 (가입 정보 입력 화면 자체는 requireUser 를 쓰지 않는다)
+  if (isProfileIncomplete(s.profile)) redirect(`${COMPLETE_PROFILE_PATH}${next ? `?next=${encodeURIComponent(next)}` : ""}`);
   return s as { user: NonNullable<typeof s.user>; profile: Profile | null };
 }
 

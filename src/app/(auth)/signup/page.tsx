@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Logo } from "@/components/ui/Logo";
+import { isGoogleLoginEnabled } from "@/lib/auth-providers";
+import { GoogleButton, OrDivider } from "../GoogleButton";
 import { SignupForm } from "./SignupForm";
 
 export const metadata: Metadata = {
@@ -9,7 +11,8 @@ export const metadata: Metadata = {
   robots: { index: false },
 };
 
-export default function SignupPage() {
+export default async function SignupPage() {
+  const google = await isGoogleLoginEnabled();
   return (
     <>
       <div className="mb-6 flex flex-col items-center gap-3 text-center">
@@ -17,6 +20,13 @@ export default function SignupPage() {
         <h1 className="text-xl font-black text-ink">회원가입</h1>
         <p className="text-sm text-slate">가입 후 수강증을 올리면 수강생으로 자동 등업됩니다.</p>
       </div>
+      {google && (
+        <>
+          <GoogleButton label="Google 계정으로 가입하기" />
+          <p className="mt-2 text-center text-xs text-mist">Google 계정으로 가입하면 실명과 연락처만 추가로 적어요.</p>
+          <OrDivider>또는 이메일로 가입</OrDivider>
+        </>
+      )}
       <SignupForm />
       <p className="mt-6 text-center text-sm text-slate">
         이미 회원이신가요?{" "}

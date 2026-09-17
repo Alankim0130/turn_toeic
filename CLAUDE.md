@@ -88,6 +88,13 @@
   셋 다 **홈 화면 앱으로 열었을 때만** 나온다 — 브라우저에는 이미 있다.
   판정은 `src/lib/pull-to-refresh.ts` 한곳(`pull-to-refresh.test.ts`). **`preventDefault` 를 쓰지 않는다** —
   스크롤하려던 손짓을 새로고침으로 잘못 읽으면 앱이 제멋대로 다시 뜬다. 맨 위에서 시작한 한 손가락 세로 드래그만 본다
+- **앱 스플래시** (2026-09-17 Alan 선택 "C 뒤집기"): 홈 화면 앱으로 켤 때만 `AppSplash`(루트 레이아웃 body 맨 앞)가 약 2.7초 영상을 한 번 튼다 —
+  핑크 + 흰 화살표 아이콘 → 점으로 줄어들고 핑크가 아래로 흘러내리며 뒤집힘 → 실제 로고가 세워지고 스우시 → "인생 **역전** 시켜줄게".
+  사람은 넣지 않는다(Alan: 질린다). 파일은 `public/splash/intro-{m,pc}.mp4`(768p H.264 무음 ~230KB) + `-poster.jpg`, 세로/가로로 고른다.
+  힉스필드 MiniMax H3 Max 로 **시작·끝 프레임을 고정**해 만들었다 — 프레임은 실제 `brand/logo.png` + Pretendard 로 렌더한 PNG 라 글자가 안 깨진다
+  (레시피는 메모리 `project-app-splash`). 다시 만들면 `sw.js` 의 `SPLASH_CACHE` 버전을 올린다(서비스 워커가 `/splash/` 를 첫 요청 뒤 저장).
+  `?splash=1` 로 브라우저에서 미리 볼 수 있고, 세션당 한 번(`sessionStorage`), 탭하면 건너뜀, 움직임 줄이기면 끝 장면만.
+  OS 첫 화면도 같은 그림이다: manifest `background_color` 핫핑크, iOS 는 `src/lib/ios-startup.ts` + `public/pwa/splash/ios-*.png`(34기종 × 세로·가로)
 - **"앱 설치" 한 번에 기기별 최단 경로** (`install-store.ts` 의 `getInstallPlan`, 시트는 `InstallSheet`). 웹은 사용자 확인 없이 스스로 설치할 수 없다 —
   안드로이드 크롬은 `beforeinstallprompt` 원터치(크롬이 탭 1회+30초 뒤에 신호를 줌), 삼성 인터넷 27+는 신호를 안 주므로 메뉴 위치 안내,
   iOS 는 공유 버튼 위치 안내(Safari 26 은 ⋯→공유, UA 의 iOS 버전이 18.6 으로 고정되어 `Version/26` 으로 판별),
@@ -132,6 +139,8 @@
   아이콘은 `<Icon name="…" />` 로만 쓴다 — Tailwind preflight 의 `img { height: auto }` 때문에 flex 안에서 세로로 늘어나므로
   `Icon`·`Symbol` 이 가로·세로를 CSS 로 못박는다. 새 이미지 컴포넌트를 만들 때도 같은 처리를 할 것
 - 브랜드 로고도 힉스필드로 제작 (`public/brand/`)
+- **구글 "G" 마크는 예외** (2026-09-17 구글 로그인): 외부 브랜드 표식이라 구글 가이드의 4색 마크를 그대로 쓴다 (`GoogleButton.tsx` 안 인라인 SVG).
+  로그인 버튼 밖에서는 쓰지 않는다
 - **강사 사진은 예외로 실사**를 쓴다 (2026-09-16 Alan 제공). `public/instructors/lee-hyeyoung.png`(LC)·`lee-yeongsu.png`(RC),
   배경 투명 PNG, 두 장 모두 높이 1500px·머리 380px·얼굴이 가로 중앙이라 같은 높이로 나란히 두면 구도가 맞는다.
   경로·크기는 `site.instructors[].photo` 한곳에서 읽는다. 원본은 OneDrive `바탕 화면/역전토익/강사프로필/` (이영수는 검정·파란 의상도 있음).
@@ -362,6 +371,24 @@
   다시 열기 `update private.reserved_staff set claimed_by = null, claimed_at = null where name = '…';` /
   끄기 `delete from private.reserved_staff;`
 - 마이그레이션이 이미 가입해 있던 **이혜영을 관리자 → 강사로** 내렸다 (권한은 같다). 단 그가 마지막 관리자면 그대로 둔다.
+
+**로그인 방법 — 이메일·비밀번호 + 구글** (2026-09-17 Alan 요청 "구글 이메일 로그인", 마이그레이션 20260917113000)
+- 로그인·회원가입 화면 맨 위에 **"Google 계정으로 계속하기"** (`src/app/(auth)/GoogleButton.tsx`). 서버 액션 `signInWithGoogle` 이
+  Supabase `signInWithOAuth(google)` 로 보내고(PKCE. 콜백 주소는 **요청 origin** 으로 만들어 로컬·프리뷰·운영이 각자 돌아온다),
+  `/auth/callback` 이 세션으로 바꾼다. 버튼은 **Supabase 에 구글이 켜져 있을 때만** 그린다
+  (`src/lib/auth-providers.ts` 의 `isGoogleLoginEnabled`, `/auth/v1/settings` 를 5분 캐시) — 켜기 전에 눌리면 Supabase 오류 화면으로 떨어지기 때문.
+- **구글로 처음 들어온 계정은 실명·휴대폰이 없다.** 가입 트리거(`private.handle_new_user`)는 우리 가입 폼(`app_metadata.provider = 'email'`)의
+  메타데이터만 믿고, 외부 로그인은 이름을 비운 회원(member)으로 만든다 — 구글이 넣는 `name` 은 표시 이름(닉네임·영문)이라 수강증 대조 실명(G3)이 아니다.
+  콜백과 `requireUser()` 가 `isProfileIncomplete`(이름이 빈 문자열이거나 휴대폰 없음)이면 **`/signup/complete`** 로 보내고, 거기서
+  실명·휴대폰(대학·학과·성별은 선택)·동의를 한 번 받아 세션으로 `public.complete_profile()` 을 부른다.
+- 이름은 **비어 있을 때 한 번만** 정해진다. 그 뒤에는 정책 "profiles: 본인·admin 수정" 이 그대로 잠근다. 예약된 강사 이름(`private.reserved_staff`)은
+  이때도 가입 트리거와 똑같이 잡는다 — 이영수 강사가 구글로 가입해도 실명을 적는 순간 강사 등급·RC 를 받는다.
+- 같은 이메일로 이미 이메일 가입한 사람이 구글로 들어오면 Supabase 가 **같은 계정에 붙인다**(자동 연결, 이메일이 인증된 계정만). 반대로
+  구글로 먼저 가입한 이메일로 비밀번호 가입을 시도하면 "이미 가입된 이메일" 이다. profiles 는 어느 쪽이든 한 줄이다.
+- `/signup/complete` 는 `requireUser` 를 쓰지 않는다 (미완성 계정이 자기 자신으로 튕긴다). `npm test` 의 `profile-completion.test.ts` 가 지킨다.
+- **켜는 법 (Alan 이 한다)**: Google Cloud Console → OAuth 동의 화면 → 사용자 인증 정보 → OAuth 클라이언트 ID(웹 애플리케이션),
+  승인된 리디렉션 URI 에 `https://grldodnbvznnnwpuunnt.supabase.co/auth/v1/callback` → Supabase 대시보드 Authentication → Sign In / Providers → Google 에
+  클라이언트 ID·시크릿. Supabase 의 Redirect URL 허용 목록은 이미 `localhost:3000/**` · 운영 `/**` · 프리뷰 `/**` 라 손댈 것이 없다.
 
 **테스터 — 강사·관리자 계정의 테스트 등급** (2026-09-16 Alan 요청 "강사·관리자 계정도 학생명단에 테스터로, 등급을 임의로 바꿔 테스트")
 - 진짜 등급을 학생으로 내리면 관리자 화면을 잃고 스스로 되돌릴 수 없다. 그래서 스태프 계정에만 **`profiles.test_role`**
@@ -1038,7 +1065,8 @@ where p.role='student'
 | `/student` | 수강생전용 소개: 6개 기능 카드. 수강생은 바로가기, 비수강생은 잠금 표시와 수강생이 되는 방법 |
 | `/study` | 스터디 신청하기: 대면·비대면·단어 소개 + 이번 달·다음 달 일정. 그 달 수강생은 여기서 신청·시간대 변경·취소 |
 | `/contact` | 연락하기 |
-| `/login`, `/signup` | 로그인 / 회원가입 (실명·전화·대학·학과·성별) |
+| `/login`, `/signup` | 로그인 / 회원가입 (실명·전화·대학·학과·성별). 맨 위에 **구글 버튼** (Supabase 에 구글이 켜져 있을 때만 보인다) |
+| `/signup/complete` | 구글로 처음 들어온 회원의 **가입 정보 입력** (실명·휴대폰 필수, 대학·학과·성별 선택). 미완성 계정은 어느 화면으로 가든 여기로 온다 |
 
 **수강생 `/my`**
 
