@@ -4,11 +4,12 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
-import { MonthCalendar, type CalendarMark } from "@/components/my/MonthCalendar";
-import { cn, formatDate, formatTime, formatTimeRange, RECORDED_LABEL, RECORDED_NOTE, todayKST, TRACK_LABEL } from "@/lib/utils";
+import { type CalendarMark } from "@/components/my/MonthCalendar";
+import { MonthSchedule, type DayRow, type LectureRow } from "@/components/my/MonthSchedule";
+import { formatTime, formatTimeRange, todayKST, TRACK_LABEL } from "@/lib/utils";
 import { lectureTitle } from "@/lib/lecture";
-import { SUBJECT_LABEL } from "@/lib/instructor-subject";
 import { classHours, toClassHours, type ClassHour } from "@/lib/class-hours";
+import { initialDay } from "@/lib/class-day";
 import { studentTrackLabel, week5SectionIds } from "@/lib/week5";
 import { getMyLectures, getMyLectureSignupIds, getMyOrders, getMySectionIncludes, getMySessions, termLabel } from "../_lib/queries";
 
@@ -144,95 +145,41 @@ export default async function ClassPage() {
           })),
           ...g.lectures.map((l) => ({ date: l.date, track: "lecture", label: lectureTitle(l) })),
         ];
+        /**
+         * 줄은 **서버에서 다 만들어** 넘긴다 — 클라이언트로는 Map·중첩 객체가 못 넘어가고,
+         * 넘길 수 있더라도 반·기수 전체를 실어 보낼 이유가 없다.
+         */
+        const days: DayRow[] = g.list.map((s) => ({
+          id: s.id,
+          seq: s.seq,
+          date: s.date,
+          time: s.start_time && s.end_time ? formatTimeRange(s.start_time, s.end_time) : s.section!.time_block,
+          track: studentTrackLabel(s.section!, week5, TRACK_LABEL),
+          mwf: s.section!.track === "mwf",
+          course: s.section!.course?.name ?? termLabel(s.section!.term),
+          recorded: !!s.section!.recorded,
+          next: s.id === nextId,
+          hours: partsOf.get(s.id) ?? [],
+        }));
+        const lectureRows: LectureRow[] = g.lectures.map((l) => ({
+          id: l.id,
+          date: l.date,
+          title: lectureTitle(l),
+          lecturer: l.lecturer?.name ?? null,
+          signed: mySignups.has(l.id),
+        }));
         return (
-          <Reveal key={`${g.year}-${g.month}`} delay={gi * 80} className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
-            <MonthCalendar year={g.year} month={g.month} marks={marks} today={today} />
-
-            <section className="card overflow-hidden">
-              <div className="border-b border-line bg-brand-50/60 px-4 py-3">
-                <p className="font-black text-ink">
-                  {g.year}년 {g.month}월 수업일 <span className="text-sm font-semibold text-slate">· {g.list.length}회</span>
-                  {g.lectures.length > 0 && <span className="text-sm font-semibold text-violet-700"> · 특강 {g.lectures.length}개</span>}
-                </p>
-              </div>
-              <ol className="divide-y divide-line">
-                {g.list.map((s) => {
-                  const isToday = s.date === today;
-                  const isNext = s.id === nextId && !isToday;
-                  const past = s.date < today;
-                  return (
-                    <li
-                      key={s.id}
-                      className={cn(
-                        "flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm",
-                        isToday && "bg-brand-50",
-                        isNext && "bg-surface",
-                        past && "opacity-55",
-                      )}
-                    >
-                      <span className="w-12 font-black text-brand-600">{s.seq}회차</span>
-                      <span className="font-semibold text-ink">{formatDate(s.date)}</span>
-                      {s.start_time && s.end_time ? (
-                        <span className="text-slate">{formatTimeRange(s.start_time, s.end_time)}</span>
-                      ) : (
-                        s.section!.time_block && <span className="tabular-nums text-slate">{s.section!.time_block}</span>
-                      )}
-                      <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold text-white", s.section!.track === "mwf" ? "bg-brand-500" : "bg-ink")}>
-                        {studentTrackLabel(s.section!, week5, TRACK_LABEL)}
-                      </span>
-                      <span className="text-slate">{s.section!.course?.name ?? termLabel(s.section!.term)}</span>
-                      {/* 저녁반 화목금은 인강 — 교실에 나오지 않는다 (2026-09-17 Alan) */}
-                      {s.section!.recorded && (
-                        <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-black text-violet-800" title={RECORDED_NOTE}>
-                          {RECORDED_LABEL}
-                        </span>
-                      )}
-                      {isToday && <span className="ml-auto rounded-full bg-brand-500 px-2 py-0.5 text-xs font-black text-white">오늘</span>}
-                      {isNext && <span className="ml-auto rounded-full bg-ink px-2 py-0.5 text-xs font-black text-white">다음 수업</span>}
-                      {s.section!.recorded && <span className="basis-full pl-12 text-xs text-violet-700">{RECORDED_NOTE}</span>}
-                      {partsOf.has(s.id) && (
-                        <div className="basis-full pl-12">
-                          <p className="text-xs font-bold text-mist">함께 듣는 시간</p>
-                          <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-                            {partsOf.get(s.id)!.map((p) => (
-                              <li key={`${p.course}|${p.block}`} className="flex items-center gap-1.5 text-xs">
-                                <span className="tabular-nums font-bold text-ink-soft">{p.block}</span>
-                                {p.subject && (
-                                  <span className={cn("rounded px-1.5 py-0.5 text-[0.65rem] font-black", p.subject === "lc" ? "bg-brand-100 text-brand-700" : "bg-ink/10 text-ink-soft")}>
-                                    {SUBJECT_LABEL[p.subject]}
-                                  </span>
-                                )}
-                                {p.course && p.course !== s.section!.course?.name && <span className="text-mist">{p.course}</span>}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ol>
-
-              {g.lectures.length > 0 && (
-                <div className="border-t border-line">
-                  <p className="bg-violet-50/60 px-4 py-2 text-sm font-black text-violet-800">특강 · 모의고사</p>
-                  <ul className="divide-y divide-line">
-                    {g.lectures.map((l) => (
-                      <li
-                        key={l.id}
-                        className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm", l.date === today && "bg-violet-50", l.date < today && "opacity-55")}
-                      >
-                        <span className="font-semibold text-ink">{formatDate(l.date)}</span>
-                        <span className="min-w-0 flex-1 text-slate">{lectureTitle(l)}</span>
-                        {mySignups.has(l.id) && <span className="rounded-full bg-brand-500 px-2 py-0.5 text-xs font-bold text-white">신청함</span>}
-                        {l.lecturer?.name && <span className="text-xs font-bold text-violet-700">{l.lecturer.name}</span>}
-                        {l.date === today && <span className="rounded-full bg-violet-600 px-2 py-0.5 text-xs font-black text-white">오늘</span>}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </section>
+          <Reveal key={`${g.year}-${g.month}`} delay={gi * 80}>
+            <MonthSchedule
+              year={g.year}
+              month={g.month}
+              today={today}
+              marks={marks}
+              days={days}
+              lectures={lectureRows}
+              // 처음 고르는 날짜는 특강만 있는 날도 센다 (달력에서 누를 수 있는 날과 같은 집합)
+              initial={initialDay([...g.list.map((s) => s.date), ...g.lectures.map((l) => l.date)], today)}
+            />
           </Reveal>
         );
       })}

@@ -8,8 +8,28 @@ export type CalendarMark = { date: string; label: string; track: string };
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
-/** 서버에서 렌더되는 간단한 월 달력. date 는 "YYYY-MM-DD". */
-export function MonthCalendar({ year, month, marks, today }: { year: number; month: number; marks: CalendarMark[]; today: string }) {
+/**
+ * 월 달력. date 는 "YYYY-MM-DD".
+ *
+ * `onSelect` 를 주면 **수업·특강이 있는 날만 누를 수 있는 버튼**이 된다 (2026-09-17 Alan 요청 —
+ * 내 시간표에서 고른 날짜의 수업만 보여 준다). 빈 날은 눌러도 보여 줄 것이 없어 버튼으로 만들지 않는다 —
+ * 눌리는데 아무 일도 없으면 고장난 것처럼 보인다. `onSelect` 가 없으면 예전처럼 보여 주기만 한다.
+ */
+export function MonthCalendar({
+  year,
+  month,
+  marks,
+  today,
+  selected,
+  onSelect,
+}: {
+  year: number;
+  month: number;
+  marks: CalendarMark[];
+  today: string;
+  selected?: string | null;
+  onSelect?: (date: string) => void;
+}) {
   const first = new Date(Date.UTC(year, month - 1, 1));
   const firstWeekday = first.getUTCDay();
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
@@ -55,35 +75,57 @@ export function MonthCalendar({ year, month, marks, today }: { year: number; mon
           const ms = c ? byDate.get(c.date) ?? [] : [];
           const isToday = c?.date === today;
           const past = c ? c.date < today : false;
-          return (
-            <div key={i} className={cn("min-h-14 border-b border-r border-line/70 p-1 sm:min-h-16", (i + 1) % 7 === 0 && "border-r-0")}>
-              {c && (
-                <>
+          const on = !!c && c.date === selected;
+          const pickable = !!c && !!onSelect && ms.length > 0;
+          const inner = c && (
+            <>
+              <span
+                className={cn(
+                  "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold",
+                  isToday ? "bg-brand-500 text-white" : i % 7 === 0 ? "text-brand-500" : past ? "text-mist" : "text-ink",
+                )}
+              >
+                {c.day}
+              </span>
+              <div className="mt-0.5 flex flex-wrap gap-0.5">
+                {ms.map((m, j) => (
                   <span
+                    key={j}
+                    title={m.label}
                     className={cn(
-                      "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold",
-                      isToday ? "bg-brand-500 text-white" : i % 7 === 0 ? "text-brand-500" : past ? "text-mist" : "text-ink",
+                      "block h-1.5 w-full max-w-8 rounded-full sm:h-auto sm:max-w-none sm:px-1 sm:py-0.5 sm:text-[10px] sm:font-bold sm:text-white",
+                      m.track === "ttf" ? "bg-ink" : m.track === "lecture" ? "bg-violet-500" : "bg-brand-500",
+                      past && !on && "opacity-40",
                     )}
                   >
-                    {c.day}
+                    <span className="hidden truncate sm:block">{m.label}</span>
                   </span>
-                  <div className="mt-0.5 flex flex-wrap gap-0.5">
-                    {ms.map((m, j) => (
-                      <span
-                        key={j}
-                        title={m.label}
-                        className={cn(
-                          "block h-1.5 w-full max-w-8 rounded-full sm:h-auto sm:max-w-none sm:px-1 sm:py-0.5 sm:text-[10px] sm:font-bold sm:text-white",
-                          m.track === "ttf" ? "bg-ink" : m.track === "lecture" ? "bg-violet-500" : "bg-brand-500",
-                          past && "opacity-40",
-                        )}
-                      >
-                        <span className="hidden truncate sm:block">{m.label}</span>
-                      </span>
-                    ))}
-                  </div>
-                </>
-              )}
+                ))}
+              </div>
+            </>
+          );
+          const box = cn(
+            "min-h-14 border-b border-r border-line/70 p-1 text-left sm:min-h-16",
+            (i + 1) % 7 === 0 && "border-r-0",
+            on && "bg-brand-50 ring-2 ring-inset ring-brand-400",
+          );
+          if (pickable) {
+            return (
+              <button
+                key={i}
+                type="button"
+                aria-pressed={on}
+                aria-label={`${month}월 ${c.day}일 수업 보기`}
+                onClick={() => onSelect(c.date)}
+                className={cn(box, "transition hover:bg-brand-50/70")}
+              >
+                {inner}
+              </button>
+            );
+          }
+          return (
+            <div key={i} className={box}>
+              {inner}
             </div>
           );
         })}
