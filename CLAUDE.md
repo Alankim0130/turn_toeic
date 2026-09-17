@@ -88,6 +88,13 @@
   셋 다 **홈 화면 앱으로 열었을 때만** 나온다 — 브라우저에는 이미 있다.
   판정은 `src/lib/pull-to-refresh.ts` 한곳(`pull-to-refresh.test.ts`). **`preventDefault` 를 쓰지 않는다** —
   스크롤하려던 손짓을 새로고침으로 잘못 읽으면 앱이 제멋대로 다시 뜬다. 맨 위에서 시작한 한 손가락 세로 드래그만 본다
+- **앱 스플래시** (2026-09-17 Alan 선택 "C 뒤집기"): 홈 화면 앱으로 켤 때만 `AppSplash`(루트 레이아웃 body 맨 앞)가 약 2.7초 영상을 한 번 튼다 —
+  핑크 + 흰 화살표 아이콘 → 점으로 줄어들고 핑크가 아래로 흘러내리며 뒤집힘 → 실제 로고가 세워지고 스우시 → "인생 **역전** 시켜줄게".
+  사람은 넣지 않는다(Alan: 질린다). 파일은 `public/splash/intro-{m,pc}.mp4`(768p H.264 무음 ~230KB) + `-poster.jpg`, 세로/가로로 고른다.
+  힉스필드 MiniMax H3 Max 로 **시작·끝 프레임을 고정**해 만들었다 — 프레임은 실제 `brand/logo.png` + Pretendard 로 렌더한 PNG 라 글자가 안 깨진다
+  (레시피는 메모리 `project-app-splash`). 다시 만들면 `sw.js` 의 `SPLASH_CACHE` 버전을 올린다(서비스 워커가 `/splash/` 를 첫 요청 뒤 저장).
+  `?splash=1` 로 브라우저에서 미리 볼 수 있고, 세션당 한 번(`sessionStorage`), 탭하면 건너뜀, 움직임 줄이기면 끝 장면만.
+  OS 첫 화면도 같은 그림이다: manifest `background_color` 핫핑크, iOS 는 `src/lib/ios-startup.ts` + `public/pwa/splash/ios-*.png`(34기종 × 세로·가로)
 - **"앱 설치" 한 번에 기기별 최단 경로** (`install-store.ts` 의 `getInstallPlan`, 시트는 `InstallSheet`). 웹은 사용자 확인 없이 스스로 설치할 수 없다 —
   안드로이드 크롬은 `beforeinstallprompt` 원터치(크롬이 탭 1회+30초 뒤에 신호를 줌), 삼성 인터넷 27+는 신호를 안 주므로 메뉴 위치 안내,
   iOS 는 공유 버튼 위치 안내(Safari 26 은 ⋯→공유, UA 의 iOS 버전이 18.6 으로 고정되어 `Version/26` 으로 판별),

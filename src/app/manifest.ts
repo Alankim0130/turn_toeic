@@ -17,7 +17,8 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: "/my",
     scope: "/",
     display: "standalone",
-    background_color: "#fff8fb",
+    // OS 첫 화면 = 핫핑크 + 흰 화살표 아이콘 → 스플래시 영상의 첫 장면과 같아서 끊김 없이 이어진다
+    background_color: "#ff2e88",
     theme_color: "#ff2e88",
     lang: "ko",
     dir: "ltr",

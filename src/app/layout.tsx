@@ -6,6 +6,8 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { TestModeBanner } from "@/components/layout/TestModeBanner";
 import { PwaRegister } from "@/components/pwa/PwaRegister";
 import { PullToRefresh } from "@/components/pwa/PullToRefresh";
+import { AppSplash } from "@/components/pwa/AppSplash";
+import { IOS_STARTUP_IMAGES } from "@/lib/ios-startup";
 import { getSessionProfile, getStudentAccess } from "@/lib/auth";
 import { site } from "@/lib/site";
 
@@ -18,7 +20,8 @@ export const metadata: Metadata = {
   description: site.description,
   keywords: [...site.keywords],
   applicationName: site.name,
-  appleWebApp: { capable: true, title: site.name, statusBarStyle: "default" },
+  // startupImage: 홈 화면 앱을 켤 때 iOS 가 보여 주는 첫 화면 (핑크 + 흰 화살표, 스플래시 영상 첫 장면과 동일)
+  appleWebApp: { capable: true, title: site.name, statusBarStyle: "default", startupImage: [...IOS_STARTUP_IMAGES] },
   authors: [{ name: site.name }],
   creator: site.name,
   openGraph: {
@@ -61,6 +64,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
       </head>
       <body className="min-h-dvh">
+        {/* 홈 화면 앱으로 켤 때만 보이는 첫 화면. DOM 맨 앞에 두어 하이드레이션 전에도 먼저 그려진다 */}
+        <AppSplash />
         {/* 홈 화면 앱에는 주소창이 없다 — 맨 위에서 당기면 새로고침 (2026-09-16 Alan) */}
         <PullToRefresh />
         <TestModeBanner profile={profile} />

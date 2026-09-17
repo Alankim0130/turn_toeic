@@ -5,6 +5,7 @@
  * 이 파일을 고치면 OFFLINE_CACHE 버전을 올린다. */
 
 const OFFLINE_CACHE = "turn-toeic-offline-v1";
+const SPLASH_CACHE = "turn-toeic-splash-v1"; // 스플래시 파일을 바꾸면 이 버전을 올린다
 const OFFLINE_URL = "/offline.html";
 // offline.html 은 로고까지 안에 넣은 한 파일이라 이것만 저장하면 된다
 const OFFLINE_ASSETS = [OFFLINE_URL];
@@ -22,7 +23,11 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k.startsWith("turn-toeic-offline-") && k !== OFFLINE_CACHE).map((k) => caches.delete(k)));
+      await Promise.all(
+        keys
+          .filter((k) => (k.startsWith("turn-toeic-offline-") && k !== OFFLINE_CACHE) || (k.startsWith("turn-toeic-splash-") && k !== SPLASH_CACHE))
+          .map((k) => caches.delete(k)),
+      );
       // 서비스 워커가 깨어나는 동안 페이지 요청을 미리 보내 둔다 (첫 화면이 느려지지 않게)
       if (self.registration.navigationPreload) await self.registration.navigationPreload.enable();
       await self.clients.claim();
@@ -31,6 +36,21 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+  // 스플래시 영상·포스터: 처음 한 번 받은 뒤 저장해 두 번째 실행부터 즉시(오프라인에서도) 재생. 앱으로 여는 사람만 요청하므로 미리 받지 않는다
+  if (url.origin === self.location.origin && url.pathname.startsWith("/splash/") && event.request.method === "GET") {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(SPLASH_CACHE);
+        const hit = await cache.match(event.request, { ignoreVary: true });
+        if (hit) return hit;
+        const res = await fetch(event.request);
+        if (res.ok && res.status === 200) cache.put(event.request, res.clone());
+        return res;
+      })(),
+    );
+    return;
+  }
   if (event.request.mode !== "navigate") return;
   event.respondWith(
     (async () => {
