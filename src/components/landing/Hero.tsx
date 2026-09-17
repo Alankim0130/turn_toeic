@@ -53,18 +53,21 @@ export function Hero() {
           </ul>
         </div>
 
-        <div className="relative mx-auto w-full max-w-md md:max-w-none">
+        {/* 두 강사 투샷 (2026-09-17 Alan — 일러스트 소녀 대신 "우리 강사님 두 분이 같이 있는 이미지").
+            힉스필드 GPT Image 2.5 로 원본 사진 두 장을 참조해 한 장으로 합친 투명 배경 컷 — CLAUDE.md "히어로 강사 투샷" */}
+        <div className="relative mx-auto w-full max-w-md md:max-w-lg">
           <div aria-hidden className="absolute left-1/2 top-1/2 -z-10 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-300/40 animate-pulse-ring" />
           <div aria-hidden className="absolute left-1/2 top-1/2 -z-10 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-300/30 animate-pulse-ring" style={{ animationDelay: "1.2s" }} />
           <Image
-            src="/illustrations/hero-comeback.png"
-            alt="역전토익 수강생이 상승 화살표를 따라 900점 목표로 올라가는 일러스트"
+            src="/illustrations/hero-instructors.webp"
+            alt="역전토익 대표 강사 이혜영(LC)과 이영수(RC)"
             width={1600}
-            height={1200}
+            height={1806}
             priority
-            sizes="(max-width: 768px) 90vw, 45vw"
+            sizes="(max-width: 768px) 90vw, 40vw"
             className="h-auto w-full animate-float drop-shadow-[0_24px_40px_rgba(255,46,136,0.25)]"
           />
+          {/* 왼쪽 아래(페이드로 녹아드는 치마 자리)에 둔다 — 위쪽은 두 분 얼굴·머리라 카드를 올리면 가린다 */}
           <div className="absolute -left-2 bottom-6 hidden rounded-xl2 bg-paper/90 px-4 py-3 shadow-soft ring-1 ring-brand-100 sm:block animate-float-slow">
             <p className="text-[11px] font-bold text-mist">이번 달 목표</p>
             <p className="text-lg font-black text-brand-600">650 → 750 → 850</p>
