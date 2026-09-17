@@ -6,7 +6,8 @@ import { isAuthWeakPasswordError } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { COMPLETE_PROFILE_PATH } from "@/lib/auth";
-import { isGoogleLoginEnabled } from "@/lib/auth-providers";
+import { getSocialLogins } from "@/lib/auth-providers";
+import { isSocialProvider } from "@/lib/social";
 import { site } from "@/lib/site";
 
 export type AuthState = { error?: string; message?: string; values?: Record<string, string> };
@@ -47,18 +48,20 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
 }
 
 /**
- * 구글 로그인 (2026-09-17 Alan 요청). 로그인·회원가입 화면의 같은 버튼이 부른다.
- * Supabase 가 PKCE 검증값을 쿠키에 두고 구글로 보내며, 돌아오면 /auth/callback 이 세션으로 바꾼다.
+ * 간편 로그인 — 구글 · 카카오 (2026-09-17 Alan 요청). 로그인·회원가입 화면의 같은 버튼이 부른다.
+ * Supabase 가 PKCE 검증값을 쿠키에 두고 그 회사 로그인 화면으로 보내며, 돌아오면 /auth/callback 이 세션으로 바꾼다.
  * 처음 들어온 계정은 실명·휴대폰이 없어 콜백이 /signup/complete 로 보낸다 (requireUser 도 같은 판정).
+ * provider 는 목록(`SOCIAL_PROVIDERS`)에 있고 Supabase 에 켜져 있는 것만 받는다.
  */
-export async function signInWithGoogle(formData: FormData) {
+export async function signInWithSocial(formData: FormData) {
   const next = safeNext(formData.get("next"));
-  const back = `/login?error=google&next=${encodeURIComponent(next)}`;
-  if (!(await isGoogleLoginEnabled())) redirect(back);
+  const provider = formData.get("provider");
+  const back = `/login?error=social&next=${encodeURIComponent(next)}`;
+  if (!isSocialProvider(provider) || !(await getSocialLogins())[provider]) redirect(back);
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
+    provider,
     options: { redirectTo: `${await requestOrigin()}/auth/callback?next=${encodeURIComponent(next)}` },
   });
   if (error || !data.url) redirect(back);
