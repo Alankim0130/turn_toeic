@@ -42,7 +42,7 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
   const [{ data: term }, { data: classDates }, { data: slots }, { data: courses }, { data: existing }, { data: teachers }] = await Promise.all([
     supabase.from("terms").select("year, month, enrollment_opens_at, closes_at").eq("id", termId).maybeSingle(),
     supabase.from("term_class_dates").select("track").eq("term_id", termId),
-    supabase.from("timetable_slots").select("id, level, program, season, start_time, end_time"),
+    supabase.from("timetable_slots").select("id, level, program, season, start_time, end_time, ttf_recorded"),
     supabase.from("courses").select("id, program, target_score").eq("is_active", true),
     supabase.from("class_sections").select("course_id, track, time_block").eq("term_id", termId),
     // 과목이 정해진 강사 (이혜영 LC · 이영수 RC) — 반의 LC 교재로 담당을 저절로 정한다
@@ -136,6 +136,8 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
       capacity,
       status: r.status,
       book_set: bookSet,
+      // 저녁반 화목금은 인강 — 시간표가 정한다 (2026-09-17 Alan). 월수금은 그대로 현장
+      recorded: !!slot?.ttf_recorded && r.track === "ttf",
       bundle_id: null,
     });
   }

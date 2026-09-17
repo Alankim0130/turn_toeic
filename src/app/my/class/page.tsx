@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
 import { MonthCalendar, type CalendarMark } from "@/components/my/MonthCalendar";
-import { cn, formatDate, formatTime, formatTimeRange, todayKST, TRACK_LABEL } from "@/lib/utils";
+import { cn, formatDate, formatTime, formatTimeRange, RECORDED_LABEL, RECORDED_NOTE, todayKST, TRACK_LABEL } from "@/lib/utils";
 import { lectureTitle } from "@/lib/lecture";
 import { SUBJECT_LABEL } from "@/lib/instructor-subject";
 import { classHours, toClassHours, type ClassHour } from "@/lib/class-hours";
@@ -181,8 +181,15 @@ export default async function ClassPage() {
                         {studentTrackLabel(s.section!, week5, TRACK_LABEL)}
                       </span>
                       <span className="text-slate">{s.section!.course?.name ?? termLabel(s.section!.term)}</span>
+                      {/* 저녁반 화목금은 인강 — 교실에 나오지 않는다 (2026-09-17 Alan) */}
+                      {s.section!.recorded && (
+                        <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-black text-violet-800" title={RECORDED_NOTE}>
+                          {RECORDED_LABEL}
+                        </span>
+                      )}
                       {isToday && <span className="ml-auto rounded-full bg-brand-500 px-2 py-0.5 text-xs font-black text-white">오늘</span>}
                       {isNext && <span className="ml-auto rounded-full bg-ink px-2 py-0.5 text-xs font-black text-white">다음 수업</span>}
+                      {s.section!.recorded && <span className="basis-full pl-12 text-xs text-violet-700">{RECORDED_NOTE}</span>}
                       {partsOf.has(s.id) && (
                         <div className="basis-full pl-12">
                           <p className="text-xs font-bold text-mist">함께 듣는 시간</p>

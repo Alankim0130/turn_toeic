@@ -6,7 +6,7 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
 import { InstallApp } from "@/components/pwa/InstallApp";
 import { effectiveRole, getStudentAccess, requireUser, ROLE_LABEL } from "@/lib/auth";
-import { cn, formatDate, formatTimeRange, MODE_LABEL, TRACK_LABEL } from "@/lib/utils";
+import { cn, formatDate, formatTimeRange, MODE_LABEL, RECORDED_LABEL, TRACK_LABEL } from "@/lib/utils";
 import { collapseWeek5, pairKey, studentTrackLabel, type Week5Section } from "@/lib/week5";
 import {
   getMyOrders,
@@ -51,6 +51,23 @@ function modeLabelOf(
     enrollments.filter((x) => x.section && week5.has(x.section.id) && pairKey(x.section) === key).map((x) => x.mode),
   );
   return [...modes].map((m) => MODE_LABEL[m] ?? m).join(" · ");
+}
+
+/**
+ * 인강인 트랙 (2026-09-17 Alan: 저녁반은 화목금이 인강).
+ * 주5일은 두 줄이 한 줄로 합쳐지므로, **어느 트랙이 인강인지**를 함께 적어야 말이 된다.
+ */
+function recordedTracksOf(
+  enrollments: { section: (Week5Section & { recorded?: boolean }) | null }[],
+  section: Week5Section & { recorded?: boolean },
+  week5: Set<number>,
+) {
+  const rows = week5.has(section.id)
+    ? enrollments.filter((x) => x.section && week5.has(x.section.id) && pairKey(x.section) === pairKey(section))
+    : [{ section }];
+  return rows
+    .filter((x) => x.section?.recorded)
+    .map((x) => TRACK_LABEL[x.section!.track] ?? x.section!.track);
 }
 
 export default async function MyPage({ searchParams }: { searchParams: Promise<{ welcome?: string; denied?: string }> }) {
@@ -185,6 +202,12 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
                                 <span className={cn("text-xs font-bold", e.mode === "live" ? "text-brand-600" : "text-slate")}>
                                   {modeLabelOf(o.enrollments, e.mode, e.section, week5)}
                                 </span>
+                                {/* 저녁반 화목금은 인강 — 주5일이라 한 줄로 합쳐졌어도 그 트랙만 인강이다 */}
+                                {recordedTracksOf(o.enrollments, e.section, week5).map((t) => (
+                                  <span key={t} className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-black text-violet-800">
+                                    {t} {RECORDED_LABEL}
+                                  </span>
+                                ))}
                               </li>
                             ) : null,
                           )}

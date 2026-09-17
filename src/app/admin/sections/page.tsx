@@ -71,7 +71,7 @@ export default async function AdminSectionsPage({
         supabase
           .from("class_sections")
           .select(
-            "id, bundle_id, track, time_block, book_set, course_id, capacity, tuition, live_tuition, status, instructor_id, course:courses(name, course_type, target_score, program), instructor:profiles(name), session_dates(count), section_live_links(section_id)",
+            "id, bundle_id, track, time_block, book_set, recorded, course_id, capacity, tuition, live_tuition, status, instructor_id, course:courses(name, course_type, target_score, program), instructor:profiles(name), session_dates(count), section_live_links(section_id)",
           )
           .eq("term_id", term.id)
           .order("course_id")
@@ -329,6 +329,15 @@ export default async function AdminSectionsPage({
                                   <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold text-white", s.track === "mwf" ? "bg-brand-500" : "bg-ink")}>
                                     {TRACK_LABEL[s.track] ?? s.track}
                                   </span>
+                                  {/* 저녁반 화목금은 인강 — 시간표(ttf_recorded)가 정한다 (2026-09-17 Alan) */}
+                                  {s.recorded && (
+                                    <span
+                                      className="ml-1 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-black text-violet-800"
+                                      title="교실에 나오지 않고 그 날 오전 수업 녹화본을 봐요"
+                                    >
+                                      인강
+                                    </span>
+                                  )}
                                   {s.time_block && <span className="ml-2 font-bold tabular-nums text-ink-soft">{s.time_block}</span>}
                                   {!bundled && minutes && <span className="ml-1 rounded-full bg-brand-50 px-1.5 py-0.5 text-[11px] font-black text-brand-700">{minutes}</span>}
                                   <span className={cn("ml-2 font-black", count > 0 ? "text-brand-600" : "text-amber-600")}>

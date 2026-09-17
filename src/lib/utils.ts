@@ -31,6 +31,10 @@ export function formatWon(n: number) {
 }
 
 export const TRACK_LABEL: Record<string, string> = { mwf: "월수금", ttf: "화목금" };
+/** 인강 반 — 교실에 나오지 않고 그 날 오전 수업 녹화본을 본다 (2026-09-17 Alan: 저녁반 화목금).
+ *  불라방(라이브방송)과 다르다 — `enrollments.mode` 는 그대로 onsite 다 */
+export const RECORDED_LABEL = "인강";
+export const RECORDED_NOTE = "교실에 나오지 않고 그 날 오전 수업 녹화본을 봐요.";
 export const MODE_LABEL: Record<string, string> = { onsite: "현장", live: "불라방" };
 export const COURSE_TYPE_LABEL: Record<string, string> = { full: "종합", lc: "단과 LC", rc: "단과 RC" };
 

@@ -42,6 +42,7 @@ export type Database = {
       class_sections: {
         Row: {
           book_set: string | null
+          recorded: boolean
           bundle_id: string | null
           capacity: number | null
           closes_at: string
@@ -62,6 +63,7 @@ export type Database = {
         }
         Insert: {
           book_set?: string | null
+          recorded?: boolean
           bundle_id?: string | null
           capacity?: number | null
           closes_at: string
@@ -82,6 +84,7 @@ export type Database = {
         }
         Update: {
           book_set?: string | null
+          recorded?: boolean
           bundle_id?: string | null
           capacity?: number | null
           closes_at?: string
@@ -1332,6 +1335,7 @@ export type Database = {
           program: string
           season: string
           start_time: string
+          ttf_recorded: boolean
         }
         Insert: {
           end_time: string
@@ -1340,6 +1344,7 @@ export type Database = {
           program?: string
           season?: string
           start_time: string
+          ttf_recorded?: boolean
         }
         Update: {
           end_time?: string
@@ -1348,6 +1353,7 @@ export type Database = {
           program?: string
           season?: string
           start_time?: string
+          ttf_recorded?: boolean
         }
         Relationships: [
           {
