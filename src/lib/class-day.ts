@@ -13,3 +13,19 @@ export function initialDay(dates: readonly string[], today: string): string | nu
   if (sorted.includes(today)) return today;
   return sorted.find((d) => d > today) ?? sorted[sorted.length - 1];
 }
+
+/**
+ * 대시보드가 띄울 달 (여러 달이 있을 때). `이번 달 → 앞으로 올 첫 달 → 마지막 달` 순으로 고른다.
+ *
+ * `/my` 는 한 달만 보여 주므로 "지금 다니는 달" 이 나와야 한다 — 늘 첫 달을 띄우면
+ * 9월이 끝난 10월에도 9월 달력이 뜬다. 빈 목록이면 -1.
+ */
+export function initialMonth(months: readonly { year: number; month: number }[], today: string): number {
+  if (months.length === 0) return -1;
+  const key = (y: number, m: number) => `${y}-${String(m).padStart(2, "0")}`;
+  const now = today.slice(0, 7);
+  const here = months.findIndex((g) => key(g.year, g.month) === now);
+  if (here >= 0) return here;
+  const next = months.findIndex((g) => key(g.year, g.month) > now);
+  return next >= 0 ? next : months.length - 1;
+}

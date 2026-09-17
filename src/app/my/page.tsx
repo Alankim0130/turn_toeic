@@ -5,11 +5,13 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
 import { InstallApp } from "@/components/pwa/InstallApp";
-import { effectiveRole, getStudentAccess, requireUser, ROLE_LABEL } from "@/lib/auth";
+import { MonthSchedule } from "@/components/my/MonthSchedule";
+import { effectiveRole, requireUser, ROLE_LABEL } from "@/lib/auth";
 import { cn, formatDate, formatTimeRange, MODE_LABEL, RECORDED_LABEL, TRACK_LABEL } from "@/lib/utils";
+import { initialMonth } from "@/lib/class-day";
 import { collapseWeek5, pairKey, studentTrackLabel, type Week5Section } from "@/lib/week5";
+import { getMySchedule } from "./_lib/schedule";
 import {
-  getMyOrders,
   getMyVerifications,
   monthOf,
   ORDER_STATUS_LABEL,
@@ -71,44 +73,130 @@ function recordedTracksOf(
 }
 
 export default async function MyPage({ searchParams }: { searchParams: Promise<{ welcome?: string; denied?: string }> }) {
-  const [{ profile, user }, sp, orders, verifications, access, week5] = await Promise.all([
+  const [{ profile, user }, sp, verifications, week5, schedule] = await Promise.all([
     requireUser("/my"),
     searchParams,
-    getMyOrders(),
     getMyVerifications(),
-    getStudentAccess(),
     getMyWeek5(),
+    getMySchedule(),
   ]);
 
+  const orders = schedule.orders;
   const name = profile?.name || user.email || "회원";
   // 테스터가 테스트 등급을 켜 두었으면 그 등급으로 보여 준다
   const role = effectiveRole(profile) ?? "member";
   const latestVerification = verifications[0];
   const empty = orders.length === 0 && verifications.length === 0;
 
+  /**
+   * 등록 현황은 이름 옆(머리글)으로 올라갔다 (2026-09-17 Alan 요청). 자리가 좁으므로
+   * **지금 유효한 등록만** 줄로 펴고, 끝난 등록은 달 이름만 한 줄로 접는다 —
+   * 매달 등록이라(도메인 규칙 4) 다 펴면 해가 갈수록 머리글이 길어진다.
+   */
+  const live = orders.filter((o) => o.status !== "expired");
+  const expiredTerms = [
+    ...new Set(
+      orders
+        .filter((o) => o.status === "expired")
+        .flatMap((o) => o.enrollments.map((e) => (e.section ? termLabel(e.section.term) : null)).filter(Boolean) as string[]),
+    ),
+  ];
+
+  // 대시보드는 한 달만 보여 준다 — 이번 달(없으면 다음 달)이고, 전부 보는 길은 `/my/class`
+  const monthIndex = initialMonth(schedule.months, schedule.today);
+  const month = monthIndex >= 0 ? schedule.months[monthIndex] : null;
+
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+        <div className="min-w-0">
           <p className="text-sm font-semibold text-slate">반갑습니다</p>
           <h1 className="text-2xl font-black tracking-tight text-ink sm:text-3xl">
             {name}
             <span className="text-slate"> 님</span>
           </h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-          <span className="chip">
+          {/* 종강일은 등록 현황 카드 안(등록마다)에 적는다 — 여기 칩으로도 두면 같은 날짜가 나란히 두 번 나오고,
+              왼쪽 칸이 넓어져 카드가 이름 옆에 서지 못한다 */}
+          <span className="chip mt-2">
             <Icon name="profile" size={16} />
             {ROLE_LABEL[role]}
           </span>
-          {/* 수강생전용은 강사가 정한 종강일까지 쓸 수 있다 */}
-          {access.until && (
-            <span className="chip">
-              <Icon name="calendar" size={16} />
-              {formatDate(access.until, { month: "numeric", day: "numeric" })} 종강까지 이용
-            </span>
-          )}
         </div>
+
+        {/* 내 등록 현황 — 이름 오른쪽 (2026-09-17 Alan 요청) */}
+        {orders.length > 0 && (
+          <section aria-labelledby="orders-title" className="card min-w-[14rem] flex-1 p-3.5 sm:p-4 lg:max-w-sm">
+            <h2 id="orders-title" className="text-sm font-black text-ink">내 등록 현황</h2>
+
+            {live.length === 0 ? (
+              <p className="mt-2 text-sm text-slate">지금 유효한 등록이 없어요.</p>
+            ) : (
+              <ul className="mt-2 space-y-3">
+                {live.map((o) => {
+                  const preliminary = o.status === "preliminary";
+                  return (
+                    <li key={o.id}>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span
+                          className={cn(
+                            "rounded-full px-2.5 py-0.5 text-xs font-black",
+                            o.status === "active" ? "bg-brand-500 text-white" : "bg-ink text-white",
+                          )}
+                        >
+                          {ORDER_STATUS_LABEL[o.status] ?? o.status}
+                        </span>
+                        <span className="ml-auto text-xs text-mist">
+                          {formatDate(o.access_until, { month: "numeric", day: "numeric" })} 종강까지 이용
+                        </span>
+                      </div>
+
+                      <ul className="mt-1.5 space-y-1">
+                        {/* 주5일은 월수금·화목금 두 줄이 아니라 한 줄로 (2026-09-16 Alan) */}
+                        {collapseWeek5(o.enrollments, (e) => e.section, week5).map((e) =>
+                          e.section ? (
+                            <li key={e.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                              <span className="font-black text-ink">{termLabel(e.section.term)}</span>
+                              <span className="font-semibold text-ink">{e.section.course?.name ?? "강좌"}</span>
+                              <span className="rounded-full bg-ink px-2 py-0.5 text-xs font-bold text-white">
+                                {studentTrackLabel(e.section, week5, TRACK_LABEL)}
+                              </span>
+                              {e.section.start_time && e.section.end_time ? (
+                                <span className="tabular-nums text-slate">{formatTimeRange(e.section.start_time, e.section.end_time)}</span>
+                              ) : (
+                                e.section.time_block && <span className="tabular-nums text-slate">{e.section.time_block}</span>
+                              )}
+                              <span className={cn("text-xs font-bold", e.mode === "live" ? "text-brand-600" : "text-slate")}>
+                                {modeLabelOf(o.enrollments, e.mode, e.section, week5)}
+                              </span>
+                              {/* 저녁반 화목금은 인강 — 주5일이라 한 줄로 합쳐졌어도 그 트랙만 인강이다 */}
+                              {recordedTracksOf(o.enrollments, e.section, week5).map((t) => (
+                                <span key={t} className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-black text-violet-800">
+                                  {t} {RECORDED_LABEL}
+                                </span>
+                              ))}
+                            </li>
+                          ) : null,
+                        )}
+                      </ul>
+
+                      {preliminary && (
+                        <p className="mt-1.5 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs text-brand-700">
+                          <span className="font-black">{monthOf(o.activates_on)}월 예비등록생</span> · 개강일{" "}
+                          {formatDate(o.activates_on, { month: "numeric", day: "numeric" })}부터 불라방·다시보기가 열려요.
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {/* 끝난 등록은 접어 둔다 — 기록이 사라지지는 않게 달 이름만 남긴다 */}
+            {expiredTerms.length > 0 && (
+              <p className="mt-3 border-t border-line pt-2 text-xs text-mist">지난 등록 · {expiredTerms.join(" · ")}</p>
+            )}
+          </section>
+        )}
       </header>
 
       {sp.welcome === "1" && (
@@ -133,89 +221,33 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
           action={{ href: "/my/verify", label: "수강증 올리고 등업하기" }}
         />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-          {/* 내 등록 현황 */}
+        <>
+          {/* 내 시간표 — 등록 현황이 있던 자리 (2026-09-17 Alan 요청 "내 시간표가 바로 나오면 좋겠어") */}
           <Reveal>
-            <section aria-labelledby="orders-title" className="card p-5 sm:p-6">
-              <div className="flex items-center justify-between">
-                <h2 id="orders-title" className="text-lg font-black text-ink">내 등록 현황</h2>
-                <Link href="/my/class" className="text-sm font-bold text-brand-600 hover:underline">
-                  시간표 보기 →
+            <section aria-labelledby="schedule-title">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 id="schedule-title" className="text-lg font-black text-ink">
+                  내 시간표
+                  {month && <span className="ml-2 text-sm font-bold text-slate">{month.year}년 {month.month}월</span>}
+                </h2>
+                <Link href="/my/class" className="shrink-0 text-sm font-bold text-brand-600 hover:underline">
+                  전체 보기 →
                 </Link>
               </div>
-
-              {orders.length === 0 ? (
-                <p className="mt-4 text-sm text-slate">아직 배정된 반이 없어요. 등업신청이 승인되면 여기에 표시됩니다.</p>
+              {month ? (
+                <MonthSchedule
+                  year={month.year}
+                  month={month.month}
+                  today={schedule.today}
+                  marks={month.marks}
+                  days={month.days}
+                  lectures={month.lectures}
+                  initial={month.initial}
+                />
               ) : (
-                <ul className="mt-4 space-y-4">
-                  {orders.map((o) => {
-                    const preliminary = o.status === "preliminary";
-                    return (
-                      <li
-                        key={o.id}
-                        className={cn(
-                          "rounded-xl2 border p-4",
-                          preliminary ? "border-brand-300 bg-brand-50" : o.status === "expired" ? "border-line bg-surface opacity-70" : "border-line bg-paper",
-                        )}
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={cn(
-                              "rounded-full px-2.5 py-0.5 text-xs font-black",
-                              o.status === "active" ? "bg-brand-500 text-white" : preliminary ? "bg-ink text-white" : "bg-line text-slate",
-                            )}
-                          >
-                            {ORDER_STATUS_LABEL[o.status] ?? o.status}
-                          </span>
-                          <span className="ml-auto text-xs text-mist">
-                            {o.status === "expired" ? "시청 종료" : "다시보기 시청 가능"}: {formatDate(o.access_until, { month: "long", day: "numeric" })}까지
-                          </span>
-                        </div>
-
-                        {preliminary && (
-                          <div className="mt-3 flex items-start gap-3 rounded-xl bg-paper p-3">
-                            <Icon name="rank1" size={28} />
-                            <div className="text-sm">
-                              <p className="font-black text-brand-700">{monthOf(o.activates_on)}월 예비등록생</p>
-                              <p className="text-slate">
-                                개강일 {formatDate(o.activates_on)}부터 불라방과 다시보기가 자동으로 열립니다.
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        <ul className="mt-3 space-y-2">
-                          {/* 주5일은 월수금·화목금 두 줄이 아니라 한 줄로 (2026-09-16 Alan) */}
-                          {collapseWeek5(o.enrollments, (e) => e.section, week5).map((e) =>
-                            e.section ? (
-                              <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                                <span className="font-black text-ink">{termLabel(e.section.term)}</span>
-                                <span className="font-semibold text-ink">{e.section.course?.name ?? "강좌"}</span>
-                                <span className="rounded-full bg-ink px-2 py-0.5 text-xs font-bold text-white">
-                                  {studentTrackLabel(e.section, week5, TRACK_LABEL)}
-                                </span>
-                                {e.section.start_time && e.section.end_time ? (
-                                  <span className="text-slate">{formatTimeRange(e.section.start_time, e.section.end_time)}</span>
-                                ) : (
-                                  e.section.time_block && <span className="tabular-nums text-slate">{e.section.time_block}</span>
-                                )}
-                                <span className={cn("text-xs font-bold", e.mode === "live" ? "text-brand-600" : "text-slate")}>
-                                  {modeLabelOf(o.enrollments, e.mode, e.section, week5)}
-                                </span>
-                                {/* 저녁반 화목금은 인강 — 주5일이라 한 줄로 합쳐졌어도 그 트랙만 인강이다 */}
-                                {recordedTracksOf(o.enrollments, e.section, week5).map((t) => (
-                                  <span key={t} className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-black text-violet-800">
-                                    {t} {RECORDED_LABEL}
-                                  </span>
-                                ))}
-                              </li>
-                            ) : null,
-                          )}
-                        </ul>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <p className="card p-5 text-sm text-slate">
+                  아직 볼 수 있는 수업일이 없어요. 등업신청이 승인되고 반이 배정되면 여기에 바로 표시됩니다.
+                </p>
               )}
             </section>
           </Reveal>
@@ -246,7 +278,7 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
               )}
             </section>
           </Reveal>
-        </div>
+        </>
       )}
 
       {/* 바로가기 */}
