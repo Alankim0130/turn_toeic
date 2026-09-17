@@ -22,6 +22,7 @@ export function DecisionForms({
   candidates,
   pickerSections,
   order,
+  requested = [],
 }: {
   verificationId: number;
   result: string | null;
@@ -30,10 +31,12 @@ export function DecisionForms({
   /** 승인 화면의 반 고르기 (강좌 · 시간대 · 주5일) */
   pickerSections: PickerSection[];
   order: OrderInfo | null;
+  /** 수동 등업신청에서 **학생이 고른 반**. 미리 골라 두되 그대로 승인되지는 않는다 — 스태프가 수강증을 보고 정한다 */
+  requested?: number[];
 }) {
   const [approveState, approveAction] = useActionState<ActionState, FormData>(approveVerification, {});
   const [rejectState, rejectAction] = useActionState<ActionState, FormData>(rejectVerification, {});
-  const [picked, setPicked] = useState<number[]>([]);
+  const [picked, setPicked] = useState<number[]>(requested);
 
   if (result === "approved") {
     return (

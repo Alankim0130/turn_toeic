@@ -96,6 +96,10 @@ export default async function VerificationDetailPage({
       }
     : null;
 
+  // 수동 등업신청 — 학생이 직접 고른 반 (2026-09-17). 신청 기록일 뿐 확정이 아니다
+  const requested = (v.requested_section_ids ?? []).filter((n): n is number => typeof n === "number");
+  const requestedLabels = requested.map((id) => candidates.find((c) => c.id === id)?.label ?? `반 #${id}`);
+
   const isImage = /\.(png|jpe?g|webp|gif)$/i.test(v.file_path);
   const parsed = v.parsed as Record<string, unknown> | null;
   const candidateLog = v.candidates as unknown[] | null;
@@ -127,6 +131,20 @@ export default async function VerificationDetailPage({
             ) : (
               <p className="text-sm text-slate">파일을 불러올 수 없습니다. (삭제되었거나 경로 오류)</p>
             )}
+            {v.source === "manual" && (
+              <div className="mt-4 rounded-xl border border-brand-200 bg-brand-50 p-3">
+                <p className="text-sm font-black text-brand-700">학생이 직접 고른 반 (수동 등업신청)</p>
+                {requestedLabels.length === 0 ? (
+                  <p className="mt-1 text-sm text-slate">고른 반을 찾을 수 없습니다 (반이 지워졌을 수 있어요).</p>
+                ) : (
+                  <ul className="mt-1 space-y-0.5 text-sm text-ink">
+                    {requestedLabels.map((l) => <li key={l}>{l}</li>)}
+                  </ul>
+                )}
+                <p className="mt-2 text-xs text-mist">아래 승인 칸에 미리 골라 뒀습니다. <b>수강증과 맞는지 확인한 뒤</b> 승인해 주세요.</p>
+              </div>
+            )}
+
             <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
               <dt className="text-slate">가입 실명</dt><dd className="font-bold">{v.profile?.name ?? "-"}</dd>
               <dt className="text-slate">연락처</dt><dd>{v.profile?.phone ?? "-"}</dd>

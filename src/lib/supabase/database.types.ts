@@ -261,7 +261,9 @@ export type Database = {
           parsed: Json | null
           receipt_no: string | null
           reject_reason: string | null
+          requested_section_ids: number[]
           result: string | null
+          source: string
           user_id: string
         }
         Insert: {
@@ -275,6 +277,8 @@ export type Database = {
           parsed?: Json | null
           receipt_no?: string | null
           reject_reason?: string | null
+          requested_section_ids?: number[]
+          source?: string
           result?: string | null
           user_id: string
         }
@@ -289,6 +293,8 @@ export type Database = {
           parsed?: Json | null
           receipt_no?: string | null
           reject_reason?: string | null
+          requested_section_ids?: number[]
+          source?: string
           result?: string | null
           user_id?: string
         }

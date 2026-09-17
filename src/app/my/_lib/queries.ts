@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { todayKST } from "@/lib/utils";
 import { week5SectionIds } from "@/lib/week5";
+import type { EnrollSection } from "@/lib/enroll-options";
 
 /** 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다. */
 
@@ -62,6 +63,24 @@ export async function getMyOrders() {
   return data ?? [];
 }
 export type MyOrder = Awaited<ReturnType<typeof getMyOrders>>[number];
+
+/**
+ * 지금 등업신청을 받는 반 — 아직 종강하지 않은 공개 반.
+ * **스태프가 승인할 수 있는 집합과 같아야 한다** (`/admin/verifications/[id]` 와 같은 조건) —
+ * 학생이 고를 수 있는데 스태프가 승인 못 하는 반이 있으면 신청이 막힌다.
+ * 수동 등업신청의 레벨·요일·시간대 선택지가 여기서 나온다 (작업 원칙 4 — 코드에 시간대를 적지 않는다).
+ */
+export async function getOpenEnrollSections(): Promise<EnrollSection[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("class_sections")
+    .select("id, track, time_block, term:terms(year, month), course:courses(id, name, program, target_score)")
+    .eq("status", "open")
+    .gte("closes_at", todayKST())
+    .order("enrollment_opens_at")
+    .order("time_block");
+  return data ?? [];
+}
 
 export async function getMyVerifications() {
   const supabase = await createClient();

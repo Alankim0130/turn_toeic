@@ -26,7 +26,7 @@ export default async function VerificationsPage({ searchParams }: { searchParams
 
   let query = supabase
     .from("enrollment_verifications")
-    .select("id, created_at, result, receipt_no, confidence, matched_section, profile:profiles(name)")
+    .select("id, created_at, result, receipt_no, confidence, matched_section, source, profile:profiles(name)")
     .order("created_at", { ascending: false })
     .limit(200);
   query = status === "pending" ? query.is("result", null) : query.eq("result", status);
@@ -62,7 +62,13 @@ export default async function VerificationsPage({ searchParams }: { searchParams
               return (
                 <tr key={r.id} className="hover:bg-brand-50/40">
                   <Td className="whitespace-nowrap text-xs">{formatDate(r.created_at, { year: "2-digit", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
-                  <Td className="whitespace-nowrap font-bold">{r.profile?.name ?? "-"}</Td>
+                  <Td className="whitespace-nowrap font-bold">
+                    {r.profile?.name ?? "-"}
+                    {/* 수동 등업신청은 학생이 반을 골라 냈다 — 승인 화면에 미리 골라져 있다 */}
+                    {r.source === "manual" && (
+                      <span className="ml-2 rounded-full bg-brand-50 px-2 py-0.5 text-[0.65rem] font-black text-brand-700">수동</span>
+                    )}
+                  </Td>
                   <Td className="tabular-nums">{r.confidence != null ? `${Math.round(Number(r.confidence))}점` : "-"}</Td>
                   <Td><StatusBadge status={r.result ?? "pending"} /></Td>
                   <Td className="text-right">

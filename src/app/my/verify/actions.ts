@@ -5,24 +5,31 @@ import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyStaff } from "@/lib/push";
+import { decideVerification, type VerifyTerm } from "@/lib/verify-decision";
+import { resolveEnrollChoice, type EnrollSection } from "@/lib/enroll-options";
+import { getOpenEnrollSections } from "../_lib/queries";
+import type { ParsedReceipt } from "@/lib/receipt";
 
-export type SubmitVerificationInput = { filePath: string };
-export type SubmitVerificationResult = { ok: true } | { ok: false; error: string };
+export type SubmitVerificationResult = { ok: true } | { ok: false; error: string } | { ok: false; rejected: true; reason: string };
 
-/**
- * 업로드가 끝난 수강증 경로를 접수한다.
- * enrollment_verifications 는 service_role 만 insert 할 수 있으므로, 여기서 세션·경로를 검증한 뒤 admin 클라이언트로 넣는다.
- * 등록은 매달 단위이고 현장/불라방은 수강증 내용(수강료)으로 판정하므로 학생에게 따로 받지 않는다.
- * OCR 엔진 미확정 → result·parsed 를 비워 두고 /admin/verifications 에서 검토·승인한다.
- */
-export async function submitVerification(input: SubmitVerificationInput): Promise<SubmitVerificationResult> {
+/** 열린 반이 속한 기수 = 지금 받는 수강월 */
+function openTermsOf(sections: EnrollSection[]): VerifyTerm[] {
+  const seen = new Map<string, VerifyTerm>();
+  for (const s of sections) {
+    if (s.term) seen.set(`${s.term.year}-${s.term.month}`, s.term);
+  }
+  return [...seen.values()];
+}
+
+type Guard = { ok: false; error: string } | { ok: true; user: { id: string }; admin: ReturnType<typeof createAdminClient> };
+
+async function guardUpload(filePath: string): Promise<Guard> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "로그인이 필요합니다." };
 
-  const filePath = String(input?.filePath ?? "");
   if (!filePath.startsWith(`${user.id}/`) || filePath.includes("..")) return { ok: false, error: "파일 경로가 올바르지 않습니다." };
 
   const admin = createAdminClient();
@@ -34,7 +41,7 @@ export async function submitVerification(input: SubmitVerificationInput): Promis
     return { ok: false, error: "업로드된 파일을 찾을 수 없어요. 다시 시도해 주세요." };
   }
 
-  // 확인 중인 신청이 있으면 중복 접수 막기
+  // 확인 중인 신청이 있으면 중복 접수 막기 (거절된 건은 다시 낼 수 있다)
   const { count } = await admin
     .from("enrollment_verifications")
     .select("id", { count: "exact", head: true })
@@ -44,23 +51,107 @@ export async function submitVerification(input: SubmitVerificationInput): Promis
     return { ok: false, error: "이미 확인 중인 등업신청이 있어요. 처리가 끝난 뒤 다시 올려 주세요." };
   }
 
+  return { ok: true, user, admin };
+}
+
+function notifyNew(admin: ReturnType<typeof createAdminClient>, userId: string, manual: boolean) {
+  after(async () => {
+    const { data: profile } = await admin.from("profiles").select("name").eq("id", userId).maybeSingle();
+    await notifyStaff("verification", {
+      title: manual ? "새 등업신청 (수동)" : "새 등업신청",
+      body: manual
+        ? `${profile?.name || "회원"}님이 반을 직접 골라 신청했어요. 수강증을 확인해 주세요.`
+        : `${profile?.name || "회원"}님이 수강증을 올렸어요. 확인해 주세요.`,
+      url: "/admin/verifications?status=pending",
+    });
+  });
+}
+
+function done() {
+  revalidatePath("/my");
+  revalidatePath("/my/verify");
+}
+
+/**
+ * 수강증만 올리는 기본 등업신청.
+ *
+ * **바로 거절할 수 있는 것은 바로 거절한다** (2026-09-17 Alan 요청) — 우리 수강증이 아니거나 수강월이 다르면
+ * 검토 대기로 쌓지 않고 이유를 적어 돌려준다. 판정은 `decideVerification` 한곳이다.
+ *
+ * 다만 **OCR 엔진이 아직 없어서**(CLAUDE.md 미확정 5) 지금은 읽을 글자가 없다 —
+ * `parsed` 가 null 이라 모든 신청이 검토 대기로 간다. OCR 이 붙으면 아래 `parsed` 만 채우면 된다.
+ * 자동 **승인**은 여전히 하지 않는다 (기준선이 미확정 3).
+ */
+export async function submitVerification(input: { filePath: string }): Promise<SubmitVerificationResult> {
+  const guarded = await guardUpload(String(input?.filePath ?? ""));
+  if (!guarded.ok) return guarded;
+  const { user, admin } = guarded;
+  const filePath = String(input.filePath);
+
+  const sections = await getOpenEnrollSections();
+
+  // OCR 엔진이 붙으면 여기서 원문을 읽어 parseReceipt 로 넘긴다 (미확정 5)
+  const parsed: ParsedReceipt | null = null;
+  const decision = decideVerification(parsed, openTermsOf(sections));
+
+  const rejected = decision.kind === "reject";
   const { error } = await admin.from("enrollment_verifications").insert({
     user_id: user.id,
     file_path: filePath,
+    source: "auto",
+    result: rejected ? "rejected" : null,
+    reject_reason: rejected ? decision.reason : null,
+  });
+  if (error) return { ok: false, error: "접수 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요." };
+
+  if (rejected) {
+    done();
+    return { ok: false, rejected: true, reason: decision.reason };
+  }
+
+  notifyNew(admin, user.id, false);
+  done();
+  return { ok: true };
+}
+
+/**
+ * 수동 등업신청 — 학생이 **레벨 · 요일 · 시간대**를 직접 골라 낸다 (2026-09-17 Alan 요청).
+ * 자동 판정이 틀렸을 때의 길이다.
+ *
+ * **고른 것이 곧 배정은 아니다.** 여기서는 "이렇게 신청했다" 만 기록하고, 수강증이 진짜인지는 스태프가 보고 승인한다 —
+ * 그러지 않으면 아무 파일이나 올리고 원하는 반을 스스로 가져갈 수 있다.
+ * 화면이 보낸 반 id 는 믿지 않고 **서버가 `resolveEnrollChoice` 로 다시 푼다.**
+ */
+export async function submitManualVerification(input: {
+  filePath: string;
+  term: string;
+  courseId: number;
+  track: string;
+  timeBlock: string;
+}): Promise<SubmitVerificationResult> {
+  const guarded = await guardUpload(String(input?.filePath ?? ""));
+  if (!guarded.ok) return guarded;
+  const { user, admin } = guarded;
+
+  const sections = await getOpenEnrollSections();
+  const resolved = resolveEnrollChoice(sections, {
+    term: String(input?.term ?? ""),
+    courseId: Number(input?.courseId) || undefined,
+    track: String(input?.track ?? ""),
+    timeBlock: String(input?.timeBlock ?? ""),
+  });
+  if (!resolved.ok) return { ok: false, error: resolved.reason };
+
+  const { error } = await admin.from("enrollment_verifications").insert({
+    user_id: user.id,
+    file_path: String(input.filePath),
+    source: "manual",
+    requested_section_ids: resolved.sectionIds,
     result: null,
   });
   if (error) return { ok: false, error: "접수 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요." };
 
-  after(async () => {
-    const { data: profile } = await admin.from("profiles").select("name").eq("id", user.id).maybeSingle();
-    await notifyStaff("verification", {
-      title: "새 등업신청",
-      body: `${profile?.name || "회원"}님이 수강증을 올렸어요. 확인해 주세요.`,
-      url: "/admin/verifications?status=pending",
-    });
-  });
-
-  revalidatePath("/my");
-  revalidatePath("/my/verify");
+  notifyNew(admin, user.id, true);
+  done();
   return { ok: true };
 }

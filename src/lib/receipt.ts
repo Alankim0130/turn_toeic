@@ -45,6 +45,12 @@ export type ParsedReceipt = {
   times: ReceiptTime[];
   /** 첫 시간 범위 */
   time: ReceiptTime | null;
+  /**
+   * 수강증에 적힌 날짜들의 (연·월) — **수강 기간뿐 아니라 결제일·발행일도 함께 걸린다.**
+   * 어느 줄이 수강 기간인지는 실물 샘플을 봐야 알 수 있어서(미확정 5) 가려내지 않고 모은다.
+   * 판정은 "이 중 하나라도 열린 기수면 통과" 로 쓴다 — 8월에 결제한 9월 강좌를 거절하지 않게.
+   */
+  months: { year: number; month: number }[];
   receiptNo: string | null;
   /** 참고용. 판정에 쓰지 않는다 (수강료는 선택 항목) */
   tuition: number | null;
@@ -163,6 +169,28 @@ function parseLevels(compact: string): number[] {
   return LEVELS.filter((l) => found.has(l));
 }
 
+/**
+ * 수강증에 적힌 날짜의 (연·월)을 전부 모은다.
+ *
+ * `2026-09-01` · `2026.09.01` · `2026/09/01` · `2026년 9월 1일` 을 읽는다.
+ * **뒤에 구분자가 오는 것만 센다** — 그래야 금액·영수증번호의 숫자 뭉치를 날짜로 오독하지 않는다.
+ * 두 자리 연도(`26.09.01`)는 읽지 않는다: 금액·번호와 구분이 안 돼 잘못 읽을 위험이 더 크다.
+ */
+export function parseReceiptMonths(text: string): { year: number; month: number }[] {
+  const out: { year: number; month: number }[] = [];
+  const seen = new Set<string>();
+  for (const m of text.matchAll(/(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]/g)) {
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    if (year < 2020 || year > 2100 || month < 1 || month > 12) continue;
+    const key = `${year}-${month}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ year, month });
+  }
+  return out;
+}
+
 function parseReceiptNo(text: string): string | null {
   const m = text.match(/(?:영수증|승인|접수|주문|거래|결제)?\s*(?:번호|No\.?|NO\.?|#)\s*[:：]?\s*([A-Z0-9][A-Z0-9-]{5,})/i);
   return m ? m[1].toUpperCase() : null;
@@ -232,6 +260,7 @@ export function parseReceipt(raw: string): ParsedReceipt {
     program,
     times,
     time: times[0] ?? null,
+    months: parseReceiptMonths(text),
     receiptNo: parseReceiptNo(text),
     tuition: parseTuition(compact),
     warnings,

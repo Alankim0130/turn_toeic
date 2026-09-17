@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
 import { formatDate, cn } from "@/lib/utils";
-import { getMyVerifications, VERIFICATION_STATUS_LABEL } from "../_lib/queries";
+import { getMyVerifications, getOpenEnrollSections, VERIFICATION_STATUS_LABEL } from "../_lib/queries";
 import { VerifyForm } from "./VerifyForm";
 
 export const metadata: Metadata = {
@@ -13,16 +13,16 @@ export const metadata: Metadata = {
 
 const STEPS: { icon: IconName; title: string; desc: string }[] = [
   { icon: "upload", title: "수강증 업로드", desc: "YBM에서 받은 수강증(영수증) 사진이나 PDF를 올립니다." },
-  { icon: "target", title: "자동 대조", desc: "가입한 실명·강좌·시간대·수강료를 이번 달 개설 반과 대조합니다." },
-  { icon: "success", title: "자동 등업", desc: "확인이 끝나면 수강생으로 전환되고 불라방·다시보기가 열립니다." },
+  { icon: "target", title: "확인", desc: "역전토익 수강증이 맞는지, 이번 달 수강증이 맞는지 확인합니다. 아니면 이유를 적어 바로 알려드려요." },
+  { icon: "success", title: "등업", desc: "확인이 끝나면 수강생으로 전환되고 불라방·다시보기가 열립니다." },
 ];
 
 export default async function VerifyPage() {
-  const verifications = await getMyVerifications();
+  const [verifications, sections] = await Promise.all([getMyVerifications(), getOpenEnrollSections()]);
 
   return (
     <div className="space-y-8">
-      <PageHeader icon="verify" title="등업신청" description="수강증을 올리면 배정된 반이 자동으로 확인됩니다." />
+      <PageHeader icon="verify" title="등업신청" description="수강증을 올리면 강사가 확인해 반을 배정합니다. 확인이 잘못됐다면 반을 직접 골라 다시 낼 수 있어요." />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
         <div className="space-y-4">
@@ -71,7 +71,7 @@ export default async function VerifyPage() {
 
         <Reveal delay={120} className="card p-5 sm:p-7">
           <h2 className="mb-4 text-base font-black text-ink">수강증 올리기</h2>
-          <VerifyForm />
+          <VerifyForm sections={sections} />
         </Reveal>
       </div>
 
