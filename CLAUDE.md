@@ -62,6 +62,22 @@
   **미리보기 브랜치(Preview branches)는 켜지 않는다** — Branching Compute 는 별도 과금이다.
 - OCR: 외부 OCR API 호출 (엔진 미확정)
 
+**다른 워크트리에서 바로 확인하기** (2026-09-17 Alan 요청). 세션마다 워크트리가 따로 있으므로
+**끝낸 일은 `main` 에 머지해 두어야 다른 워크트리가 받아 간다** (브랜치에만 있으면 안 보인다).
+받는 쪽은 세 가지가 필요하다 — 앞의 둘은 **깃에 없다**(`.gitignore`):
+```
+git -C <워크트리> pull origin main
+npm install                    # node_modules 는 워크트리마다 따로
+cp <기존 워크트리>/.env.local .    # .env* 는 깃에 안 올라간다 (.env.example 만 있다)
+npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
+```
+- 워크트리는 `.claude/worktrees/` 아래에 둔다 (`.gitignore` 에 들어 있다).
+- **이 작업 환경에서 `npm run build` 는 Supabase 로 못 나간다** — `getSocialLogins()` 가 `/signup` 을 미리 만들 때
+  `/auth/v1/settings` 를 부르는데 프록시가 막아 **60초 넘게 멈춘다.** 닿지 않는 주소를 주면 바로 실패해서 지나간다:
+  `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:1 npm run build`. 운영 배포(Vercel)는 실제로 닿으므로 그대로 둔다.
+- `node_modules` 를 다른 워크트리에서 **심볼릭 링크로 끌어다 쓰지 말 것** — Turbopack 이
+  "points out of the filesystem root" 로 거부한다. 복사(`cp -al`)하거나 그 워크트리에서 `npm install` 한다.
+
 ---
 
 ## 구현 범위 (2026-09-15 Alan 확장 반영)
