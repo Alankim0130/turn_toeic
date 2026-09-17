@@ -14,6 +14,8 @@ export const site = {
   academy: {
     name: "YBM어학원 부산서면센터",
     ybmUrl: "https://www.ybmedu.com/seomyon/winnertoeic",
+    // YBM 홈 — 회원가입은 여기서 한다 (2026-09-17 Alan "Ybm홈페이지 회원가입 후 학원 데스크에 문의하기"). 등업신청의 "수강증이 없나요?" 카드가 연다
+    ybmHomeUrl: "https://www.ybmedu.com/",
     // 네이버 예약 "역전토익 강사상담" 상품 (사업장 459658). 상단 메뉴의 "네이버 상담예약"이 새 창으로 연다
     naverBookingUrl:
       "https://m.booking.naver.com/booking/12/bizes/459658/items/4139011?area=bmp&lang=ko&service-target=map-pc&startDateTime=2026-09-16T00%3A00%3A00%2B09%3A00&theme=place",
