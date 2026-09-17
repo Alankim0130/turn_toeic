@@ -25,17 +25,32 @@ export const site = {
    */
   introVideo: { id: "YuRcsGJahTs", label: "역전토익 소개 영상" },
   /**
-   * YBM 공식 수강후기 화면 캡쳐 (2026-09-17 Alan 제공). `public/reviews/` 의 WebP 를 그대로 보여 준다.
+   * 수강후기 캡쳐 (2026-09-17 Alan 제공). `public/reviews/` 의 그림을 그대로 보여 준다.
    *
-   * **본문을 옮겨 적지 않는다** — 캡쳐 이미지가 원문이고, 여기 적는 것은 카드 겉면과 `alt` 에 쓸
-   * 제목·강좌·작성자·날짜뿐이다. 작성자 아이디는 YBM 이 가린 그대로(`dlfud19****`) 둔다.
-   * 후기를 더하려면 이미지를 `public/reviews/` 에 넣고 이 배열에 한 줄 더한다 (자동 수집은 미확정 8).
+   * 두 갈래다 — `kakao` 는 **학생이 선생님에게 보낸 카톡**(Alan 이 게시 동의를 받았다고 확인했다),
+   * `ybm` 은 YBM 공식 수강후기 게시판 화면이다.
+   *
+   * **본문을 옮겨 적지 않는다** — 캡쳐가 원문이고 여기에는 카드 겉면과 `alt` 에 쓸 세 가지만 둔다:
+   * `badge`(점수·강좌) · `title`(한 줄 요약) · `meta`(작성자·날짜 또는 출처).
+   * **캡쳐에 또렷이 보이는 것만 적는다 — 점수를 짐작해서 쓰지 말 것.**
+   * 카톡 마지막 장처럼 점수가 안 보이면 기간만 적는다.
+   * 후기를 더하려면 그림을 `public/reviews/` 에 넣고 이 배열에 한 줄 더한다 (자동 수집은 미확정 8).
+   *
+   * 카톡 캡쳐는 원본이 309~434px 뿐이라 **키우지 않았다** — 늘리면 글자가 뭉개진다.
+   * 작은 글자 그림이라 **무손실 WebP** 가 손실 압축보다 더 작고 또렷하다 (188KB → 75KB).
    */
   reviews: [
-    { src: "/reviews/1.webp", w: 900, h: 1425, title: "역전토익 적극 추천 수강 후기", course: "700+중급 한달 점수보장반", author: "dlfud19****", date: "2025-05-29" },
-    { src: "/reviews/2.webp", w: 900, h: 1368, title: "역전토익은 새로운시작이다", course: "600+기초 한달 점수보장반", author: "miin2****", date: "2025-05-29" },
-    { src: "/reviews/3.webp", w: 898, h: 1612, title: "역전토익 강사님들은 토익 요령을 귀에 다이렉트로 꼽아주십니다", course: "600+기초 한달 점수보장반", author: "yebbi77****", date: "2025-05-23" },
-    { src: "/reviews/4.webp", w: 900, h: 1607, title: "역전토익은 빛이다", course: "700+중급 두달완성", author: "tnwl99****", date: "2025-05-23" },
+    // 학생 카톡 — 점수가 바로 보여서 앞에 둔다
+    { src: "/reviews/k1.webp", w: 412, h: 513, kind: "kakao", badge: "690 → 780", title: "2주 만에 90점 올랐어요", meta: "학생이 보낸 메시지" },
+    { src: "/reviews/k2.webp", w: 434, h: 331, kind: "kakao", badge: "880 · LC 만점", title: "1·2월 수강 뒤 880점", meta: "학생이 보낸 메시지" },
+    { src: "/reviews/k3.webp", w: 309, h: 507, kind: "kakao", badge: "865", title: "한 달 수업으로 865점", meta: "학생이 보낸 메시지" },
+    { src: "/reviews/k5.webp", w: 332, h: 468, kind: "kakao", badge: "800점 돌파", title: "스파르타 듣고 LC가 들렸어요", meta: "학생이 보낸 메시지" },
+    { src: "/reviews/k4.webp", w: 396, h: 510, kind: "kakao", badge: "4개월 수강", title: "학원 덕에 토익에 익숙해졌어요", meta: "학생이 보낸 메시지" },
+    // YBM 공식 수강후기 게시판. 작성자 아이디는 YBM 이 가린 그대로 둔다
+    { src: "/reviews/1.webp", w: 900, h: 1425, kind: "ybm", badge: "700+중급 한달 점수보장반", title: "역전토익 적극 추천 수강 후기", meta: "dlfud19**** · 2025-05-29" },
+    { src: "/reviews/2.webp", w: 900, h: 1368, kind: "ybm", badge: "600+기초 한달 점수보장반", title: "역전토익은 새로운시작이다", meta: "miin2**** · 2025-05-29" },
+    { src: "/reviews/3.webp", w: 898, h: 1612, kind: "ybm", badge: "600+기초 한달 점수보장반", title: "역전토익 강사님들은 토익 요령을 귀에 다이렉트로 꼽아주십니다", meta: "yebbi77**** · 2025-05-23" },
+    { src: "/reviews/4.webp", w: 900, h: 1607, kind: "ybm", badge: "700+중급 두달완성", title: "역전토익은 빛이다", meta: "tnwl99**** · 2025-05-23" },
   ],
   // 강사 사진: 배경 투명 PNG. 두 장 모두 머리 크기(380px)·구도가 같고 얼굴이 가로 중앙이라 나란히 둬도 맞는다
   // casual: 원본 얼굴을 유지한 채 힉스필드(Nano Banana Pro)로 의상·자세만 바꾸고 배경을 지운 컷. 무릎 위까지라

@@ -47,7 +47,7 @@ export function Reviews() {
           <br />
           <span className="text-gradient-brand">직접 남긴 이야기</span>
         </h2>
-        <p className="mt-3 text-sm text-slate">YBM 공식 홈페이지에 올라온 후기예요. 눌러서 전체를 볼 수 있어요.</p>
+        <p className="mt-3 text-sm text-slate">학생들이 보내 준 메시지와 YBM 공식 홈페이지 후기예요. 눌러서 전체를 볼 수 있어요.</p>
       </Reveal>
 
       <Reveal delay={80} className="relative mt-8">
@@ -83,7 +83,7 @@ export function Reviews() {
                   {/* 로컬 WebP 는 이미 줄여 두었다 — `unoptimized` 로 Vercel 이미지 변환(과금)을 타지 않는다 */}
                   <Image
                     src={r.src}
-                    alt={`${r.title} — ${r.course} 수강생 ${r.author} 후기`}
+                    alt={`${r.title} — ${r.badge} 수강 후기`}
                     width={r.w}
                     height={r.h}
                     unoptimized
@@ -91,13 +91,21 @@ export function Reviews() {
                   />
                   <span aria-hidden className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-paper to-transparent" />
                 </span>
-                {/* 캡션에 제목을 또 적지 않는다 — 캡쳐 그림 맨 위에 제목이 이미 있다. 제목은 `alt` 와 팝업에 남는다 */}
+                {/* YBM 후기는 캡쳐 맨 위에 제목이 이미 있어 캡션에 또 적지 않는다.
+                    카톡은 제목이 없으므로 한 줄 요약을 적는다 — 어느 쪽이든 `alt` 와 팝업에는 제목이 남는다 */}
                 <span className="block p-4">
-                  <span className="inline-flex rounded-full bg-brand-50 px-2.5 py-1 text-[0.7rem] font-black text-brand-700">{r.course}</span>
+                  <span
+                    className={cn(
+                      "inline-flex rounded-full px-2.5 py-1 text-[0.7rem] font-black",
+                      // 카톡은 점수라 진한 분홍으로 눈에 띄게, YBM 강좌명은 연분홍
+                      r.kind === "kakao" ? "bg-brand-500 text-white" : "bg-brand-50 text-brand-700",
+                    )}
+                  >
+                    {r.badge}
+                  </span>
+                  {r.kind === "kakao" && <span className="mt-2 block line-clamp-2 font-black leading-snug text-ink">{r.title}</span>}
                   <span className="mt-2 flex items-center gap-2 text-xs text-mist">
-                    <span className="min-w-0 flex-1 truncate">
-                      {r.author} · {r.date}
-                    </span>
+                    <span className="min-w-0 flex-1 truncate">{r.meta}</span>
                     <span className="shrink-0 font-black text-brand-600 transition group-hover:translate-x-0.5">전체 보기 ›</span>
                   </span>
                 </span>
@@ -155,7 +163,7 @@ function Lightbox({ index, onClose, onMove }: { index: number; onClose: () => vo
       <div role="dialog" aria-modal="true" aria-label={`${r.title} 후기 전체`} className="relative flex max-h-full w-full max-w-lg flex-col">
         <div className="mb-2 flex items-center gap-2">
           <p className="min-w-0 flex-1 truncate text-sm font-black text-white">
-            <span className="mr-2 rounded-full bg-white/15 px-2 py-0.5 text-[0.7rem]">{r.course}</span>
+            <span className="mr-2 rounded-full bg-white/15 px-2 py-0.5 text-[0.7rem]">{r.badge}</span>
             {r.title}
           </p>
           <p className="shrink-0 text-xs font-bold text-white/70">
@@ -174,14 +182,23 @@ function Lightbox({ index, onClose, onMove }: { index: number; onClose: () => vo
           </button>
         </div>
 
-        {/* 캡쳐 전체. 세로로 길어 여기서 스크롤한다 */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-xl2 bg-paper">
-          <Image src={r.src} alt={`${r.title} — ${r.course} 수강생 ${r.author} 후기 전체`} width={r.w} height={r.h} unoptimized className="h-auto w-full" />
+        {/* 캡쳐 전체. 세로로 길어 여기서 스크롤한다.
+            **원본 폭보다 크게 늘리지 않는다** — 카톡 캡쳐는 309~434px 뿐이라 늘리면 글자가 뭉개진다 */}
+        <div className="flex min-h-0 flex-1 justify-center overflow-y-auto overscroll-contain rounded-xl2 bg-paper">
+          <Image
+            src={r.src}
+            alt={`${r.title} — ${r.badge} 수강 후기 전체`}
+            width={r.w}
+            height={r.h}
+            unoptimized
+            style={{ maxWidth: r.w }}
+            className="h-auto w-full"
+          />
         </div>
 
         <div className="mt-2 flex items-center justify-between gap-2">
           <p className="min-w-0 truncate text-xs text-white/70">
-            {r.author} · {r.date}
+            {r.meta}
           </p>
           <div className="flex shrink-0 gap-2">
             {(["back", "next"] as const).map((d) => (
