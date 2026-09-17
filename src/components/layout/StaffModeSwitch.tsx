@@ -39,26 +39,34 @@ export function StaffModeSwitch({
   const panel = variant === "panel";
 
   /**
-   * 좁은 화면(햄버거 옆)에는 **갈 곳 한 칸만** 둔다 (2026-09-17 Alan 요청 —
-   * "관리자페이지 버튼을 햄버거 메뉴 왼쪽에 … 바로 언제든지 스위칭이 가능하도록").
-   * 두 칸 토글은 로고·햄버거와 한 줄에 놓기엔 넓다. 글자는 갈 곳 이름이고,
-   * 지금 어느 쪽인지는 밑줄 친 화면이 말해 준다 (`aria-label` 에 풀어서 적는다).
+   * 좁은 화면(햄버거 옆)의 모드 칸 (2026-09-17 Alan 요청 —
+   * "현재 나의 상태가 보이고 오른쪽에 작은 아이콘을 클릭해서 변경할 수 있으면 좋겠어").
+   *
+   * **왼쪽은 지금 상태를 알려 주는 배지**(누르는 곳이 아니다), **오른쪽 동그란 버튼이 바꾼다.**
+   * 버튼의 그림은 **갈 곳**이라 한 번 보면 어디로 가는지 알 수 있다.
+   * 두 칸 토글은 로고·햄버거와 한 줄에 놓기엔 넓어서 이 모양을 따로 뒀다.
    */
   if (variant === "compact") {
+    const now = staffMode ? MODES[1] : MODES[0];
     const target = staffMode ? MODES[0] : MODES[1];
-    const short = target.label.replace(" 모드", "");
     return (
-      <Link
-        href={target.href}
-        aria-label={`${target.label}로 바꾸기`}
-        className={cn(
-          "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-surface px-2.5 py-1.5 text-xs font-black text-ink-soft ring-1 ring-line transition hover:text-brand-600 hover:ring-brand-300",
-          className,
-        )}
-      >
-        <Icon name={target.icon} size={16} />
-        {short}
-      </Link>
+      <div className={cn("flex shrink-0 items-center gap-1", className)}>
+        <span
+          aria-current="true"
+          className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-brand-500 px-3 py-2 text-xs font-bold text-white shadow-pink"
+        >
+          <Icon name={now.icon} size={16} className="brightness-0 invert" />
+          {now.label}
+        </span>
+        <Link
+          href={target.href}
+          aria-label={`${target.label}로 바꾸기`}
+          title={`${target.label}로 바꾸기`}
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-surface ring-1 ring-line transition hover:bg-brand-50 hover:ring-brand-300"
+        >
+          <Icon name={target.icon} size={16} />
+        </Link>
+      </div>
     );
   }
 
