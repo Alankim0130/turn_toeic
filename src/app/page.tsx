@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Hero } from "@/components/landing/Hero";
 import { Marquee } from "@/components/landing/Marquee";
+import { IntroVideo } from "@/components/landing/IntroVideo";
 import { Stats } from "@/components/landing/Stats";
 import { Features } from "@/components/landing/Features";
 import { Curriculum } from "@/components/landing/Curriculum";
@@ -57,6 +58,7 @@ export default function HomePage() {
       <JsonLd />
       <Hero />
       <Marquee />
+      <IntroVideo />
       <Stats />
       <Features />
       <Curriculum />

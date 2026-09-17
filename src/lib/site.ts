@@ -19,6 +19,11 @@ export const site = {
       "https://m.booking.naver.com/booking/12/bizes/459658/items/4139011?area=bmp&lang=ko&service-target=map-pc&startDateTime=2026-09-16T00%3A00%3A00%2B09%3A00&theme=place",
     address: "부산광역시 부산진구 서면",
   },
+  /**
+   * 랜딩 초반의 소개 영상 (2026-09-17 Alan 제공). **바꿀 때 여기 id 만 고친다.**
+   * 썸네일을 눌러야 유튜브를 불러오므로(`IntroVideo`) 안 보는 방문자에게는 전송량이 들지 않는다.
+   */
+  introVideo: { id: "YuRcsGJahTs", label: "역전토익 소개 영상" },
   // 강사 사진: 배경 투명 PNG. 두 장 모두 머리 크기(380px)·구도가 같고 얼굴이 가로 중앙이라 나란히 둬도 맞는다
   // casual: 원본 얼굴을 유지한 채 힉스필드(Nano Banana Pro)로 의상·자세만 바꾸고 배경을 지운 컷. 무릎 위까지라
   //         설명 구간 곳곳에 <InstructorCameo /> 로 등장시킨다. 손짓 방향은 모두 화면 왼쪽 → 콘텐츠 오른쪽에 둔다
