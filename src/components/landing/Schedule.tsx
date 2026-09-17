@@ -16,13 +16,22 @@ import { TimetableCard, type TimetableCardData } from "./TimetableCard";
 async function loadTimetable() {
   const supabase = await createClient();
   const season = seasonOfMonth(Number(todayKST().slice(5, 7)));
-  const { data } = await supabase
-    .from("timetable_levels")
-    .select("level, note, timetable_slots(program, season, start_time, end_time, ttf_recorded)")
-    .order("sort_order")
-    .order("start_time", { referencedTable: "timetable_slots" });
+  const [{ data }, { data: spartaCourses }] = await Promise.all([
+    supabase
+      .from("timetable_levels")
+      .select("level, note, timetable_slots(program, season, start_time, end_time, ttf_recorded)")
+      .order("sort_order")
+      .order("start_time", { referencedTable: "timetable_slots" }),
+    // 스파르타는 두 레벨을 함께 듣는다 (650+ 중급속성 = 650 + 850). 구성은 courses.includes_levels 한곳 — 코드에 적지 않는다
+    supabase.from("courses").select("target_score, name, includes_levels").eq("program", "sparta").eq("is_active", true),
+  ]);
 
   const rows = data ?? [];
+  const spartaOf = (level: number): TimetableCardData["sparta"] => {
+    const c = (spartaCourses ?? []).find((c) => c.target_score === level);
+    if (!c) return null;
+    return { name: c.name, levels: [level, ...c.includes_levels.filter((l) => l !== level).sort((a, b) => a - b)] };
+  };
   const pick = (want: string): TimetableCardData[] =>
     PROGRAMS.flatMap((program) =>
       rows.map((t) => ({
@@ -31,6 +40,7 @@ async function loadTimetable() {
         program,
         // 레벨 메모는 점수보장반 카드에만. **인강 여부는 여기가 아니라 시간대마다** `recorded` 로 넘긴다
         note: program === "score" ? t.note : null,
+        sparta: program === "sparta" ? spartaOf(t.level) : null,
         slots: t.timetable_slots
           .filter((s) => s.season === want && s.program === program)
           .sort((a, b) => a.start_time.localeCompare(b.start_time) || a.end_time.localeCompare(b.end_time))
