@@ -49,8 +49,11 @@ export function SiteHeader({ profile, signedIn, access }: { profile: Profile | n
           )}
         </div>
 
-        {/* 모바일·태블릿: 오른쪽 슬라이드 메뉴 */}
-        <MobileMenu signedIn={signedIn} staff={staff} role={profile?.role ?? null} name={profile?.name ?? null} access={navAccess} />
+        {/* 모바일·태블릿: 모드 전환은 햄버거 바로 왼쪽에 늘 둔다 (2026-09-17 Alan — 어디서든 바로 오간다) */}
+        <div className="flex shrink-0 items-center gap-1.5 lg:hidden">
+          {staff && <StaffModeSwitch variant="compact" role={profile?.role} />}
+          <MobileMenu signedIn={signedIn} staff={staff} role={profile?.role ?? null} name={profile?.name ?? null} access={navAccess} />
+        </div>
       </div>
     </header>
   );
