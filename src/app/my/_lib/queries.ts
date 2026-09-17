@@ -24,6 +24,22 @@ export async function getMyAccessibleSections() {
 export type MyAccessibleSection = Awaited<ReturnType<typeof getMyAccessibleSections>>[number];
 
 /**
+ * 부모 반 → **함께 열리는 반** (묶음 반 → 시간 단위 반, 스파르타 반 → 겹치는 레벨의 시간 단위 반).
+ * 판정은 DB 한곳(`private.section_includes`)이다 — 화면에서 다시 계산하지 말 것 (도메인 규칙 1 "반 권한").
+ */
+export async function getMySectionIncludes(termIds: (number | null)[]) {
+  const ids = [...new Set(termIds.filter((t): t is number => typeof t === "number"))];
+  if (ids.length === 0) return new Map<number, Set<number>>();
+  const supabase = await createClient();
+  const out = new Map<number, Set<number>>();
+  const rows = await Promise.all(ids.map((t) => supabase.rpc("term_section_includes", { p_term_id: t })));
+  for (const { data } of rows) {
+    for (const r of data ?? []) out.set(r.section_id, (out.get(r.section_id) ?? new Set<number>()).add(r.included_id));
+  }
+  return out;
+}
+
+/**
  * 내 반 중 **주5일인 반의 id** (2026-09-16 Alan: 학생에게는 월수금·화목금 대신 "주5일" 로 보여 준다).
  * 접근 가능한 반 전체로 판정한다 — 다시보기처럼 일부만 나오는 화면에서도 같은 이름이 나와야 한다.
  */

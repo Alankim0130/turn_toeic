@@ -7,13 +7,10 @@ import { Icon } from "@/components/ui/Icon";
 import { MonthCalendar, type CalendarMark } from "@/components/my/MonthCalendar";
 import { cn, formatDate, formatTime, formatTimeRange, todayKST, TRACK_LABEL } from "@/lib/utils";
 import { lectureTitle } from "@/lib/lecture";
-import { dashLabel, parseTimeBlock, sectionPackages } from "@/lib/time-blocks";
-import { subjectsWithin, SUBJECT_LABEL, type Subject } from "@/lib/instructor-subject";
+import { SUBJECT_LABEL } from "@/lib/instructor-subject";
+import { classHours, toClassHours, type ClassHour } from "@/lib/class-hours";
 import { studentTrackLabel, week5SectionIds } from "@/lib/week5";
-import { getMyLectures, getMyLectureSignupIds, getMyOrders, getMySessions, termLabel } from "../_lib/queries";
-
-/** 함께 듣는 시간 한 줄 — 시간대 · 과목 · (다른 강좌면) 강좌 이름 */
-type Part = { block: string; subject: Subject | null; course: string | null };
+import { getMyLectures, getMyLectureSignupIds, getMyOrders, getMySectionIncludes, getMySessions, termLabel } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "내 시간표",
@@ -22,8 +19,11 @@ export const metadata: Metadata = {
 
 export default async function ClassPage() {
   const [sessionRows, lectures, mySignups, orders] = await Promise.all([getMySessions(), getMyLectures(), getMyLectureSignupIds(), getMyOrders()]);
-  // 학생에게는 월수금·화목금 대신 "주5일" 로 보여 준다 (2026-09-16 Alan) — 판정은 lib/week5.ts
-  const week5 = week5SectionIds(sessionRows.filter((s) => s.section).map((s) => s.section!));
+  // 학생에게는 월수금·화목금 대신 "주5일" 로 보여 준다 (2026-09-16 Alan) — 판정은 lib/week5.ts.
+  // **내가 등록한 반**으로 본다 — 스태프는 RLS 가 모든 반을 내려 줘서 남의 반까지 짝으로 잡힌다
+  const week5 = week5SectionIds(
+    orders.flatMap((o) => o.enrollments.filter((e) => e.section).map((e) => e.section!)),
+  );
   /**
    * 묶음 반(120분) · 스파르타반 학생은 함께 열리는 반(60분 시간 단위, 650·850 …)의 수업일이 같은 날 함께 내려온다.
    * 시간표에는 **내가 등록한 반**(직접 배정된 반) 줄만 두고, 함께 열리는 반은 그 줄의 설명으로 붙인다 —
@@ -41,16 +41,14 @@ export default async function ClassPage() {
   /**
    * 함께 듣는 시간은 **시간대 × 과목**으로 보여 준다 (2026-09-16 Alan 요청 —
    * "10:00-11:00 LC / 11:10-12:10 RC 이거 시간대별로 자동매칭해서 표시해주는게 더 좋을 것 같아").
-   * 과목은 반의 LC 교재(`book_set`)가 말해 준다 (`subjectsWithin`).
-   * 묶음 반·스파르타 반 줄은 뺀다 — 교실에 앉아 있는 시간이 아니라 그 시간들을 담는 그릇이고,
-   * `10:00–12:10` 이 `10:00–11:00` 옆에 같이 있으면 몇 시에 무엇을 듣는지 되레 흐려진다.
+   *
+   * **내 반이 실제로 여는 시간만** 붙인다 — 그 날 내려온 반을 다 붙였더니 등록하지도 않은
+   * 750·850·저녁반까지 줄줄이 나왔다 (2026-09-16 Alan 지적). 포함 관계는 DB 가 정한다
+   * (`term_section_includes` → `private.section_includes`). 판정은 `lib/class-hours.ts`.
    */
-  // 반 하나가 회차 수만큼 들어 있으므로 먼저 추린다 (묶음 판정은 반 단위다)
-  const packages = sectionPackages([...new Map(rows.map((s) => [s.section!.id, s.section!])).values()]);
-  const isUnit = (sec: NonNullable<(typeof rows)[number]["section"]>) =>
-    (packages.get(sec.id)?.parts.length ?? 0) === 0 && sec.course?.program !== "sparta";
+  const includes = await getMySectionIncludes(rows.map((s) => s.section!.term_id));
 
-  const partsOf = new Map<number, Part[]>();
+  const partsOf = new Map<number, ClassHour[]>();
   const sessions: typeof rows = [];
   for (const list of byDay.values()) {
     const own = direct.size ? list.filter((s) => direct.has(s.section!.id)) : [];
@@ -60,23 +58,10 @@ export default async function ClassPage() {
       sessions.push(...list.filter((s) => !(hasReal && s.section!.course?.program === "sparta")));
       continue;
     }
-    // 그 날 실제로 앉아 있는 시간 단위 반만, 시작 시각 순으로. 같은 시간·같은 강좌가 겹치면 하나만
-    const units = list.filter((s) => isUnit(s.section!) && s.section!.time_block);
-    const subject = subjectsWithin(units.map((s) => s.section!));
-    const seen = new Set<string>();
-    const hours: Part[] = units
-      .sort((a, b) => (parseTimeBlock(a.section!.time_block)?.start ?? 0) - (parseTimeBlock(b.section!.time_block)?.start ?? 0))
-      .flatMap((s) => {
-        const key = `${s.section!.course_id}|${s.section!.time_block}`;
-        if (seen.has(key)) return [];
-        seen.add(key);
-        return [{ block: dashLabel(s.section!.time_block!), subject: subject.get(s.section!.id) ?? null, course: s.section!.course?.name ?? null }];
-      });
-
+    const sameDay = list.map((s) => s.section!);
     for (const o of own) {
-      // 내가 등록한 줄이 곧 그 시간 하나면 굳이 아래에 한 번 더 적지 않는다
-      const others = isUnit(o.section!) ? hours.filter((h) => h.block !== dashLabel(o.section!.time_block ?? "")) : hours;
-      if (others.length) partsOf.set(o.id, others);
+      const hours = toClassHours(classHours(o.section!.id, sameDay, includes));
+      if (hours.length) partsOf.set(o.id, hours);
       sessions.push(o);
     }
   }
