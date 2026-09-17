@@ -68,7 +68,10 @@ export async function signInWithSocial(formData: FormData) {
   redirect(data.url);
 }
 
-const GENDERS = new Set(["male", "female", "other", "undisclosed"]);
+// 폼이 보내는 값만 받는다 — 화면에 없는 `other` 는 새로 저장하지 않는다 (2026-09-17 Alan: 여자·남자만).
+// `undisclosed` 는 남는다: 성별은 선택 항목이라 안 고르면 이 값이 된다.
+// **DB check 와 분석 화면의 `other` 는 그대로 둔다** — 이미 그 값으로 가입한 회원의 기록이다.
+const GENDERS = new Set(["male", "female", "undisclosed"]);
 
 /** 가입 폼과 가입 정보 입력 폼이 함께 쓰는 값 (실명·휴대폰·대학·학과·성별·동의) */
 function readProfileValues(formData: FormData) {
@@ -86,7 +89,7 @@ function readProfileValues(formData: FormData) {
 /** 두 폼의 공통 검사. 통과하면 undefined */
 function validateProfileValues(values: ReturnType<typeof readProfileValues>) {
   if (values.name.length < 2) return "실명을 정확히 입력해 주세요. 수강증의 이름과 같아야 등업이 됩니다.";
-  if (!/^01\d{8,9}$/.test(values.phone)) return "휴대폰 번호를 확인해 주세요. (예: 01012345678)";
+  if (!/^01\d{8,9}$/.test(values.phone)) return "휴대폰 번호를 확인해 주세요. (예: 010-1234-5678)";
   if (!GENDERS.has(values.gender)) return "성별 선택이 올바르지 않습니다.";
   if (values.agree !== "on") return "개인정보 수집·이용에 동의해 주세요.";
   return undefined;
@@ -172,7 +175,7 @@ export async function completeProfile(_prev: AuthState, formData: FormData): Pro
     const msg = error.message.includes("invalid_name")
       ? "실명을 정확히 입력해 주세요."
       : error.message.includes("invalid_phone")
-        ? "휴대폰 번호를 확인해 주세요. (예: 01012345678)"
+        ? "휴대폰 번호를 확인해 주세요. (예: 010-1234-5678)"
         : "저장하지 못했어요. 잠시 후 다시 시도해 주세요.";
     return { error: msg, values };
   }
