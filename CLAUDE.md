@@ -202,6 +202,17 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   배경 투명 PNG, 두 장 모두 높이 1500px·머리 380px·얼굴이 가로 중앙이라 같은 높이로 나란히 두면 구도가 맞는다.
   경로·크기는 `site.instructors[].photo` 한곳에서 읽는다. 원본은 OneDrive `바탕 화면/역전토익/강사프로필/` (이영수는 검정·파란 의상도 있음).
   흰 재킷(이혜영)은 핫핑크 배경, 핫핑크 재킷(이영수)은 잉크 배경에서 살아난다
+- **강사 소개 블록** (2026-09-17 Alan 제공 — 소개 슬라이드 2장, "애니메이션 효과도 잘 들어가면서"). 랜딩 강사 소개는
+  **강사마다 한 줄 = 사진 카드 + 소개 블록**이고, 사진이 왼쪽·오른쪽으로 번갈아 선다 (lg 이상. 좁으면 카드 → 소개 세로).
+  문구는 전부 `site.instructors[]` 의 `tagline`·`taglineMark`·`education`·`years`·`highlights`·`awards` 에서 읽는다 —
+  **Alan 이 준 그대로**이고 고친 것은 오타 `멤돈다`→`맴돈다` 와 원본의 `**`(각주 표시인데 각주가 없다) 삭제뿐. `P어학원` 은 원본 표기 그대로.
+  블록은 위에서부터 **칩(담당·경력) → 캐치프레이즈 → 학력 → 강점 두 카드 → 수상 알약**. 스크롤로 들어오면 네 가지가 움직인다:
+  ① 캐치프레이즈의 강조어(`taglineMark`) 밑에 **형광펜이 왼쪽에서 그어진다** (`.mark-sweep`, globals.css),
+  ② 경력 햇수가 **세어 올라간다** (`CountUp`), ③ 강점 카드 → 그 안의 줄 → 수상 알약이 **차례로 뜬다** (`.stagger` + 자식마다 inline `transition-delay`),
+  ④ 사진 카드는 그대로 `Reveal`. ①③ 은 `.reveal.is-visible` 에 묶여 있어 **Reveal 없이 쓰면 영영 안 보인다** — 반드시 `Reveal` 안에 둘 것.
+  움직임 줄이기(`prefers-reduced-motion`)면 전부 바로 보인다. 순서 간격을 `nth-child` 로 못박지 않은 것은 항목 수가 늘면 뒤가 잘리기 때문.
+  글머리는 브랜드색 점, 강점 머리는 힉스필드 `lc`·`bolt`·`target` 아이콘(`highlights[].icon`), 수상은 `rank1`(월계관) — 이모지를 쓰지 않는다.
+  카드 이름표의 한 줄 소개는 뺐다 (소개 블록이 맡는다). **강조어 `taglineMark` 는 `white-space: nowrap`** 이라 너무 길게 잡지 말 것 — 좁은 화면에서 넘친다.
 - **강사 캐주얼 컷** (2026-09-16 Alan 요청): 얼굴은 유지하고 의상·자세만 힉스필드(Nano Banana Pro)로 바꾼 뒤 배경을 지운 무릎 위 컷.
   `public/instructors/casual/` — 이혜영 `point`(가리키기)·`notebook`(노트+헤드폰, 크림 니트 가디건+청바지),
   이영수 `thumbsup`·`tablet`(데님 재킷+흰 티+블랙 와이드). `site.instructors[].casual` 에 등록하고 `<InstructorCameo name pose />` 로만 쓴다.

@@ -55,11 +55,34 @@ export const site = {
   // 강사 사진: 배경 투명 PNG. 두 장 모두 머리 크기(380px)·구도가 같고 얼굴이 가로 중앙이라 나란히 둬도 맞는다
   // casual: 원본 얼굴을 유지한 채 힉스필드(Nano Banana Pro)로 의상·자세만 바꾸고 배경을 지운 컷. 무릎 위까지라
   //         설명 구간 곳곳에 <InstructorCameo /> 로 등장시킨다. 손짓 방향은 모두 화면 왼쪽 → 콘텐츠 오른쪽에 둔다
+  /**
+   * 강사 소개 (2026-09-17 Alan 제공 — 소개 슬라이드 2장을 옮겨 적었다).
+   * `tagline`·`education`·`years`·`highlights`·`awards` 가 랜딩 강사 소개의 설명 블록이 된다.
+   * **문구는 Alan 이 준 그대로다.** 고친 것은 두 가지뿐 — 오타 `멤돈다` → `맴돈다`, 원본의 `**`(각주 표시, 각주 없음) 삭제.
+   * `P어학원` 은 원본 표기 그대로 (이전 학원 이름을 가린 것).
+   */
   instructors: [
     {
       name: "이혜영",
       part: "LC",
-      desc: "미국 Brigham Young University 영어교육학 전공. 역전토익 대표 강사.",
+      /** 한 줄 캐치프레이즈. `taglineMark` 부분에 형광펜이 그어진다 (Instructors.tsx) */
+      tagline: "귀에 때려 박는듯한 텐션과 압도적인 전달",
+      taglineMark: "압도적인 전달",
+      education: "미국 Brigham Young University 영어교육학 전공",
+      years: 15,
+      highlights: [
+        {
+          icon: "lc",
+          title: "지인이 검증하고 추천하는 뇌에 박히는 강의",
+          points: ["명쾌한 목소리로 영어가 귀에 착착 감긴다는 전설의 LC강사", "좌중을 유쾌한 매력으로 1시간이 순삭되는 마력의 수업"],
+        },
+        {
+          icon: "target",
+          title: "숨만 쉬고 있어도 오르는 점수",
+          points: ["체계적인 반복으로 숨만 쉬고 있어도 점수가 오른다!", "토익 LC 만점 수강생이 인정한 압도적인 전달력과 몰입도 높은 강의"],
+        },
+      ],
+      awards: ["P어학원 최우수 강사 선정", "P어학원 수강생이 직접 뽑은 토익부문 최우수 강사 선정", "지인추천 압도적인 강사추천도"],
       photo: { src: "/instructors/lee-hyeyoung.png", width: 827, height: 1500 },
       casual: [
         { pose: "point", src: "/instructors/casual/lee-hyeyoung-point.png", width: 655, height: 1400 },
@@ -69,7 +92,23 @@ export const site = {
     {
       name: "이영수",
       part: "RC",
-      desc: "부산대학교 영어영문학과 전공. 역전토익 대표 강사.",
+      tagline: "몰입도 높은 & 뇌에 박히는 강의 전문가",
+      taglineMark: "뇌에 박히는 강의",
+      education: "부산대학교 영어영문학과 졸업",
+      years: 12,
+      highlights: [
+        {
+          icon: "bolt",
+          title: "몰입도 높은 고퀄리티 강의",
+          points: ["10분 같은 1시간!", "미친 입담으로 연극을 보는 듯한 독해 수업"],
+        },
+        {
+          icon: "target",
+          title: "쉽게 이해할 수 있는 핵심만 다루는 족집게식 수업",
+          points: ["시험장에서 쌤 목소리가 귓가에 맴돈다!", "무엇을 버려야 하는지도 알려준다!", "수강생들이 인정한 미친 적중률을 자랑하는 강의"],
+        },
+      ],
+      awards: ["P어학원 최우수 강사 선정", "지인추천 압도적인 강사추천도"],
       photo: { src: "/instructors/lee-yeongsu.png", width: 1233, height: 1500 },
       casual: [
         { pose: "thumbsup", src: "/instructors/casual/lee-yeongsu-thumbsup.png", width: 681, height: 1400 },
