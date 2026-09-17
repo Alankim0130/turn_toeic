@@ -137,3 +137,16 @@ export function sectionPackages<T extends SectionLike>(list: T[]): Map<number, {
   }
   return out;
 }
+
+/**
+ * 이 시간대 줄이 **화목금 인강**인가 (2026-09-17 Alan: "650반도 저녁에는 화목금 인강이야", "저녁반만 화목금 인강인데 전체가 다 그런것처럼 보여").
+ *
+ * `flagged` 는 `timetable_slots.ttf_recorded` 가 켜진 시간대 라벨 집합이다. 줄 자신이 켜져 있거나,
+ * 묶음(120분)이라 자기 라벨은 없어도 **안의 시간 단위가 전부** 켜져 있으면 인강으로 본다 —
+ * 마이그레이션은 셋 다 켜 두지만, 손으로 고치다 부모만 빠져도 저녁 줄에서 표시가 사라지지 않게.
+ * **카드 전체가 아니라 이 줄에만 붙인다** — 카드 바닥에 두면 오전 반까지 인강처럼 읽힌다.
+ */
+export function isRecordedBlock(node: BlockNode, flagged: ReadonlySet<string>): boolean {
+  if (flagged.has(node.label)) return true;
+  return node.parts.length > 0 && node.parts.every((p) => flagged.has(p.label));
+}
