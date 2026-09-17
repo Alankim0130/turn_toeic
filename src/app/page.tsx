@@ -4,6 +4,7 @@ import { Hero } from "@/components/landing/Hero";
 import { Marquee } from "@/components/landing/Marquee";
 import { IntroVideo } from "@/components/landing/IntroVideo";
 import { Stats } from "@/components/landing/Stats";
+import { Reviews } from "@/components/landing/Reviews";
 import { Features } from "@/components/landing/Features";
 import { Curriculum } from "@/components/landing/Curriculum";
 import { Mode } from "@/components/landing/Mode";
@@ -60,6 +61,7 @@ export default function HomePage() {
       <Marquee />
       <IntroVideo />
       <Stats />
+      <Reviews />
       <Features />
       <Curriculum />
       <Mode />

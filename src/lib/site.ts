@@ -24,6 +24,19 @@ export const site = {
    * 썸네일을 눌러야 유튜브를 불러오므로(`IntroVideo`) 안 보는 방문자에게는 전송량이 들지 않는다.
    */
   introVideo: { id: "YuRcsGJahTs", label: "역전토익 소개 영상" },
+  /**
+   * YBM 공식 수강후기 화면 캡쳐 (2026-09-17 Alan 제공). `public/reviews/` 의 WebP 를 그대로 보여 준다.
+   *
+   * **본문을 옮겨 적지 않는다** — 캡쳐 이미지가 원문이고, 여기 적는 것은 카드 겉면과 `alt` 에 쓸
+   * 제목·강좌·작성자·날짜뿐이다. 작성자 아이디는 YBM 이 가린 그대로(`dlfud19****`) 둔다.
+   * 후기를 더하려면 이미지를 `public/reviews/` 에 넣고 이 배열에 한 줄 더한다 (자동 수집은 미확정 8).
+   */
+  reviews: [
+    { src: "/reviews/1.webp", w: 900, h: 1425, title: "역전토익 적극 추천 수강 후기", course: "700+중급 한달 점수보장반", author: "dlfud19****", date: "2025-05-29" },
+    { src: "/reviews/2.webp", w: 900, h: 1368, title: "역전토익은 새로운시작이다", course: "600+기초 한달 점수보장반", author: "miin2****", date: "2025-05-29" },
+    { src: "/reviews/3.webp", w: 898, h: 1612, title: "역전토익 강사님들은 토익 요령을 귀에 다이렉트로 꼽아주십니다", course: "600+기초 한달 점수보장반", author: "yebbi77****", date: "2025-05-23" },
+    { src: "/reviews/4.webp", w: 900, h: 1607, title: "역전토익은 빛이다", course: "700+중급 두달완성", author: "tnwl99****", date: "2025-05-23" },
+  ],
   // 강사 사진: 배경 투명 PNG. 두 장 모두 머리 크기(380px)·구도가 같고 얼굴이 가로 중앙이라 나란히 둬도 맞는다
   // casual: 원본 얼굴을 유지한 채 힉스필드(Nano Banana Pro)로 의상·자세만 바꾸고 배경을 지운 컷. 무릎 위까지라
   //         설명 구간 곳곳에 <InstructorCameo /> 로 등장시킨다. 손짓 방향은 모두 화면 왼쪽 → 콘텐츠 오른쪽에 둔다
