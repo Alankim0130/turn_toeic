@@ -5,6 +5,7 @@ import { Reveal } from "@/components/ui/Reveal";
 import { formatDate, cn } from "@/lib/utils";
 import { getMyVerifications, getOpenEnrollSections, VERIFICATION_STATUS_LABEL } from "../_lib/queries";
 import { VerifyForm } from "./VerifyForm";
+import { NoReceiptCard } from "./NoReceiptCard";
 
 export const metadata: Metadata = {
   title: "등업신청",
@@ -47,7 +48,12 @@ export default async function VerifyPage() {
             </section>
           </Reveal>
 
-          <Reveal delay={80}>
+          {/* 수강증이 아예 없는 학생 (YBM 미가입) — 회원가입 → 데스크 계정 연동 안내 */}
+          <Reveal delay={60}>
+            <NoReceiptCard />
+          </Reveal>
+
+          <Reveal delay={120}>
             <section className="card border-brand-200 p-5">
               <h2 className="text-base font-black text-ink">개인정보 안내</h2>
               <dl className="mt-3 space-y-2 text-sm">
