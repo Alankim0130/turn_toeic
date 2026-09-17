@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Reveal } from "@/components/ui/Reveal";
-import { Icon } from "@/components/ui/Icon";
 import { InstructorCameo } from "@/components/ui/InstructorCameo";
-import { formatTime, todayKST } from "@/lib/utils";
+import { todayKST } from "@/lib/utils";
 import { PROGRAMS, SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
-import { blockMinutes, buildBlockTree, dashLabel, minutesLabel } from "@/lib/time-blocks";
 import { timeBlockOf } from "@/components/admin/sections/bulk";
+import { TimetableCard, type TimetableCardData } from "./TimetableCard";
 
 /**
  * 목표 점수반별 수업 시간 (timetable_levels · timetable_slots). 매달 편성하는 반과 별개인 대표 시간표.
@@ -19,24 +18,28 @@ async function loadTimetable() {
   const season = seasonOfMonth(Number(todayKST().slice(5, 7)));
   const { data } = await supabase
     .from("timetable_levels")
-    .select("level, note, timetable_slots(program, season, start_time, end_time)")
+    .select("level, note, timetable_slots(program, season, start_time, end_time, ttf_recorded)")
     .order("sort_order")
     .order("start_time", { referencedTable: "timetable_slots" });
 
   const rows = data ?? [];
-  const pick = (want: string) =>
+  const pick = (want: string): TimetableCardData[] =>
     PROGRAMS.flatMap((program) =>
       rows.map((t) => ({
         key: `${program}-${t.level}`,
         level: t.level,
         program,
-        // 레벨 안내(예: 월수금반 현장, 화목금반 인강)는 점수보장반 시간표 기준이다
+        // 레벨 메모는 점수보장반 카드에만. **인강 여부는 여기가 아니라 시간대마다** `recorded` 로 넘긴다
         note: program === "score" ? t.note : null,
-        timetable_slots: t.timetable_slots
+        slots: t.timetable_slots
           .filter((s) => s.season === want && s.program === program)
-          .sort((a, b) => a.start_time.localeCompare(b.start_time) || a.end_time.localeCompare(b.end_time)),
+          .sort((a, b) => a.start_time.localeCompare(b.start_time) || a.end_time.localeCompare(b.end_time))
+          .flatMap((s) => {
+            const label = timeBlockOf(s.start_time, s.end_time);
+            return label ? [{ label, recorded: s.ttf_recorded }] : [];
+          }),
       })),
-    ).filter((t) => t.timetable_slots.length > 0);
+    ).filter((t) => t.slots.length > 0);
 
   const wanted = pick(season);
   if (wanted.length > 0) return { levels: wanted, season, fallback: false };
@@ -73,46 +76,7 @@ export async function Schedule() {
       {timetable.length > 0 && (
         <div className="relative z-10 mt-10 grid gap-4 md:grid-cols-3">
           {timetable.map((t, i) => (
-            <Reveal key={t.key} delay={i * 80} className="card flex flex-col p-6">
-              <div className="flex items-center gap-3">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-50">
-                  <Icon name="timeslot" size={30} />
-                </span>
-                <h3 className="text-2xl font-black tracking-tight text-ink">
-                  {t.program === "sparta" && <span className="mr-1.5 text-lg text-brand-600">스파르타</span>}
-                  {t.level}
-                  <span className="ml-0.5 text-lg">반</span>
-                </h3>
-              </div>
-              {/* 등록 단위(120분 · 140분)를 크게, 그 안의 60분 · 70분 시간 단위를 아래에 — 60분만 듣는 반도 있다 (2026-09-16 Alan) */}
-              <ul className="mt-5 space-y-2">
-                {buildBlockTree(
-                  t.timetable_slots.map((s) => timeBlockOf(s.start_time, s.end_time)),
-                  { nest: t.program === "score" },
-                ).map((node) => {
-                  const minutes = minutesLabel(blockMinutes(node));
-                  return (
-                    <li key={node.label} className="rounded-xl bg-brand-50 px-4 py-3 text-center">
-                      <p className="text-xl font-black tabular-nums text-brand-600">
-                        {formatTime(node.label.slice(0, 5))} ~ {formatTime(node.label.slice(6))}
-                        {minutes && <span className="ml-1.5 align-middle text-xs font-black text-brand-700">{minutes}</span>}
-                      </p>
-                      {node.parts.length > 0 && (
-                        <p className="mt-1 text-xs font-semibold text-slate">
-                          {node.parts.map((p) => `${dashLabel(p.label)}${minutesLabel(blockMinutes(p)) ? ` (${minutesLabel(blockMinutes(p))})` : ""}`).join(" · ")}
-                          <span className="block text-[11px] font-normal text-mist">한 시간만 듣는 반도 있어요</span>
-                        </p>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-              {t.note && (
-                <p className="mt-3 rounded-xl border border-brand-200 px-4 py-2.5 text-center text-sm font-bold text-brand-700">
-                  {t.note}
-                </p>
-              )}
-            </Reveal>
+            <TimetableCard key={t.key} card={t} delay={i * 80} />
           ))}
         </div>
       )}
