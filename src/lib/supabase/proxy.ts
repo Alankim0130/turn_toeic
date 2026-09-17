@@ -31,7 +31,8 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname, search } = request.nextUrl;
-  const needsAuth = pathname.startsWith("/my") || pathname.startsWith("/admin");
+  // /signup/complete 는 구글로 들어온 회원의 가입 정보 입력 — 로그인해야 의미가 있다 (화면의 redirect 보다 먼저 307 을 내린다)
+  const needsAuth = pathname.startsWith("/my") || pathname.startsWith("/admin") || pathname.startsWith("/signup/complete");
   const isAuthPage = pathname === "/login" || pathname === "/signup";
 
   if (!user && needsAuth) {

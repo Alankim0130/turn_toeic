@@ -1398,6 +1398,16 @@ export type Database = {
       }
     }
     Functions: {
+      complete_profile: {
+        Args: {
+          p_department?: string | null
+          p_gender?: string | null
+          p_name: string
+          p_phone: string
+          p_university?: string | null
+        }
+        Returns: undefined
+      }
       my_section_ids: { Args: never; Returns: number[] }
       save_term_schedule: {
         Args: {
