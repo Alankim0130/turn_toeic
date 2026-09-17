@@ -3,6 +3,7 @@ import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
 import { cn, formatTime, RECORDED_LABEL } from "@/lib/utils";
 import { blockMinutes, buildBlockTree, dashLabel, isRecordedBlock, minutesLabel } from "@/lib/time-blocks";
+import { courseShortName, PROGRAM_LABEL } from "@/lib/timetable";
 
 export type TimetableCardData = {
   key: string;
@@ -13,7 +14,7 @@ export type TimetableCardData = {
   /** 이미 라벨(`HH:MM~HH:MM`)로 바꾼 시간대와, 그 시간대가 화목금 인강인지 (`timetable_slots.ttf_recorded`) */
   slots: { label: string; recorded: boolean }[];
   /**
-   * 스파르타 카드만: 강좌 이름(`courses.name`)과 함께 듣는 레벨 (`courses.includes_levels`, 자기 레벨이 앞).
+   * 스파르타 카드만: 강좌 이름(`courses.name`, 제목에는 `courseShortName` 으로 "중급속성"만)과 함께 듣는 레벨 (`courses.includes_levels`, 자기 레벨이 앞).
    * 2026-09-17 Alan — "650 중급속성 = 650 + 850 이렇게 수업을 듣는거야. 750 실전속성 = 750 + 850".
    * 강좌 행이 없으면 null — 구성을 짐작해서 적지 않는다
    */
@@ -42,17 +43,21 @@ export function TimetableCard({ card, delay = 0 }: { card: TimetableCardData; de
           <Icon name="timeslot" size={30} />
         </span>
         <h3 className="text-2xl font-black tracking-tight text-ink">
-          {card.program === "sparta" && <span className="mr-1.5 text-lg text-brand-600">스파르타</span>}
           {card.level}
-          <span className="ml-0.5 text-lg">반</span>
+          {card.program === "sparta" ? (
+            // 스파르타 카드는 "650 중급속성" — 이름은 courses.name 에서 온다 (2026-09-17 Alan "스파르타라고 하지말고 중급속성과 실전속성으로").
+            // 강좌 행이 없을 때만 과정 이름으로 대신한다
+            <span className="ml-1.5 text-lg text-brand-600">{card.sparta ? courseShortName(card.sparta.name) : PROGRAM_LABEL.sparta}</span>
+          ) : (
+            <span className="ml-0.5 text-lg">반</span>
+          )}
         </h3>
       </div>
 
       {/* 스파르타는 두 레벨 수업을 함께 듣는다 — 어느 반인지 강좌 행(courses)에서 읽어 그대로 적는다 */}
       {card.sparta && (
         <div className="mt-4 rounded-xl border border-brand-200 bg-white px-4 py-3 text-center" data-sparta>
-          <p className="text-sm font-bold text-ink">{card.sparta.name}</p>
-          <p className="mt-2 flex flex-wrap items-center justify-center gap-1.5">
+          <p className="flex flex-wrap items-center justify-center gap-1.5">
             {card.sparta.levels.map((lv, i) => (
               <Fragment key={lv}>
                 {i > 0 && <span className="text-base font-black text-brand-600">+</span>}

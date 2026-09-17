@@ -32,3 +32,14 @@ export type Program = (typeof PROGRAMS)[number];
 export const PROGRAM_LABEL: Record<Program, string> = { score: "한 달 점수보장반", sparta: "스파르타반" };
 
 export const isProgram = (v: unknown): v is Program => typeof v === "string" && (PROGRAMS as readonly string[]).includes(v);
+
+/**
+ * 강좌 이름에서 랜딩 카드에 쓸 짧은 이름 — `스파르타 650+ 중급속성` → `중급속성`
+ * (2026-09-17 Alan "이름을 스파르타라고 하지말고 중급속성과 실전속성으로 해줘").
+ * 앞의 과정 이름(스파르타)과 레벨 토큰(`650+` · `650`)만 뗀다 — 이름은 `courses.name` 한곳이고 코드에 적지 않는다.
+ * 떼고 나서 남는 글자가 없으면 원래 이름 그대로 돌려준다 (지어내지 않는다)
+ */
+export function courseShortName(name: string): string {
+  const short = name.trim().replace(/^스파르타\s*/, "").replace(/^\d{3,4}\+?\s*/, "").trim();
+  return short || name.trim();
+}
