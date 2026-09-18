@@ -291,7 +291,7 @@ describe("receiptComplete — 판정 키가 다 읽혔는가 (OCR 이 남은 변
 08월 과정
 역전토익 [종합반]
 650 목표
-수강생 김윤이
+수강생 김민수
 수강센터 부산 서면센터
 강사 이영수 .이혜영
 강의실 온라인 강의
@@ -307,5 +307,16 @@ describe("receiptComplete — 판정 키가 다 읽혔는가 (OCR 이 남은 변
     expect(receiptComplete(FULL.replace("08월 과정\n", ""))).toBe(false);
     expect(receiptComplete(FULL.replace("수강시간 10:00~12:10", ""))).toBe(false);
     expect(receiptComplete(FULL.replace("650 목표\n", "").replace("역전토익 [종합반]", "역전토익 [종합반]"))).toBe(false);
+  });
+});
+
+describe("캡처 시각 (현재시간 줄)", () => {
+  it("현재시간 줄의 날짜를 읽는다 — 공백이 빠져도", () => {
+    expect(parseReceipt("현재시간 2026-08-07 16:19:02\n08월 과정").capturedOn).toBe("2026-08-07");
+    expect(parseReceipt("현재시간 2026-08-0716:19:02").capturedOn).toBe("2026-08-07");
+  });
+  it("현재시간 라벨이 안 읽혔으면 첫 날짜, 날짜가 없으면 null", () => {
+    expect(parseReceipt("허재시간 2026-09-02 19:27:43").capturedOn).toBe("2026-09-02");
+    expect(parseReceipt("역전토익 [종합반] 650 목표").capturedOn).toBeNull();
   });
 });

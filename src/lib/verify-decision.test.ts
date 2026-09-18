@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseReceipt, parseReceiptMonths } from "./receipt";
-import { decideVerification } from "./verify-decision";
+import { decideVerification, isCaptureFresh } from "./verify-decision";
 
 const SEP = [{ year: 2026, month: 9 }];
 const SEP_OCT = [
@@ -135,5 +135,18 @@ describe("수강월 — 배지 `NN월 과정` 이 1순위 (2026-09-18 실물 수
   it("배지가 없으면 예전처럼 날짜로 본다", () => {
     const d = decideVerification(parseReceipt(card("", "2026-08-07 16:19:02")), SEP);
     expect(d).toMatchObject({ kind: "reject", code: "month" });
+  });
+});
+
+describe("캡처 신선도 — isCaptureFresh (자동 승인 조건)", () => {
+  it("45일 안이면 신선, 넘으면 아니다", () => {
+    expect(isCaptureFresh("2026-08-07", "2026-09-18")).toBe(true); // 42일
+    expect(isCaptureFresh("2026-08-01", "2026-09-18")).toBe(false); // 48일
+    expect(isCaptureFresh("2026-09-18", "2026-09-18")).toBe(true);
+  });
+  it("날짜를 못 읽었거나 며칠 미래면 판단하지 않는다(신선으로 본다)", () => {
+    expect(isCaptureFresh(null, "2026-09-18")).toBe(true);
+    expect(isCaptureFresh("2026-09-20", "2026-09-18")).toBe(true);
+    expect(isCaptureFresh("2026-10-18", "2026-09-18")).toBe(false);
   });
 });

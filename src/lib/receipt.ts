@@ -58,6 +58,11 @@ export type ParsedReceipt = {
    * **수강월을 가리키는 가장 직접적인 신호**다 — `months` 는 캡처 시각·결제일도 섞여 있다.
    */
   courseMonth: number | null;
+  /**
+   * 수강증 맨 위 `현재시간 2026-08-07 16:19:02` 의 날짜 (YYYY-MM-DD). 캡처한 시각이다.
+   * 너무 오래된 캡처(지난달 것을 다시 올리기)를 자동 승인에서 빼는 데 쓴다 — 위조 판별은 아니다.
+   */
+  capturedOn: string | null;
   /** 참고용. 판정에 쓰지 않는다 (수강료는 선택 항목) */
   tuition: number | null;
   warnings: string[];
@@ -225,6 +230,16 @@ export function parseCourseMonth(text: string): number | null {
   return month >= 1 && month <= 12 ? month : null;
 }
 
+/** `현재시간 2026-08-07 16:19:02` → "2026-08-07". 라벨이 안 읽혔으면 맨 처음 나오는 YYYY-MM-DD 로 본다 */
+export function parseCapturedOn(text: string): string | null {
+  const labeled = text.match(/현재\s*시간[^\d]{0,6}(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+  const m = labeled ?? text.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (y < 2020 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
 function parseTuition(compact: string): number | null {
   const m = compact.match(/(\d{1,3}(?:,\d{3})+|\d{5,})원/);
   if (!m) return null;
@@ -306,6 +321,7 @@ export function parseReceipt(raw: string): ParsedReceipt {
     time: times[0] ?? null,
     months: parseReceiptMonths(text),
     courseMonth: parseCourseMonth(text),
+    capturedOn: parseCapturedOn(text),
     tuition: parseTuition(compact),
     warnings,
   };

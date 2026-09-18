@@ -5,7 +5,9 @@ import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyStaff } from "@/lib/push";
-import { decideVerification, type VerifyTerm } from "@/lib/verify-decision";
+import { createHash } from "node:crypto";
+import { decideVerification, isCaptureFresh, type VerifyTerm } from "@/lib/verify-decision";
+import { todayKST } from "@/lib/utils";
 import { resolveEnrollChoice, type EnrollSection } from "@/lib/enroll-options";
 import { getOpenEnrollSections } from "../_lib/queries";
 import { parseReceipt, receiptComplete, receiptHasName, type ParsedReceipt } from "@/lib/receipt";
@@ -94,7 +96,14 @@ function notifyAutoApproved(admin: ReturnType<typeof createAdminClient>, userId:
   });
 }
 
-type ReadOk = { ok: true; parsed: ParsedReceipt; ocr: { engine: string; text: string; confidence: number | null }; nameMatches: boolean | null };
+type ReadOk = {
+  ok: true;
+  parsed: ParsedReceipt;
+  ocr: { engine: string; text: string; confidence: number | null };
+  nameMatches: boolean | null;
+  /** 파일 SHA-256 — 다른 계정이 같은 파일을 올렸는지 본다 (돌려쓰기 의심, 2026-09-18) */
+  hash: string;
+};
 /** 못 읽었을 때도 **왜** 못 읽었는지는 남긴다 (`ocr_raw.error`) — 승인 화면과 Vercel 로그에서 원인을 볼 수 있게 */
 type ReadReceipt = ReadOk | { ok: false; ocr: { engine: string; error: string } };
 
@@ -109,7 +118,9 @@ async function readReceipt(admin: ReturnType<typeof createAdminClient>, filePath
     return { ok: false, ocr: { engine: tesseractOcr.name, error: "download_failed" } };
   }
 
-  const outcome = await readReceiptText({ bytes: new Uint8Array(await file.arrayBuffer()), mimeType: file.type, filePath, enough: receiptComplete });
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const hash = createHash("sha256").update(bytes).digest("hex");
+  const outcome = await readReceiptText({ bytes, mimeType: file.type, filePath, enough: receiptComplete });
   if (!outcome.ok) return { ok: false, ocr: { engine: tesseractOcr.name, error: outcome.reason } };
   const ocr = outcome.result;
 
@@ -123,6 +134,7 @@ async function readReceipt(admin: ReturnType<typeof createAdminClient>, filePath
     parsed,
     ocr: { engine: ocr.engine, text: ocr.text, confidence: typeof confidence === "number" ? confidence : null },
     nameMatches,
+    hash,
   };
 }
 
@@ -165,8 +177,26 @@ export async function submitVerification(input: { filePath: string }): Promise<S
 
   // 반 대조 — 거절되지 않은 것만. 기록은 자동 승인이 안 되더라도 스태프가 본다
   const match = !rejected && read ? matchSections(read.parsed, sections) : null;
+
+  // 위조·돌려쓰기 의심 신호 (2026-09-18 Alan). 이미지만으로 위조를 가려낼 수는 없다 — 근본 대책은 YBM 등록 명단 대조(CLAUDE.md 미확정 11).
+  // 여기서는 **자동 승인만 막고** 스태프에게 이유를 보여 준다. 거절하지 않는다 (진짜 학생일 수 있다).
+  let duplicateImage = false;
+  if (read) {
+    const { count } = await admin.from("enrollment_verifications").select("id", { count: "exact", head: true }).eq("file_hash", read.hash).neq("user_id", user.id);
+    duplicateImage = (count ?? 0) > 0; // 다른 계정이 같은 파일을 올렸다
+  }
+  const staleCapture = !!read && !isCaptureFresh(read.parsed.capturedOn, todayKST()); // 캡처가 45일 넘게 오래됐다
+  const flags = { duplicateImage, staleCapture };
+
   const autoApprove =
-    !!read && !!match && match.result.kind === "match" && read.parsed.gates.academy && read.parsed.gates.brand && read.nameMatches === true;
+    !!read &&
+    !!match &&
+    match.result.kind === "match" &&
+    read.parsed.gates.academy &&
+    read.parsed.gates.brand &&
+    read.nameMatches === true &&
+    !duplicateImage &&
+    !staleCapture;
 
   const { data: inserted, error } = await admin
     .from("enrollment_verifications")
@@ -178,7 +208,8 @@ export async function submitVerification(input: { filePath: string }): Promise<S
       reject_reason: rejected ? decision.reason : null,
       ocr_raw: outcome.ocr,
       parsed: read ? parsedSummary(read) : null,
-      candidates: match ? { rule: "key-match", result: match.result, log: match.log, nameMatches: read!.nameMatches } : null,
+      file_hash: read?.hash ?? null,
+      candidates: match ? { rule: "key-match", result: match.result, log: match.log, nameMatches: read!.nameMatches, flags } : null,
     })
     .select("id")
     .single();

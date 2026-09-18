@@ -30,6 +30,22 @@ export type VerifyTerm = { year: number; month: number };
 export const MIN_RECEIPT_TEXT = 40;
 
 const termKey = (t: VerifyTerm) => `${t.year}-${t.month}`;
+
+/**
+ * 캡처가 너무 오래됐나 (2026-09-18 Alan "가상의 수강증을 만들어 올리면?" 대응 1단계).
+ * 위조를 가려내는 것은 아니다 — 지난달 수강증을 다시 올리거나 남의 옛 캡처를 쓰는 **게으른 재사용**을 자동 승인에서 뺀다.
+ * 개강 전에도 올릴 수 있어(규칙 5) 45일까지는 정상으로 본다. 날짜를 못 읽었으면 판단하지 않는다(true).
+ */
+export const MAX_CAPTURE_AGE_DAYS = 45;
+export function isCaptureFresh(capturedOn: string | null | undefined, today: string, maxDays = MAX_CAPTURE_AGE_DAYS): boolean {
+  if (!capturedOn) return true;
+  const a = Date.parse(`${capturedOn}T00:00:00Z`);
+  const b = Date.parse(`${today}T00:00:00Z`);
+  if (Number.isNaN(a) || Number.isNaN(b)) return true;
+  const days = Math.round((b - a) / 86_400_000);
+  // 미래 날짜(기기 시각이 틀린 캡처)도 며칠까지는 봐준다
+  return days <= maxDays && days >= -7;
+}
 export const termsLabel = (terms: readonly VerifyTerm[]) => terms.map((t) => `${t.year}년 ${t.month}월`).join(" · ");
 
 /**
