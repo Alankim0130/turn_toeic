@@ -1570,6 +1570,9 @@ where p.role='student'
      빌드 뒤 `.next/server/app/my/verify/page.js.nft.json` 에 `tesseract.js-core/*.wasm` 이 있어야 한다. LSTM 변형 셋(relaxedsimd · simd · 기본,
      js + wasm ≈ 9MB)만 넣고 `*.wasm.js`(브라우저용 base64 내장)는 뺀다. OCR 을 다른 페이지에서도 부르게 되면 그 경로도 키에 더할 것.
    - **워커가 죽어도 함수가 죽지 않게 `errorHandler` 를 준다** — 없으면 tesseract.js 가 메인 스레드에 그냥 던진다(uncaught exception).
+     그리고 **`createWorker` 는 언어 데이터·초기화가 실패해도 영영 끝나지 않는다**(안에서 삼킨다 — 실측: errorHandler 만 불린다).
+     그대로 두면 실패마다 30초 타임아웃을 다 기다리므로 `getWorker` 가 errorHandler 의 첫 오류로 **바로 실패**시킨다 (실측 0.2초).
+     실패한 워커 스레드는 손에 없어 못 끝내므로 5분 뒤에만 다시 만든다(`ocr_cooldown`).
      실패 사유는 `ocr_raw.error` 에 남고(승인 화면 "실패 사유", Vercel 로그 `[ocr] …`), 등업신청은 그대로 접수돼 검토 대기로 간다.
      페이지 함수는 `maxDuration = 60` (`src/app/my/verify/page.tsx`) — Vercel 기본 10초에 걸리지 않게. 학생 화면 버튼은 그동안 `수강증을 읽는 중…`.
    - 이 작업 환경은 `cdn.jsdelivr.net` 이 막혀 언어 데이터를 못 받는다 — 로컬 실측이 필요하면 git 이력의 `3c89e92:kor.traineddata` 를
