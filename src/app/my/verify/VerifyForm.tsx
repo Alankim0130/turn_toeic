@@ -88,7 +88,7 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rejected, setRejected] = useState<string | null>(null);
-  const [done, setDone] = useState<null | "auto" | "manual">(null);
+  const [done, setDone] = useState<null | "auto" | "manual" | "approved" | "preliminary">(null);
   const [pending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -187,7 +187,8 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
           : await submitVerification({ filePath: path });
 
         if (res.ok) {
-          setDone(manual ? "manual" : "auto");
+          // OCR 이 반을 찾아 바로 등업했으면 그렇게 말한다 (2026-09-18 자동 승인)
+          setDone(res.approved ? (res.preliminary ? "preliminary" : "approved") : manual ? "manual" : "auto");
           return;
         }
         if ("rejected" in res) {
@@ -202,6 +203,18 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
     } finally {
       setUploading(false);
     }
+  }
+
+  if (done === "approved" || done === "preliminary") {
+    return (
+      <Alert kind="success" title={done === "approved" ? "등업이 완료됐어요" : "예비등록이 완료됐어요"}>
+        수강증을 읽어 반을 바로 배정했어요.{" "}
+        {done === "approved"
+          ? "이제 불라방·다시보기·숙제업로드를 쓸 수 있어요. 내 시간표에서 배정된 반을 확인해 주세요."
+          : "개강일에 수강생으로 자동 전환되고, 그때부터 불라방·다시보기가 열려요."}{" "}
+        반이 잘못 배정됐다면 강사에게 알려 주세요 — 바로 정정해 드립니다.
+      </Alert>
+    );
   }
 
   if (done) {

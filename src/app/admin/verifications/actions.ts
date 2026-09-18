@@ -4,8 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { todayKST } from "@/lib/utils";
-import type { TablesInsert } from "@/lib/supabase/database.types";
+import { approveVerificationWith } from "@/lib/approve-verification";
 
 export type ActionState = { error?: string };
 
@@ -37,50 +36,9 @@ export async function approveVerification(_prev: ActionState, formData: FormData
   if (!ver) return { error: "검증 기록을 찾을 수 없습니다." };
   if (ver.result === "approved") return { error: "이미 승인된 기록입니다. 정정은 아래 배정 수정에서 해 주세요." };
 
-  const { data: sections } = await admin
-    .from("class_sections")
-    .select("id, enrollment_opens_at, closes_at")
-    .in("id", sectionIds);
-  if (!sections || sections.length !== sectionIds.length) return { error: "선택한 반을 찾을 수 없습니다." };
-
-  // 개강일 = 고른 반 중 가장 이른 개강일, 시청 만료일 = 가장 늦은 종강일
-  const today = todayKST();
-  const activatesOn = sections.map((s) => s.enrollment_opens_at).sort()[0];
-  const accessUntil = sections.map((s) => s.closes_at).sort().at(-1)!;
-  const status = activatesOn <= today ? "active" : "preliminary";
-
-  const { data: order, error: orderErr } = await admin
-    .from("enrollment_orders")
-    .insert({ user_id: ver.user_id, verification_id: id, months: 1, status, activates_on: activatesOn, access_until: accessUntil })
-    .select("id")
-    .single();
-  if (orderErr || !order) return { error: `등록 생성에 실패했습니다. ${orderErr?.message ?? ""}` };
-
-  const rows: TablesInsert<"enrollments">[] = sections.map((s) => ({
-    order_id: order.id,
-    student_id: ver.user_id,
-    section_id: s.id,
-    status: "active",
-    mode,
-  }));
-  const { error: enrErr } = await admin.from("enrollments").insert(rows);
-  if (enrErr) {
-    await admin.from("enrollment_orders").delete().eq("id", order.id);
-    return { error: enrErr.code === "23505" ? "이미 같은 반에 배정된 수강생입니다." : `반 배정에 실패했습니다. ${enrErr.message}` };
-  }
-
-  const { error: verErr } = await admin
-    .from("enrollment_verifications")
-    .update({ result: "approved", matched_section: sections[0].id, reject_reason: null })
-    .eq("id", id);
-  if (verErr) {
-    await admin.from("enrollment_orders").delete().eq("id", order.id);
-    return { error: `승인 기록 저장에 실패했습니다. ${verErr.message}` };
-  }
-
-  if (status === "active") {
-    await admin.from("profiles").update({ role: "student" }).eq("id", ver.user_id).in("role", ["member", "alumni"]);
-  }
+  // 승인 본체는 OCR 자동 승인과 같은 함수다 (src/lib/approve-verification.ts)
+  const approved = await approveVerificationWith(admin, { verificationId: id, userId: ver.user_id, sectionIds, mode });
+  if (!approved.ok) return { error: approved.error };
 
   revalidateAll(id);
   redirect(`/admin/verifications/${id}?done=approved`);

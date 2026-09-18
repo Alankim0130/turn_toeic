@@ -97,7 +97,11 @@ export default async function VerificationDetailPage({
     : null;
 
   // 수동 등업신청 — 학생이 직접 고른 반 (2026-09-17). 신청 기록일 뿐 확정이 아니다
-  const requested = (v.requested_section_ids ?? []).filter((n): n is number => typeof n === "number");
+  const requestedManual = (v.requested_section_ids ?? []).filter((n): n is number => typeof n === "number");
+  // OCR 이 반을 찾았는데 자동 승인 조건(이름 일치 등)에 못 미친 건 — 찾은 반을 미리 골라 둔다 (2026-09-18)
+  const matchLog = v.candidates as { result?: { kind?: string; sectionIds?: number[] } } | null;
+  const suggested = matchLog?.result?.kind === "match" ? (matchLog.result.sectionIds ?? []).filter((n) => typeof n === "number") : [];
+  const requested = requestedManual.length > 0 ? requestedManual : suggested;
   const requestedLabels = requested.map((id) => candidates.find((c) => c.id === id)?.label ?? `반 #${id}`);
 
   const isImage = /\.(png|jpe?g|webp|gif)$/i.test(v.file_path);
@@ -113,7 +117,8 @@ export default async function VerificationDetailPage({
         ["이름 일치", parsed.nameMatches === true ? "일치" : parsed.nameMatches === false ? "다름 — 확인 필요" : "확인 못 함"],
       ]
     : [];
-  const candidateLog = v.candidates as unknown[] | null;
+  // 반 대조 기록 — { rule, result, log[], nameMatches } (2026-09-18 자동 승인). 예전 점수 배열이어도 그대로 보여 준다
+  const candidateLog = v.candidates as Record<string, unknown> | unknown[] | null;
 
   return (
     <>
@@ -185,9 +190,9 @@ export default async function VerificationDetailPage({
             ) : (
               <p className="text-sm text-slate">수강증에서 글자를 읽지 못했습니다 (이미지가 아니거나 OCR 실패). 수강증을 보고 수동으로 승인해 주세요.</p>
             )}
-            {candidateLog && Array.isArray(candidateLog) && candidateLog.length > 0 && (
+            {candidateLog && (Array.isArray(candidateLog) ? candidateLog.length > 0 : Object.keys(candidateLog).length > 0) && (
               <>
-                <h3 className="mb-2 mt-4 text-sm font-bold text-slate">후보 점수</h3>
+                <h3 className="mb-2 mt-4 text-sm font-bold text-slate">반 대조 기록</h3>
                 <pre className="max-h-64 overflow-auto rounded-xl bg-surface p-3 text-xs leading-relaxed text-ink-soft">{JSON.stringify(candidateLog, null, 2)}</pre>
               </>
             )}

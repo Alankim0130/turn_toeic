@@ -10,8 +10,14 @@ import { resolveEnrollChoice, type EnrollSection } from "@/lib/enroll-options";
 import { getOpenEnrollSections } from "../_lib/queries";
 import { parseReceipt, receiptHasName, type ParsedReceipt } from "@/lib/receipt";
 import { readReceiptText } from "@/lib/ocr";
+import { matchSections } from "@/lib/match-sections";
+import { approveVerificationWith } from "@/lib/approve-verification";
 
-export type SubmitVerificationResult = { ok: true } | { ok: false; error: string } | { ok: false; rejected: true; reason: string };
+export type SubmitVerificationResult =
+  /** approved = OCR 이 반을 찾아 바로 등업했다. preliminary = 개강 전이라 예비등록생 */
+  | { ok: true; approved?: boolean; preliminary?: boolean }
+  | { ok: false; error: string }
+  | { ok: false; rejected: true; reason: string };
 
 /** 열린 반이 속한 기수 = 지금 받는 수강월 */
 function openTermsOf(sections: EnrollSection[]): VerifyTerm[] {
@@ -71,6 +77,21 @@ function notifyNew(admin: ReturnType<typeof createAdminClient>, userId: string, 
 function done() {
   revalidatePath("/my");
   revalidatePath("/my/verify");
+  revalidatePath("/admin");
+  revalidatePath("/admin/verifications");
+  revalidatePath("/admin/students");
+}
+
+/** OCR 이 반을 찾아 바로 등업한 것도 스태프에게 알린다 — 승인 화면에서 확인·정정할 수 있게 */
+function notifyAutoApproved(admin: ReturnType<typeof createAdminClient>, userId: string, status: "active" | "preliminary") {
+  after(async () => {
+    const { data: profile } = await admin.from("profiles").select("name").eq("id", userId).maybeSingle();
+    await notifyStaff("verification", {
+      title: "자동 등업 완료",
+      body: `${profile?.name || "회원"}님의 수강증을 읽어 반을 배정했어요${status === "preliminary" ? " (개강 전 — 예비등록생)" : ""}. 잘못됐으면 승인 화면에서 정정해 주세요.`,
+      url: "/admin/verifications?status=approved",
+    });
+  });
 }
 
 type ReadReceipt = { parsed: ParsedReceipt; ocr: { engine: string; text: string; confidence: number | null }; nameMatches: boolean | null };
@@ -111,8 +132,12 @@ function parsedSummary({ parsed, nameMatches }: ReadReceipt) {
  * 검토 대기로 쌓지 않고 이유를 적어 돌려준다. 판정은 `decideVerification` 한곳이다.
  *
  * **OCR 은 tesseract.js 로 서버에서 돌린다** (2026-09-16 Alan: "무료 OCR 로 진행", `src/lib/ocr.ts`).
- * 읽은 원문은 `ocr_raw`, 판독 결과는 `parsed` 에 남겨 스태프 화면에서 보이게 한다.
- * 자동 **승인**은 여전히 하지 않는다 (기준선이 미확정 3) — 여기서는 거절할 근거가 있을 때만 거절한다.
+ * 읽은 원문은 `ocr_raw`, 판독 결과는 `parsed`, 반 대조 기록은 `candidates` 에 남겨 스태프 화면에서 보이게 한다.
+ *
+ * **자동 승인** (2026-09-18 Alan: "반을 찾아서 자동승인까지"): 다음이 **전부** 맞을 때만 바로 등업한다 —
+ *   ① 게이트 통과(우리 센터 · 역전토익) ② 수강증 이름 = 가입 실명 ③ 열린 반 중 레벨·과정·시간대·수강월·트랙이
+ *   **딱 맞는 반이 정확히 그 수만큼**(주3일 1 · 주5일 2) 있음 (`matchSections`). 하나라도 어긋나면 스태프 검토로 간다 —
+ *   애매한데 넣으면 오배정이고, 오배정은 남의 반 다시보기를 열어 준다.
  * 이미지가 아니거나(PDF) OCR 이 실패하면 읽은 것이 없으니 그대로 검토 대기로 간다.
  */
 export async function submitVerification(input: { filePath: string }): Promise<SubmitVerificationResult> {
@@ -128,22 +153,48 @@ export async function submitVerification(input: { filePath: string }): Promise<S
 
   const read = await readReceipt(admin, filePath, profile?.name ?? null);
   const decision = decideVerification(read?.parsed ?? null, openTermsOf(sections));
-
   const rejected = decision.kind === "reject";
-  const { error } = await admin.from("enrollment_verifications").insert({
-    user_id: user.id,
-    file_path: filePath,
-    source: "auto",
-    result: rejected ? "rejected" : null,
-    reject_reason: rejected ? decision.reason : null,
-    ocr_raw: read ? read.ocr : null,
-    parsed: read ? parsedSummary(read) : null,
-  });
-  if (error) return { ok: false, error: "접수 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요." };
+
+  // 반 대조 — 거절되지 않은 것만. 기록은 자동 승인이 안 되더라도 스태프가 본다
+  const match = !rejected && read ? matchSections(read.parsed, sections) : null;
+  const autoApprove =
+    !!read && !!match && match.result.kind === "match" && read.parsed.gates.academy && read.parsed.gates.brand && read.nameMatches === true;
+
+  const { data: inserted, error } = await admin
+    .from("enrollment_verifications")
+    .insert({
+      user_id: user.id,
+      file_path: filePath,
+      source: "auto",
+      result: rejected ? "rejected" : null,
+      reject_reason: rejected ? decision.reason : null,
+      ocr_raw: read ? read.ocr : null,
+      parsed: read ? parsedSummary(read) : null,
+      candidates: match ? { rule: "key-match", result: match.result, log: match.log, nameMatches: read!.nameMatches } : null,
+    })
+    .select("id")
+    .single();
+  if (error || !inserted) return { ok: false, error: "접수 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요." };
 
   if (rejected) {
     done();
     return { ok: false, rejected: true, reason: decision.reason };
+  }
+
+  if (autoApprove && match.result.kind === "match") {
+    const approved = await approveVerificationWith(admin, {
+      verificationId: inserted.id,
+      userId: user.id,
+      sectionIds: match.result.sectionIds,
+      mode: read.parsed.mode,
+      confidence: 100,
+    });
+    if (approved.ok) {
+      notifyAutoApproved(admin, user.id, approved.status);
+      done();
+      return { ok: true, approved: true, preliminary: approved.status === "preliminary" };
+    }
+    // 승인 단계에서 막히면(이미 같은 반에 배정 등) 검토 대기로 남긴다 — 접수는 됐다
   }
 
   notifyNew(admin, user.id, false);

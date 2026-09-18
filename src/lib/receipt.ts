@@ -51,6 +51,11 @@ export type ParsedReceipt = {
    * 판정은 "이 중 하나라도 열린 기수면 통과" 로 쓴다 — 8월에 결제한 9월 강좌를 거절하지 않게.
    */
   months: { year: number; month: number }[];
+  /**
+   * 수강증 맨 위 배지 `09월 과정` 의 달 (1~12). 연도는 없다.
+   * **수강월을 가리키는 가장 직접적인 신호**다 — `months` 는 캡처 시각·결제일도 섞여 있다.
+   */
+  courseMonth: number | null;
   /** 참고용. 판정에 쓰지 않는다 (수강료는 선택 항목) */
   tuition: number | null;
   warnings: string[];
@@ -200,6 +205,18 @@ export function parseReceiptMonths(text: string): { year: number; month: number 
   return out;
 }
 
+/**
+ * `09월 과정` · `9월과정` → 9. 수강증 화면 맨 위 배지 (2026-09-16 샘플).
+ * 공백을 지운 원문에서는 바로 앞 줄의 캡처 시각 초(`…19:27:43`)가 `09` 에 붙어 `4309월과정` 이 되므로
+ * "앞에 숫자가 없어야 한다" 는 조건을 두면 못 읽는다 — 가장 왼쪽에서 `월 과정` 에 붙는 한두 자리만 본다.
+ */
+export function parseCourseMonth(text: string): number | null {
+  const m = text.match(/(\d{1,2})\s*월\s*과정/);
+  if (!m) return null;
+  const month = Number(m[1]);
+  return month >= 1 && month <= 12 ? month : null;
+}
+
 function parseTuition(compact: string): number | null {
   const m = compact.match(/(\d{1,3}(?:,\d{3})+|\d{5,})원/);
   if (!m) return null;
@@ -265,6 +282,7 @@ export function parseReceipt(raw: string): ParsedReceipt {
     times,
     time: times[0] ?? null,
     months: parseReceiptMonths(text),
+    courseMonth: parseCourseMonth(text),
     tuition: parseTuition(compact),
     warnings,
   };
