@@ -150,3 +150,25 @@ describe("캡처 신선도 — isCaptureFresh (자동 승인 조건)", () => {
     expect(isCaptureFresh("2026-10-18", "2026-09-18")).toBe(false);
   });
 });
+
+describe("다음 달 등록 미리 받기 (2026-09-18 Alan — 지난달은 배제, 다음 달은 예비등록생)", () => {
+  const card = (badge: string) =>
+    `현재시간 2026-09-18 10:00:00\n${badge}\n역전토익 [종합반]\n650 목표\n수강생 김민수\n수강센터 부산 서면센터\n강사 이영수 .이혜영\n강의실 본관 701호\n수강요일 [4주-10/07] 주5일 (월18회)\n수강시간 10:00~12:10`;
+
+  it("다음 달 반이 이미 열려 있으면(모집 중) 검토로 간다 → 승인되면 예비등록생", () => {
+    expect(decideVerification(parseReceipt(card("10월 과정")), SEP_OCT)).toEqual({ kind: "review" });
+  });
+  it("다음 달 반이 아직 안 열렸으면 '아직 열리지 않았어요' 로 거절한다 (지난달 문구와 다르다)", () => {
+    const d = decideVerification(parseReceipt(card("10월 과정")), SEP);
+    expect(d).toMatchObject({ kind: "reject", code: "month" });
+    expect((d as { reason: string }).reason).toContain("아직 열리지 않았어요");
+  });
+  it("지난달은 '지난 달' 로 거절한다", () => {
+    const d = decideVerification(parseReceipt(card("08월 과정")), SEP);
+    expect((d as { reason: string }).reason).toContain("지난 달");
+  });
+  it("12월에 열려 있을 때 1월 과정은 다음 달이다 (연도 넘김)", () => {
+    const d = decideVerification(parseReceipt(card("01월 과정")), [{ year: 2026, month: 12 }]);
+    expect((d as { reason: string }).reason).toContain("아직 열리지 않았어요");
+  });
+});
