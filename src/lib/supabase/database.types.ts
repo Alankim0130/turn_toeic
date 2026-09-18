@@ -192,6 +192,7 @@ export type Database = {
         Row: {
           book_set: string | null
           recorded: boolean
+          live_to_replay: boolean
           bundle_id: string | null
           capacity: number | null
           closes_at: string
@@ -213,6 +214,7 @@ export type Database = {
         Insert: {
           book_set?: string | null
           recorded?: boolean
+          live_to_replay?: boolean
           bundle_id?: string | null
           capacity?: number | null
           closes_at: string
@@ -234,6 +236,7 @@ export type Database = {
         Update: {
           book_set?: string | null
           recorded?: boolean
+          live_to_replay?: boolean
           bundle_id?: string | null
           capacity?: number | null
           closes_at?: string
@@ -1037,6 +1040,35 @@ export type Database = {
           },
         ]
       }
+      session_live_links: {
+        Row: {
+          live_url: string
+          promoted_at: string | null
+          session_date_id: number
+          updated_at: string
+        }
+        Insert: {
+          live_url: string
+          promoted_at?: string | null
+          session_date_id: number
+          updated_at?: string
+        }
+        Update: {
+          live_url?: string
+          promoted_at?: string | null
+          session_date_id?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_live_links_session_date_id_fkey"
+            columns: ["session_date_id"]
+            isOneToOne: true
+            referencedRelation: "session_dates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       section_live_links: {
         Row: {
           live_url: string
@@ -1613,6 +1645,7 @@ export type Database = {
         Returns: Json
       }
       sync_term_instructors: { Args: { p_term_id: number }; Returns: Json }
+      recorded_source_section: { Args: { p_section_id: number }; Returns: number | null }
       term_section_includes: {
         Args: { p_term_id: number }
         Returns: {

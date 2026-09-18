@@ -6,7 +6,7 @@ import type { EnrollSection } from "@/lib/enroll-options";
 /** 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다. */
 
 const SECTION_COLS = `
-  id, course_id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status, book_set, recorded,
+  id, course_id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status, book_set, recorded, live_to_replay,
   course:courses(name, course_type, target_score, program, includes_levels),
   term:terms(year, month)
 ` as const;
@@ -135,6 +135,42 @@ export async function getMyLiveLinks() {
   return data ?? [];
 }
 export type MyLiveLink = Awaited<ReturnType<typeof getMyLiveLinks>>[number];
+
+export type MyLiveCard = {
+  sectionId: number;
+  section: NonNullable<MyLiveLink["section"]>;
+  url: string;
+  /** today = 오늘 회차 링크 · next = 앞으로 올 회차 링크 · standing = 반의 상시 링크 */
+  kind: "today" | "next" | "standing";
+  seq?: number;
+  date?: string;
+};
+
+/**
+ * 불라방 카드 — 회차 링크가 우선이다 (2026-09-18 Alan: 오전반 라이브 주소가 끝나면 그대로 다시보기가 되므로 링크는 회차마다 다르다).
+ * 오늘 회차 링크 → 앞으로 올 가장 가까운 회차 링크 → 반의 상시 링크(Zoom 같은 고정 방) 순으로 하나만 고른다.
+ * 어느 반이 보이는지는 RLS(has_section_access)가 정한다.
+ */
+export async function getMyLiveCards(): Promise<MyLiveCard[]> {
+  const supabase = await createClient();
+  const today = todayKST();
+  const [{ data: standing }, { data: perSession }] = await Promise.all([
+    supabase.from("section_live_links").select(`section_id, live_url, updated_at, section:class_sections(${SECTION_COLS})`),
+    supabase.from("session_live_links").select(`session_date_id, live_url, session:session_dates(id, seq, date, section_id, section:class_sections(${SECTION_COLS}))`),
+  ]);
+  const cards = new Map<number, MyLiveCard>();
+  for (const l of standing ?? []) if (l.section) cards.set(l.section_id, { sectionId: l.section_id, section: l.section, url: l.live_url, kind: "standing" });
+  const upcoming = (perSession ?? [])
+    .filter((l) => l.session?.section && l.session.date >= today)
+    .sort((a, b) => a.session!.date.localeCompare(b.session!.date) || a.session!.seq - b.session!.seq);
+  for (const l of upcoming) {
+    const s = l.session!;
+    const prev = cards.get(s.section_id);
+    if (prev && prev.kind !== "standing") continue; // 더 가까운 회차 링크가 이미 있다
+    cards.set(s.section_id, { sectionId: s.section_id, section: s.section!, url: l.live_url, kind: s.date === today ? "today" : "next", seq: s.seq, date: s.date });
+  }
+  return [...cards.values()].sort((a, b) => a.sectionId - b.sectionId);
+}
 
 /** 오늘 이후 첫 수업일을 section_id 별로 */
 export async function getNextSessionBySection(sectionIds: number[]) {

@@ -7,7 +7,8 @@ import { Icon } from "@/components/ui/Icon";
 import { VideoEmbed } from "@/components/my/VideoEmbed";
 import { formatDate, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
 import { studentTrackLabel } from "@/lib/week5";
-import { getMyReplays, getMyWeek5, termLabel, type MyReplay } from "../_lib/queries";
+import { RECORDED_LABEL } from "@/lib/utils";
+import { getMyAccessibleSections, getMyReplays, getMyWeek5, termLabel, type MyReplay } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "강의 다시보기",
@@ -20,7 +21,10 @@ export default async function ReplayPage() {
   if (locked) return locked;
 
   const replays = (await getMyReplays()).filter((r) => r.session?.section);
-  const week5 = await getMyWeek5();
+  const mySections = await getMyAccessibleSections();
+  const week5 = await getMyWeek5(mySections);
+  // 저녁 화목금 인강 학생은 오전 짝 반의 다시보기를 본다 (2026-09-18) — 내 반이 아닌 반의 녹화본이면 그렇게 적어 준다
+  const mine = new Set(mySections.map((s) => s.id));
 
   if (replays.length === 0) {
     return (
@@ -59,6 +63,11 @@ export default async function ReplayPage() {
               <p className="font-black text-ink">{g.section.course?.name ?? "강좌"}</p>
               {/* 60분 반은 같은 강좌가 시간마다 따로 있다 — 시간대로 구분한다 */}
               {g.section.time_block && <span className="text-sm font-bold tabular-nums text-ink-soft">{g.section.time_block}</span>}
+              {mine.size > 0 && !mine.has(g.section.id) && (
+                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-black text-violet-800" title="교실에 나오지 않고 그 날 오전 수업 녹화본을 봐요">
+                  {RECORDED_LABEL} · 오전 수업 녹화본
+                </span>
+              )}
               <p className="ml-auto flex items-center gap-1 text-xs font-semibold text-slate">
                 <Icon name="timeslot" size={16} />
                 종강일 {formatDate(g.section.closes_at, { month: "long", day: "numeric" })}까지 시청 가능

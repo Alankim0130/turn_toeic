@@ -187,7 +187,10 @@ export function BulkCreateSections({
                 <div>
                   <p className="font-black text-ink">
                     {c.name}
-                    <span className="ml-2 text-xs font-bold text-slate">{COURSE_TYPE_LABEL[c.course_type] ?? c.course_type}</span>
+                    {/* 강좌의 종합/단과는 여기 적지 않는다 — 아래 60분 줄은 단과(LC 또는 RC), 120분 줄이 종합이라 강좌 이름 옆에 적으면 헷갈린다 */}
+                    {(c.course_type === "lc" || c.course_type === "rc") && (
+                      <span className="ml-2 text-xs font-bold text-slate">{COURSE_TYPE_LABEL[c.course_type]}</span>
+                    )}
                     {c.target_score && <span className="ml-1.5 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-black text-brand-700">{c.target_score}</span>}
                   </p>
                   {c.program === "sparta" && (

@@ -115,6 +115,8 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
       book_set: bookSet,
       // 저녁반 화목금은 인강 — 시간표가 정한다 (2026-09-17 Alan). 월수금은 그대로 현장
       recorded: !!slot?.ttf_recorded && r.track === "ttf",
+      // 저녁 줄(화목금 인강이 켜진 시간대)의 불라방은 라이브만 — 오전반만 수업 뒤 다시보기로 연결한다 (2026-09-18 Alan)
+      live_to_replay: !slot?.ttf_recorded,
       bundle_id: null,
     });
   }

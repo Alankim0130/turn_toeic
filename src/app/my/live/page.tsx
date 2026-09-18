@@ -5,9 +5,9 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
-import { formatDate, formatTime, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
+import { cn, formatDate, formatTime, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
 import { studentTrackLabel } from "@/lib/week5";
-import { getMyLiveLinks, getMyWeek5, getNextSessionBySection, termLabel } from "../_lib/queries";
+import { getMyLiveCards, getMyWeek5, getNextSessionBySection, termLabel } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "불라방",
@@ -19,15 +19,16 @@ export default async function LivePage() {
   const locked = await studentGate("live");
   if (locked) return locked;
 
-  const links = (await getMyLiveLinks()).filter((l) => l.section);
+  // 회차 링크(오늘 → 다음 수업) 가 있으면 그것, 없으면 반의 상시 링크 (2026-09-18 Alan)
+  const cards = await getMyLiveCards();
   const week5 = await getMyWeek5();
-  const next = await getNextSessionBySection(links.map((l) => l.section_id));
+  const next = await getNextSessionBySection(cards.map((c) => c.sectionId));
 
   return (
     <div className="space-y-8">
       <PageHeader icon="live" title="불라방" description="현장 강의를 실시간 라이브로. 수업 시작 10분 전부터 입장하세요." />
 
-      {links.length === 0 ? (
+      {cards.length === 0 ? (
         <EmptyState
           icon="live"
           title="입장할 수 있는 불라방이 없어요"
@@ -36,17 +37,30 @@ export default async function LivePage() {
         />
       ) : (
         <ul className="grid gap-4 md:grid-cols-2">
-          {links.map((l, i) => {
-            const s = l.section!;
-            const n = next.get(l.section_id);
+          {cards.map((c, i) => {
+            const s = c.section;
+            const n = next.get(c.sectionId);
             return (
-              <Reveal key={l.section_id} delay={i * 80} as="li">
+              <Reveal key={c.sectionId} delay={i * 80} as="li">
                 <article className="card relative overflow-hidden p-5 sm:p-6">
                   <div aria-hidden className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-brand-50" />
                   <div className="relative">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="chip">{termLabel(s.term)}</span>
                       <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-bold text-white">{studentTrackLabel(s, week5, TRACK_LABEL)}</span>
+                      {/* 어느 링크인지 — 오늘 회차 라이브는 끝나면 그대로 다시보기가 된다 */}
+                      <span
+                        className={cn(
+                          "rounded-full px-2.5 py-0.5 text-xs font-black",
+                          c.kind === "today" ? "bg-brand-500 text-white" : c.kind === "next" ? "bg-brand-50 text-brand-700" : "bg-line text-slate",
+                        )}
+                      >
+                        {c.kind === "today"
+                          ? `오늘 ${c.seq}회차 라이브`
+                          : c.kind === "next"
+                            ? `${formatDate(c.date!, { month: "numeric", day: "numeric" })} ${c.seq}회차 링크`
+                            : "상시 입장 링크"}
+                      </span>
                     </div>
                     <h2 className="mt-3 text-xl font-black text-ink">{s.course?.name ?? "강좌"}</h2>
                     {(s.start_time || s.time_block) && (
@@ -68,11 +82,16 @@ export default async function LivePage() {
                       )}
                     </div>
 
-                    <a href={l.live_url} target="_blank" rel="noopener noreferrer" className="btn-primary mt-5 w-full !py-4 text-base">
+                    <a href={c.url} target="_blank" rel="noopener noreferrer" className="btn-primary mt-5 w-full !py-4 text-base">
                       <Icon name="live" size={24} className="brightness-0 invert" />
                       불라방 입장
                     </a>
-                    <p className="mt-2 text-center text-xs text-mist">수업 시작 10분 전부터 입장하세요. 링크는 본인만 사용해 주세요.</p>
+                    <p className="mt-2 text-center text-xs text-mist">
+                      {c.kind === "today" && s.live_to_replay
+                        ? "수업이 끝나면 이 주소가 그대로 다시보기에 올라와요. "
+                        : ""}
+                      수업 시작 10분 전부터 입장하세요. 링크는 본인만 사용해 주세요.
+                    </p>
                   </div>
                 </article>
               </Reveal>

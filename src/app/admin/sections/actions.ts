@@ -376,6 +376,64 @@ export async function upsertLiveLink(_prev: ActionState, formData: FormData): Pr
   return { ok: true, message: "불라방 링크를 저장했어요.", values: { live_url: url } };
 }
 
+/* ─── 회차별 불라방 링크 (2026-09-18 Alan: 오전반 라이브가 끝나면 그 주소가 그대로 그 회차 다시보기) ── */
+function revalidateLive(sectionId: number) {
+  revalidatePath(`/admin/sections/${sectionId}`);
+  revalidatePath("/admin/sections");
+  revalidatePath("/admin/replays");
+  revalidatePath("/my/live");
+  revalidatePath("/my/replay");
+}
+
+export async function upsertSessionLiveLink(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireStaff();
+  const sessionDateId = toInt(str(formData, "session_date_id"));
+  const sectionId = toInt(str(formData, "section_id"));
+  const url = str(formData, "live_url");
+  if (!sessionDateId || !sectionId) return { error: "잘못된 요청이에요." };
+
+  const supabase = await createClient();
+  if (url === "") {
+    const { error } = await supabase.from("session_live_links").delete().eq("session_date_id", sessionDateId);
+    if (error) return { error: rlsMessage(error.code) };
+    revalidateLive(sectionId);
+    return { ok: true, message: "회차 불라방 링크를 지웠어요." };
+  }
+  try {
+    const u = new URL(url);
+    if (!/^https?:$/.test(u.protocol)) throw new Error();
+  } catch {
+    return { error: "http(s):// 로 시작하는 주소를 입력해 주세요.", values: { live_url: url } };
+  }
+
+  // 링크를 바꾸면 DB 트리거가 이미 만든 다시보기의 주소도 함께 바꾼다 (session_live_links_changed)
+  const { data, error } = await supabase
+    .from("session_live_links")
+    .upsert({ session_date_id: sessionDateId, live_url: url }, { onConflict: "session_date_id" })
+    .select("session_date_id");
+  if (error) return { error: rlsMessage(error.code), values: { live_url: url } };
+  if (!data || data.length === 0) return { error: "권한이 없어요. 본인 반만 수정할 수 있습니다.", values: { live_url: url } };
+
+  revalidateLive(sectionId);
+  return { ok: true, message: "저장했어요.", values: { live_url: url } };
+}
+
+/** 오전반(수업이 끝나면 다시보기로) ↔ 저녁반(라이브만) — class_sections.live_to_replay */
+export async function setLiveToReplay(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireStaff();
+  const sectionId = toInt(str(formData, "section_id"));
+  const on = formData.get("live_to_replay") === "on";
+  if (!sectionId) return { error: "잘못된 요청이에요." };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("class_sections").update({ live_to_replay: on }).eq("id", sectionId).select("id");
+  if (error) return { error: rlsMessage(error.code) };
+  if (!data || data.length === 0) return { error: "권한이 없어요. 본인 반만 수정할 수 있습니다." };
+
+  revalidateLive(sectionId);
+  return { ok: true, message: on ? "수업이 끝나면 그 회차 다시보기로 자동 연결해요." : "이 반의 불라방은 라이브만 해요." };
+}
+
 /**
  * 강사 일괄 지정 (2026-09-16 Alan 요청 — 반이 한 달에 70개 안팎이라 하나씩 못 바꾼다).
  * 고른 반들의 담당 강사를 한 번에 바꾼다. 강사·관리자만 (isAdmin 은 2026-09-16 부터 강사도 참).

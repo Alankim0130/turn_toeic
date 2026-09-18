@@ -5,7 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
-import { formatDate, TRACK_LABEL, COURSE_TYPE_LABEL, todayKST, cn } from "@/lib/utils";
+import { formatDate, TRACK_LABEL, todayKST, cn } from "@/lib/utils";
+import { groupHasBookSet, groupKeyOf, sectionTypeLabel } from "@/lib/section-type";
 import { CreateSectionForm } from "@/components/admin/sections/CreateSectionForm";
 import { BulkCreateSections, type BulkSlot } from "@/components/admin/sections/BulkCreateSections";
 import { AssignInstructor } from "@/components/admin/sections/AssignInstructor";
@@ -71,7 +72,7 @@ export default async function AdminSectionsPage({
         supabase
           .from("class_sections")
           .select(
-            "id, bundle_id, track, time_block, book_set, recorded, course_id, capacity, status, instructor_id, course:courses(name, course_type, target_score, program), instructor:profiles(name), session_dates(count), section_live_links(section_id)",
+            "id, bundle_id, track, time_block, book_set, recorded, live_to_replay, course_id, capacity, status, instructor_id, course:courses(name, course_type, target_score, program), instructor:profiles(name, subject), session_dates(count), section_live_links(section_id)",
           )
           .eq("term_id", term.id)
           .order("course_id")
@@ -107,6 +108,15 @@ export default async function AdminSectionsPage({
     ? await supabase.from("session_dates").select("date, section_id, replays!inner(id)").in("section_id", [...sectionTrack.keys()])
     : { data: [] as { date: string; section_id: number }[] };
   const replayDates = (replayRows ?? []).map((r) => ({ date: r.date, track: sectionTrack.get(r.section_id) === "ttf" ? ("ttf" as const) : ("mwf" as const) }));
+  // 회차별 불라방 링크 수 (2026-09-18) — 카드의 "불라방 링크" 칩
+  const { data: sessionLinkRows } = sectionTrack.size
+    ? await supabase.from("session_dates").select("section_id, session_live_links(promoted_at)").in("section_id", [...sectionTrack.keys()])
+    : { data: [] as { section_id: number; session_live_links: unknown }[] };
+  const sessionLinkCount = new Map<number, number>();
+  for (const r of sessionLinkRows ?? []) {
+    const has = Array.isArray(r.session_live_links) ? r.session_live_links.length > 0 : !!r.session_live_links;
+    if (has) sessionLinkCount.set(r.section_id, (sessionLinkCount.get(r.section_id) ?? 0) + 1);
+  }
 
   // 스파르타 반이 권한을 함께 주는 반 (DB 의 private.section_includes 와 같은 판정) — 카드에 보여 준다
   const hasSparta = (sections ?? []).some((s) => s.course?.program === "sparta");
@@ -121,6 +131,10 @@ export default async function AdminSectionsPage({
   }
   // 묶음 반(120분·140분) ↔ 시간 단위 반(60분·70분): 같은 강좌·트랙에서 시간이 안에 들어오는 반 (2026-09-16 Alan)
   const packages = sectionPackages(sections ?? []);
+  // 종합/단과는 반마다 다르다 (2026-09-18 Alan) — 시간 단위 반은 강사 한 명의 단과(LC·RC), 묶음·스파르타만 종합
+  const hasBook = groupHasBookSet(sections ?? []);
+  const typeLabelOf = (s: NonNullable<typeof sections>[number]) =>
+    sectionTypeLabel(s, { isPackage: (packages.get(s.id)?.parts.length ?? 0) > 0, groupHasBook: hasBook.has(groupKeyOf(s)) });
   // 묶음 반(120분·140분)·스파르타 반은 담당이 한 명이 아니라 DB 에는 비어 있다 (도메인 규칙 1 "담당 강사").
   // **화면에는 두 강사 이름을 다 적는다** (2026-09-18 Alan "종합에는 LC·RC 둘 다 수업을 하니 두 쌤 이름을 다") —
   // 안에 든 시간 단위 반의 담당을 모으고, 아직 아무도 없으면 과목 강사(이혜영 LC · 이영수 RC) 둘을 적는다
@@ -324,7 +338,8 @@ export default async function AdminSectionsPage({
                     <div className={cn("grid gap-3", bundled && "sm:grid-cols-2")}>
                       {list.map((s) => {
                         const count = s.session_dates?.[0]?.count ?? 0;
-                        const hasLive = !!s.section_live_links;
+                        const linkCount = sessionLinkCount.get(s.id) ?? 0;
+                        const hasLive = !!s.section_live_links || linkCount > 0;
                         const pk = packages.get(s.id);
                         return (
                           <Link
@@ -336,9 +351,7 @@ export default async function AdminSectionsPage({
                               <div>
                                 <p className="text-lg font-black text-ink">
                                   {s.course?.name ?? "강좌"}
-                                  {s.course?.course_type && (
-                                    <span className="ml-2 text-sm font-semibold text-slate">{COURSE_TYPE_LABEL[s.course.course_type]}</span>
-                                  )}
+                                  {typeLabelOf(s) && <span className="ml-2 text-sm font-semibold text-slate">{typeLabelOf(s)}</span>}
                                 </p>
                                 <p className="mt-1 text-sm">
                                   <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold text-white", s.track === "mwf" ? "bg-brand-500" : "bg-ink")}>
@@ -399,8 +412,13 @@ export default async function AdminSectionsPage({
                             <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
                               <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-bold", hasLive ? "bg-brand-100 text-brand-700" : "bg-line text-slate")}>
                                 <Icon name="live" size={14} className={cn(!hasLive && "grayscale opacity-60")} />
-                                {hasLive ? "불라방 링크 등록됨" : "불라방 링크 없음"}
+                                {linkCount > 0 ? `회차 불라방 링크 ${linkCount}개` : hasLive ? "상시 불라방 링크" : "불라방 링크 없음"}
                               </span>
+                              {s.live_to_replay ? (
+                                <span className="rounded-full bg-brand-50 px-2 py-0.5 font-bold text-brand-700" title="수업이 끝나면 그 회차 불라방 링크가 다시보기로 자동 연결돼요">라이브 → 다시보기</span>
+                              ) : (
+                                <span className="rounded-full bg-line px-2 py-0.5 font-semibold text-slate" title="이 반의 불라방은 다시보기와 연결하지 않아요">라이브만</span>
+                              )}
                               {s.capacity != null && <span className="rounded-full bg-line px-2 py-0.5 font-semibold text-slate">정원 {s.capacity}명</span>}
                             </div>
                           </Link>

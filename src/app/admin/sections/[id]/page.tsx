@@ -6,7 +6,9 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
-import { cn, formatDate, TRACK_LABEL, COURSE_TYPE_LABEL } from "@/lib/utils";
+import { cn, formatDate, TRACK_LABEL } from "@/lib/utils";
+import { sectionTypeLabel } from "@/lib/section-type";
+import { LiveReplayToggle, SessionLiveLinkForm } from "@/components/admin/sections/SessionLiveLinkForm";
 import { SectionEditForm } from "@/components/admin/sections/SectionEditForm";
 import { LiveLinkForm } from "@/components/admin/sections/LiveLinkForm";
 import { DeleteSectionButton } from "@/components/admin/sections/DeleteSectionButton";
@@ -26,13 +28,13 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
   const supabase = await createClient();
   const { data: section } = await supabase
     .from("class_sections")
-    .select("*, course:courses(id, name, course_type, target_score, program, includes_levels), term:terms(id, year, month), instructor:profiles(id, name)")
+    .select("*, course:courses(id, name, course_type, target_score, program, includes_levels), term:terms(id, year, month), instructor:profiles(id, name, subject)")
     .eq("id", id)
     .maybeSingle();
   if (!section || !section.term) notFound();
 
   const [{ data: sessions }, { data: sibling }, { data: live }, { count: enrolled }, { data: instructors }, { data: sameCourse }] = await Promise.all([
-    supabase.from("session_dates").select("id, seq, date, replays(id, video_url)").eq("section_id", id).order("date"),
+    supabase.from("session_dates").select("id, seq, date, replays(id, video_url), session_live_links(live_url, promoted_at)").eq("section_id", id).order("date"),
     // 주5일 짝 = 같은 기수 · 강좌 · 시간대의 반대 트랙 반 (시간대가 없는 반은 하나씩 만들기의 bundle_id 로)
     section.time_block
       ? supabase
@@ -52,7 +54,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
     isAdmin(profile.role)
       ? supabase.from("profiles").select("id, name, role").in("role", ["instructor", "admin"]).order("name")
       : Promise.resolve({ data: null }),
-    supabase.from("class_sections").select("id, time_block").eq("term_id", section.term_id).eq("course_id", section.course_id).eq("track", section.track).neq("id", id),
+    supabase.from("class_sections").select("id, track, time_block, book_set").eq("term_id", section.term_id).eq("course_id", section.course_id).neq("id", id),
   ]);
 
   // 이 반 학생에게 함께 열리는 반 (DB 의 private.section_includes 와 같은 판정):
@@ -65,7 +67,14 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
     : { data: [] as { id: number; track: string; time_block: string | null; book_set: string | null; course: { name: string } | null }[] };
   const isPackage = !isSparta && includedIds.length > 0;
   // 이 반을 안에 품는 묶음 반 (60분 반이면 120분 반) — 그 반 학생도 이 반을 함께 듣는다
-  const parents = !isSparta ? (sameCourse ?? []).filter((s) => blockContains(s.time_block, section.time_block)) : [];
+  const parents = !isSparta ? (sameCourse ?? []).filter((s) => s.track === section.track && blockContains(s.time_block, section.time_block)) : [];
+  // 종합/단과 (2026-09-18 Alan): 시간 단위 반은 담당 한 명의 단과(LC·RC), 묶음·스파르타만 종합
+  const groupHasBook = [section, ...(sameCourse ?? [])].some((s) => s.time_block === section.time_block && !!s.book_set);
+  const typeLabel = sectionTypeLabel(section, { isPackage, groupHasBook });
+  const sessionLink = (s: NonNullable<typeof sessions>[number]) => {
+    const l = s.session_live_links;
+    return (Array.isArray(l) ? l[0] : l) ?? null;
+  };
   const bookSetNote = isSparta
     ? "스파르타 반은 교재를 두지 않아요. 함께 듣는 점수보장반의 교재를 씁니다."
     : isPackage
@@ -209,21 +218,35 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
                 <tr>
                   <th className="px-5 py-2 font-semibold">회차</th>
                   <th className="px-3 py-2 font-semibold">날짜</th>
+                  <th className="px-3 py-2 font-semibold">불라방 링크</th>
                   <th className="px-3 py-2 font-semibold">다시보기</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {sessionList.map((s) => {
                   const rep = s.replays?.[0];
+                  const link = sessionLink(s);
                   return (
                     <tr key={s.id}>
                       <td className="px-5 py-2.5 font-black text-brand-600">{s.seq}회</td>
                       <td className="px-3 py-2.5 font-semibold text-ink">{labelKo(s.date)}</td>
                       <td className="px-3 py-2.5">
+                        {/* 회차마다 라이브 주소가 다르다 — 오전반은 수업이 끝나면 이 주소가 다시보기로 (2026-09-18 Alan) */}
+                        <SessionLiveLinkForm
+                          sessionDateId={s.id}
+                          sectionId={id}
+                          seq={s.seq}
+                          current={link?.live_url ?? ""}
+                          promoted={!!link?.promoted_at}
+                          autoReplay={section.live_to_replay}
+                          readOnly={!canManage}
+                        />
+                      </td>
+                      <td className="px-3 py-2.5">
                         {rep ? (
                           <a href={rep.video_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:underline">
                             <Icon name="replay" size={14} />
-                            등록됨
+                            {link?.promoted_at && rep.video_url === link.live_url ? "불라방에서 연결됨" : "등록됨"}
                           </a>
                         ) : (
                           <span className="text-xs text-mist">없음</span>
@@ -244,8 +267,16 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
           <Icon name="live" size={24} />
           불라방 입장 링크
         </h2>
-        <p className="mt-1 text-sm text-slate">이 반에 접근 가능한 수강생에게만 보입니다. 종강일이 지나면 자동으로 닫혀요.</p>
+        <p className="mt-1 text-sm text-slate">
+          이 반에 접근 가능한 수강생에게만 보입니다. 종강일이 지나면 자동으로 닫혀요.
+          <strong className="text-ink"> 회차마다 라이브 주소가 다르면 위 수업일 표의 “불라방 링크” 칸에 그 날 주소를 넣어 주세요</strong> —
+          학생에게는 오늘(없으면 다음 수업) 회차 링크가 먼저 보이고, 없을 때 아래 상시 링크가 보여요.
+        </p>
         <div className="mt-4">
+          <LiveReplayToggle sectionId={id} on={section.live_to_replay} readOnly={!canManage} />
+        </div>
+        <p className="mt-4 text-xs font-bold text-slate">상시 입장 링크 <span className="font-normal text-mist">(Zoom 처럼 늘 같은 방 — 회차 링크가 없을 때)</span></p>
+        <div className="mt-2">
           <LiveLinkForm sectionId={id} current={live?.live_url ?? ""} readOnly={!canManage} />
         </div>
       </section>
@@ -257,7 +288,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
           <div>
             <dt className="text-xs text-mist">강좌</dt>
             <dd className="font-semibold text-ink">
-              {section.course?.name} {section.course?.course_type && `· ${COURSE_TYPE_LABEL[section.course.course_type]}`}
+              {section.course?.name} {typeLabel && `· ${typeLabel}`}
             </dd>
           </div>
           <div>
