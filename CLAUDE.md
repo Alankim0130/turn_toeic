@@ -792,7 +792,7 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
              (역전토익 ↔ 력전토익 / 역젼토익 / 역전도익)
           OR 강사명 '이혜영' | '이영수' 포함
       G3  가입 실명 == 수강증 수강생명 (공백 무시)
-      G4  영수증번호 미사용 (DB unique index) — **수강증 화면에 영수증번호가 없다. 미확정 10**
+      (G4  영수증번호 게이트는 폐기 — 수강증 화면에 영수증번호가 없다. 중복 방지는 미확정 10)
   ↓ 후보 생성
       class_sections 중 업로드 시점에 enrollment_opens_at 이 도래했거나
       곧 도래하는 반 전체 (예비등록 허용하므로 다음 달 반도 포함)
@@ -929,7 +929,8 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 - 수강증 원본은 private bucket에 저장하고 인증 후 자동 삭제한다 (보관 기간 미확정)
 - 업로드 화면에 수집 항목·보관 기간을 고지하고 동의를 받는다 (수집 항목: **수강증 이미지 · 이름**)
 - **OCR 은 서버에서 자체 실행한다** (tesseract.js) — 수강증에 든 실명이 외부 서비스로 나가지 않는다
-- `receipt_no`에 unique index — 다만 수강증 화면에 영수증번호가 없어 지금은 채워지지 않는다 (미확정 10)
+- ~~`receipt_no` unique index~~ → **삭제** (2026-09-18 Alan "영수증번호는 없어. 전부 다 삭제"). 마이그레이션 20260918100000.
+  중복 등업·다중 계정 방지는 **이름 · 전화번호와 계정 통합**으로 다시 만든다 (미확정 10)
 
 ---
 
@@ -1110,20 +1111,18 @@ create table enrollment_verifications (
   user_id         uuid references profiles,
   file_path       text not null,
   ocr_raw         jsonb,
-  parsed          jsonb,   -- {name, course, teacher, time, tuition, period, receipt_no}
+  parsed          jsonb,   -- parseReceipt 결과 (방식·트랙·레벨·과정·시간·이름 일치 …)
   candidates      jsonb,   -- [{section_id, score, breakdown}] 튜닝용 로그
   matched_section int references class_sections,
   confidence      numeric,
   result          text,    -- approved | rejected
   reject_reason   text,
-  receipt_no      text,
   source          text not null default 'auto',   -- auto(수강증만) | manual(학생이 반을 직접 고름)  (20260917150000)
   requested_section_ids int[] not null default '{}',  -- 수동 등업신청에서 학생이 고른 반. 주5일이면 2개.
                                                  -- **신청 기록일 뿐 확정 배정이 아니다** (확정은 enrollments)
   created_at      timestamptz default now()
 );
-create unique index on enrollment_verifications (receipt_no)
-  where result = 'approved';
+-- (영수증번호 컬럼·unique index 는 마이그레이션 20260918100000 에서 삭제했다 — 수강증 화면에 번호가 없다)
 
 -- ─── 스터디 · 숙제 · LC 음원 (마이그레이션 20260915093000) ───
 create table studies (                     -- 월별 스터디. 기수 × 유형당 1개
@@ -1480,12 +1479,17 @@ where p.role='student'
 9. **숙제 미제출자 기준** (2026-09-16) — 숙제가 레벨 × 과목 단위이고 여러 번 낼 수 있어서 "누가 안 냈는가"의 기준(기간? 회차?)이 없다.
    관리자 숙제점검에 미제출자 목록을 넣으려면 Alan 이 기준을 정해야 한다. 그때까지 제출 목록만 보여 준다.
 
-10. **수강증 중복 사용을 무엇으로 막을지** (2026-09-16 샘플로 드러남) — 수강증 화면에 **영수증번호가 없다.**
-   G4(영수증번호 unique index)가 성립하지 않아, 한 사람의 수강증 캡처를 여러 계정이 돌려 쓰면 지금은 막히지 않는다
-   (가입 실명 대조 G3 는 통과해야 하므로 아무나 되는 것은 아니다).
-   선택지: (a) **같은 이름 + 같은 달**이면 한 번만 — 매달 등록 원칙(규칙 4)과 맞는다 / (b) 수강증 이미지 해시로 같은 캡처를 막는다
-   (캡처 시각이 초 단위로 찍혀 있어 다시 캡처하면 달라진다) / (c) 그냥 두고 스태프가 학생명단에서 본다.
-   **정하기 전까지 `receipt_no` 는 스태프가 직접 적을 때만 채워진다.** 관리자 승인 화면의 "영수증 번호" 칸도 이 결정에 따라 없앤다.
+10. **이름 · 전화번호로 학생을 가리고, 계정을 통합한다** (2026-09-18 Alan 요청. **아직 구현하지 않는다**)
+   - 확정: **영수증번호는 없다 → 전부 삭제했다** (컬럼·unique index·화면·판독기, 마이그레이션 20260918100000).
+   - Alan 요청: "수강증 인증이 끝나면 **바로 등록한 이름과 전화번호**를 적도록 (동명이인 방지). 여러 계정을 만드는 것도 막을 수 있을 것 같다.
+     여러 계정이면 **계정 통합 안내**가 나가면서 어떤 계정으로 통합할지 선택지를 주고, 통합하면 **이전 계정의 숙제 제출 내용이 전부 새 계정으로 옮겨지도록**."
+   - **먼저 정해야 할 것** (이게 없으면 만들 수 없다 — 남의 계정을 가져가는 길이 될 수 있다):
+     ① 통합을 **누가** 승인하나. 이름·전화번호만 맞으면 합쳐 주면, 남의 이름·번호를 아는 사람이 그 계정의 기록을 가져간다.
+        (본인 확인: 옛 계정 로그인 / 문자 인증 / 스태프 승인 중 무엇인지)
+     ② **무엇을 옮기나.** 숙제 제출 외에 등록·반 배정, 스터디·특강 신청, 교재주문, 다시보기 이력도 옮길지.
+     ③ 통합한 **옛 계정은 어떻게 되나** (삭제 / 로그인 차단 / 그대로 둠).
+     ④ 이름·전화번호를 **언제** 받나 — 가입할 때 이미 받고 있다(`profiles.name`·`phone`). 수강증 인증 뒤 다시 확인만 받는 것인지,
+        YBM 에 등록한 이름·번호를 따로 받는 것인지.
 
 ### 아직 논의되지 않음 (임의 구현 금지)
 출결, 채점·점수(숙제업로드는 점검완료 표시까지만), 성적·모의고사, 단어장, 오답노트, 일반 자료실, 학생 대상 알림 발송(문자·알림톡·학생 푸시),

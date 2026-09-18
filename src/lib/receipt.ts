@@ -51,7 +51,6 @@ export type ParsedReceipt = {
    * 판정은 "이 중 하나라도 열린 기수면 통과" 로 쓴다 — 8월에 결제한 9월 강좌를 거절하지 않게.
    */
   months: { year: number; month: number }[];
-  receiptNo: string | null;
   /** 참고용. 판정에 쓰지 않는다 (수강료는 선택 항목) */
   tuition: number | null;
   warnings: string[];
@@ -201,11 +200,6 @@ export function parseReceiptMonths(text: string): { year: number; month: number 
   return out;
 }
 
-function parseReceiptNo(text: string): string | null {
-  const m = text.match(/(?:영수증|승인|접수|주문|거래|결제)?\s*(?:번호|No\.?|NO\.?|#)\s*[:：]?\s*([A-Z0-9][A-Z0-9-]{5,})/i);
-  return m ? m[1].toUpperCase() : null;
-}
-
 function parseTuition(compact: string): number | null {
   const m = compact.match(/(\d{1,3}(?:,\d{3})+|\d{5,})원/);
   if (!m) return null;
@@ -271,7 +265,6 @@ export function parseReceipt(raw: string): ParsedReceipt {
     times,
     time: times[0] ?? null,
     months: parseReceiptMonths(text),
-    receiptNo: parseReceiptNo(text),
     tuition: parseTuition(compact),
     warnings,
   };

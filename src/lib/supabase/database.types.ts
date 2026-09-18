@@ -259,7 +259,6 @@ export type Database = {
           matched_section: number | null
           ocr_raw: Json | null
           parsed: Json | null
-          receipt_no: string | null
           reject_reason: string | null
           requested_section_ids: number[]
           result: string | null
@@ -275,7 +274,6 @@ export type Database = {
           matched_section?: number | null
           ocr_raw?: Json | null
           parsed?: Json | null
-          receipt_no?: string | null
           reject_reason?: string | null
           requested_section_ids?: number[]
           source?: string
@@ -291,7 +289,6 @@ export type Database = {
           matched_section?: number | null
           ocr_raw?: Json | null
           parsed?: Json | null
-          receipt_no?: string | null
           reject_reason?: string | null
           requested_section_ids?: number[]
           source?: string

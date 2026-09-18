@@ -100,8 +100,8 @@ async function readReceipt(admin: ReturnType<typeof createAdminClient>, filePath
 
 /** 스태프 화면에 보여 줄 판독 결과. 원문은 ocr_raw 에 있으니 여기서는 뺀다 */
 function parsedSummary({ parsed, nameMatches }: ReadReceipt) {
-  const { gates, mode, weekly, tracks, levels, level, program, times, time, months, receiptNo, tuition, warnings } = parsed;
-  return { gates, mode, weekly, tracks, levels, level, program, times, time, months, receiptNo, tuition, warnings, nameMatches };
+  const { gates, mode, weekly, tracks, levels, level, program, times, time, months, tuition, warnings } = parsed;
+  return { gates, mode, weekly, tracks, levels, level, program, times, time, months, tuition, warnings, nameMatches };
 }
 
 /**

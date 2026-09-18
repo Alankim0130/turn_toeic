@@ -28,7 +28,6 @@ export async function approveVerification(_prev: ActionState, formData: FormData
   const id = Number(formData.get("verification_id"));
   const sectionIds = [...new Set(formData.getAll("section_ids").map(Number).filter((n) => Number.isInteger(n) && n > 0))];
   const mode = formData.get("mode") === "live" ? "live" : "onsite";
-  const receiptNo = String(formData.get("receipt_no") ?? "").trim() || null;
 
   if (!id) return { error: "잘못된 요청입니다." };
   if (sectionIds.length === 0) return { error: "배정할 반을 1개 이상 선택해 주세요." };
@@ -43,17 +42,6 @@ export async function approveVerification(_prev: ActionState, formData: FormData
     .select("id, enrollment_opens_at, closes_at")
     .in("id", sectionIds);
   if (!sections || sections.length !== sectionIds.length) return { error: "선택한 반을 찾을 수 없습니다." };
-
-  if (receiptNo) {
-    const { data: dup } = await admin
-      .from("enrollment_verifications")
-      .select("id")
-      .eq("receipt_no", receiptNo)
-      .eq("result", "approved")
-      .neq("id", id)
-      .maybeSingle();
-    if (dup) return { error: "이미 다른 계정에서 사용된 영수증 번호입니다." };
-  }
 
   // 개강일 = 고른 반 중 가장 이른 개강일, 시청 만료일 = 가장 늦은 종강일
   const today = todayKST();
@@ -83,11 +71,11 @@ export async function approveVerification(_prev: ActionState, formData: FormData
 
   const { error: verErr } = await admin
     .from("enrollment_verifications")
-    .update({ result: "approved", matched_section: sections[0].id, receipt_no: receiptNo, reject_reason: null })
+    .update({ result: "approved", matched_section: sections[0].id, reject_reason: null })
     .eq("id", id);
   if (verErr) {
     await admin.from("enrollment_orders").delete().eq("id", order.id);
-    return { error: verErr.code === "23505" ? "이미 다른 계정에서 사용된 영수증 번호입니다." : `승인 기록 저장에 실패했습니다. ${verErr.message}` };
+    return { error: `승인 기록 저장에 실패했습니다. ${verErr.message}` };
   }
 
   if (status === "active") {

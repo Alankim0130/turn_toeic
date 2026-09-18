@@ -160,7 +160,6 @@ export default async function VerificationDetailPage({
               <dt className="text-slate">가입 실명</dt><dd className="font-bold">{v.profile?.name ?? "-"}</dd>
               <dt className="text-slate">연락처</dt><dd>{v.profile?.phone ?? "-"}</dd>
               <dt className="text-slate">현재 등급</dt><dd><StatusBadge status={v.profile?.role} /></dd>
-              <dt className="text-slate">영수증 번호</dt><dd>{v.receipt_no ?? "-"}</dd>
               <dt className="text-slate">신뢰도</dt><dd>{v.confidence != null ? `${Math.round(Number(v.confidence))}점` : "-"}</dd>
               {v.reject_reason && (<><dt className="text-slate">반려 사유</dt><dd className="text-red-700">{v.reject_reason}</dd></>)}
             </dl>

@@ -26,7 +26,7 @@ export default async function VerificationsPage({ searchParams }: { searchParams
 
   let query = supabase
     .from("enrollment_verifications")
-    .select("id, created_at, result, receipt_no, confidence, matched_section, source, profile:profiles(name)")
+    .select("id, created_at, result, confidence, matched_section, source, profile:profiles(name)")
     .order("created_at", { ascending: false })
     .limit(200);
   query = status === "pending" ? query.is("result", null) : query.eq("result", status);

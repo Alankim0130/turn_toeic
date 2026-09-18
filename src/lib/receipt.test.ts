@@ -134,13 +134,11 @@ describe("게이트", () => {
 });
 
 describe("참고 필드", () => {
-  it("영수증번호와 금액은 있으면 읽고 없으면 null", () => {
-    const p = parseReceipt(receipt("650 월수금 (월9회)", "영수증번호: A2026-091601\n수강료 250,000원"));
-    expect(p.receiptNo).toBe("A2026-091601");
+  // 영수증번호는 읽지 않는다 — 수강증 화면에 없다 (2026-09-18 Alan 확인)
+  it("금액은 있으면 읽고 없으면 null", () => {
+    const p = parseReceipt(receipt("650 월수금 (월9회)", "수강료 250,000원"));
     expect(p.tuition).toBe(250000);
-    const q = parseReceipt(receipt("650 월수금 (월9회)"));
-    expect(q.receiptNo).toBeNull();
-    expect(q.tuition).toBeNull();
+    expect(parseReceipt(receipt("650 월수금 (월9회)")).tuition).toBeNull();
   });
 });
 

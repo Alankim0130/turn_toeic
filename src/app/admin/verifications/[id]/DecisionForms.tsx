@@ -84,7 +84,7 @@ export function DecisionForms({
             )}
           </fieldset>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4">
             <fieldset>
               {/* 수강증의 `라이브방송` 표기로 OCR 이 정한다 (2026-09-16 Alan). 못 읽었을 때만 현장이 기본값이다 */}
               <legend className="label">
@@ -105,10 +105,6 @@ export function DecisionForms({
                 ))}
               </div>
             </fieldset>
-            <div>
-              <label htmlFor="receipt_no" className="label">영수증 번호 <span className="font-normal text-mist">(선택 · 중복 등업 방지)</span></label>
-              <input id="receipt_no" name="receipt_no" className="input" placeholder="수강증의 영수증/주문 번호" />
-            </div>
           </div>
 
           <SubmitButton pendingText="승인 처리 중…" className="w-full sm:w-full">승인하고 등업하기</SubmitButton>
