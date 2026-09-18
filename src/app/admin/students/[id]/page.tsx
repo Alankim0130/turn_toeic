@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/admin/StatusBadge";
 import { TermChips } from "@/components/admin/TermChips";
 import { RoleSelect, type RoleOption } from "@/components/admin/students/RoleSelect";
 import { AssignSections, RemoveEnrollment } from "@/components/admin/students/EnrollmentEditor";
+import { MergeAccounts, type StaffMergeCandidate } from "@/components/admin/students/MergeAccounts";
 import type { PickerSection } from "@/components/admin/SectionPicker";
 import { GENDER_LABEL, pickTerm, sectionSummary, termLabel } from "../../_lib/queries";
 import { termParam } from "@/lib/study";
@@ -54,6 +55,10 @@ export default async function StudentDetailPage({
     supabase.from("enrollment_orders").select("id, status, activates_on, access_until, verification_id").eq("user_id", id).order("activates_on", { ascending: false }),
     supabase.from("terms").select("id, year, month").order("year").order("month"),
   ]);
+
+  // 같은 사람으로 보이는 다른 계정 (이름 또는 전화번호가 같음). 판정·권한은 DB 함수가 본다
+  const { data: mergeCandidateRows } = await supabase.rpc("staff_merge_candidates", { p_user: id });
+  const mergeCandidates = (mergeCandidateRows ?? []) as StaffMergeCandidate[];
 
   const term = pickTerm(terms ?? [], sp.term, today);
   const { data: termSections } = term
@@ -135,6 +140,15 @@ export default async function StudentDetailPage({
               테스터 계정이에요. 진짜 등급을 학생으로 내리면 관리자 화면을 잃어요 — 테스트는 아래 <b>테스트 등급</b>으로 하세요.
             </p>
           )}
+        </section>
+
+        {/* 계정 합치기 (2026-09-18 Alan 요청) — 학생이 계정을 여러 개 만들었을 때 강사가 직접 합친다 */}
+        <section aria-labelledby="merge-title" className="card p-5 lg:col-span-2">
+          <h2 id="merge-title" className="text-lg font-black text-ink">계정 합치기</h2>
+          <p className="mt-1 text-sm text-slate">
+            이름이나 전화번호가 같은 다른 계정입니다. 같은 사람이면 하나로 합쳐 숙제·수강 기록을 한곳에 모읍니다.
+          </p>
+          <MergeAccounts student={{ id: student.id, name: student.name }} candidates={mergeCandidates} />
         </section>
 
         {/* 테스터: 테스트 등급 */}

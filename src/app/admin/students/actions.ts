@@ -143,3 +143,36 @@ export async function removeEnrollment(enrollmentId: number): Promise<StudentAct
   if (studentId) revalidateStudent(studentId);
   return { ok: true, message: "배정을 해제했어요." };
 }
+
+/**
+ * 스태프가 두 계정을 직접 합친다 (2026-09-18 Alan 요청).
+ *
+ * 학생 스스로 합치려면 **두 계정 모두에 로그인**해야 하는데(도메인 규칙 3-1), 옛 계정 비밀번호를 잊거나
+ * 옛 소셜 계정을 못 쓰는 경우가 있다. 그때는 강사가 같은 사람인지 확인하고 여기서 합친다.
+ * 이동 규칙은 학생 쪽과 같은 DB 함수(`private.merge_accounts`)를 쓰고, 누가 합쳤는지 기록이 남는다.
+ */
+export async function mergeStudentAccounts(_prev: StudentActionState, formData: FormData): Promise<StudentActionState> {
+  await requireStaff();
+
+  const from = String(formData.get("from_user") ?? "");
+  const to = String(formData.get("to_user") ?? "");
+  if (!from || !to || from === to) return { error: "합칠 두 계정을 확인해 주세요." };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("staff_merge_accounts", { p_from: from, p_to: to });
+
+  if (error) {
+    const msg = error.message.includes("not_mergeable")
+      ? "강사·관리자 계정이거나 이미 합쳐진 계정이에요."
+      : error.message.includes("forbidden")
+        ? "권한이 없습니다."
+        : `합치지 못했어요. ${error.message}`;
+    return { error: msg };
+  }
+
+  const moved = (data ?? {}) as Record<string, number>;
+  const total = Object.values(moved).reduce((a, b) => a + (Number(b) || 0), 0);
+  revalidatePath("/admin/students", "layout");
+  revalidatePath("/my", "layout");
+  return { message: `계정을 합쳤어요. 기록 ${total}건을 옮기고, 비워진 계정은 로그인만 막았습니다.` };
+}

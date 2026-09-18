@@ -1451,6 +1451,21 @@ export type Database = {
         }[]
       }
       request_account_merge: { Args: { p_keep: string; p_other: string }; Returns: number }
+      staff_merge_accounts: { Args: { p_from: string; p_to: string }; Returns: Json }
+      staff_merge_candidates: {
+        Args: { p_user: string }
+        Returns: {
+          user_id: string
+          name: string
+          phone: string | null
+          email_hint: string
+          joined_at: string
+          role: string
+          same_name: boolean
+          same_phone: boolean
+          has_records: boolean
+        }[]
+      }
       complete_profile: {
         Args: {
           p_department?: string | null

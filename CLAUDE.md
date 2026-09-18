@@ -602,6 +602,13 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 - 통합 뒤 비워진 계정은 **로그인만 막고 기록은 보존한다** (`profiles.merged_into`). `requireUser()` 가 `/account-merged` 로 보낸다.
   지우지 않는 이유는 잘못 합쳤을 때 되돌릴 수 있어야 하기 때문이다.
 - 스태프(강사·관리자) 계정은 통합 대상이 아니다 (`merge_candidates`·`merge_accounts` 가 막는다).
+- **강사가 직접 합칠 수도 있다** (2026-09-18 Alan 요청, 마이그레이션 20260918130000). 학생이 옛 계정 비밀번호를 잊거나
+  옛 소셜 로그인을 못 쓰면 스스로 합칠 수 없기 때문이다. `/admin/students/[id]` 의 **계정 합치기** 칸에서
+  `public.staff_merge_candidates(학생)` 이 **이름이 같거나 전화번호가 같은** 계정을 보여 주고(학생용은 둘 다 같아야 한다 —
+  번호를 잘못 적어 갈린 계정을 강사는 찾을 수 있어야 한다), `public.staff_merge_accounts(from, to)` 가 바로 합친다.
+  학생 확인은 받지 않는다 — 대신 화면에서 "같은 사람이 맞다"를 체크해야 버튼이 열리고,
+  **누가 합쳤는지** `account_merge_requests` 에 `status = 'done'` · `requested_by = 스태프` 로 남는다.
+  이동 규칙은 학생 쪽과 **같은 함수**(`private.merge_accounts`)다 — 옮길 것이 늘면 그 함수 한 곳만 고친다.
 
 ### 4. 등록 기간 — 매달 등록 (2026-09-15 Alan 확정)
 
@@ -1346,7 +1353,7 @@ where p.role='student'
 |---|---|---|
 | `/admin` | 대시보드: 학생명단 요약, 교재주문, 마케팅 분석 차트, 시간대별 인원수 위젯 | instructor |
 | `/admin/students` | 학생명단: 등록생 / 예비등록생 / 졸업생 / **테스터**(강사·관리자 계정) / **전체** 탭 + 이름 검색. 이름을 누르면 학생 관리로 (테스터는 테스트 등급 칸) | instructor |
-| `/admin/students/[id]` | 학생 관리: 기본 정보, **등급 변경**(관리자만), **반 배정 추가·해제**(기수별), 등록 이력 | instructor |
+| `/admin/students/[id]` | 학생 관리: 기본 정보, **등급 변경**(관리자만), **반 배정 추가·해제**(기수별), **계정 합치기**(이름·전화번호가 같은 계정), 등록 이력 | instructor |
 | `/admin/sections` | 반 편성 달력(개강일·종강일·월수금·화목금·특강 → 항목별 저장 / 전체 저장, 이전/다음 달, 이미지 저장), 그 달 반 일괄 개설(강좌 × 시간대 × 트랙 표 → 고른 칸 한 번에) + 하나씩 만들기, **담당 강사 일괄 지정**, 스터디 시간 설정 | instructor |
 | `/admin/lectures` | 특강 신청: 기수별 특강마다 신청 받기·정원·신청 시작 설정 + 신청자 명단(스태프 취소) | instructor |
 | `/admin/sections/[id]` | 반 상세: 달력에서 파생된 수업일(읽기 전용)·다시보기 여부, 불라방 링크, 수강료·정원·상태·강사 수정, 삭제 | instructor |
