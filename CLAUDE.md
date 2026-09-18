@@ -49,6 +49,32 @@
 
 ---
 
+## 보안 점검 (2026-09-18, Alan "보안설계 좀 부탁해")
+
+운영 DB 의 실제 설정을 조회해 확인한 것 — **바꿀 때 이 상태를 깨지 않는다.**
+- **모든 public 표(31개)에 RLS 가 켜져 있고 정책이 있다.** 쓰기 정책은 스태프 함수(`is_staff`·`is_admin`·`is_crew`·`can_manage_section`)나
+  "본인 행 + 자격 조건" 둘 중 하나다. 새 표를 만들면 **RLS 켜기 + 정책 + grant** 세 가지를 한 마이그레이션에 같이 넣을 것.
+- **버킷 5개 전부 private**, 크기·MIME 제한 있음(`receipts` 10MB 이미지·PDF, `homework` 20MB 이미지, `lc-audio` 50MB 오디오).
+  본인 폴더 업로드(`{uid}/…`)·본인/스태프 조회 정책. 파일은 `/files/{kind}/{id}` 가 **사용자 세션으로 행을 읽고**(RLS) 서명 URL 로 보낸다.
+- 서비스 롤은 서버 액션·`src/lib`·API 라우트에서만 (`server-only`). 클라이언트 번들에는 없다. 비밀은 `.env*`(gitignore) 에만 있고 저장소에 없다.
+- 두 API 라우트(네이버 웹훅·크론)는 비밀이 없으면 **거절(fail-closed)**, 비교는 `timingSafeEqual`, 웹훅 본문은 64KB 상한.
+- 로그인 뒤 이동 주소(`safeNext`)는 `/` 로 시작하고 `//` 가 아닌 것만 — 외부로 튕기는 오픈 리다이렉트 없음.
+- 서버 액션은 Next 가 Origin 을 확인한다(CSRF). `dangerouslySetInnerHTML` 두 곳은 상수·JSON 이고 JSON-LD 는 `<` 를 이스케이프한다.
+- 응답 헤더(`next.config.ts`): `X-Frame-Options: DENY` · `nosniff` · `Referrer-Policy` · `Permissions-Policy`(카메라·마이크·위치 끔) · HSTS.
+- 문의(비회원 유일한 쓰기 경로): 안 보이는 `website` 칸(허니팟)이 채워지면 조용히 버리고, 이름 40·이메일 120·본문 2,000자 서버 상한.
+- OCR 입력 이미지는 4,000만 픽셀 상한(`limitInputPixels`) — 작은 파일이 거대한 픽셀로 풀리는 폭탄을 막는다.
+- 계정 통합은 두 계정 모두 로그인해야 한다(도메인 규칙 3-1). 등급·이름·과목·test_role 은 본인이 못 바꾼다(등급 체계).
+
+**아직 안 된 것 — Alan 결정·대시보드 설정이 필요하다**
+1. **수강증 원본 보관** (미확정 6): 승인·거절 뒤에도 `receipts` 에 그대로 남는다. 다시 올리면 지우는 것 말고는 지우는 코드가 없다.
+   제안: 승인·거절 뒤 **30일** 지나면 자동 삭제(pg_cron), OCR 원문·판독 결과만 남긴다. 기간을 정해 주면 만든다.
+2. **Supabase Auth 설정** (대시보드, Alan 이 한다): 유출 비밀번호 차단 켜기(advisor WARN) · 비밀번호 최소 8자 ·
+   **출시 전 이메일 확인 켜기 + SMTP**(지금은 개발용 autoconfirm) · 가입·로그인에 CAPTCHA(Turnstile) 켜기.
+3. **속도 제한**: 코드에 없다. 수강증 업로드는 한 번에 OCR 3회를 돌리고, 문의는 비회원도 쓴다.
+   제안: Vercel Firewall 규칙 — `/my/verify` · `/contact` · `/login` · `/signup` 에 IP 당 분당 N회. 대시보드에서 켠다.
+4. **CSP**: 안 넣었다. 인라인 스크립트·유튜브·Supabase 허용 목록을 만들고 report-only 로 먼저 켜야 한다 — 따로 작업.
+5. **재업로드 기록**: 대기 중 신청을 지우고 교체하므로(4-2) 누가 몇 번 올렸는지 흔적이 없다. 남기려면 `result = 'superseded'` 로 두는 방식으로 바꾼다.
+
 ## 기술 스택
 
 - **Next.js** (App Router) + TypeScript

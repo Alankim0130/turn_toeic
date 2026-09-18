@@ -22,8 +22,11 @@ export type OcrVariant = { name: string; bytes: Buffer };
 const TITLE_WIDTH = 700;
 const WHITE_THRESHOLD = 200;
 
+/** 이보다 큰 그림은 읽지 않는다 — 작은 파일이 거대한 픽셀로 풀리는(디컴프레션 폭탄) 이미지로 CPU·메모리를 태우지 못하게. 휴대폰 캡처는 3~12MP 다 */
+const MAX_PIXELS = 40_000_000;
+
 export async function receiptVariants(input: Uint8Array): Promise<OcrVariant[]> {
-  const src = sharp(Buffer.from(input), { failOn: "none" }).rotate();
+  const src = sharp(Buffer.from(input), { failOn: "none", limitInputPixels: MAX_PIXELS }).rotate();
   const meta = await src.metadata();
   const width = meta.width ?? 0;
 

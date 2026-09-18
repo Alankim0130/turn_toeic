@@ -20,6 +20,11 @@ export function ContactForm({ defaults }: { defaults: { name: string; phone: str
   return (
     <form action={action} className="space-y-4">
       {state.error && <Alert kind="warning">{state.error}</Alert>}
+      {/* 봇 잡는 빈 칸 — 사람 눈에 안 보이고 탭으로도 안 가며 자동완성도 안 된다. 채워져 있으면 서버가 조용히 버린다 */}
+      <div className="hidden" aria-hidden="true">
+        <label htmlFor="website">웹사이트</label>
+        <input id="website" name="website" type="text" tabIndex={-1} autoComplete="off" defaultValue="" />
+      </div>
       <div>
         <label htmlFor="name" className="label">이름</label>
         <input id="name" name="name" required className="input" defaultValue={v.name} />

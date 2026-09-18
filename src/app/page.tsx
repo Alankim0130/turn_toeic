@@ -50,7 +50,8 @@ function JsonLd() {
       provider: { "@type": "Organization", name: "역전토익" },
     })),
   };
-  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />;
+  // `<` 를 이스케이프해야 데이터 안의 `</script>` 가 스크립트를 닫고 HTML 로 새어 나가지 못한다 (지금 값은 전부 상수지만 습관으로)
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data).replace(/</g, "\u003c") }} />;
 }
 
 export default function HomePage() {
