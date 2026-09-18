@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
-import { todayKST, formatDate } from "@/lib/utils";
+import { todayKST, formatDate, MODE_LABEL } from "@/lib/utils";
 import { formatPhone } from "@/lib/phone";
 import { loginLabel, lastSeenLabel, kstDay, shortDay } from "@/lib/account";
 import { STUDY_KIND_LABEL, STUDY_KINDS } from "@/lib/study";
@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { StudentCard, type StudentCardMeta } from "@/components/admin/students/StudentCard";
-import { getRosterSets, getCurrentOrUpcomingTerm, sectionSummary } from "../_lib/queries";
+import { getRosterSets, getCurrentOrUpcomingTerm, sectionChip } from "../_lib/queries";
 import { ROLE_LABEL, requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "학생명단", robots: { index: false } };
@@ -57,7 +57,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
     ids.length
       ? supabase
           .from("enrollments")
-          .select("id, student_id, mode, status, section:class_sections!enrollments_section_id_fkey(track, start_time, time_block, closes_at, term:terms(year, month), course:courses(name))")
+          .select("id, student_id, mode, status, section:class_sections!enrollments_section_id_fkey(track, start_time, time_block, closes_at, term:terms(year, month), course:courses(name, target_score, program))")
           .in("student_id", ids)
           .order("id")
       : Promise.resolve({ data: [] as never[] }),
@@ -135,24 +135,26 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
               const kinds = studiesByUser.get(p.id);
               const studyValue = kinds ? STUDY_KINDS.filter((k) => kinds.has(k)).map(studyShort).join(" · ") : "";
 
-              const metas: StudentCardMeta[] = [];
-              if (p.phone) metas.push({ label: "연락처", value: formatPhone(p.phone), href: `tel:${p.phone}` });
-              if (account?.email) metas.push({ label: "메일", value: account.email, href: `mailto:${account.email}` });
-              const login = loginLabel(account?.providers);
-              if (login) metas.push({ label: "로그인", value: login });
-              const seen = lastSeenLabel(account?.last_sign_in_at, today);
-              if (seen) metas.push({ label: "접속", value: seen });
-              if (p.created_at) metas.push({ label: "가입", value: shortDay(kstDay(p.created_at)) });
-              if (studyValue) metas.push({ label: "스터디", value: studyValue });
-
               const foot =
                 tab === "preliminary" && prelimOrder
                   ? { label: "개강", value: formatDate(prelimOrder.activates_on, { month: "long", day: "numeric" }) }
                   : tab === "active" && activeOrder
-                    ? { label: "시청 만료일", value: formatDate(activeOrder.access_until, { year: "numeric", month: "long", day: "numeric" }) }
+                    ? { label: "만료", value: formatDate(activeOrder.access_until, { month: "long", day: "numeric" }) }
                     : tab === "alumni" && lastAccess.get(p.id)
-                      ? { label: "마지막 만료일", value: formatDate(lastAccess.get(p.id)!, { year: "numeric", month: "long", day: "numeric" }) }
+                      ? { label: "만료", value: formatDate(lastAccess.get(p.id)!, { year: "numeric", month: "long", day: "numeric" }) }
                       : null;
+
+              // 아이콘 한 줄씩 흘려 놓는다 (첫토익 학생 리스트와 같은 배치) — 상자에 담지 않는다
+              const metas: StudentCardMeta[] = [];
+              if (p.phone) metas.push({ icon: "phone", value: formatPhone(p.phone), href: `tel:${p.phone}` });
+              if (account?.email) metas.push({ icon: "mail", value: account.email, href: `mailto:${account.email}` });
+              const login = loginLabel(account?.providers);
+              if (login) metas.push({ icon: "key", value: `${login} 로그인` });
+              if (p.created_at) metas.push({ icon: "calendar", label: "가입", value: shortDay(kstDay(p.created_at)) });
+              const seen = lastSeenLabel(account?.last_sign_in_at, today);
+              if (seen) metas.push({ icon: "clock", label: "접속", value: seen });
+              if (foot) metas.push({ icon: "calendar", label: foot.label, value: foot.value });
+              if (studyValue) metas.push({ icon: "check", label: "스터디", value: studyValue });
 
               return (
                 <StudentCard
@@ -161,13 +163,16 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
                   name={p.name}
                   role={p.role}
                   tester={p.role === "instructor" || p.role === "admin"}
-                  testRole={p.test_role ? ROLE_LABEL[p.test_role] : null}
+                  testRoleLabel={p.test_role ? ROLE_LABEL[p.test_role] : null}
                   affiliation={[p.university, p.department].filter(Boolean).join(" · ")}
                   chip={tab === "preliminary" && prelimOrder ? `${Number(prelimOrder.activates_on.slice(5, 7))}월 예비등록생` : undefined}
+                  classes={myEnroll.map((e) => ({
+                    id: e.id,
+                    label: sectionChip(e.section),
+                    mode: e.mode,
+                    modeLabel: MODE_LABEL[e.mode] ?? e.mode,
+                  }))}
                   metas={metas}
-                  enrollments={myEnroll.map((e) => ({ id: e.id, label: sectionSummary(e.section), mode: e.mode }))}
-                  footLabel={foot?.label}
-                  footValue={foot?.value}
                 />
               );
             })}

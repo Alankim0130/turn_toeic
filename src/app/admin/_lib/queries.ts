@@ -36,6 +36,31 @@ export function sectionSummary(
   return parts.join(" · ");
 }
 
+/**
+ * 명단 카드용 짧은 반 이름 — "9월 · 650+ · 월수금 · 10:00~12:10".
+ * `sectionSummary` 의 강좌 전체 이름("650+ 왕기초반")은 카드 배지에 넣기엔 길어서 **레벨 숫자로 줄인다.**
+ * 레벨을 못 읽으면(강좌에 target_score 가 없으면) 강좌 이름을 그대로 쓴다 — 짐작해서 적지 않는다.
+ */
+export function sectionChip(
+  s: {
+    track?: string | null;
+    start_time?: string | null;
+    time_block?: string | null;
+    term?: { year: number; month: number } | null;
+    course?: { name: string; target_score?: number | null; program?: string | null } | null;
+  } | null | undefined,
+) {
+  if (!s) return "반 미배정";
+  const level = s.course?.target_score
+    ? `${s.course.program === "sparta" ? "스파르타 " : ""}${s.course.target_score}+`
+    : (s.course?.name ?? "강좌");
+  // 트랙과 시간은 한 덩어리로 붙여 쓴다 — 가운뎃점을 넷 찍으면 배지가 휴대폰에서 두 줄로 접힌다
+  const when = [s.track ? (TRACK_LABEL[s.track] ?? s.track) : null, s.start_time ? formatTime(s.start_time) : (s.time_block ?? null)]
+    .filter(Boolean)
+    .join(" ");
+  return [termLabel(s.term, true), level, when || null].filter(Boolean).join(" · ");
+}
+
 /** 이번 달 기수. 없으면 가장 가까운 다음 기수 */
 export async function getCurrentOrUpcomingTerm(supabase: DB, today: string): Promise<TermLite | null> {
   const [y, m] = today.split("-").map(Number);
