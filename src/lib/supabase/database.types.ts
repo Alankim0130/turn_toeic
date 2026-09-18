@@ -406,8 +406,7 @@ export type Database = {
           candidates: Json | null
           confidence: number | null
           created_at: string
-          file_path: string
-
+          file_path: string
 
           file_hash: string | null
           id: number
@@ -424,8 +423,7 @@ export type Database = {
           candidates?: Json | null
           confidence?: number | null
           created_at?: string
-          file_path: string
-
+          file_path: string
 
           file_hash?: string | null
           id?: number
@@ -442,8 +440,7 @@ export type Database = {
           candidates?: Json | null
           confidence?: number | null
           created_at?: string
-          file_path?: string
-
+          file_path?: string
 
           file_hash?: string | null
           id?: number
