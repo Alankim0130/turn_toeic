@@ -406,7 +406,8 @@ export type Database = {
           candidates: Json | null
           confidence: number | null
           created_at: string
-          file_path: string
+          file_path: string
+
 
           file_hash: string | null
           id: number
@@ -423,7 +424,8 @@ export type Database = {
           candidates?: Json | null
           confidence?: number | null
           created_at?: string
-          file_path: string
+          file_path: string
+
 
           file_hash?: string | null
           id?: number
@@ -440,7 +442,8 @@ export type Database = {
           candidates?: Json | null
           confidence?: number | null
           created_at?: string
-          file_path?: string
+          file_path?: string
+
 
           file_hash?: string | null
           id?: number
@@ -1606,6 +1609,15 @@ export type Database = {
       }
       request_account_merge: { Args: { p_keep: string; p_other: string }; Returns: number }
       staff_merge_accounts: { Args: { p_from: string; p_to: string }; Returns: Json }
+      student_auth_info: {
+        Args: { p_ids: string[] }
+        Returns: {
+          user_id: string
+          email: string | null
+          providers: string[]
+          last_sign_in_at: string | null
+        }[]
+      }
       staff_merge_candidates: {
         Args: { p_user: string }
         Returns: {
