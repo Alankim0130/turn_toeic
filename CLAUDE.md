@@ -663,13 +663,14 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 - **수강증만 올리기** — 기본. 판정은 `src/lib/verify-decision.ts` 의 `decideVerification()` 한곳(`verify-decision.test.ts`).
 - **수동 등업신청** — 학생이 **수강월 · 레벨 · 요일 · 시간대**를 직접 골라 낸다. 자동 판정이 틀렸을 때의 길.
 
-**자동 판정은 거절만 한다. 승인은 하지 않는다** — 자동 확정 기준선은 여전히 미확정 3 이다.
+**`decideVerification` 은 거절할지 검토로 넘길지만 정한다.** 자동 **승인**은 그 뒤에 반 대조(`matchSections`)가 딱 맞을 때
+`submitVerification` 이 한다 (2026-09-18, 미확정 3 해결 — 파이프라인 "반 대조 · 자동 승인").
 거절하지 않은 것은 전부 검토 대기(`result = null`)로 가고 스태프가 승인한다.
 
 **근거가 있을 때만 거절한다.** 없는 정보로 거절하면 멀쩡한 수강증이 튕기고 학생은 이유를 알 수 없다.
 그래서 이렇게 막아 뒀다 — **고칠 때 이 세 가지를 함께 지킬 것:**
-1. **OCR 이 없으면(`parsed === null`) 늘 검토 대기.** 지금이 그 상태다 (미확정 5) — **오늘은 자동 거절이 한 건도 나가지 않는다.**
-   OCR 이 붙으면 `submitVerification` 의 `parsed` 만 채우면 그대로 동작한다.
+1. **OCR 이 못 읽었으면(`parsed === null`) 늘 검토 대기.** 이미지가 아니거나(PDF) 엔진이 실패·타임아웃한 경우다 —
+   사유는 `ocr_raw.error` 에 남는다 (2026-09-18). 읽은 것이 없으니 거절할 근거도 없다.
 2. **글자를 거의 못 읽었으면(`MIN_RECEIPT_TEXT` 미만) 판정하지 않는다.** 사진이 흐리면 게이트의 `false` 를 믿을 수 없다.
 3. **수강월은 배지 `NN월 과정` 이 1순위다** (2026-09-18 실물 수강증으로 확인). 화면 맨 위 `현재시간` 은 **캡처한 시각**이라
    8월 말에 9월 강좌를 등록하고 바로 캡처하면 날짜는 8월인데 과정은 9월이다 — 날짜만 보면 멀쩡한 수강증을 거절한다.
@@ -1561,11 +1562,19 @@ where p.role='student'
      키워드를 찾으므로 중복은 해가 없다. 카드만 자른 캡처(첫토익 샘플)도 흑백에서 그대로 읽힌다. sharp 가 운영 의존성이 된 이유다.
    - 읽은 원문은 `enrollment_verifications.ocr_raw`, 판독 결과는 `parsed` 에 남는다. 승인 화면이 이것으로
      **수강 방식(현장/불라방)을 미리 골라 둔다** (미확정 2-1).
-   - 자동 **승인**은 여전히 하지 않는다 (기준선 미확정 3). 거절은 근거가 있을 때만 한다 (`decideVerification`).
-   → **엔진이 붙으면 바로 살아나는 것들이 있다** (2026-09-17): 자동 거절(`decideVerification`)은 다 만들어 뒀지만
-   읽을 글자가 없어 **지금은 한 건도 거절되지 않는다.** `submitVerification` 의 `const parsed = null` 을
-   `parseReceipt(원문)` 으로 바꾸면 그대로 동작한다. 실물 샘플을 받으면 **수강 기간 줄의 표기**도 함께 확인할 것 —
-   지금은 어느 줄이 수강 기간인지 몰라 결제일·발행일까지 다 모아서 "하나라도 맞으면 통과" 로 느슨하게 본다 (도메인 규칙 4-2).
+   - 자동 **승인**은 반 대조가 딱 맞을 때만 한다 (미확정 3 해결, 파이프라인 "반 대조 · 자동 승인"). 거절은 근거가 있을 때만 (`decideVerification`).
+   - **Vercel 에 wasm·워커 파일을 직접 실어 보낸다** (`next.config.ts` 의 `outputFileTracingIncludes["/my/verify"]`, 2026-09-18).
+     tesseract.js 는 워커를 파일 경로로 띄우고 그 워커가 wasm 코어를 `require` 하는데, Next 의 파일 추적이 워커 안을 따라가지 못해
+     **첫 운영 테스트(2026-09-18 Alan, 8월 수강증)에서 워커가 뜨자마자 죽고 30초 뒤 "읽은 것 없음" 으로 검토 대기에 빠졌다** —
+     그래서 거절 메시지가 안 나왔다 (로컬은 node_modules 가 다 있어 3초 만에 읽히고 "8월 과정이에요" 로 거절됐다).
+     빌드 뒤 `.next/server/app/my/verify/page.js.nft.json` 에 `tesseract.js-core/*.wasm` 이 있어야 한다. LSTM 변형 셋(relaxedsimd · simd · 기본,
+     js + wasm ≈ 9MB)만 넣고 `*.wasm.js`(브라우저용 base64 내장)는 뺀다. OCR 을 다른 페이지에서도 부르게 되면 그 경로도 키에 더할 것.
+   - **워커가 죽어도 함수가 죽지 않게 `errorHandler` 를 준다** — 없으면 tesseract.js 가 메인 스레드에 그냥 던진다(uncaught exception).
+     실패 사유는 `ocr_raw.error` 에 남고(승인 화면 "실패 사유", Vercel 로그 `[ocr] …`), 등업신청은 그대로 접수돼 검토 대기로 간다.
+     페이지 함수는 `maxDuration = 60` (`src/app/my/verify/page.tsx`) — Vercel 기본 10초에 걸리지 않게. 학생 화면 버튼은 그동안 `수강증을 읽는 중…`.
+   - 이 작업 환경은 `cdn.jsdelivr.net` 이 막혀 언어 데이터를 못 받는다 — 로컬 실측이 필요하면 git 이력의 `3c89e92:kor.traineddata` 를
+     `/tmp/tesseract-cache/kor.traineddata` 로 꺼내 두면 캐시로 잡힌다 (`ocr.integration.test.ts` 가 그 캐시 폴더를 쓴다). 실측: 전체 화면 캡쳐
+     1242×2688 이 변형 셋 합쳐 약 3초, 워커 준비 0.2초.
 6. **수강증 원본 보관 기간**
 7. **도메인** — 현재 veterantoiec.com. 유지 여부 미정.
 8. **YBM 수강후기 수집 + 특강 신청** (2026-09-15 사전 공유 → 2026-09-16 Alan 이 첫토익 화면으로 구체화. 아직 구현하지 않는다)
