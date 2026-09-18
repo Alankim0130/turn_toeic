@@ -116,3 +116,24 @@ describe("decideVerification — 바로 거절 / 검토 대기", () => {
     expect(decideVerification(parseReceipt(other), SEP)).toMatchObject({ code: "academy" });
   });
 });
+
+describe("수강월 — 배지 `NN월 과정` 이 1순위 (2026-09-18 실물 수강증)", () => {
+  const card = (badge: string, when: string) =>
+    `현재시간 ${when}\n${badge}\n역전토익 [종합반]\n650 목표\n수강생 김민수\n수강센터 부산 서면센터\n강사 이영수 .이혜영\n강의실 온라인 강의\n수강요일 [4주-09/04] 주5일 (월18회 라이브방송)\n수강시간 10:00~12:10\n수강료 264,000원`;
+
+  it("8월 말에 캡처한 9월 과정 수강증은 거절하지 않는다 (날짜는 8월이지만 배지는 9월)", () => {
+    expect(decideVerification(parseReceipt(card("09월 과정", "2026-08-28 16:19:02")), SEP)).toEqual({ kind: "review" });
+  });
+
+  it("지난달(8월) 과정 수강증은 배지로 거절하고, 몇 월 과정인지 이유에 적는다", () => {
+    const d = decideVerification(parseReceipt(card("08월 과정", "2026-08-07 16:19:02")), SEP);
+    expect(d).toMatchObject({ kind: "reject", code: "month" });
+    expect((d as { reason: string }).reason).toContain("8월 과정");
+    expect((d as { reason: string }).reason).toContain("2026년 9월");
+  });
+
+  it("배지가 없으면 예전처럼 날짜로 본다", () => {
+    const d = decideVerification(parseReceipt(card("", "2026-08-07 16:19:02")), SEP);
+    expect(d).toMatchObject({ kind: "reject", code: "month" });
+  });
+});

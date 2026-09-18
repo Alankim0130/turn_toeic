@@ -61,8 +61,22 @@ export function decideVerification(parsed: ParsedReceipt | null, openTerms: read
   }
 
   // ② 수강월이 지금 받는 달인가.
-  // 날짜를 하나도 못 읽었으면 판정하지 않는다. 읽은 달에는 결제일·발행일도 섞여 있으므로
-  // **하나라도 열린 기수에 걸리면 통과**시킨다 (8월에 결제한 9월 강좌를 거절하지 않게).
+  // **배지 `NN월 과정` 이 1순위다** (2026-09-18 실물 수강증 확인). 화면 맨 위 `현재시간` 은 캡처한 시각이라
+  // 8월 말에 9월 강좌를 등록하고 바로 캡처하면 날짜는 8월인데 과정은 9월이다 — 날짜만 보면 멀쩡한 수강증을 거절한다.
+  // 배지를 읽었으면 그 달이 열린 기수에 있는지만 본다. 연도는 배지에 없으니 달만 맞춘다 (열린 기수는 이번 달·다음 달뿐이다).
+  if (openTerms.length > 0 && parsed.courseMonth != null) {
+    if (!openTerms.some((t) => t.month === parsed.courseMonth)) {
+      return {
+        kind: "reject",
+        code: "month",
+        reason: `이 수강증은 ${parsed.courseMonth}월 과정이에요. 지금은 ${termsLabel(openTerms)} 등업신청만 받고 있어요. 이번 달 수강증이 맞는지 확인해 주세요.`,
+      };
+    }
+    return { kind: "review" };
+  }
+
+  // 배지를 못 읽었으면 수강증의 날짜들로 본다. 날짜를 하나도 못 읽었으면 판정하지 않는다.
+  // 읽은 달에는 결제일·발행일도 섞여 있으므로 **하나라도 열린 기수에 걸리면 통과**시킨다 (8월에 결제한 9월 강좌를 거절하지 않게).
   if (openTerms.length > 0 && parsed.months.length > 0) {
     const open = new Set(openTerms.map(termKey));
     if (!parsed.months.some((m) => open.has(termKey(m)))) {

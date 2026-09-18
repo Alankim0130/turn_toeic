@@ -48,14 +48,14 @@ async function guardUpload(filePath: string): Promise<Guard> {
     return { ok: false, error: "업로드된 파일을 찾을 수 없어요. 다시 시도해 주세요." };
   }
 
-  // 확인 중인 신청이 있으면 중복 접수 막기 (거절된 건은 다시 낼 수 있다)
-  const { count } = await admin
-    .from("enrollment_verifications")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", user.id)
-    .is("result", null);
-  if ((count ?? 0) > 0) {
-    return { ok: false, error: "이미 확인 중인 등업신청이 있어요. 처리가 끝난 뒤 다시 올려 주세요." };
+  // 확인 중인 신청이 있으면 **새 수강증으로 바꿔 넣는다** (2026-09-18 Alan — "잘못 올린 경우 새로 올릴 수 있고,
+  // 예전 기록이 새로 업로드하면 새 정보로 자동 교체". 그전에는 "처리가 끝난 뒤 다시 올려 주세요" 로 막아 시간이 낭비됐다).
+  // 대기 중인 건은 등록·배정이 아직 없어 지워도 남는 것이 없고, 파일도 함께 지운다 (원본은 필요한 동안만 둔다 — 개인정보).
+  // 승인·거절이 끝난 건은 그대로 둔다 (기록이다).
+  const { data: pending } = await admin.from("enrollment_verifications").select("id, file_path").eq("user_id", user.id).is("result", null);
+  for (const p of pending ?? []) {
+    if (p.file_path && p.file_path !== filePath) await admin.storage.from("receipts").remove([p.file_path]);
+    await admin.from("enrollment_verifications").delete().eq("id", p.id);
   }
 
   return { ok: true, user, admin };
