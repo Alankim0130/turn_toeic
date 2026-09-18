@@ -51,7 +51,13 @@ function cacheDir(): string {
 }
 
 function getWorker(): Promise<Worker> {
-  workerPromise ??= createWorker(LANG, 1, { cachePath: cacheDir(), logger: () => {} });
+  workerPromise ??= createWorker(LANG, 1, {
+    cachePath: cacheDir(),
+    logger: () => {},
+    // 워커가 죽으면 tesseract.js 는 errorHandler 가 없을 때 메인 스레드에 **그냥 던진다**(uncaught exception) — 함수 전체가 죽는다.
+    // 여기서 받아 로그만 남긴다. 실패 자체는 createWorker/recognize 의 reject 로 돌아와 readReceiptText 가 사유를 돌려준다
+    errorHandler: (err: unknown) => console.error("[ocr] worker error:", err),
+  });
   return workerPromise;
 }
 
@@ -107,16 +113,23 @@ export const tesseractOcr: OcrEngine = {
   },
 };
 
+export type OcrOutcome = { ok: true; result: OcrResult } | { ok: false; reason: string };
+
 /**
- * 이미지 바이트 → 원문. **실패하면 null** — 던지지 않는다.
+ * 이미지 바이트 → 원문. **실패해도 던지지 않는다** — 사유(`reason`)를 돌려주고 로그에 남긴다.
  * 등업신청은 OCR 이 안 돼도 접수돼야 한다 (읽은 게 없으면 스태프 검토로 간다, `decideVerification`).
+ * 사유는 `enrollment_verifications.ocr_raw.error` 에 남아 승인 화면에서 보인다 — 2026-09-18 첫 운영 테스트에서
+ * 조용히 null 만 돌려줘서 왜 안 읽혔는지(Vercel 에 wasm 이 없었다) 알 길이 없었다.
  */
-export async function readReceiptText(input: { bytes: Uint8Array; mimeType?: string | null; filePath?: string }): Promise<OcrResult | null> {
-  if (!ocrSupports(input.mimeType, input.filePath)) return null;
+export async function readReceiptText(input: { bytes: Uint8Array; mimeType?: string | null; filePath?: string }): Promise<OcrOutcome> {
+  if (!ocrSupports(input.mimeType, input.filePath)) return { ok: false, reason: "not_image" };
   try {
-    return await withTimeout(tesseractOcr.recognize({ bytes: input.bytes, mimeType: input.mimeType ?? "" }), TIMEOUT_MS);
-  } catch {
+    const result = await withTimeout(tesseractOcr.recognize({ bytes: input.bytes, mimeType: input.mimeType ?? "" }), TIMEOUT_MS);
+    return { ok: true, result };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error(`[ocr] 수강증을 읽지 못했어요: ${reason}`);
     await resetWorker();
-    return null;
+    return { ok: false, reason: reason.slice(0, 200) };
   }
 }

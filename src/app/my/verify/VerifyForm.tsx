@@ -380,7 +380,7 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
 
       <div className="flex flex-wrap items-center gap-3">
         <button type="submit" disabled={busy || !!missing} className="btn-primary w-full sm:w-auto" aria-busy={busy}>
-          {uploading ? "업로드 중…" : pending ? "접수 중…" : manual ? "수동 등업신청 접수" : "등업신청 접수"}
+          {uploading ? "업로드 중…" : pending ? (manual ? "접수 중…" : "수강증을 읽는 중…") : manual ? "수동 등업신청 접수" : "등업신청 접수"}
         </button>
         {missing && <span className="text-xs text-mist">{missing}</span>}
       </div>

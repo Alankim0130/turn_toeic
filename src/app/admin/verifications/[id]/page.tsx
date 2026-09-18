@@ -106,6 +106,9 @@ export default async function VerificationDetailPage({
 
   const isImage = /\.(png|jpe?g|webp|gif)$/i.test(v.file_path);
   const parsed = v.parsed as Record<string, unknown> | null;
+  // OCR 이 실패했으면 사유가 ocr_raw.error 에 있다 (2026-09-18 — 조용히 비어 있으면 원인을 알 수 없다)
+  const ocrErrorRaw = (v.ocr_raw as { error?: unknown } | null)?.error;
+  const ocrError = typeof ocrErrorRaw === "string" ? ocrErrorRaw : null;
   const ocrMode = parsed?.mode === "live" || parsed?.mode === "onsite" ? parsed.mode : null;
   // 스태프가 한눈에 보는 줄 — 자세한 값은 아래 JSON 에 그대로 있다
   const ocrFacts: [string, string][] = parsed
@@ -188,7 +191,15 @@ export default async function VerificationDetailPage({
                 </details>
               </>
             ) : (
-              <p className="text-sm text-slate">수강증에서 글자를 읽지 못했습니다 (이미지가 아니거나 OCR 실패). 수강증을 보고 수동으로 승인해 주세요.</p>
+              <p className="text-sm text-slate">
+                수강증에서 글자를 읽지 못했습니다 (이미지가 아니거나 OCR 실패). 수강증을 보고 수동으로 승인해 주세요.
+                {ocrError && (
+                  <>
+                    {" "}
+                    실패 사유: <code className="rounded bg-surface px-1 text-xs">{ocrError}</code>
+                  </>
+                )}
+              </p>
             )}
             {candidateLog && (Array.isArray(candidateLog) ? candidateLog.length > 0 : Object.keys(candidateLog).length > 0) && (
               <>

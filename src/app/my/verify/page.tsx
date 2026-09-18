@@ -9,6 +9,12 @@ import { NoReceiptCard } from "./NoReceiptCard";
 import { getSessionProfile } from "@/lib/auth";
 import { IdentityConfirmForm } from "@/components/my/IdentityConfirmForm";
 
+/**
+ * 이 페이지 함수 안에서 수강증 OCR 서버 액션이 돈다. Vercel 기본 제한(요금제에 따라 10초)에 걸리지 않게 늘린다 —
+ * OCR 은 로컬 실측 3초지만 첫 호출은 언어 데이터 내려받기(2.2MB)·wasm 준비가 더 걸린다 (`src/lib/ocr.ts` 의 30초 타임아웃보다 길게)
+ */
+export const maxDuration = 60;
+
 export const metadata: Metadata = {
   title: "등업신청",
   robots: { index: false },

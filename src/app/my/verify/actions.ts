@@ -9,7 +9,7 @@ import { decideVerification, type VerifyTerm } from "@/lib/verify-decision";
 import { resolveEnrollChoice, type EnrollSection } from "@/lib/enroll-options";
 import { getOpenEnrollSections } from "../_lib/queries";
 import { parseReceipt, receiptHasName, type ParsedReceipt } from "@/lib/receipt";
-import { readReceiptText } from "@/lib/ocr";
+import { readReceiptText, tesseractOcr } from "@/lib/ocr";
 import { matchSections } from "@/lib/match-sections";
 import { approveVerificationWith } from "@/lib/approve-verification";
 
@@ -94,18 +94,24 @@ function notifyAutoApproved(admin: ReturnType<typeof createAdminClient>, userId:
   });
 }
 
-type ReadReceipt = { parsed: ParsedReceipt; ocr: { engine: string; text: string; confidence: number | null }; nameMatches: boolean | null };
+type ReadOk = { ok: true; parsed: ParsedReceipt; ocr: { engine: string; text: string; confidence: number | null }; nameMatches: boolean | null };
+/** 못 읽었을 때도 **왜** 못 읽었는지는 남긴다 (`ocr_raw.error`) — 승인 화면과 Vercel 로그에서 원인을 볼 수 있게 */
+type ReadReceipt = ReadOk | { ok: false; ocr: { engine: string; error: string } };
 
 /**
  * 올라온 수강증을 서버에서 읽는다 (tesseract.js, `src/lib/ocr.ts`).
- * **못 읽으면 null** — 등업신청 자체는 접수되고 스태프 검토로 간다 (`decideVerification`).
+ * **못 읽어도 접수는 된다** — 스태프 검토로 간다 (`decideVerification`). 사유만 `ocr_raw` 에 남긴다.
  */
-async function readReceipt(admin: ReturnType<typeof createAdminClient>, filePath: string, studentName: string | null): Promise<ReadReceipt | null> {
+async function readReceipt(admin: ReturnType<typeof createAdminClient>, filePath: string, studentName: string | null): Promise<ReadReceipt> {
   const { data: file, error } = await admin.storage.from("receipts").download(filePath);
-  if (error || !file) return null;
+  if (error || !file) {
+    console.error(`[ocr] 수강증 파일을 내려받지 못했어요: ${error?.message ?? "no file"}`);
+    return { ok: false, ocr: { engine: tesseractOcr.name, error: "download_failed" } };
+  }
 
-  const ocr = await readReceiptText({ bytes: new Uint8Array(await file.arrayBuffer()), mimeType: file.type, filePath });
-  if (!ocr) return null;
+  const outcome = await readReceiptText({ bytes: new Uint8Array(await file.arrayBuffer()), mimeType: file.type, filePath });
+  if (!outcome.ok) return { ok: false, ocr: { engine: tesseractOcr.name, error: outcome.reason } };
+  const ocr = outcome.result;
 
   const parsed = parseReceipt(ocr.text);
   // 이름이 다르다고 **자동으로 거절하지는 않는다** — 이름 한 글자 오인식으로 멀쩡한 학생을 튕길 수 있다.
@@ -113,6 +119,7 @@ async function readReceipt(admin: ReturnType<typeof createAdminClient>, filePath
   const nameMatches = studentName ? receiptHasName(parsed.text, studentName) : null;
   const confidence = (ocr.raw as { confidence?: unknown } | undefined)?.confidence;
   return {
+    ok: true,
     parsed,
     ocr: { engine: ocr.engine, text: ocr.text, confidence: typeof confidence === "number" ? confidence : null },
     nameMatches,
@@ -120,7 +127,7 @@ async function readReceipt(admin: ReturnType<typeof createAdminClient>, filePath
 }
 
 /** 스태프 화면에 보여 줄 판독 결과. 원문은 ocr_raw 에 있으니 여기서는 뺀다 */
-function parsedSummary({ parsed, nameMatches }: ReadReceipt) {
+function parsedSummary({ parsed, nameMatches }: ReadOk) {
   const { gates, mode, weekly, tracks, levels, level, program, times, time, months, tuition, warnings } = parsed;
   return { gates, mode, weekly, tracks, levels, level, program, times, time, months, tuition, warnings, nameMatches };
 }
@@ -151,7 +158,8 @@ export async function submitVerification(input: { filePath: string }): Promise<S
     admin.from("profiles").select("name").eq("id", user.id).maybeSingle(),
   ]);
 
-  const read = await readReceipt(admin, filePath, profile?.name ?? null);
+  const outcome = await readReceipt(admin, filePath, profile?.name ?? null);
+  const read = outcome.ok ? outcome : null;
   const decision = decideVerification(read?.parsed ?? null, openTermsOf(sections));
   const rejected = decision.kind === "reject";
 
@@ -168,7 +176,7 @@ export async function submitVerification(input: { filePath: string }): Promise<S
       source: "auto",
       result: rejected ? "rejected" : null,
       reject_reason: rejected ? decision.reason : null,
-      ocr_raw: read ? read.ocr : null,
+      ocr_raw: outcome.ocr,
       parsed: read ? parsedSummary(read) : null,
       candidates: match ? { rule: "key-match", result: match.result, log: match.log, nameMatches: read!.nameMatches } : null,
     })
