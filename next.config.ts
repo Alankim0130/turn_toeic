@@ -18,14 +18,25 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/my/verify": [
       "./node_modules/tesseract.js/src/**",
-      "./node_modules/tesseract.js-core/package.json",
-      "./node_modules/tesseract.js-core/tesseract-core-relaxedsimd-lstm.js",
-      "./node_modules/tesseract.js-core/tesseract-core-relaxedsimd-lstm.wasm",
-      "./node_modules/tesseract.js-core/tesseract-core-simd-lstm.js",
-      "./node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm",
-      "./node_modules/tesseract.js-core/tesseract-core-lstm.js",
-      "./node_modules/tesseract.js-core/tesseract-core-lstm.wasm",
+      // 워커 트리가 require 하는 패키지 — 추적이 못 따라가 2026-09-18 두 번째 운영 테스트에서 `bmp-js` 를 못 찾고 워커가 죽었다.
+      // 배포 전 확인: 추적 파일만 복사해 워커를 띄워 보는 시뮬레이션 (CLAUDE.md 미확정 5)
+      "./node_modules/bmp-js/**",
+      "./node_modules/is-url/**",
+      "./node_modules/idb-keyval/**",
+      "./node_modules/regenerator-runtime/**",
+      "./node_modules/zlibjs/**",
       "./node_modules/wasm-feature-detect/**",
+      // wasm 코어는 CPU 기능(relaxed SIMD · SIMD · 기본)과 엔진 모드로 실행 시점에 고른다 — 여섯 조합의 js + wasm 을 다 넣는다 (≈ 21MB).
+      // 브라우저용 `*.wasm.js`(base64 내장, 6 × 3.9MB)는 넣지 않는다 — outputFileTracingExcludes 는 include 로 더한 파일에 안 먹어서
+      // js 는 파일명을 하나씩 적는다 (`tesseract-core*.js` 는 `.wasm.js` 까지 잡는다)
+      "./node_modules/tesseract.js-core/package.json",
+      "./node_modules/tesseract.js-core/tesseract-core.js",
+      "./node_modules/tesseract.js-core/tesseract-core-lstm.js",
+      "./node_modules/tesseract.js-core/tesseract-core-simd.js",
+      "./node_modules/tesseract.js-core/tesseract-core-simd-lstm.js",
+      "./node_modules/tesseract.js-core/tesseract-core-relaxedsimd.js",
+      "./node_modules/tesseract.js-core/tesseract-core-relaxedsimd-lstm.js",
+      "./node_modules/tesseract.js-core/tesseract-core*.wasm",
     ],
   },
 

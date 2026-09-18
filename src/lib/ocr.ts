@@ -120,7 +120,7 @@ export const tesseractOcr: OcrEngine = {
    * 흑백 변형 여러 장을 읽어 원문을 이어 붙인다 (`receiptVariants` 참고 — 컬러 원본은 파란 카드를 통째로 놓친다).
    * 전처리가 실패하면(깨진 파일 등) 원본 한 장으로 돈다.
    */
-  async recognize({ bytes }): Promise<OcrResult> {
+  async recognize({ bytes, enough }): Promise<OcrResult> {
     const worker = await getWorker();
     let variants: { name: string; bytes: Buffer }[];
     try {
@@ -129,13 +129,17 @@ export const tesseractOcr: OcrEngine = {
       variants = [{ name: "original", bytes: Buffer.from(bytes) }];
     }
     const texts: string[] = [];
+    const used: string[] = [];
     let confidence = 0;
     for (const v of variants) {
       const { data } = await worker.recognize(v.bytes);
       texts.push(data.text);
+      used.push(v.name);
       confidence = Math.max(confidence, data.confidence);
+      // 판정 키가 다 나왔으면 남은(더 느린) 변형은 건너뛴다 — 변형 순서는 receiptVariants 가 싼 것부터 둔다
+      if (enough?.(texts.join("\n"))) break;
     }
-    return { text: texts.join("\n"), engine: `tesseract.js/${LANG}`, raw: { confidence, variants: variants.map((v) => v.name) } };
+    return { text: texts.join("\n"), engine: `tesseract.js/${LANG}`, raw: { confidence, variants: used } };
   },
 };
 
@@ -147,12 +151,19 @@ export type OcrOutcome = { ok: true; result: OcrResult } | { ok: false; reason: 
  * 사유는 `enrollment_verifications.ocr_raw.error` 에 남아 승인 화면에서 보인다 — 2026-09-18 첫 운영 테스트에서
  * 조용히 null 만 돌려줘서 왜 안 읽혔는지(Vercel 에 wasm 이 없었다) 알 길이 없었다.
  */
-export async function readReceiptText(input: { bytes: Uint8Array; mimeType?: string | null; filePath?: string }): Promise<OcrOutcome> {
+export async function readReceiptText(input: {
+  bytes: Uint8Array;
+  mimeType?: string | null;
+  filePath?: string;
+  /** 판정 키가 다 읽혔는지 — true 면 남은 변형을 건너뛴다 (`receiptComplete`) */
+  enough?: (text: string) => boolean;
+}): Promise<OcrOutcome> {
   if (!ocrSupports(input.mimeType, input.filePath)) return { ok: false, reason: "not_image" };
   const started = Date.now();
   try {
-    const result = await withTimeout(tesseractOcr.recognize({ bytes: input.bytes, mimeType: input.mimeType ?? "" }), TIMEOUT_MS);
-    console.log(`[ocr] ${result.text.replace(/\s+/g, "").length}자 읽음, ${Date.now() - started}ms`);
+    const result = await withTimeout(tesseractOcr.recognize({ bytes: input.bytes, mimeType: input.mimeType ?? "", enough: input.enough }), TIMEOUT_MS);
+    const used = (result.raw as { variants?: string[] } | undefined)?.variants?.join("+") ?? "?";
+    console.log(`[ocr] ${result.text.replace(/\s+/g, "").length}자 읽음, ${Date.now() - started}ms (${used})`);
     return { ok: true, result };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);

@@ -89,6 +89,8 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
   const [error, setError] = useState<string | null>(null);
   const [rejected, setRejected] = useState<string | null>(null);
   const [done, setDone] = useState<null | "auto" | "manual" | "approved" | "preliminary">(null);
+  /** 자동으로 못 읽어 강사 검토로 갔을 때의 한 줄 (서버가 준다) */
+  const [ocrNote, setOcrNote] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -188,6 +190,7 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
 
         if (res.ok) {
           // OCR 이 반을 찾아 바로 등업했으면 그렇게 말한다 (2026-09-18 자동 승인)
+          setOcrNote(res.ocrNote ?? null);
           setDone(res.approved ? (res.preliminary ? "preliminary" : "approved") : manual ? "manual" : "auto");
           return;
         }
@@ -224,6 +227,7 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
           ? "고르신 반으로 신청이 접수됐어요. 강사가 수강증을 확인한 뒤 배정해 드립니다."
           : "보통 1일 이내 처리돼요."}{" "}
         개강일 전에 올리셨다면 예비등록생으로 표시되고, 개강일에 수강생으로 자동 전환됩니다.
+        {ocrNote && <span className="mt-2 block font-bold text-ink">{ocrNote}</span>}
       </Alert>
     );
   }
