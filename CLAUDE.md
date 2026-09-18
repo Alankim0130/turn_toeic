@@ -90,6 +90,9 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 
 ### 디자인·품질 원칙 (항상 적용)
 - **브랜드 컬러는 핫핑크.** 팔레트: brand #FF2E88 / hover #E61E75 / tint #FFE4EF, 텍스트 ink #17121F
+- **랜딩 구간에 어두운(잉크색) 바탕 띠를 두지 않는다** (2026-09-18 Alan 피드백 — 커리큘럼 구간이 검은 바탕이라 "여기서 페이지가 끝난다"고 느꼈다).
+  구간은 밝은 바탕(`surface`)과 연핑크 띠(`bg-brand-50/70`)만 번갈아 쓰고, 강조는 핫핑크 배너·카드 하나로 한다.
+  어두운 바탕은 강사 소개의 RC 카드처럼 **카드 안**에서만 쓴다
 - **SEO**: 모든 공개 페이지에 metadata(title/description/OG), 시맨틱 HTML, `app/sitemap.ts`·`app/robots.ts` 를 새 공개 라우트마다 갱신
 - **반응형** + 상단 네비게이션 바 + **모바일 하단 네비게이션 바**
 - **홈 화면 앱(PWA)** (2026-09-16 Alan 요청): `app/manifest.ts`(시작 `/my`, standalone, 바로가기 = 불라방·다시보기·숙제업로드·LC음원),
