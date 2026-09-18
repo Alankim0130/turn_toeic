@@ -4,7 +4,8 @@
  * 무엇을 보고 판정하는지는 CLAUDE.md "수강증 OCR 자동 등업 › 수강증 표기 규칙" (2026-09-16 Alan 확정)이 진실의 원천이다.
  *  - 수강 방식: `라이브방송` 이 있으면 불라방(live), 없으면 현장(onsite). `인강` 은 불라방이 아니다 (화목금 인강 = 오전 녹화본).
  *  - 주3일/주5일 · 트랙: `주5일` 을 먼저 본다 — 주5일 표기 안에도 `월수금`·`화목금` 글자가 있어서 트랙부터 보면 주3일로 오독한다.
- *  - 레벨: 650 · 750 · 850 숫자. `프리미어반` 이 붙으면 스파르타(program = sparta).
+ *  - 레벨: 650 · 750 · 850 숫자. `프리미어반`·`스파르타`·`중급속성`·`실전속성` 중 하나라도 있으면 스파르타(program = sparta).
+ *    `중급속성` = 650, `실전속성` = 750 — 숫자를 못 읽으면 이걸로 레벨을 정하고, 숫자와 다르면 경고를 남긴다.
  *  - 수업 시간: `HH:MM~HH:MM` 을 **그대로** 돌려준다. 60/120분으로 가르지 않는다 — 실제 길이가 70·130·140·190·260분 등 다양해서
  *    숫자 기준선을 두면 850 70분이 60분으로, 스파르타가 120분으로 섞인다. 판정은 반의 `time_block` 라벨과 같은지로 한다.
  *
@@ -69,7 +70,10 @@ export const RECEIPT_KEYWORDS = {
   sessions9: "월9회",
   mwf: "월수금",
   ttf: "화목금",
-  sparta: "프리미어",
+  /** 스파르타(프리미어)반 표기. 어느 하나만 읽혀도 sparta 다 — `프리미어반` 한 글자 오인식에 무너지지 않게 (2026-09-18 Alan 확인) */
+  spartaWords: ["프리미어", "스파르타", "중급속성", "실전속성"],
+  /** 과정명이 레벨을 정한다: 스파르타 650+ 중급속성 · 스파르타 750+ 실전속성 */
+  spartaLevelWords: { 중급속성: 650, 실전속성: 750 } as Record<string, number>,
   brand: "역전토익",
   instructors: ["이혜영", "이영수"],
   academy: "YBM",
@@ -259,12 +263,24 @@ export function parseReceipt(raw: string): ParsedReceipt {
     }
   }
 
-  const levels = parseLevels(compact);
-  const level = levels[0] ?? null;
-  if (levels.length === 0) warnings.push("레벨(650/750/850)을 찾지 못했어요");
-  if (levels.length > 1) warnings.push(`레벨이 여러 개 적혀 있어요: ${levels.join(", ")}`);
+  // 과정 — 프리미어 · 스파르타 · 중급속성 · 실전속성 중 하나라도 있으면 스파르타반
+  const program: Program = RECEIPT_KEYWORDS.spartaWords.some((w) => fuzzyIncludes(compact, w, 1)) ? "sparta" : "score";
+  // 과정명이 레벨을 말해 준다 (중급속성 = 650, 실전속성 = 750). 숫자를 못 읽었을 때 대신 쓰고, 읽었는데 다르면 경고
+  const courseLevel =
+    Object.entries(RECEIPT_KEYWORDS.spartaLevelWords).find(([word]) => fuzzyIncludes(compact, word, 1))?.[1] ?? null;
 
-  const program: Program = fuzzyIncludes(compact, RECEIPT_KEYWORDS.sparta, 1) ? "sparta" : "score";
+  const levels = parseLevels(compact);
+  let level = levels[0] ?? null;
+  if (level == null && courseLevel != null) {
+    level = courseLevel;
+    warnings.push(`레벨 숫자는 못 읽었지만 과정명으로 ${courseLevel} 으로 봤어요`);
+  } else if (level == null) {
+    warnings.push("레벨(650/750/850)을 찾지 못했어요");
+  }
+  if (levels.length > 1) warnings.push(`레벨이 여러 개 적혀 있어요: ${levels.join(", ")}`);
+  if (courseLevel != null && level != null && courseLevel !== level) {
+    warnings.push(`과정명(${courseLevel === 650 ? "중급속성" : "실전속성"} = ${courseLevel})과 레벨 숫자(${level})가 달라요`);
+  }
 
   const times = parseTimes(compact);
   if (times.length === 0) warnings.push("수업 시간(HH:MM~HH:MM)을 찾지 못했어요");

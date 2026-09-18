@@ -226,3 +226,36 @@ describe("실제 수강증 화면 양식", () => {
     expect(p.time?.timeBlock).toBe("13:00~15:10");
   });
 });
+
+describe("스파르타(프리미어)반 과정명 — 중급속성 · 실전속성 (2026-09-18 Alan 확인)", () => {
+  const line = (title: string, days: string) => screen(["역전토익 [종합반]", title, "수강센터 부산 서면센터", days, "수강시간 10:00~13:40"].join("\n"));
+
+  it("중급속성이 있으면 프리미어 글자가 없어도 스파르타 650", () => {
+    const p = parseReceipt(line("스파르타 650+ 중급속성", "수강요일 [4주-09/04] 주5일 (월18회)"));
+    expect(p.program).toBe("sparta");
+    expect(p.level).toBe(650);
+  });
+
+  it("실전속성이 있으면 스파르타 750", () => {
+    const p = parseReceipt(line("750+ 실전속성", "수강요일 [4주-09/04] 주5일 (월18회) 프리미어반"));
+    expect(p.program).toBe("sparta");
+    expect(p.level).toBe(750);
+  });
+
+  it("레벨 숫자를 못 읽어도 과정명으로 레벨을 정한다 (경고 남김)", () => {
+    const p = parseReceipt(line("실전속성", "수강요일 주5일 (월18회) 프리미어반"));
+    expect(p.level).toBe(750);
+    expect(p.warnings.some((w) => w.includes("과정명으로 750"))).toBe(true);
+  });
+
+  it("과정명과 숫자가 다르면 경고 — 자동 승인 전에 스태프가 본다", () => {
+    const p = parseReceipt(line("850 목표 중급속성", "수강요일 주5일 (월18회) 프리미어반"));
+    expect(p.level).toBe(850);
+    expect(p.warnings.some((w) => w.includes("달라요"))).toBe(true);
+  });
+
+  it("점수보장반 수강증에는 이 단어가 없어 score 로 남는다", () => {
+    const p = parseReceipt(line("650 목표", "수강요일 [4주-09/04] 월수금 (월9회)"));
+    expect(p.program).toBe("score");
+  });
+});
