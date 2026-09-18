@@ -13,11 +13,15 @@ import { getOpenEnrollSections } from "../_lib/queries";
 import { parseReceipt, receiptComplete, receiptHasName, type ParsedReceipt } from "@/lib/receipt";
 import { readReceiptText, tesseractOcr } from "@/lib/ocr";
 import { matchSections } from "@/lib/match-sections";
+import { assignedLabels } from "@/lib/assigned-label";
 import { approveVerificationWith } from "@/lib/approve-verification";
 
 export type SubmitVerificationResult =
-  /** approved = OCR 이 반을 찾아 바로 등업했다. preliminary = 개강 전이라 예비등록생. ocrNote = 수강증을 못 읽어 강사 검토로 간 이유(학생에게 보인다) */
-  | { ok: true; approved?: boolean; preliminary?: boolean; ocrNote?: string }
+  /**
+   * approved = OCR 이 반을 찾아 바로 등업했다. preliminary = 개강 전이라 예비등록생. ocrNote = 수강증을 못 읽어 강사 검토로 간 이유(학생에게 보인다).
+   * assigned = 배정된 반 한 줄들 — 팝업에 "이 반으로 승인됐어요, 맞나요?" (2026-09-18 Alan)
+   */
+  | { ok: true; approved?: boolean; preliminary?: boolean; ocrNote?: string; assigned?: string[] }
   | { ok: false; error: string }
   | { ok: false; rejected: true; reason: string };
 
@@ -231,7 +235,12 @@ export async function submitVerification(input: { filePath: string }): Promise<S
     if (approved.ok) {
       notifyAutoApproved(admin, user.id, approved.status);
       done();
-      return { ok: true, approved: true, preliminary: approved.status === "preliminary" };
+      return {
+        ok: true,
+        approved: true,
+        preliminary: approved.status === "preliminary",
+        assigned: assignedLabels(sections, match.result.sectionIds, read.parsed.mode),
+      };
     }
     // 승인 단계에서 막히면(이미 같은 반에 배정 등) 검토 대기로 남긴다 — 접수는 됐다
   }
@@ -275,12 +284,20 @@ export async function submitManualVerification(input: {
   });
   if (!resolved.ok) return { ok: false, error: resolved.reason };
 
+  // 자동 승인된 뒤 "반이 달라요" 로 온 정정 요청인가 (2026-09-18 Alan 팝업). 그 달 반으로 이미 승인된 수강증이 있으면 그 id 를 남겨
+  // 스태프가 새로 승인하지 않고 기존 승인의 '배정 수정' 에서 고치게 한다 — 새로 승인하면 등록이 두 건 생긴다.
+  const termSectionIds = sections.filter((s) => s.term && `${s.term.year}-${String(s.term.month).padStart(2, "0")}` === String(input.term)).map((s) => s.id);
+  const { data: prior } = termSectionIds.length
+    ? await admin.from("enrollment_verifications").select("id").eq("user_id", user.id).eq("result", "approved").in("matched_section", termSectionIds).order("id", { ascending: false }).limit(1).maybeSingle()
+    : { data: null };
+
   const { error } = await admin.from("enrollment_verifications").insert({
     user_id: user.id,
     file_path: String(input.filePath),
     source: "manual",
     requested_section_ids: resolved.sectionIds,
     result: null,
+    candidates: prior ? { correctionOf: prior.id } : null,
   });
   if (error) return { ok: false, error: "접수 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요." };
 

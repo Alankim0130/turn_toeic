@@ -99,7 +99,9 @@ export default async function VerificationDetailPage({
   // 수동 등업신청 — 학생이 직접 고른 반 (2026-09-17). 신청 기록일 뿐 확정이 아니다
   const requestedManual = (v.requested_section_ids ?? []).filter((n): n is number => typeof n === "number");
   // OCR 이 반을 찾았는데 자동 승인 조건(이름 일치 등)에 못 미친 건 — 찾은 반을 미리 골라 둔다 (2026-09-18)
-  const matchLog = v.candidates as { result?: { kind?: string; sectionIds?: number[] }; flags?: { duplicateImage?: boolean; staleCapture?: boolean } } | null;
+  const matchLog = v.candidates as { result?: { kind?: string; sectionIds?: number[] }; flags?: { duplicateImage?: boolean; staleCapture?: boolean }; correctionOf?: number } | null;
+  // 자동 승인 뒤 학생이 "반이 달라요" 로 낸 정정 요청 — 새로 승인하면 등록이 두 건 생기니 기존 승인의 배정 수정으로 보낸다 (2026-09-18)
+  const correctionOf = typeof matchLog?.correctionOf === "number" ? matchLog.correctionOf : null;
   // 위조·돌려쓰기 의심 — 자동 승인이 막힌 이유. 스태프가 수강증을 더 자세히 본다 (2026-09-18)
   const suspicious = [
     matchLog?.flags?.duplicateImage ? "다른 계정이 같은 이미지 파일을 올렸어요 — 수강증을 돌려 쓰는 것일 수 있어요. 두 계정의 이름·전화번호를 확인해 주세요." : null,
@@ -179,6 +181,13 @@ export default async function VerificationDetailPage({
           </section>
 
           <section className="card p-5">
+            {correctionOf && (
+              <Alert kind="warning" className="mb-3">
+                이 학생은 이 달 반에 <b>이미 자동 배정</b>돼 있고, 「반이 달라요」로 정정을 요청했어요. 여기서 새로 승인하지 말고{" "}
+                <Link href={`/admin/verifications/${correctionOf}`} className="font-bold underline">기존 승인 #{correctionOf}</Link>의 <b>배정 수정</b>에서 반을 바꾼 뒤,
+                이 건은 반려(사유: 「기존 배정을 수정했어요」)로 닫아 주세요.
+              </Alert>
+            )}
             <h2 className="mb-3 font-black text-ink">OCR 판독 결과</h2>
             {suspicious.map((s) => (
               <Alert key={s} kind="warning" className="mb-3">{s}</Alert>

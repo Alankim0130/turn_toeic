@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Alert } from "@/components/ui/Alert";
+import { Dialog } from "@/components/ui/Dialog";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
 import {
@@ -91,6 +92,8 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
   const [done, setDone] = useState<null | "auto" | "manual" | "approved" | "preliminary">(null);
   /** 자동으로 못 읽어 강사 검토로 갔을 때의 한 줄 (서버가 준다) */
   const [ocrNote, setOcrNote] = useState<string | null>(null);
+  // 결과 팝업 (2026-09-18 Alan — "반려 문구가 바로 보여야 하고, 승인이면 어떤 반인지 팝업으로 보여 주고 맞으면 확인, 아니면 수동신청")
+  const [popup, setPopup] = useState<null | { kind: "approved" | "preliminary"; assigned: string[] } | { kind: "rejected"; reason: string }>(null);
   const [pending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -191,12 +194,15 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
         if (res.ok) {
           // OCR 이 반을 찾아 바로 등업했으면 그렇게 말한다 (2026-09-18 자동 승인)
           setOcrNote(res.ocrNote ?? null);
-          setDone(res.approved ? (res.preliminary ? "preliminary" : "approved") : manual ? "manual" : "auto");
+          const kind = res.approved ? (res.preliminary ? "preliminary" : "approved") : manual ? "manual" : "auto";
+          setDone(kind);
+          if (kind === "approved" || kind === "preliminary") setPopup({ kind, assigned: res.assigned ?? [] });
           return;
         }
         if ("rejected" in res) {
-          // 바로 거절 — 이유를 보여 주고 수동 등업신청으로 갈 수 있게 한다
+          // 바로 거절 — 팝업으로 이유를 보여 주고 수동 등업신청으로 갈 수 있게 한다. 닫아도 폼 위에 같은 문구가 남는다
           setRejected(res.reason);
+          setPopup({ kind: "rejected", reason: res.reason });
           return;
         }
         setError(res.error);
@@ -208,15 +214,65 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
     }
   }
 
+  const toManual = () => {
+    setPopup(null);
+    setDone(null);
+    setRejected(null);
+    setManual(true);
+  };
+
+  const resultPopup = popup && (
+    <Dialog
+      open
+      tone={popup.kind === "rejected" ? "warning" : "success"}
+      title={popup.kind === "rejected" ? "등업신청이 반려됐어요" : popup.kind === "approved" ? "등업이 완료됐어요" : "예비등록이 완료됐어요"}
+      onClose={() => setPopup(null)}
+    >
+      {popup.kind === "rejected" ? (
+        <>
+          <p>{popup.reason}</p>
+          <p className="mt-2 text-slate">잘못 판정된 것 같다면 <b>수동 등업신청</b>으로 반을 직접 골라 내실 수 있어요. 강사가 수강증을 보고 확인해 드립니다.</p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <button type="button" onClick={toManual} className="btn-primary w-full sm:w-auto">수동 등업신청으로 내기</button>
+            <button type="button" onClick={() => setPopup(null)} className="btn-secondary w-full sm:w-auto">닫기</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p>수강증을 읽어 이 반으로 배정했어요. <b>맞는지 확인해 주세요.</b></p>
+          <ul className="mt-3 space-y-1.5">
+            {popup.assigned.length === 0 ? (
+              <li className="rounded-xl bg-surface px-3 py-2 text-slate">배정된 반 정보를 불러오지 못했어요. 내 시간표에서 확인해 주세요.</li>
+            ) : (
+              popup.assigned.map((a) => (
+                <li key={a} className="rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 font-bold text-ink">{a}</li>
+              ))
+            )}
+          </ul>
+          <p className="mt-3 text-slate">
+            {popup.kind === "approved" ? "이제 불라방·다시보기·숙제업로드를 쓸 수 있어요." : "개강일에 수강생으로 자동 전환되고, 그때부터 불라방·다시보기가 열려요."}
+          </p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <button type="button" onClick={() => setPopup(null)} className="btn-primary w-full sm:w-auto">맞아요, 확인</button>
+            <button type="button" onClick={toManual} className="btn-secondary w-full sm:w-auto">반이 달라요 — 수동신청</button>
+          </div>
+        </>
+      )}
+    </Dialog>
+  );
+
   if (done === "approved" || done === "preliminary") {
     return (
+      <>
+      {resultPopup}
       <Alert kind="success" title={done === "approved" ? "등업이 완료됐어요" : "예비등록이 완료됐어요"}>
         수강증을 읽어 반을 바로 배정했어요.{" "}
         {done === "approved"
           ? "이제 불라방·다시보기·숙제업로드를 쓸 수 있어요. 내 시간표에서 배정된 반을 확인해 주세요."
           : "개강일에 수강생으로 자동 전환되고, 그때부터 불라방·다시보기가 열려요."}{" "}
-        반이 잘못 배정됐다면 강사에게 알려 주세요 — 바로 정정해 드립니다.
+        반이 잘못 배정됐다면 <button type="button" onClick={toManual} className="font-bold underline">수동 등업신청</button>으로 알려 주세요 — 강사가 바로 정정해 드립니다.
       </Alert>
+      </>
     );
   }
 
@@ -236,6 +292,7 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      {resultPopup}
       {error && <Alert kind="warning">{error}</Alert>}
 
       {rejected && (
