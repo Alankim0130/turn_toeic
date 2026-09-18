@@ -6,6 +6,8 @@ import { formatDate, cn } from "@/lib/utils";
 import { getMyVerifications, getOpenEnrollSections, VERIFICATION_STATUS_LABEL } from "../_lib/queries";
 import { VerifyForm } from "./VerifyForm";
 import { NoReceiptCard } from "./NoReceiptCard";
+import { getSessionProfile } from "@/lib/auth";
+import { IdentityConfirmForm } from "@/components/my/IdentityConfirmForm";
 
 export const metadata: Metadata = {
   title: "등업신청",
@@ -19,11 +21,28 @@ const STEPS: { icon: IconName; title: string; desc: string }[] = [
 ];
 
 export default async function VerifyPage() {
-  const [verifications, sections] = await Promise.all([getMyVerifications(), getOpenEnrollSections()]);
+  const [verifications, sections, { profile }] = await Promise.all([getMyVerifications(), getOpenEnrollSections(), getSessionProfile()]);
+
+  // 수강증을 낸 뒤 이름·전화번호를 한 번 확인받는다 (2026-09-18 Alan — 동명이인 방지)
+  const needsIdentity = verifications.length > 0 && !profile?.identity_confirmed_at;
 
   return (
     <div className="space-y-8">
       <PageHeader icon="verify" title="등업신청" description="수강증을 올리면 강사가 확인해 반을 배정합니다. 확인이 잘못됐다면 반을 직접 골라 다시 낼 수 있어요." />
+
+      {needsIdentity && (
+        <Reveal>
+          <section className="card border-brand-200 p-5 sm:p-6">
+            <h2 className="text-base font-black text-ink">이름·전화번호 확인</h2>
+            <p className="mt-1 text-sm text-slate">
+              수강증을 받았어요. 같은 이름을 쓰는 수강생이 있어서, <b>가입할 때 적은 이름과 전화번호</b>를 한 번 더 확인합니다.
+            </p>
+            <div className="mt-4">
+              <IdentityConfirmForm phone={profile?.phone ?? null} />
+            </div>
+          </section>
+        </Reveal>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
         <div className="space-y-4">

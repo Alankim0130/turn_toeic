@@ -295,3 +295,17 @@ export function termLabel(term: { year: number; month: number } | null | undefin
 export function monthOf(date: string) {
   return Number(date.slice(5, 7));
 }
+
+/**
+ * 대기 중인 계정 통합 신청 (2026-09-18 Alan). RLS 가 내 계정이 걸린 행만 돌려준다.
+ * 내가 신청하지 않은 행이면 **이 계정에서 확인해야** 합쳐진다 (본인 확인).
+ */
+export async function getMyMergeRequests() {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("account_merge_requests")
+    .select("id, from_user, to_user, requested_by, created_at")
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+  return data ?? [];
+}

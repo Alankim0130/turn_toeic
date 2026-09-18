@@ -577,6 +577,23 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 등록 현황이 이름 옆으로 올라오면서 같은 날짜가 나란히 두 번 나와 칩을 없앴다 — 등록마다 적는 쪽이 더 정확하다.
 등록이 여러 건이면 칩 하나로는 못 적는다).
 
+### 3-1. 이름·전화번호 확인 · 계정 통합 (2026-09-18 Alan 요청, 마이그레이션 20260918110000)
+
+- **수강증을 내면 바로 이름·전화번호를 확인받는다** (동명이인 방지). 수강증에는 이름만 있어서 같은 이름이면 누구인지 못 가린다.
+  `/my/verify` 위에 확인 카드가 뜨고, 저장하면 `profiles.identity_confirmed_at` 이 찍힌다.
+  **이름은 바꾸지 않는다** — 가입 실명과 같은지 `public.confirm_identity` 가 확인만 하고(다르면 `name_mismatch`), 전화번호만 저장한다.
+  수강증 대조(G3)의 기준이 가입 실명이라, 이름을 학생이 고치면 기준이 흔들린다. 이름이 틀리면 스태프가 고친다.
+- **같은 이름 + 같은 전화번호면 같은 사람으로 본다.** `public.merge_candidates()` 가 그런 계정을 찾아
+  `/my/account` 에 보여 준다 (이메일은 앞 두 글자만, 나머지는 가림).
+- **계정 통합** — 학생이 **어느 계정을 남길지 고르고**, 기록은 남길 계정으로 모두 옮긴다:
+  숙제 제출 · 스터디 신청 · 특강 신청 · 교재주문 · 문의 · 등록(`enrollment_orders`) · 반 배정(`enrollments`) · 등업 기록.
+  남길 계정에 이미 같은 것이 있으면(같은 반 배정, 같은 스터디·특강 신청) 옮기지 않고 **지운다** — 죽은 계정이 정원을 계속 차지하면 안 된다.
+- **본인 확인: 두 계정 모두에 로그인할 수 있어야 한다** (Alan 확정). 신청은 한쪽에서 하고 **확인은 반대쪽 계정에서** 한다
+  (`confirm_account_merge` 가 `auth.uid() = requested_by` 면 거부). 이름·전화번호만 알면 남의 기록을 가져갈 수 있기 때문이다.
+- 통합 뒤 비워진 계정은 **로그인만 막고 기록은 보존한다** (`profiles.merged_into`). `requireUser()` 가 `/account-merged` 로 보낸다.
+  지우지 않는 이유는 잘못 합쳤을 때 되돌릴 수 있어야 하기 때문이다.
+- 스태프(강사·관리자) 계정은 통합 대상이 아니다 (`merge_candidates`·`merge_accounts` 가 막는다).
+
 ### 4. 등록 기간 — 매달 등록 (2026-09-15 Alan 확정)
 
 - **등록은 매달 한다.** 수강증 1건 = 그 달 등록 1건. 2개월 등록은 받지 않는다.
@@ -1001,6 +1018,20 @@ create table special_lectures (            -- 특강. 수업일과 겹쳐도 되
   applied_count   int not null default 0           -- lecture_signups 트리거가 유지 (직접 수정 불가)
 );
 
+create table account_merge_requests (      -- 계정 통합 신청 (마이그레이션 20260918110000)
+  id           bigint primary key,
+  from_user    uuid references profiles,   -- 비워질 계정
+  to_user      uuid references profiles,   -- 남길 계정 (학생이 고른다)
+  requested_by uuid references profiles,   -- 신청한 계정. **확인은 반대쪽이 한다** (본인 확인)
+  status       text default 'pending',     -- pending | done | cancelled
+  moved        jsonb,                      -- 옮긴 행 수 (숙제·스터디·특강 …)
+  created_at timestamptz, decided_at timestamptz
+);
+-- profiles.identity_confirmed_at : 수강증 인증 뒤 이름·전화번호를 확인한 시각
+-- profiles.merged_into           : 통합되어 비워진 계정 → 남은 계정. null 이 아니면 로그인을 막는다 (기록은 보존)
+-- 함수: public.confirm_identity(name, phone) · public.merge_candidates() · public.request_account_merge(other, keep)
+--       public.confirm_account_merge(request) → private.merge_accounts(from, to) · public.cancel_account_merge(request)
+
 create table lecture_signups (             -- 특강 신청. 한 특강에 한 사람 1건
   id         bigint primary key,
   lecture_id bigint references special_lectures,   -- 신청자가 있는 특강은 삭제 불가
@@ -1285,6 +1316,7 @@ where p.role='student'
 | 경로 | 내용 | 필요 등급 |
 |---|---|---|
 | `/my` | 대시보드. **이름 옆에 내 등록 현황**, 그 아래 **이번 달 내 시간표**(달력 + 고른 날짜), 등업신청 현황, 바로가기 | member |
+| `/my/account` | 내 계정 — 이름·전화번호 확인, 같은 사람으로 보이는 계정과 **계정 합치기**(신청·확인·취소) | member |
 | `/my/verify` | 등업신청 — **수강증만 올리기**(우리 수강증·수강월이 아니면 이유를 적어 바로 거절) 와 **수동 등업신청**(수강증 + 수강월·레벨·요일·시간대, 하나라도 비면 제출 불가) | member |
 | `/my/class` | 내 시간표 — **달력에서 고른 날짜의 수업만** (처음엔 오늘) + 특강 신청 바로가기. `이 달 전체` 로 한 달을 펼친다 | student |
 | `/my/lecture` | **특강 신청** — 그 달 특강·모의고사 카드에서 신청·취소 (정원·신청 시작 카운트다운) | 그 달 수강생 |
@@ -1479,7 +1511,10 @@ where p.role='student'
 9. **숙제 미제출자 기준** (2026-09-16) — 숙제가 레벨 × 과목 단위이고 여러 번 낼 수 있어서 "누가 안 냈는가"의 기준(기간? 회차?)이 없다.
    관리자 숙제점검에 미제출자 목록을 넣으려면 Alan 이 기준을 정해야 한다. 그때까지 제출 목록만 보여 준다.
 
-10. **이름 · 전화번호로 학생을 가리고, 계정을 통합한다** (2026-09-18 Alan 요청. **아직 구현하지 않는다**)
+10. ~~**이름 · 전화번호로 학생을 가리고, 계정을 통합한다**~~ → **완료 (2026-09-18, 마이그레이션 20260918110000).**
+   도메인 규칙 3-1 에 동작을 적었다. 네 가지는 Alan 이 그날 확정했다: 본인 확인 = 두 계정 모두 로그인 /
+   옮길 것 = 학습 기록 전부 / 옛 계정 = 로그인만 막고 보존 / 이름·전화번호 = 인증 직후 확인 화면.
+   아래는 그 결정에 이르기까지의 기록이다.
    - 확정: **영수증번호는 없다 → 전부 삭제했다** (컬럼·unique index·화면·판독기, 마이그레이션 20260918100000).
    - Alan 요청: "수강증 인증이 끝나면 **바로 등록한 이름과 전화번호**를 적도록 (동명이인 방지). 여러 계정을 만드는 것도 막을 수 있을 것 같다.
      여러 계정이면 **계정 통합 안내**가 나가면서 어떤 계정으로 통합할지 선택지를 주고, 통합하면 **이전 계정의 숙제 제출 내용이 전부 새 계정으로 옮겨지도록**."

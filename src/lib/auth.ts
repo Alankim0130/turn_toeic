@@ -54,9 +54,14 @@ export const COMPLETE_PROFILE_PATH = "/signup/complete";
 export const isProfileIncomplete = (profile?: Pick<Profile, "name" | "phone"> | null) =>
   !profile || profile.name.trim() === "" || !profile.phone;
 
+/** 통합되어 비워진 계정. 기록은 남은 계정에 있고 이 계정으로는 더 쓸 수 없다 (2026-09-18 Alan) */
+export const MERGED_PATH = "/account-merged";
+
 export async function requireUser(next?: string) {
   const s = await getSessionProfile();
   if (!s.user) redirect(`/login${next ? `?next=${encodeURIComponent(next)}` : ""}`);
+  // 계정을 합치면 옛 계정은 로그인만 막는다 (기록은 지우지 않는다)
+  if (s.profile?.merged_into) redirect(MERGED_PATH);
   // 구글로 들어와 실명·휴대폰이 없으면 먼저 채우게 한다 (가입 정보 입력 화면 자체는 requireUser 를 쓰지 않는다)
   if (isProfileIncomplete(s.profile)) redirect(`${COMPLETE_PROFILE_PATH}${next ? `?next=${encodeURIComponent(next)}` : ""}`);
   return s as { user: NonNullable<typeof s.user>; profile: Profile | null };

@@ -39,6 +39,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_merge_requests: {
+        Row: {
+          created_at: string
+          decided_at: string | null
+          from_user: string
+          id: number
+          moved: Json | null
+          requested_by: string
+          status: string
+          to_user: string
+        }
+        Insert: {
+          created_at?: string
+          decided_at?: string | null
+          from_user: string
+          id?: never
+          moved?: Json | null
+          requested_by: string
+          status?: string
+          to_user: string
+        }
+        Update: {
+          created_at?: string
+          decided_at?: string | null
+          from_user?: string
+          id?: never
+          moved?: Json | null
+          requested_by?: string
+          status?: string
+          to_user?: string
+        }
+        Relationships: []
+      }
       class_sections: {
         Row: {
           book_set: string | null
@@ -775,6 +808,8 @@ export type Database = {
           department: string | null
           gender: string | null
           id: string
+          identity_confirmed_at: string | null
+          merged_into: string | null
           name: string
           phone: string | null
           role: Database["public"]["Enums"]["user_role"]
@@ -787,6 +822,8 @@ export type Database = {
           department?: string | null
           gender?: string | null
           id: string
+          identity_confirmed_at?: string | null
+          merged_into?: string | null
           name: string
           phone?: string | null
           role?: Database["public"]["Enums"]["user_role"]
@@ -1401,6 +1438,19 @@ export type Database = {
       }
     }
     Functions: {
+      cancel_account_merge: { Args: { p_request: number }; Returns: undefined }
+      confirm_account_merge: { Args: { p_request: number }; Returns: Json }
+      confirm_identity: { Args: { p_name: string; p_phone: string }; Returns: undefined }
+      merge_candidates: {
+        Args: Record<string, never>
+        Returns: {
+          email_hint: string
+          has_records: boolean
+          joined_at: string
+          user_id: string
+        }[]
+      }
+      request_account_merge: { Args: { p_keep: string; p_other: string }; Returns: number }
       complete_profile: {
         Args: {
           p_department?: string | null
