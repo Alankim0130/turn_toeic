@@ -309,3 +309,27 @@ export async function getMyMergeRequests() {
     .order("created_at", { ascending: false });
   return data ?? [];
 }
+
+/** 내 비대면 스터디 인증 (자료 id → 인증). 2026-09-18 */
+export async function getMyStudyCheckins() {
+  const supabase = await createClient();
+  const { data } = await supabase.from("study_checkins").select("id, material_id, created_at, study_checkin_files(count)");
+  return (data ?? []).map((c) => ({ id: c.id, material_id: c.material_id, created_at: c.created_at, files: c.study_checkin_files?.[0]?.count ?? 0 }));
+}
+
+/** 선생님이 보낸 알림 (최근 100건). RLS 가 본인 것만 돌려준다 */
+export async function getMyMessages() {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("student_messages")
+    .select("id, title, body, kind, related, sender_name, created_at, read_at")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  return data ?? [];
+}
+
+export async function getUnreadMessageCount() {
+  const supabase = await createClient();
+  const { count } = await supabase.from("student_messages").select("id", { count: "exact", head: true }).is("read_at", null);
+  return count ?? 0;
+}

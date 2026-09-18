@@ -7,7 +7,9 @@ import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { cn, formatDate, todayKST } from "@/lib/utils";
 import { formatBytes, isSlotKind, slotTime, STUDY_KIND_ICON, STUDY_KIND_LABEL, STUDY_STATUS_LABEL, termIndex } from "@/lib/study";
-import { getMyOrders, getMyStudyEligibility, getMyStudyMaterials, getMyStudySignups, termLabel } from "../_lib/queries";
+import { getMyOrders, getMyStudyCheckins, getMyStudyEligibility, getMyStudyMaterials, getMyStudySignups, termLabel } from "../_lib/queries";
+import { getSessionProfile } from "@/lib/auth";
+import { CheckinPanel } from "@/components/my/study/CheckinPanel";
 
 export const metadata: Metadata = {
   title: "내 스터디",
@@ -15,7 +17,9 @@ export const metadata: Metadata = {
 };
 
 export default async function MyStudyPage() {
-  const [orders, signups, materials] = await Promise.all([getMyOrders(), getMyStudySignups(), getMyStudyMaterials()]);
+  const [orders, signups, materials, checkins, { user }] = await Promise.all([getMyOrders(), getMyStudySignups(), getMyStudyMaterials(), getMyStudyCheckins(), getSessionProfile()]);
+  // 자료(날짜)마다 내 인증 — 비대면 스터디는 풀고 나서 **인증을 항상** 한다 (2026-09-18 Alan)
+  const checkinByMaterial = new Map(checkins.map((c) => [c.material_id, c]));
   const { accessTerms, opensOn } = await getMyStudyEligibility(orders);
   const today = todayKST();
 
@@ -99,9 +103,7 @@ export default async function MyStudyPage() {
                 <Icon name="online" size={24} />
                 {termLabel(study.term)} 비대면스터디 자료
               </h2>
-              <Link href="/my/homework" className="text-sm font-bold text-brand-600 hover:underline">
-                풀이는 숙제업로드에 →
-              </Link>
+              <span className="text-xs font-bold text-slate">자료를 풀고 날짜마다 <span className="text-brand-600">인증하기</span>로 풀이 사진을 올려요</span>
             </div>
 
             {!accessTerms.has(study.term_id) ? (
@@ -133,6 +135,7 @@ export default async function MyStudyPage() {
                           <Icon name="download" size={18} className="brightness-0 invert" />
                           자료 받기
                         </a>
+                        {user && <CheckinPanel materialId={m.id} userId={user.id} checkin={checkinByMaterial.get(m.id) ?? null} />}
                       </div>
                     </li>
                   );

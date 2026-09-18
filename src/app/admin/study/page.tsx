@@ -9,6 +9,7 @@ import { FilterTabs } from "@/components/admin/FilterTabs";
 import { TermChips } from "@/components/admin/TermChips";
 import { TableWrap, Th, Td } from "@/components/admin/Table";
 import { CancelSignupButton } from "@/components/admin/studies/CancelSignupButton";
+import { CheckinRoster } from "@/components/admin/studies/CheckinRoster";
 import { isSlotKind, slotTime, sortSlots, STUDY_KIND_LABEL, STUDY_STATUS_LABEL, termParam } from "@/lib/study";
 import { pickTerm, termLabel } from "../_lib/queries";
 import { requireCrew } from "@/lib/auth";
@@ -64,6 +65,20 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
 
   const rows = signups ?? [];
   const slots = sortSlots(study.study_slots ?? []);
+
+  // 비대면: 자료(날짜)마다 누가 인증했는지 (2026-09-18 Alan — 미인증 학생에게 알림)
+  const [{ data: materialRows }, { data: checkinRows }] =
+    kind === "online"
+      ? await Promise.all([
+          supabase.from("study_materials").select("id, date, title").eq("study_id", study.id).order("date", { ascending: false }),
+          supabase.from("study_checkins").select("material_id, user_id, created_at, study_checkin_files(count)"),
+        ])
+      : [{ data: [] as never[] }, { data: [] as never[] }];
+  const materialIds = new Set((materialRows ?? []).map((m) => m.id));
+  const rosterCheckins = (checkinRows ?? [])
+    .filter((c) => materialIds.has(c.material_id))
+    .map((c) => ({ material_id: c.material_id, user_id: c.user_id, created_at: c.created_at, files: c.study_checkin_files?.[0]?.count ?? 0 }));
+  const rosterStudents = rows.filter((r) => r.user).map((r) => ({ id: r.user!.id, name: r.user!.name, phone: r.user!.phone }));
 
   return (
     <>
@@ -145,6 +160,13 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
       ) : rows.length === 0 ? (
         <EmptyState icon="online" title="아직 신청한 수강생이 없어요" description="신청 받기 상태로 바꾸면 수강생이 스터디 페이지에서 신청할 수 있어요." />
       ) : (
+        <div className="space-y-6">
+        <section>
+          <h2 className="mb-2 text-base font-black text-ink">날짜별 인증 현황 <span className="text-sm font-semibold text-slate">— 자료를 풀고 인증하지 않은 학생에게 알림을 보낼 수 있어요</span></h2>
+          <CheckinRoster students={rosterStudents} materials={materialRows ?? []} checkins={rosterCheckins} />
+        </section>
+        <section>
+        <h2 className="mb-2 text-base font-black text-ink">신청자</h2>
         <TableWrap>
           <thead>
             <tr>
@@ -169,6 +191,8 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
             })}
           </tbody>
         </TableWrap>
+        </section>
+        </div>
       )}
     </>
   );

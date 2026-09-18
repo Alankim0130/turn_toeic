@@ -39,6 +39,122 @@ export type Database = {
   }
   public: {
     Tables: {
+      student_messages: {
+        Row: {
+          body: string
+          created_at: string
+          id: number
+          kind: string
+          read_at: string | null
+          related: Json | null
+          sender_id: string | null
+          sender_name: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: never
+          kind?: string
+          read_at?: string | null
+          related?: Json | null
+          sender_id?: string | null
+          sender_name?: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: never
+          kind?: string
+          read_at?: string | null
+          related?: Json | null
+          sender_id?: string | null
+          sender_name?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      study_checkin_files: {
+        Row: {
+          checkin_id: number
+          content_type: string
+          created_at: string
+          file_name: string
+          file_path: string
+          file_size: number
+          id: number
+        }
+        Insert: {
+          checkin_id: number
+          content_type: string
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size: number
+          id?: never
+        }
+        Update: {
+          checkin_id?: number
+          content_type?: string
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          id?: never
+        }
+        Relationships: [
+          {
+            foreignKeyName: "study_checkin_files_checkin_id_fkey"
+            columns: ["checkin_id"]
+            isOneToOne: false
+            referencedRelation: "study_checkins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      study_checkins: {
+        Row: {
+          created_at: string
+          id: number
+          material_id: number
+          note: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: never
+          material_id: number
+          note?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: never
+          material_id?: number
+          note?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "study_checkins_material_id_fkey"
+            columns: ["material_id"]
+            isOneToOne: false
+            referencedRelation: "study_materials"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "study_checkins_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       account_merge_requests: {
         Row: {
           created_at: string

@@ -19,6 +19,7 @@ import {
   VERIFICATION_STATUS_LABEL,
   getMyWeek5,
   getMyMergeRequests,
+  getUnreadMessageCount,
 } from "./_lib/queries";
 
 export const metadata: Metadata = {
@@ -37,6 +38,7 @@ const QUICK: { href: string; label: string; desc: string; icon: IconName }[] = [
   { href: "/my/homework", label: "숙제업로드", desc: "풀이 사진 올리기", icon: "homework" },
   { href: "/my/lc-audio", label: "LC음원듣기", desc: "레벨별 음원", icon: "headphones" },
   { href: "/my/account", label: "내 계정", desc: "이름·전화 확인, 계정 합치기", icon: "verify" },
+  { href: "/my/notifications", label: "알림", desc: "선생님이 보낸 알림", icon: "bell" },
 ];
 
 /**
@@ -75,13 +77,14 @@ function recordedTracksOf(
 }
 
 export default async function MyPage({ searchParams }: { searchParams: Promise<{ welcome?: string; denied?: string }> }) {
-  const [{ profile, user }, sp, verifications, week5, schedule, mergeRequests] = await Promise.all([
+  const [{ profile, user }, sp, verifications, week5, schedule, mergeRequests, unread] = await Promise.all([
     requireUser("/my"),
     searchParams,
     getMyVerifications(),
     getMyWeek5(),
     getMySchedule(),
     getMyMergeRequests(),
+    getUnreadMessageCount(),
   ]);
 
   // 내가 신청하지 않은 통합 요청 = 이 계정에서 확인해야 합쳐진다 (2026-09-18 Alan)
@@ -213,6 +216,11 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
       {sp.denied === "admin" && (
         <Alert kind="warning" title="관리자 페이지에 접근할 수 없어요">
           강사 또는 관리자 계정으로만 이용할 수 있습니다.
+        </Alert>
+      )}
+      {unread > 0 && (
+        <Alert kind="info" title={`선생님 알림 ${unread}개가 왔어요`}>
+          <Link href="/my/notifications" className="font-bold underline">알림 보기</Link> — 비대면 스터디 인증 요청 같은 안내가 들어 있어요.
         </Alert>
       )}
       {mergeToConfirm > 0 && (

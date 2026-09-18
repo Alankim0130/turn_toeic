@@ -319,6 +319,7 @@ export const NAV_DRAWER: NavSection[] = [
     label: "마이페이지",
     items: [
       { href: "/my", label: "대시보드", icon: "profile" },
+      { href: "/my/notifications", label: "알림", icon: "bell" },
       { href: "/my/verify", label: "등업신청", icon: "verify" },
     ],
   },
