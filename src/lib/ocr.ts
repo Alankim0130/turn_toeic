@@ -50,13 +50,39 @@ function cacheDir(): string {
   return dir;
 }
 
+/** 워커를 못 만들었으면 잠시 쉰다 — 실패한 워커 스레드는 손에 없어 못 끝내므로(아래) 요청마다 다시 만들면 스레드가 쌓인다 */
+const RETRY_AFTER_MS = 5 * 60_000;
+let failedAt = 0;
+
+/**
+ * 워커 준비. tesseract.js 의 `createWorker` 는 **언어 데이터·초기화가 실패해도 끝나지 않는다** — 안에서 오류를 삼키고
+ * `errorHandler` 만 부른다 (2026-09-18 실측: 네트워크 실패에 errorHandler 는 바로 불리는데 promise 는 영영 대기).
+ * 그대로 두면 실패할 때마다 30초 타임아웃을 다 기다린 뒤에야 "못 읽음" 이 되고 학생은 그동안 "읽는 중…" 만 본다.
+ * 그래서 errorHandler 로 받은 **첫 오류로 여기서 바로 실패**시킨다. errorHandler 가 아예 없으면 tesseract.js 가
+ * 메인 스레드에 그냥 던져(uncaught exception) 함수 전체가 죽는다.
+ */
 function getWorker(): Promise<Worker> {
-  workerPromise ??= createWorker(LANG, 1, {
-    cachePath: cacheDir(),
-    logger: () => {},
-    // 워커가 죽으면 tesseract.js 는 errorHandler 가 없을 때 메인 스레드에 **그냥 던진다**(uncaught exception) — 함수 전체가 죽는다.
-    // 여기서 받아 로그만 남긴다. 실패 자체는 createWorker/recognize 의 reject 로 돌아와 readReceiptText 가 사유를 돌려준다
-    errorHandler: (err: unknown) => console.error("[ocr] worker error:", err),
+  if (!workerPromise && Date.now() - failedAt < RETRY_AFTER_MS) return Promise.reject(new Error("ocr_cooldown"));
+  workerPromise ??= new Promise<Worker>((resolve, reject) => {
+    let settled = false;
+    const fail = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      failedAt = Date.now();
+      reject(err instanceof Error ? err : new Error(String(err)));
+    };
+    createWorker(LANG, 1, {
+      cachePath: cacheDir(),
+      logger: () => {},
+      errorHandler: (err: unknown) => {
+        console.error("[ocr] worker error:", err);
+        fail(err);
+      },
+    }).then((worker) => {
+      if (settled) return void worker.terminate();
+      settled = true;
+      resolve(worker);
+    }, fail);
   });
   return workerPromise;
 }
@@ -123,12 +149,14 @@ export type OcrOutcome = { ok: true; result: OcrResult } | { ok: false; reason: 
  */
 export async function readReceiptText(input: { bytes: Uint8Array; mimeType?: string | null; filePath?: string }): Promise<OcrOutcome> {
   if (!ocrSupports(input.mimeType, input.filePath)) return { ok: false, reason: "not_image" };
+  const started = Date.now();
   try {
     const result = await withTimeout(tesseractOcr.recognize({ bytes: input.bytes, mimeType: input.mimeType ?? "" }), TIMEOUT_MS);
+    console.log(`[ocr] ${result.text.replace(/\s+/g, "").length}자 읽음, ${Date.now() - started}ms`);
     return { ok: true, result };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    console.error(`[ocr] 수강증을 읽지 못했어요: ${reason}`);
+    console.error(`[ocr] 수강증을 읽지 못했어요 (${Date.now() - started}ms): ${reason}`);
     await resetWorker();
     return { ok: false, reason: reason.slice(0, 200) };
   }
