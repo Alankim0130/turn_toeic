@@ -53,10 +53,12 @@ export function StaffModeSwitch({
       <div className={cn("flex shrink-0 items-center gap-1", className)}>
         <span
           aria-current="true"
-          className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-brand-500 px-3 py-2 text-xs font-bold text-white shadow-pink"
+          title={now.label}
+          className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-brand-500 px-2 py-2 text-xs font-bold text-white shadow-pink min-[360px]:px-3"
         >
           <Icon name={now.icon} size={16} className="brightness-0 invert" />
-          {now.label}
+          {/* 360px 미만에서는 글자를 접고 아이콘만 (2026-09-18 — 오른쪽에 로그인 표시가 더해져 320px 에서 넘쳤다) */}
+          <span className="max-[359px]:sr-only">{now.label}</span>
         </span>
         <Link
           href={target.href}

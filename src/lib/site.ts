@@ -298,3 +298,56 @@ export const NAV_ADMIN: NavItem[] = [
 export function navAdminFor(role?: string | null): NavItem[] {
   return role === "assistant" ? NAV_ADMIN.filter((n) => n.crew) : NAV_ADMIN;
 }
+
+// ─── 햄버거 메뉴 (모바일·태블릿) ────────────────────────────────────────────
+// 2026-09-18 Alan: 마이페이지 위에 있던 메뉴 줄(대시보드 · 등업신청 · 내 시간표 …)을 없애고
+// 햄버거 메뉴에 **묶음으로** 담는다 (첫토익 앱의 수업 · 학습 묶음을 본떴다 — 구조만이고 디자인은 우리 것).
+// 목록은 여기 한곳 — 서랍(`MobileMenu`)이 그대로 그린다. 잠금 판정은 `feature` 로 한다.
+
+/** 수강생전용 기능 한 줄. 이름·주소·아이콘은 STUDENT_FEATURES 를 그대로 쓴다 (두 곳에 적지 않는다) */
+const featureNav = (key: StudentFeatureKey, label?: string): NavItem => {
+  const f = STUDENT_FEATURES.find((x) => x.key === key);
+  if (!f) throw new Error(`알 수 없는 수강생전용 기능: ${key}`);
+  return { href: f.href, label: label ?? f.label, icon: f.icon, feature: key };
+};
+
+export type NavSection = { label: string; items: NavItem[] };
+
+/** 햄버거 메뉴의 묶음 (학생 모드). 관리자 모드는 navAdminFor(role) 한 묶음이다 */
+export const NAV_DRAWER: NavSection[] = [
+  {
+    label: "마이페이지",
+    items: [
+      { href: "/my", label: "대시보드", icon: "profile" },
+      { href: "/my/verify", label: "등업신청", icon: "verify" },
+    ],
+  },
+  {
+    label: "수업",
+    items: [
+      { href: "/my/class", label: "내 시간표", icon: "calendar" },
+      featureNav("live"),
+      featureNav("replay"),
+      featureNav("lecture"),
+    ],
+  },
+  {
+    label: "학습",
+    items: [
+      featureNav("study", "스터디 신청"),
+      { href: "/my/study", label: "내 스터디", icon: "online" },
+      featureNav("lc-audio"),
+      featureNav("homework"),
+      featureNav("textbook"),
+    ],
+  },
+  {
+    label: "안내",
+    items: [
+      { href: "/", label: "소개", icon: "home" },
+      { href: STUDENT_HUB.href, label: "수강생전용 안내", icon: STUDENT_HUB.icon },
+      { href: "/contact", label: "연락하기", icon: "contact" },
+      { href: site.academy.naverBookingUrl, label: "네이버 상담예약", icon: "calendar", external: true },
+    ],
+  },
+];
