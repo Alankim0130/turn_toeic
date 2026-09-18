@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fuzzyIncludes, levenshtein, normalizeReceiptText, parseReceipt, receiptHasName } from "@/lib/receipt";
+import { fuzzyIncludes, levenshtein, normalizeReceiptText, parseReceipt, receiptComplete, receiptHasName } from "@/lib/receipt";
 
 /** CLAUDE.md "수강증 표기 규칙" 표의 강좌명. 학원명·강사명은 실제 수강증 양식을 받기 전까지의 가정 */
 const receipt = (course: string, extra = "") => `YBM어학원 서면센터\n역전토익 ${course}\n강사 이혜영\n수강생 김민수\n${extra}`;
@@ -283,5 +283,29 @@ describe("실물 수강증 OCR 특성 (2026-09-18 역전토익 8월 수강증)",
     const p = parseReceipt("현재시간 2026-08-0716:19:02\n08월 과정\n역전토익 [종합반]\n650 목표\n수강센터 부산 서면센터");
     expect(p.months).toEqual([{ year: 2026, month: 8 }]);
     expect(p.courseMonth).toBe(8);
+  });
+});
+
+describe("receiptComplete — 판정 키가 다 읽혔는가 (OCR 이 남은 변형을 건너뛰는 기준)", () => {
+  const FULL = `현재시간 2026-08-07 16:19:02
+08월 과정
+역전토익 [종합반]
+650 목표
+수강생 김윤이
+수강센터 부산 서면센터
+강사 이영수 .이혜영
+강의실 온라인 강의
+수강요일 [4주-08/04] 주5일 (월18회 라이브방송)
+수강시간 10:00~12:10`;
+  it("전부 있으면 true", () => {
+    expect(receiptComplete(FULL)).toBe(true);
+  });
+  it("강의실 줄이 빠지면 false — 방식(현장/불라방)이 기본값으로 잘못 정해질 수 있다", () => {
+    expect(receiptComplete(FULL.replace("강의실 온라인 강의\n", ""))).toBe(false);
+  });
+  it("수강월·시간·레벨 중 하나라도 빠지면 false", () => {
+    expect(receiptComplete(FULL.replace("08월 과정\n", ""))).toBe(false);
+    expect(receiptComplete(FULL.replace("수강시간 10:00~12:10", ""))).toBe(false);
+    expect(receiptComplete(FULL.replace("650 목표\n", "").replace("역전토익 [종합반]", "역전토익 [종합반]"))).toBe(false);
   });
 });

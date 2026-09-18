@@ -31,12 +31,14 @@ export async function receiptVariants(input: Uint8Array): Promise<OcrVariant[]> 
   const width = meta.width ?? 0;
 
   const gray = () => src.clone().grayscale();
-  const out: OcrVariant[] = [{ name: "gray", bytes: await gray().png().toBuffer() }];
-
+  // 읽는 순서는 싼 것부터 (2026-09-18 실측, 전체 화면 캡쳐 1242×2688): 폭 700 = 0.7초에 판정 키 전부 · 흰 글자만 = 0.1초 ·
+  // 원본 크기 = 1.4초. 엔진(`tesseractOcr.recognize`)은 앞에서 키가 다 읽히면(`receiptComplete`) 뒤를 건너뛴다 — 운영 CPU 는 여기보다 느리다
+  const out: OcrVariant[] = [];
   if (width > TITLE_WIDTH * 1.2) {
     out.push({ name: `gray_w${TITLE_WIDTH}`, bytes: await gray().resize({ width: TITLE_WIDTH }).png().toBuffer() });
   }
   out.push({ name: "white_only", bytes: await gray().threshold(WHITE_THRESHOLD).negate().png().toBuffer() });
+  out.push({ name: "gray", bytes: await gray().png().toBuffer() });
 
   return out;
 }

@@ -1563,12 +1563,19 @@ where p.role='student'
    - 읽은 원문은 `enrollment_verifications.ocr_raw`, 판독 결과는 `parsed` 에 남는다. 승인 화면이 이것으로
      **수강 방식(현장/불라방)을 미리 골라 둔다** (미확정 2-1).
    - 자동 **승인**은 반 대조가 딱 맞을 때만 한다 (미확정 3 해결, 파이프라인 "반 대조 · 자동 승인"). 거절은 근거가 있을 때만 (`decideVerification`).
-   - **Vercel 에 wasm·워커 파일을 직접 실어 보낸다** (`next.config.ts` 의 `outputFileTracingIncludes["/my/verify"]`, 2026-09-18).
-     tesseract.js 는 워커를 파일 경로로 띄우고 그 워커가 wasm 코어를 `require` 하는데, Next 의 파일 추적이 워커 안을 따라가지 못해
-     **첫 운영 테스트(2026-09-18 Alan, 8월 수강증)에서 워커가 뜨자마자 죽고 30초 뒤 "읽은 것 없음" 으로 검토 대기에 빠졌다** —
-     그래서 거절 메시지가 안 나왔다 (로컬은 node_modules 가 다 있어 3초 만에 읽히고 "8월 과정이에요" 로 거절됐다).
-     빌드 뒤 `.next/server/app/my/verify/page.js.nft.json` 에 `tesseract.js-core/*.wasm` 이 있어야 한다. LSTM 변형 셋(relaxedsimd · simd · 기본,
-     js + wasm ≈ 9MB)만 넣고 `*.wasm.js`(브라우저용 base64 내장)는 뺀다. OCR 을 다른 페이지에서도 부르게 되면 그 경로도 키에 더할 것.
+   - **Vercel 에 wasm 코어·워커 파일·워커의 의존성을 직접 실어 보낸다** (`next.config.ts` 의 `outputFileTracingIncludes["/my/verify"]`, 2026-09-18).
+     tesseract.js 는 워커 스레드를 파일 경로로 띄우고 그 워커가 wasm 코어와 `bmp-js` 같은 패키지를 `require` 하는데, Next 의 파일 추적은
+     워커 안을 따라가지 못한다. 그래서 **운영 첫 테스트(Alan, 8월 수강증)에서 워커가 뜨자마자 죽고 30초 뒤 "읽은 것 없음" 으로 검토 대기에 빠졌다** —
+     거절 메시지가 안 나온 이유다 (로컬은 node_modules 가 다 있어 3초 만에 읽히고 "8월 과정이에요" 로 거절됐다). 코어만 넣은 두 번째 배포는
+     이번엔 `bmp-js` 가 없어 죽었다. 넣는 것: `tesseract.js/src/**` · 의존성(`bmp-js` `is-url` `idb-keyval` `regenerator-runtime` `zlibjs` `wasm-feature-detect`) ·
+     **코어 여섯 조합의 js + wasm 전부**(≈ 25MB). tesseract.js 7 의 `getCore` 는 `lstmOnly` 불리언을 OEM 숫자와 비교하는 버그가 있어
+     LSTM 전용이 아니라 **전체 코어(`tesseract-core-relaxedsimd`)를 고른다** — LSTM 변형만 넣으면 또 죽는다. `*.wasm.js`(브라우저용 base64 내장)는
+     `outputFileTracingExcludes` 로 뺀다. OCR 을 다른 페이지에서도 부르게 되면 그 경로도 키에 더할 것.
+     **배포 전에 `npm run ocr:check`** (`scripts/ocr-bundle-check.mjs`) — 빌드 결과의 추적 목록(`.nft.json`)에 있는 파일만 임시 폴더에 복사하고
+     거기서 워커를 띄워 fixture 를 읽는다. 빠진 모듈이 있으면 거기서 바로 죽는다. 이 점검 없이 로컬 성공만 믿고 두 번 배포해 두 번 실패했다.
+   - **변형은 싼 것부터 읽고 키가 다 나오면 멈춘다** (`receiptComplete`, 2026-09-18 실측 전체 화면 캡쳐 1242×2688: 폭 700 = 0.7초에 키 전부,
+     흰 글자만 = 0.1초, 원본 크기 = 1.4초). 그래서 보통 0.8초에 끝난다 — 운영 CPU 는 여기보다 느려 30초 타임아웃에 여유가 필요하다.
+     못 읽어 강사 검토로 갈 때는 학생 화면에도 "자동으로 읽지 못했어요 — 강사가 직접 확인해 드려요" 를 적는다 (`ocrNote`).
    - **워커가 죽어도 함수가 죽지 않게 `errorHandler` 를 준다** — 없으면 tesseract.js 가 메인 스레드에 그냥 던진다(uncaught exception).
      그리고 **`createWorker` 는 언어 데이터·초기화가 실패해도 영영 끝나지 않는다**(안에서 삼킨다 — 실측: errorHandler 만 불린다).
      그대로 두면 실패마다 30초 타임아웃을 다 기다리므로 `getWorker` 가 errorHandler 의 첫 오류로 **바로 실패**시킨다 (실측 0.2초).

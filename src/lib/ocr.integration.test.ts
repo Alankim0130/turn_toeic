@@ -27,7 +27,7 @@ describe("실물 수강증 OCR (휴대폰 전체 캡처)", () => {
     await worker.terminate();
 
     const p = parseReceipt(texts.join("\n"));
-    expect(variants.map((v) => v.name)).toEqual(["gray", "gray_w700", "white_only"]);
+    expect(variants.map((v) => v.name)).toEqual(["gray_w700", "white_only", "gray"]);
     expect(p.gates).toEqual({ academy: true, brand: true });
     expect(p.level).toBe(650);
     expect(p.program).toBe("score");

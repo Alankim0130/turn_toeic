@@ -8,14 +8,14 @@ import { notifyStaff } from "@/lib/push";
 import { decideVerification, type VerifyTerm } from "@/lib/verify-decision";
 import { resolveEnrollChoice, type EnrollSection } from "@/lib/enroll-options";
 import { getOpenEnrollSections } from "../_lib/queries";
-import { parseReceipt, receiptHasName, type ParsedReceipt } from "@/lib/receipt";
+import { parseReceipt, receiptComplete, receiptHasName, type ParsedReceipt } from "@/lib/receipt";
 import { readReceiptText, tesseractOcr } from "@/lib/ocr";
 import { matchSections } from "@/lib/match-sections";
 import { approveVerificationWith } from "@/lib/approve-verification";
 
 export type SubmitVerificationResult =
-  /** approved = OCR 이 반을 찾아 바로 등업했다. preliminary = 개강 전이라 예비등록생 */
-  | { ok: true; approved?: boolean; preliminary?: boolean }
+  /** approved = OCR 이 반을 찾아 바로 등업했다. preliminary = 개강 전이라 예비등록생. ocrNote = 수강증을 못 읽어 강사 검토로 간 이유(학생에게 보인다) */
+  | { ok: true; approved?: boolean; preliminary?: boolean; ocrNote?: string }
   | { ok: false; error: string }
   | { ok: false; rejected: true; reason: string };
 
@@ -109,7 +109,7 @@ async function readReceipt(admin: ReturnType<typeof createAdminClient>, filePath
     return { ok: false, ocr: { engine: tesseractOcr.name, error: "download_failed" } };
   }
 
-  const outcome = await readReceiptText({ bytes: new Uint8Array(await file.arrayBuffer()), mimeType: file.type, filePath });
+  const outcome = await readReceiptText({ bytes: new Uint8Array(await file.arrayBuffer()), mimeType: file.type, filePath, enough: receiptComplete });
   if (!outcome.ok) return { ok: false, ocr: { engine: tesseractOcr.name, error: outcome.reason } };
   const ocr = outcome.result;
 
@@ -207,7 +207,13 @@ export async function submitVerification(input: { filePath: string }): Promise<S
 
   notifyNew(admin, user.id, false);
   done();
-  return { ok: true };
+  // 왜 자동으로 안 됐는지 학생에게도 말한다 — "접수됐어요" 만 보이면 거절도 승인도 안 된 이유를 알 수 없다 (2026-09-18 Alan 테스트)
+  const ocrNote = !outcome.ok
+    ? "수강증을 자동으로 읽지 못했어요. 강사가 직접 확인해 드려요."
+    : decision.kind === "review" && decision.note
+      ? "수강증 글자를 거의 읽지 못했어요. 강사가 직접 확인해 드려요."
+      : undefined;
+  return { ok: true, ocrNote };
 }
 
 /**

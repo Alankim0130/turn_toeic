@@ -321,5 +321,24 @@ export type OcrResult = { text: string; engine: string; raw?: unknown };
  */
 export interface OcrEngine {
   readonly name: string;
-  recognize(input: { bytes: Uint8Array; mimeType: string }): Promise<OcrResult>;
+  /** `enough`: 지금까지 읽은 원문으로 판정 키가 다 나왔으면 true — 엔진은 남은(더 느린) 변형을 건너뛴다. 없으면 전부 읽는다 */
+  recognize(input: { bytes: Uint8Array; mimeType: string; enough?: (text: string) => boolean }): Promise<OcrResult>;
+}
+
+/**
+ * 판정에 쓰는 키가 전부 읽혔는가 — OCR 이 값싼 변형부터 읽다가 여기서 true 가 나오면 나머지를 건너뛴다 (2026-09-18).
+ * 실측(전체 화면 캡쳐 1242×2688): 폭 700 변형 하나(0.7초)로 전부 읽히고, 원본 크기 변형(1.4초)은 덤이었다 — 운영 CPU 는 더 느리다.
+ * 방식을 정하는 `강의실` 줄까지 읽혔는지 본다 — 그 줄을 못 읽으면 기본값 현장으로 잘못 정해진다.
+ */
+export function receiptComplete(text: string): boolean {
+  const p = parseReceipt(text);
+  return (
+    p.gates.academy &&
+    p.gates.brand &&
+    p.level != null &&
+    p.weekly != null &&
+    p.time != null &&
+    p.courseMonth != null &&
+    p.compact.includes("강의실")
+  );
 }
