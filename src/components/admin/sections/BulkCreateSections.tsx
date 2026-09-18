@@ -34,7 +34,6 @@ export function BulkCreateSections({
   slots,
   existingKeys,
   instructors,
-  currentUserId,
   isAdmin,
 }: {
   termId: number;
@@ -43,7 +42,6 @@ export function BulkCreateSections({
   slots: BulkSlot[];
   existingKeys: string[];
   instructors: Instructor[] | null;
-  currentUserId: string;
   isAdmin: boolean;
 }) {
   const router = useRouter();
@@ -52,7 +50,7 @@ export function BulkCreateSections({
   // LC 교재 세트는 시간 단위 · 트랙마다 정해진다 (2026-09-16 편성표) — 9월 650 은 10:00 화목금이 LC(A), 11:10 월수금이 LC(B)
   const [bookSets, setBookSets] = useState<Record<string, string>>({});
   const [checked, setChecked] = useState<Set<string>>(new Set());
-  const [instructorId, setInstructorId] = useState(currentUserId);
+  const [instructorId, setInstructorId] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "success" | "warning"; text: string } | null>(null);
 
@@ -122,7 +120,7 @@ export function BulkCreateSections({
 
     setBusy(true);
     try {
-      const res = await bulkCreateSections({ termId, instructorId: isAdmin ? instructorId : null, rows });
+      const res = await bulkCreateSections({ termId, instructorId: isAdmin && instructorId ? instructorId : null, rows });
       if (!res.ok) {
         setMsg({ kind: "warning", text: res.error ?? "반을 개설하지 못했어요." });
         return;
@@ -194,6 +192,8 @@ export function BulkCreateSections({
           <div className="sm:col-span-2 lg:col-span-4">
             <label htmlFor="bulk-instructor" className="label !mb-1 text-xs">담당 강사 <span className="font-normal text-mist">(고른 반 전체)</span></label>
             <select id="bulk-instructor" value={instructorId} onChange={(e) => setInstructorId(e.target.value)} className="input !py-2 text-sm">
+              {/* 담당은 LC 교재로 DB 가 저절로 정한다 (2026-09-18). 고르면 과목을 못 읽는 반(교재 미지정)에만 들어간다 */}
+              <option value="">자동 — 편성표대로 (LC 교재로 과목 강사에게)</option>
               {instructors.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.name} ({i.role === "admin" ? "관리자" : "강사"})

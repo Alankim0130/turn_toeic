@@ -30,9 +30,11 @@ const SUBJECT_CLASS: Record<Subject, string> = {
 /**
  * 담당 강사 지정 (2026-09-16 Alan 요청).
  *
- * 1순위는 **편성표대로 채우기** — 반의 LC 교재(`book_set`)가 과목을 말해 주므로
- * LC 는 이혜영, RC 는 이영수에게 저절로 간다 (`lib/instructor-subject.ts`).
- * 규칙으로 정해지지 않는 것(묶음 반·LC 교재 미지정)만 손으로 고른다.
+ * 담당은 **DB 가 저절로 정한다** (2026-09-18 Alan "앞으로도 반편성과 달에 따라서 자동으로 매칭") —
+ * 반이 생기거나 LC 교재(`book_set`)·시간대가 바뀌거나 강사가 가입하면 트리거가 그 기수를 다시 맞춘다.
+ * 반의 LC 교재가 과목을 말해 주므로 LC 는 이혜영, RC 는 이영수에게 간다 (`lib/instructor-subject.ts` = DB 규칙).
+ * 위 카드는 지금 상태를 미리 보여 주고, 버튼은 어긋나 보일 때 같은 규칙을 한 번 더 돌린다.
+ * 규칙으로 정해지지 않는 것(LC 교재 미지정)만 아래에서 손으로 고른다.
  */
 export function AssignInstructor({ rows, instructors, termLabel, termId }: { rows: AssignRow[]; instructors: InstructorOption[]; termLabel: string; termId: number }) {
   const router = useRouter();
@@ -80,7 +82,7 @@ export function AssignInstructor({ rows, instructors, termLabel, termId }: { row
       setMsg(null);
       const res = await autoAssignInstructors({ termId });
       if (!res.ok) return setMsg({ kind: "warning", text: res.error ?? "채우지 못했어요." });
-      const bits = [`${res.assigned}개 반에 담당을 넣었어요`];
+      const bits = [res.assigned ? `${res.assigned}개 반의 담당을 바꿨어요` : "이미 편성표대로예요"];
       if (res.cleared) bits.push(`묶음·스파르타 ${res.cleared}개는 비웠어요`);
       if (res.missing?.length) bits.push(`${res.missing.join("·")} 강사 계정이 아직 없어 그 반은 그대로 뒀어요`);
       if (res.unknown) bits.push(`LC 교재가 안 정해진 ${res.unknown}개는 건드리지 않았어요`);
@@ -109,10 +111,11 @@ export function AssignInstructor({ rows, instructors, termLabel, termId }: { row
     <div className="space-y-4">
       {/* ─── 편성표대로 채우기 ─── */}
       <div className="rounded-xl2 border border-brand-200 bg-brand-50/60 p-4">
-        <p className="text-sm font-bold text-ink">편성표대로 채우기</p>
+        <p className="text-sm font-bold text-ink">편성표대로 저절로 정해져요</p>
         <p className="mt-1 text-sm text-ink-soft">
           반에 정해 둔 <strong>LC 교재</strong>가 그 시간의 과목을 말해 줘요 — 교재가 있으면 LC, 없으면 RC 입니다. 그대로{" "}
           {[...bySubject.entries()].map(([s, i]) => `${SUBJECT_LABEL[s]} ${i.name}`).join(" · ") || "각 과목 강사"} 에게 맡깁니다.
+          반을 만들거나 교재·시간대를 바꾸거나 강사가 가입하면 그때마다 다시 맞춰요 — 따로 누를 것이 없어요.
         </p>
         <ul className="mt-2 space-y-0.5 text-xs text-slate">
           <li>· 담당이 정해지는 반 <strong className="text-ink-soft">{autoCount}개</strong></li>
@@ -121,17 +124,18 @@ export function AssignInstructor({ rows, instructors, termLabel, termId }: { row
               · 묶음·스파르타 <strong className="text-ink-soft">{plan.clear.length}개</strong>는 두 과목을 이어 들어서 <strong className="text-ink-soft">담당을 비웁니다</strong>
             </li>
           )}
-          {plan.unknown.length > 0 && <li>· LC 교재가 안 정해진 {plan.unknown.length}개는 건드리지 않아요 (반 상세에서 교재를 먼저 고르세요)</li>}
+          {plan.unknown.length > 0 && <li>· LC 교재가 안 정해진 {plan.unknown.length}개는 건드리지 않아요 (반 상세에서 교재를 고르면 바로 정해져요)</li>}
           {missingSubjects.length > 0 && (
             <li className="text-brand-700">
-              · {missingSubjects.map((s) => SUBJECT_LABEL[s]).join("·")} 강사 계정이 아직 없어 그 반은 그대로 둡니다 — 가입하시면 이 버튼을 다시 누르세요
+              · {missingSubjects.map((s) => SUBJECT_LABEL[s]).join("·")} 강사 계정이 아직 없어 그 반은 그대로 둡니다 — 가입하시면 저절로 들어가요
             </li>
           )}
         </ul>
         <button type="button" onClick={auto} disabled={pending || autoCount + plan.clear.length === 0} className="btn-primary mt-3 !py-2" aria-busy={pending}>
           <Icon name="bolt" size={18} className="brightness-0 invert" />
-          {pending ? "채우는 중…" : "편성표대로 채우기"}
+          {pending ? "맞추는 중…" : "지금 다시 맞추기"}
         </button>
+        <p className="mt-1.5 text-xs text-mist">어긋나 보일 때만 누르세요. 손으로 바꿔 둔 담당도 규칙대로 되돌아가요.</p>
       </div>
 
       {msg && <Alert kind={msg.kind === "info" ? "warning" : msg.kind}>{msg.text}</Alert>}

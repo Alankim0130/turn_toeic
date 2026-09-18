@@ -17,14 +17,12 @@ export function CreateSectionForm({
   termLabel,
   courses,
   instructors,
-  currentUserId,
   isAdmin,
 }: {
   termId: number;
   termLabel: string;
   courses: Course[];
   instructors: Instructor[] | null;
-  currentUserId: string;
   isAdmin: boolean;
 }) {
   const [state, action] = useActionState<ActionState, FormData>(createSection, {});
@@ -81,7 +79,9 @@ export function CreateSectionForm({
         {isAdmin && instructors && (
           <div>
             <label htmlFor="instructor_id" className="label">담당 강사</label>
-            <select id="instructor_id" name="instructor_id" className="input" defaultValue={v.instructor_id ?? currentUserId}>
+            <select id="instructor_id" name="instructor_id" className="input" defaultValue={v.instructor_id ?? ""}>
+              {/* 담당은 LC 교재로 DB 가 저절로 정한다 (2026-09-18). 고르면 과목을 못 읽는 반(교재 미지정)에만 남는다 */}
+              <option value="">자동 — 편성표대로 (LC 교재로 과목 강사에게)</option>
               {instructors.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.name} ({i.role === "admin" ? "관리자" : "강사"})

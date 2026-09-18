@@ -1475,6 +1475,7 @@ export type Database = {
         }
         Returns: Json
       }
+      sync_term_instructors: { Args: { p_term_id: number }; Returns: Json }
       term_section_includes: {
         Args: { p_term_id: number }
         Returns: {

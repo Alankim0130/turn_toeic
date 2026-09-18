@@ -7,8 +7,7 @@ import { requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import { isYmd, labelKo } from "@/components/admin/sections/dates";
 import { isLectureKind, sortLectureKinds } from "@/lib/utils";
-import { sectionPackages } from "@/lib/time-blocks";
-import { planSubjects, SUBJECT_LABEL } from "@/lib/instructor-subject";
+import { SUBJECT_LABEL } from "@/lib/instructor-subject";
 
 type SectionInsert = Database["public"]["Tables"]["class_sections"]["Insert"];
 type SectionUpdate = Database["public"]["Tables"]["class_sections"]["Update"];
@@ -250,7 +249,7 @@ function parseSectionFields(formData: FormData, allowedStatus: string[]): { fiel
 
 /* ─── 반 개설: 개강일·종강일·수업일은 그 달 달력에서 가져온다 ───────────── */
 export async function createSection(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { user, profile } = await requireStaff();
+  const { profile } = await requireStaff();
   const parsed = parseSectionFields(formData, ["draft", "open"]);
   const values = { ...parsed.values, course_id: str(formData, "course_id"), track: str(formData, "track"), instructor_id: str(formData, "instructor_id") };
   if (parsed.error || !parsed.fields) return { error: parsed.error, values };
@@ -272,8 +271,9 @@ export async function createSection(_prev: ActionState, formData: FormData): Pro
     return { error: "먼저 위 달력에서 개강일·종강일을 찍고 생성하기를 눌러 주세요.", values };
   }
 
-  // 강사는 본인만, admin 은 다른 강사 지정 가능
-  const instructorId = isAdmin(profile.role) && values.instructor_id ? values.instructor_id : user.id;
+  // 담당은 DB 트리거가 LC 교재로 저절로 정한다 (마이그레이션 20260918120000). 관리자가 일부러 고른 사람만 넣고,
+  // 만든 사람을 기본값으로 넣지 않는다 — 과목을 못 읽는 반에 알런이 남는 길이었다
+  const instructorId = isAdmin(profile.role) && values.instructor_id ? values.instructor_id : null;
   const sessionsOf = (t: string) => (classDates ?? []).filter((d) => d.track === t).length || 1;
   const base = {
     ...parsed.fields,
@@ -411,10 +411,12 @@ export async function assignInstructor(input: { sectionIds: number[]; instructor
 /**
  * 담당 강사 편성표대로 채우기 (2026-09-16 Alan 요청 "자동으로 LC 이혜영, RC 이영수").
  *
- * 규칙은 `src/lib/instructor-subject.ts` 한곳 — 반의 `book_set`(LC 교재) 유무로 과목을 읽고
- * 그 과목의 강사(`profiles.subject`)에게 맡긴다. **화면이 보낸 배정은 믿지 않고 서버가 다시 계산한다.**
+ * 2026-09-18 부터 **DB 트리거가 저절로 맞춘다** (Alan "앞으로도 반편성과 달에 따라서 자동으로 매칭") —
+ * 반이 생기거나 편성(교재·시간대·강좌·기수)이 바뀌거나 강사가 가입하면 `private.sync_term_instructors` 가 돈다.
+ * 이 버튼은 같은 함수를 한 번 더 돌리는 길이다 (화면이 보낸 배정은 믿지 않는다).
+ * 규칙: 반의 `book_set`(LC 교재)이 있으면 LC, 없으면 RC → 그 과목의 강사(`profiles.subject`).
  * 묶음 반·스파르타 반은 두 과목을 이어 들어 담당이 한 명이 아니므로 **비운다** — 알런(만든 사람)이
- * 담당으로 남아 있으면 학생에게 틀린 이름이 보인다.
+ * 담당으로 남아 있으면 학생에게 틀린 이름이 보인다. 앱의 `planSubjects` 는 화면에 미리 보여 주는 용도다.
  */
 export async function autoAssignInstructors(
   input: { termId: number },
@@ -424,58 +426,17 @@ export async function autoAssignInstructors(
   const termId = Number(input.termId);
   if (!Number.isInteger(termId) || termId <= 0) return { ok: false, error: "기수(월)가 선택되지 않았어요." };
 
+  // 판정은 DB 한곳 — private.section_instructor_plan / sync_term_instructors (마이그레이션 20260918120000).
+  // 반이 생기거나 편성이 바뀌면 트리거가 이미 같은 함수를 돌리므로, 이 버튼은 어긋나 보일 때 다시 맞추는 길이다.
   const supabase = await createClient();
-  const [{ data: sections }, { data: people }] = await Promise.all([
-    supabase
-      .from("class_sections")
-      .select("id, course_id, term_id, track, time_block, book_set, course:courses(program)")
-      .eq("term_id", termId),
-    supabase.from("profiles").select("id, name, subject").in("role", ["instructor", "admin"]).not("subject", "is", null),
-  ]);
-  if (!sections?.length) return { ok: false, error: "이 달에 개설된 반이 없어요." };
-
-  // 묶음 판정은 화면·DB 와 같은 규칙 (private.time_block_contains = blockContains)
-  const packages = sectionPackages(sections);
-  const plan = planSubjects(
-    sections.map((s) => ({
-      id: s.id,
-      course_id: s.course_id,
-      time_block: s.time_block,
-      book_set: s.book_set,
-      package: (packages.get(s.id)?.parts.length ?? 0) > 0 || s.course?.program === "sparta",
-    })),
-  );
-
-  const bySubject = new Map<string, string>();
-  for (const p of people ?? []) if (p.subject) bySubject.set(p.subject, p.id);
-
-  // 계정이 아직 없는 과목은 건너뛴다 (이영수 가입 전 등) — 알런으로 두느니 그대로 남긴다
-  const missing: string[] = [];
-  const idsFor = new Map<string, number[]>();
-  for (const a of plan.assign) {
-    const who = bySubject.get(a.subject);
-    if (!who) {
-      if (!missing.includes(SUBJECT_LABEL[a.subject])) missing.push(SUBJECT_LABEL[a.subject]);
-      continue;
-    }
-    idsFor.set(who, [...(idsFor.get(who) ?? []), a.id]);
+  const { data, error } = await supabase.rpc("sync_term_instructors", { p_term_id: termId });
+  if (error) {
+    return { ok: false, error: error.code === "42501" ? "강사·관리자만 바꿀 수 있어요." : `담당을 맞추지 못했어요. ${error.message}` };
   }
-
-  let assigned = 0;
-  for (const [who, ids] of idsFor) {
-    const { data, error } = await supabase.from("class_sections").update({ instructor_id: who }).in("id", ids).select("id");
-    if (error) return { ok: false, error: `강사를 바꾸지 못했어요. ${error.message}` };
-    assigned += data?.length ?? 0;
-  }
-
-  let cleared = 0;
-  if (plan.clear.length) {
-    const { data, error } = await supabase.from("class_sections").update({ instructor_id: null }).in("id", plan.clear).select("id");
-    if (error) return { ok: false, error: `묶음 반의 담당을 비우지 못했어요. ${error.message}` };
-    cleared = data?.length ?? 0;
-  }
+  const res = (data ?? {}) as { assigned?: number; cleared?: number; unknown?: number; missing?: string[] };
+  const missing = (res.missing ?? []).map((s) => (s === "lc" || s === "rc" ? SUBJECT_LABEL[s] : s));
 
   revalidatePath("/admin/sections");
   revalidatePath("/admin");
-  return { ok: true, assigned, cleared, unknown: plan.unknown.length, missing };
+  return { ok: true, assigned: res.assigned ?? 0, cleared: res.cleared ?? 0, unknown: res.unknown ?? 0, missing };
 }

@@ -445,7 +445,6 @@ export default async function AdminSectionsPage({
                       slots={bulkSlots}
                       existingKeys={existingKeys}
                       instructors={instructors ?? null}
-                      currentUserId={user.id}
                       isAdmin={isAdmin(profile.role)}
                     />
                   </div>
@@ -463,7 +462,6 @@ export default async function AdminSectionsPage({
                   termLabel={termLabel}
                   courses={courses ?? []}
                   instructors={instructors ?? null}
-                  currentUserId={user.id}
                   isAdmin={isAdmin(profile.role)}
                 />
               </div>
