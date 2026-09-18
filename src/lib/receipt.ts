@@ -240,8 +240,11 @@ export function parseReceipt(raw: string): ParsedReceipt {
   if (!gates.academy) warnings.push("수강센터(부산 서면센터) 줄을 찾지 못했어요");
   if (!gates.brand) warnings.push("역전토익 또는 강사명을 찾지 못했어요");
 
-  // 수강 방식 — 오직 `라이브방송` 으로만. `인강` 은 신호가 아니다
-  const mode: EnrollMode = fuzzyIncludes(compact, RECEIPT_KEYWORDS.live, 1) ? "live" : "onsite";
+  // 수강 방식 — 오직 `라이브방송` 으로만. `인강` 은 신호가 아니다.
+  // 실물 수강증(2026-09-18)에서 이 단어가 줄바꿈으로 `라이` / `브방송` 으로 갈리고, OCR 이 두 줄 사이에
+  // 옆 칸 라벨(`수강요일`)을 끼워 읽었다 — 그래서 붙여 읽은 것 외에 **두 조각이 따로 있어도** 불라방으로 본다
+  const mode: EnrollMode =
+    fuzzyIncludes(compact, RECEIPT_KEYWORDS.live, 1) || (compact.includes("라이") && compact.includes("브방송")) ? "live" : "onsite";
 
   // 주5일 먼저, 그다음 트랙 글자
   let weekly: 5 | 3 | null = null;

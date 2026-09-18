@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { createWorker, type Worker } from "tesseract.js";
 import type { OcrEngine, OcrResult } from "./receipt";
+import { receiptVariants } from "./ocr-image";
 
 /**
  * 수강증 OCR 엔진 — tesseract.js (한국어, 무료 · 자체 실행).
@@ -83,10 +84,26 @@ export function ocrSupports(mimeType: string | null | undefined, filePath?: stri
 
 export const tesseractOcr: OcrEngine = {
   name: `tesseract.js/${LANG}`,
+  /**
+   * 흑백 변형 여러 장을 읽어 원문을 이어 붙인다 (`receiptVariants` 참고 — 컬러 원본은 파란 카드를 통째로 놓친다).
+   * 전처리가 실패하면(깨진 파일 등) 원본 한 장으로 돈다.
+   */
   async recognize({ bytes }): Promise<OcrResult> {
     const worker = await getWorker();
-    const { data } = await worker.recognize(Buffer.from(bytes));
-    return { text: data.text, engine: `tesseract.js/${LANG}`, raw: { confidence: data.confidence } };
+    let variants: { name: string; bytes: Buffer }[];
+    try {
+      variants = await receiptVariants(bytes);
+    } catch {
+      variants = [{ name: "original", bytes: Buffer.from(bytes) }];
+    }
+    const texts: string[] = [];
+    let confidence = 0;
+    for (const v of variants) {
+      const { data } = await worker.recognize(v.bytes);
+      texts.push(data.text);
+      confidence = Math.max(confidence, data.confidence);
+    }
+    return { text: texts.join("\n"), engine: `tesseract.js/${LANG}`, raw: { confidence, variants: variants.map((v) => v.name) } };
   },
 };
 
