@@ -120,7 +120,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
               return (
                 <tr key={p.id} className="hover:bg-brand-50/40">
                   <Td className="whitespace-nowrap font-bold">
-                    <Link href={`/admin/students/${p.id}`} className="text-brand-600 hover:underline">
+                    <Link href={`/admin/students/${p.id}`} className="text-ink underline decoration-brand-200 decoration-2 underline-offset-4 hover:decoration-brand-500">
                       {p.name || "이름 없음"}
                     </Link>
                     {(p.role === "instructor" || p.role === "admin") && (
@@ -130,7 +130,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
                       <span className="ml-1 rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-black text-white">{ROLE_LABEL[p.test_role]} 테스트 중</span>
                     )}
                   </Td>
-                  <Td className="whitespace-nowrap">{p.phone ? <a href={`tel:${p.phone}`} className="text-brand-600 hover:underline">{p.phone}</a> : "-"}</Td>
+                  <Td className="whitespace-nowrap">{p.phone ? <a href={`tel:${p.phone}`} className="text-ink underline decoration-brand-200 decoration-2 underline-offset-4 hover:decoration-brand-500">{p.phone}</a> : "-"}</Td>
                   <Td><StatusBadge status={p.role} /></Td>
                   <Td>
                     {myEnroll.length === 0 ? (
