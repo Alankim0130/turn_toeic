@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 const STEPS: { icon: IconName; title: string; desc: string }[] = [
-  { icon: "upload", title: "수강증 업로드", desc: "YBM에서 받은 수강증(영수증) 사진이나 PDF를 올립니다." },
+  { icon: "upload", title: "수강증 업로드", desc: "YBM 홈페이지·앱에서 보이는 수강증 화면을 캡처해 올립니다. 결제 영수증은 받지 않아요." },
   { icon: "target", title: "확인", desc: "역전토익 수강증이 맞는지, 이번 달 수강증이 맞는지 확인합니다. 아니면 이유를 적어 바로 알려드려요." },
   { icon: "success", title: "등업", desc: "확인이 끝나면 수강생으로 전환되고 불라방·다시보기가 열립니다." },
 ];
@@ -59,7 +59,7 @@ export default async function VerifyPage() {
               <dl className="mt-3 space-y-2 text-sm">
                 <div className="flex gap-2">
                   <dt className="w-20 shrink-0 font-bold text-slate">수집 항목</dt>
-                  <dd className="text-ink">수강증 이미지, 이름, 영수증번호</dd>
+                  <dd className="text-ink">수강증 이미지, 이름</dd>
                 </div>
                 <div className="flex gap-2">
                   <dt className="w-20 shrink-0 font-bold text-slate">이용 목적</dt>
@@ -70,7 +70,7 @@ export default async function VerifyPage() {
                   <dd className="text-ink">인증이 끝나면 원본 파일은 삭제됩니다</dd>
                 </div>
               </dl>
-              <p className="mt-3 text-xs text-mist">가입한 실명과 수강증의 이름이 다르면 등업이 반려됩니다. 영수증 1건은 1개 계정에만 사용할 수 있어요.</p>
+              <p className="mt-3 text-xs text-mist">가입한 실명과 수강증의 이름이 다르면 등업이 반려됩니다. 수강증 1건은 1개 계정에만 사용할 수 있어요.</p>
             </section>
           </Reveal>
         </div>

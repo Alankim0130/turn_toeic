@@ -143,3 +143,88 @@ describe("참고 필드", () => {
     expect(q.tuition).toBeNull();
   });
 });
+
+/**
+ * 실제 수강증 화면 양식 (2026-09-16 Alan 샘플).
+ *
+ * 샘플은 다른 브랜드(첫토익) 것이지만 **화면 양식은 같은 YBM 앱**이다. 양식에서 확인한 것:
+ *  - 학원 줄은 `수강센터  부산 서면센터` — **`YBM` 글자가 없다.**
+ *  - 수강요일 줄은 `[4주-09/02] 월화수목 (월16회)` 처럼 `[N주-MM/DD]` 가 앞에 붙는다.
+ *  - 강사는 `데이지(이명진)` 처럼 별명(실명) 꼴일 수 있다.
+ *  - 영수증번호는 화면에 **없다** (맨 위 `현재시간`은 캡처 시각이다).
+ *
+ * 아래 본문은 그 양식에 역전토익 값을 넣어 만든 것이다 (샘플의 실제 이름은 남의 개인정보라 쓰지 않는다).
+ */
+const screen = (lines: string) => `현재시간 2026-09-16 19:27:43\n09월 과정\n${lines}`;
+
+describe("실제 수강증 화면 양식", () => {
+  const 주3일 = screen(
+    [
+      "역전토익 [종합반]",
+      "650 목표",
+      "수강생 김민수",
+      "수강센터 부산 서면센터",
+      "강사 이혜영",
+      "강의실 본관 701호",
+      "수강요일 [4주-09/04] 월수금 (월9회)",
+      "수강시간 10:00~11:00",
+      "수강료 298,300원",
+    ].join("\n"),
+  );
+
+  it("YBM 글자가 없어도 수강센터 + 부산/서면이면 학원 게이트를 통과한다", () => {
+    const p = parseReceipt(주3일);
+    expect(p.gates.academy).toBe(true);
+    expect(p.gates.brand).toBe(true);
+  });
+
+  it("지역 단어만 있고 수강센터 줄이 없으면 통과시키지 않는다", () => {
+    expect(parseReceipt("부산에서 산 물건 영수증").gates.academy).toBe(false);
+  });
+
+  it("주3일 수강증: 트랙 · 레벨 · 시간 · 방식", () => {
+    const p = parseReceipt(주3일);
+    expect(p.weekly).toBe(3);
+    expect(p.tracks).toEqual(["mwf"]);
+    expect(p.level).toBe(650);
+    expect(p.program).toBe("score");
+    expect(p.mode).toBe("onsite");
+    expect(p.time?.timeBlock).toBe("10:00~11:00");
+  });
+
+  it("주5일 라이브방송 프리미어반: 두 트랙 · 불라방 · 스파르타", () => {
+    const p = parseReceipt(
+      screen(
+        [
+          "역전토익 [종합반]",
+          "750 목표",
+          "수강생 김민수",
+          "수강센터 부산 서면센터",
+          "강사 이영수",
+          "수강요일 [4주-09/04] 주5일 (월18회 라이브방송) 프리미어반",
+          "수강시간 10:00~13:40",
+        ].join("\n"),
+      ),
+    );
+    expect(p.mode).toBe("live");
+    expect(p.weekly).toBe(5);
+    expect(p.tracks).toEqual(["mwf", "ttf"]);
+    expect(p.program).toBe("sparta");
+    expect(p.level).toBe(750);
+    expect(p.time?.timeBlock).toBe("10:00~13:40");
+  });
+
+  it("월수금(현강)+화목금(인강) 은 주5일 · 현장이다 — 인강은 불라방 신호가 아니다", () => {
+    const p = parseReceipt(
+      screen(["역전토익 [종합반]", "650 목표", "수강센터 부산 서면센터", "수강요일 [4주-09/04] 주5일 (월18회) 월수금(현강)+화목금(인강)", "수강시간 18:30~20:40"].join("\n")),
+    );
+    expect(p.weekly).toBe(5);
+    expect(p.mode).toBe("onsite");
+    expect(p.tracks).toEqual(["mwf", "ttf"]);
+  });
+
+  it("OCR 이 콜론을 세미콜론으로 읽어도 시간대를 찾는다 (실측: 13;00~15:10)", () => {
+    const p = parseReceipt(screen(["역전토익 [종합반]", "850 목표", "수강센터 부산 서면센터", "수강시간 13;00~15:10"].join("\n")));
+    expect(p.time?.timeBlock).toBe("13:00~15:10");
+  });
+});

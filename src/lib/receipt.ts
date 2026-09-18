@@ -69,6 +69,8 @@ export const RECEIPT_KEYWORDS = {
   brand: "역전토익",
   instructors: ["이혜영", "이영수"],
   academy: "YBM",
+  /** 수강증 화면의 학원 줄 라벨. 값은 `수강센터  부산 서면센터` 처럼 찍힌다 */
+  academyLabel: "수강센터",
   academyPlaces: ["서면", "부산"],
 } as const;
 
@@ -126,10 +128,18 @@ export function normalizeReceiptText(raw: string): { text: string; compact: stri
 
 /* ─── 판독 ───────────────────────────────────────────────────────────────── */
 
-/** 게이트 G1: 학원명에 YBM 과 (서면 또는 부산) */
+/**
+ * 게이트 G1: 우리 센터 수강증인가.
+ *
+ * **수강증 화면에는 `YBM` 글자가 없다** (2026-09-16 Alan 샘플로 확인) — 학원 줄은 `수강센터  부산 서면센터` 다.
+ * `YBM` 을 필수로 두면 멀쩡한 수강증이 전부 거절된다. 그래서 지역(서면·부산)에 더해
+ * `수강센터` 라벨이나 `YBM` 중 하나가 보이면 통과시킨다 — 지역 단어만 보면 아무 문서나 통과하므로 둘 다 본다.
+ */
 export function passesAcademyGate(compact: string): boolean {
   const upper = compact.toUpperCase();
-  return upper.includes(RECEIPT_KEYWORDS.academy) && RECEIPT_KEYWORDS.academyPlaces.some((p) => compact.includes(p));
+  const place = RECEIPT_KEYWORDS.academyPlaces.some((p) => compact.includes(p));
+  const academy = upper.includes(RECEIPT_KEYWORDS.academy) || fuzzyIncludes(compact, RECEIPT_KEYWORDS.academyLabel, 1);
+  return place && academy;
 }
 
 /** 게이트 G2: 역전토익(편집거리 ≤ 1) 또는 강사명 */
@@ -212,7 +222,7 @@ export function parseReceipt(raw: string): ParsedReceipt {
   const warnings: string[] = [];
 
   const gates = { academy: passesAcademyGate(compact), brand: passesBrandGate(compact) };
-  if (!gates.academy) warnings.push("학원명(YBM 서면/부산)을 찾지 못했어요");
+  if (!gates.academy) warnings.push("수강센터(부산 서면센터) 줄을 찾지 못했어요");
   if (!gates.brand) warnings.push("역전토익 또는 강사명을 찾지 못했어요");
 
   // 수강 방식 — 오직 `라이브방송` 으로만. `인강` 은 신호가 아니다

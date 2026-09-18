@@ -23,6 +23,7 @@ export function DecisionForms({
   pickerSections,
   order,
   requested = [],
+  ocrMode = null,
 }: {
   verificationId: number;
   result: string | null;
@@ -33,6 +34,8 @@ export function DecisionForms({
   order: OrderInfo | null;
   /** 수동 등업신청에서 **학생이 고른 반**. 미리 골라 두되 그대로 승인되지는 않는다 — 스태프가 수강증을 보고 정한다 */
   requested?: number[];
+  /** OCR 이 수강증에서 읽은 수강 방식 (`라이브방송` 표기). 미리 골라 둔다 — 못 읽었으면 null */
+  ocrMode?: "onsite" | "live" | null;
 }) {
   const [approveState, approveAction] = useActionState<ActionState, FormData>(approveVerification, {});
   const [rejectState, rejectAction] = useActionState<ActionState, FormData>(rejectVerification, {});
@@ -83,9 +86,12 @@ export function DecisionForms({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <fieldset>
-              {/* 반 수강료는 2026-09-16 부터 선택이라 늘 대조할 수 있는 게 아니다 — 수강증 자체에서 확인하도록 안내한다 */}
+              {/* 수강증의 `라이브방송` 표기로 OCR 이 정한다 (2026-09-16 Alan). 못 읽었을 때만 현장이 기본값이다 */}
               <legend className="label">
-                수강 방식 <span className="font-normal text-mist">(수강증에서 확인 — 반에 수강료가 있으면 금액으로 대조)</span>
+                수강 방식{" "}
+                <span className="font-normal text-mist">
+                  {ocrMode ? `(OCR 판독: ${ocrMode === "live" ? "라이브방송 있음 → 불라방" : "라이브방송 없음 → 현장"})` : "(OCR 미판독 — 수강증에서 확인)"}
+                </span>
               </legend>
               <div className="grid grid-cols-2 gap-2">
                 {[
@@ -93,7 +99,7 @@ export function DecisionForms({
                   { v: "live", l: "불라방" },
                 ].map((o) => (
                   <label key={o.v} className="cursor-pointer">
-                    <input type="radio" name="mode" value={o.v} defaultChecked={o.v === "onsite"} className="peer sr-only" />
+                    <input type="radio" name="mode" value={o.v} defaultChecked={o.v === (ocrMode ?? "onsite")} className="peer sr-only" />
                     <span className="block rounded-xl border border-line px-3 py-2 text-center text-sm font-bold text-slate peer-checked:border-brand-400 peer-checked:bg-brand-50 peer-checked:text-brand-700">{o.l}</span>
                   </label>
                 ))}

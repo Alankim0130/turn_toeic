@@ -49,7 +49,7 @@ export function decideVerification(parsed: ParsedReceipt | null, openTerms: read
     return {
       kind: "reject",
       code: "academy",
-      reason: "YBM 서면(부산) 수강증이 아닌 것 같아요. 학원명이 보이도록 다시 찍어 올려 주세요.",
+      reason: "부산 서면센터 수강증이 아닌 것 같아요. 수강센터 줄이 보이도록 화면 전체를 캡처해 올려 주세요.",
     };
   }
   if (!parsed.gates.brand) {

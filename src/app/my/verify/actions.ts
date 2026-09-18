@@ -8,7 +8,8 @@ import { notifyStaff } from "@/lib/push";
 import { decideVerification, type VerifyTerm } from "@/lib/verify-decision";
 import { resolveEnrollChoice, type EnrollSection } from "@/lib/enroll-options";
 import { getOpenEnrollSections } from "../_lib/queries";
-import type { ParsedReceipt } from "@/lib/receipt";
+import { parseReceipt, receiptHasName, type ParsedReceipt } from "@/lib/receipt";
+import { readReceiptText } from "@/lib/ocr";
 
 export type SubmitVerificationResult = { ok: true } | { ok: false; error: string } | { ok: false; rejected: true; reason: string };
 
@@ -72,15 +73,47 @@ function done() {
   revalidatePath("/my/verify");
 }
 
+type ReadReceipt = { parsed: ParsedReceipt; ocr: { engine: string; text: string; confidence: number | null }; nameMatches: boolean | null };
+
+/**
+ * 올라온 수강증을 서버에서 읽는다 (tesseract.js, `src/lib/ocr.ts`).
+ * **못 읽으면 null** — 등업신청 자체는 접수되고 스태프 검토로 간다 (`decideVerification`).
+ */
+async function readReceipt(admin: ReturnType<typeof createAdminClient>, filePath: string, studentName: string | null): Promise<ReadReceipt | null> {
+  const { data: file, error } = await admin.storage.from("receipts").download(filePath);
+  if (error || !file) return null;
+
+  const ocr = await readReceiptText({ bytes: new Uint8Array(await file.arrayBuffer()), mimeType: file.type, filePath });
+  if (!ocr) return null;
+
+  const parsed = parseReceipt(ocr.text);
+  // 이름이 다르다고 **자동으로 거절하지는 않는다** — 이름 한 글자 오인식으로 멀쩡한 학생을 튕길 수 있다.
+  // 스태프가 승인 화면에서 보고 판단한다 (게이트 G3).
+  const nameMatches = studentName ? receiptHasName(parsed.text, studentName) : null;
+  const confidence = (ocr.raw as { confidence?: unknown } | undefined)?.confidence;
+  return {
+    parsed,
+    ocr: { engine: ocr.engine, text: ocr.text, confidence: typeof confidence === "number" ? confidence : null },
+    nameMatches,
+  };
+}
+
+/** 스태프 화면에 보여 줄 판독 결과. 원문은 ocr_raw 에 있으니 여기서는 뺀다 */
+function parsedSummary({ parsed, nameMatches }: ReadReceipt) {
+  const { gates, mode, weekly, tracks, levels, level, program, times, time, months, receiptNo, tuition, warnings } = parsed;
+  return { gates, mode, weekly, tracks, levels, level, program, times, time, months, receiptNo, tuition, warnings, nameMatches };
+}
+
 /**
  * 수강증만 올리는 기본 등업신청.
  *
  * **바로 거절할 수 있는 것은 바로 거절한다** (2026-09-17 Alan 요청) — 우리 수강증이 아니거나 수강월이 다르면
  * 검토 대기로 쌓지 않고 이유를 적어 돌려준다. 판정은 `decideVerification` 한곳이다.
  *
- * 다만 **OCR 엔진이 아직 없어서**(CLAUDE.md 미확정 5) 지금은 읽을 글자가 없다 —
- * `parsed` 가 null 이라 모든 신청이 검토 대기로 간다. OCR 이 붙으면 아래 `parsed` 만 채우면 된다.
- * 자동 **승인**은 여전히 하지 않는다 (기준선이 미확정 3).
+ * **OCR 은 tesseract.js 로 서버에서 돌린다** (2026-09-16 Alan: "무료 OCR 로 진행", `src/lib/ocr.ts`).
+ * 읽은 원문은 `ocr_raw`, 판독 결과는 `parsed` 에 남겨 스태프 화면에서 보이게 한다.
+ * 자동 **승인**은 여전히 하지 않는다 (기준선이 미확정 3) — 여기서는 거절할 근거가 있을 때만 거절한다.
+ * 이미지가 아니거나(PDF) OCR 이 실패하면 읽은 것이 없으니 그대로 검토 대기로 간다.
  */
 export async function submitVerification(input: { filePath: string }): Promise<SubmitVerificationResult> {
   const guarded = await guardUpload(String(input?.filePath ?? ""));
@@ -88,11 +121,13 @@ export async function submitVerification(input: { filePath: string }): Promise<S
   const { user, admin } = guarded;
   const filePath = String(input.filePath);
 
-  const sections = await getOpenEnrollSections();
+  const [sections, { data: profile }] = await Promise.all([
+    getOpenEnrollSections(),
+    admin.from("profiles").select("name").eq("id", user.id).maybeSingle(),
+  ]);
 
-  // OCR 엔진이 붙으면 여기서 원문을 읽어 parseReceipt 로 넘긴다 (미확정 5)
-  const parsed: ParsedReceipt | null = null;
-  const decision = decideVerification(parsed, openTermsOf(sections));
+  const read = await readReceipt(admin, filePath, profile?.name ?? null);
+  const decision = decideVerification(read?.parsed ?? null, openTermsOf(sections));
 
   const rejected = decision.kind === "reject";
   const { error } = await admin.from("enrollment_verifications").insert({
@@ -101,6 +136,8 @@ export async function submitVerification(input: { filePath: string }): Promise<S
     source: "auto",
     result: rejected ? "rejected" : null,
     reject_reason: rejected ? decision.reason : null,
+    ocr_raw: read ? read.ocr : null,
+    parsed: read ? parsedSummary(read) : null,
   });
   if (error) return { ok: false, error: "접수 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요." };
 

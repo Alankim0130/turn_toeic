@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { todayKST, formatDate, formatTimeRange, formatWon, TRACK_LABEL } from "@/lib/utils";
+import { todayKST, formatDate, formatTimeRange, formatWon, cn, TRACK_LABEL } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { StatusBadge } from "@/components/admin/StatusBadge";
@@ -102,6 +102,17 @@ export default async function VerificationDetailPage({
 
   const isImage = /\.(png|jpe?g|webp|gif)$/i.test(v.file_path);
   const parsed = v.parsed as Record<string, unknown> | null;
+  const ocrMode = parsed?.mode === "live" || parsed?.mode === "onsite" ? parsed.mode : null;
+  // 스태프가 한눈에 보는 줄 — 자세한 값은 아래 JSON 에 그대로 있다
+  const ocrFacts: [string, string][] = parsed
+    ? [
+        ["수강 방식", ocrMode === "live" ? "불라방 (라이브방송)" : ocrMode === "onsite" ? "현장" : "-"],
+        ["레벨 · 과정", [parsed.level ?? "-", parsed.program === "sparta" ? "프리미어(스파르타)" : "점수보장반"].join(" · ")],
+        ["주 · 트랙", [parsed.weekly ? `주${parsed.weekly}일` : "-", (parsed.tracks as string[] | undefined)?.map((t) => (t === "mwf" ? "월수금" : "화목금")).join("+") || "-"].join(" · ")],
+        ["수강 시간", (parsed.time as { timeBlock?: string } | null)?.timeBlock ?? "-"],
+        ["이름 일치", parsed.nameMatches === true ? "일치" : parsed.nameMatches === false ? "다름 — 확인 필요" : "확인 못 함"],
+      ]
+    : [];
   const candidateLog = v.candidates as unknown[] | null;
 
   return (
@@ -156,11 +167,24 @@ export default async function VerificationDetailPage({
           </section>
 
           <section className="card p-5">
-            <h2 className="mb-3 font-black text-ink">OCR 파싱 결과</h2>
+            <h2 className="mb-3 font-black text-ink">OCR 판독 결과</h2>
             {parsed ? (
-              <pre className="max-h-64 overflow-auto rounded-xl bg-surface p-3 text-xs leading-relaxed text-ink-soft">{JSON.stringify(parsed, null, 2)}</pre>
+              <>
+                <dl className="mb-3 grid grid-cols-2 gap-2 text-sm">
+                  {ocrFacts.map(([k, val]) => (
+                    <div key={k} className="contents">
+                      <dt className="text-slate">{k}</dt>
+                      <dd className={cn("font-bold text-ink", k === "이름 일치" && parsed.nameMatches === false && "text-red-700")}>{val}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <details>
+                  <summary className="cursor-pointer text-xs font-bold text-slate">읽은 값 전체</summary>
+                  <pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-surface p-3 text-xs leading-relaxed text-ink-soft">{JSON.stringify(parsed, null, 2)}</pre>
+                </details>
+              </>
             ) : (
-              <p className="text-sm text-slate">아직 OCR 처리 전입니다. 아래에서 수강증을 보고 수동으로 승인할 수 있습니다.</p>
+              <p className="text-sm text-slate">수강증에서 글자를 읽지 못했습니다 (이미지가 아니거나 OCR 실패). 수강증을 보고 수동으로 승인해 주세요.</p>
             )}
             {candidateLog && Array.isArray(candidateLog) && candidateLog.length > 0 && (
               <>
@@ -183,7 +207,7 @@ export default async function VerificationDetailPage({
               </dl>
             </section>
           )}
-          <DecisionForms verificationId={v.id} result={v.result} candidates={candidates} pickerSections={pickerSections} order={orderInfo} />
+          <DecisionForms verificationId={v.id} result={v.result} candidates={candidates} pickerSections={pickerSections} order={orderInfo} ocrMode={ocrMode} />
         </div>
       </div>
     </>

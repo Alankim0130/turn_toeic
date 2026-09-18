@@ -58,11 +58,11 @@ describe("decideVerification — 바로 거절 / 검토 대기", () => {
     expect(decideVerification(parseReceipt(REAL), SEP_OCT)).toEqual({ kind: "review" });
   });
 
-  it("YBM 서면 수강증이 아니면 바로 거절", () => {
+  it("부산 서면센터 수강증이 아니면 바로 거절", () => {
     const other = REAL.replace("YBM어학원 서면센터", "다른어학원 강남센터").replace("역전토익", "다른토익").replace("이혜영", "김강사");
     const d = decideVerification(parseReceipt(other), SEP);
     expect(d).toMatchObject({ kind: "reject", code: "academy" });
-    expect((d as { reason: string }).reason).toContain("YBM");
+    expect((d as { reason: string }).reason).toContain("서면센터");
   });
 
   it("YBM 이지만 역전토익 강좌가 아니면 바로 거절", () => {
