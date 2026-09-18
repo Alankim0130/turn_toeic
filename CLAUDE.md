@@ -1569,8 +1569,9 @@ where p.role='student'
      거절 메시지가 안 나온 이유다 (로컬은 node_modules 가 다 있어 3초 만에 읽히고 "8월 과정이에요" 로 거절됐다). 코어만 넣은 두 번째 배포는
      이번엔 `bmp-js` 가 없어 죽었다. 넣는 것: `tesseract.js/src/**` · 의존성(`bmp-js` `is-url` `idb-keyval` `regenerator-runtime` `zlibjs` `wasm-feature-detect`) ·
      **코어 여섯 조합의 js + wasm 전부**(≈ 25MB). tesseract.js 7 의 `getCore` 는 `lstmOnly` 불리언을 OEM 숫자와 비교하는 버그가 있어
-     LSTM 전용이 아니라 **전체 코어(`tesseract-core-relaxedsimd`)를 고른다** — LSTM 변형만 넣으면 또 죽는다. `*.wasm.js`(브라우저용 base64 내장)는
-     `outputFileTracingExcludes` 로 뺀다. OCR 을 다른 페이지에서도 부르게 되면 그 경로도 키에 더할 것.
+     LSTM 전용이 아니라 **전체 코어(`tesseract-core-relaxedsimd`)를 고른다** — LSTM 변형만 넣으면 또 죽는다. 브라우저용 `*.wasm.js`(6 × 3.9MB)는
+     코어 js 가 참조해서 추적기가 어차피 넣는다(excludes 로도 안 빠진다) — 함수 전체 약 97MB, Vercel 한도 250MB 안.
+     OCR 을 다른 페이지에서도 부르게 되면 그 경로도 키에 더할 것.
      **배포 전에 `npm run ocr:check`** (`scripts/ocr-bundle-check.mjs`) — 빌드 결과의 추적 목록(`.nft.json`)에 있는 파일만 임시 폴더에 복사하고
      거기서 워커를 띄워 fixture 를 읽는다. 빠진 모듈이 있으면 거기서 바로 죽는다. 이 점검 없이 로컬 성공만 믿고 두 번 배포해 두 번 실패했다.
    - **변형은 싼 것부터 읽고 키가 다 나오면 멈춘다** (`receiptComplete`, 2026-09-18 실측 전체 화면 캡쳐 1242×2688: 폭 700 = 0.7초에 키 전부,

@@ -26,9 +26,9 @@ const nextConfig: NextConfig = {
       "./node_modules/regenerator-runtime/**",
       "./node_modules/zlibjs/**",
       "./node_modules/wasm-feature-detect/**",
-      // wasm 코어는 CPU 기능(relaxed SIMD · SIMD · 기본)과 엔진 모드로 실행 시점에 고른다 — 여섯 조합의 js + wasm 을 다 넣는다 (≈ 21MB).
-      // 브라우저용 `*.wasm.js`(base64 내장, 6 × 3.9MB)는 넣지 않는다 — outputFileTracingExcludes 는 include 로 더한 파일에 안 먹어서
-      // js 는 파일명을 하나씩 적는다 (`tesseract-core*.js` 는 `.wasm.js` 까지 잡는다)
+      // wasm 코어는 CPU 기능(relaxed SIMD · SIMD · 기본)과 엔진 모드로 실행 시점에 고른다 — 여섯 조합의 js + wasm 을 다 넣는다.
+      // 브라우저용 `*.wasm.js`(base64 내장, 6 × 3.9MB)는 코어 js 가 참조해서 추적기가 어차피 함께 넣는다 (excludes 로도 안 빠진다).
+      // 그래서 함수 전체가 약 97MB 다 — Vercel 한도 250MB 안. 아래 js 는 `.wasm.js` 를 또 잡지 않게 파일명을 하나씩 적었다
       "./node_modules/tesseract.js-core/package.json",
       "./node_modules/tesseract.js-core/tesseract-core.js",
       "./node_modules/tesseract.js-core/tesseract-core-lstm.js",
