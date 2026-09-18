@@ -21,7 +21,7 @@ type Row = { slot: BulkSlot | null; node: BlockNode | null; depth: number; leaf:
 
 /**
  * 시간표(레벨·시간대) × 강좌 × 트랙 표에서 고른 반을 한 번에 개설한다.
- * 불라방은 별도 반이 아니라 같은 반의 수강 방식이라, 반마다 현장·불라방 수강료를 함께 넣는다.
+ * 수강료 칸은 없다 (2026-09-18 Alan "수강료 부분은 다 삭제") — 불라방은 별도 반이 아니라 같은 반의 수강 방식이다.
  *
  * 60분 반과 120분 반 (2026-09-16 Alan): 시간 단위(60분 · 70분)가 진짜 수업이고 120분 · 140분은 그 시간들을 품는 묶음 반이다.
  * 묶음 반 학생은 안에 든 시간 단위 반의 수업일·다시보기·LC 교재를 그대로 받으므로 LC 교재는 시간 단위 반에만 고른다.
@@ -45,8 +45,7 @@ export function BulkCreateSections({
   isAdmin: boolean;
 }) {
   const router = useRouter();
-  const [common, setCommon] = useState({ tuition: "", live: "", capacity: "", status: "open" });
-  const [fees, setFees] = useState<Record<number, { tuition: string; live: string }>>({});
+  const [common, setCommon] = useState({ capacity: "", status: "open" });
   // LC 교재 세트는 시간 단위 · 트랙마다 정해진다 (2026-09-16 편성표) — 9월 650 은 10:00 화목금이 LC(A), 11:10 월수금이 LC(B)
   const [bookSets, setBookSets] = useState<Record<string, string>>({});
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -65,7 +64,6 @@ export function BulkCreateSections({
     const tree = buildBlockTree(list.map((s) => s.label), { nest: c.program === "score" });
     return flattenBlockTree(tree).map(({ node, depth }) => ({ slot: byLabel.get(node.label) ?? null, node, depth, leaf: node.parts.length === 0 }));
   };
-  const feeOf = (courseId: number) => fees[courseId] ?? { tuition: common.tuition, live: common.live };
   const bookKey = (courseId: number, slotId: number | null, track: string) => `${courseId}:${slotId ?? 0}:${track}`;
   const isTaken = (c: BulkCourse, slot: BulkSlot | null, track: string) => existing.has(sectionKeyOf(c.id, track, slot ? slot.label : null));
 
@@ -94,7 +92,6 @@ export function BulkCreateSections({
     setMsg(null);
     const rows: BulkRow[] = [];
     for (const c of courses) {
-      const fee = feeOf(c.id);
       for (const r of rowsOf(c)) {
         for (const t of TRACKS) {
           if (!checked.has(cellKey(c.id, r.slot?.id ?? null, t))) continue;
@@ -102,9 +99,6 @@ export function BulkCreateSections({
             courseId: c.id,
             slotId: r.slot?.id ?? null,
             track: t,
-            // 수강료는 선택 — 등록은 YBM 에서 한다 (2026-09-16 Alan)
-            tuition: digits(fee.tuition) ? Number(digits(fee.tuition)) : null,
-            liveTuition: digits(fee.live) ? Number(digits(fee.live)) : null,
             capacity: digits(common.capacity) ? Number(digits(common.capacity)) : null,
             status: common.status,
             // 교재는 시간 단위 반에만. 묶음 반은 안에 든 반의 교재를 쓰고, 스파르타 반은 함께 듣는 점수보장반의 교재를 쓴다
@@ -147,29 +141,7 @@ export function BulkCreateSections({
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 rounded-xl2 border border-line bg-surface p-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <label htmlFor="bulk-tuition" className="label !mb-1 text-xs">현장 수강료 <span className="font-normal text-mist">(선택 · 기본값)</span></label>
-          <input
-            id="bulk-tuition"
-            inputMode="numeric"
-            value={common.tuition}
-            onChange={(e) => setCommon({ ...common, tuition: digits(e.target.value) })}
-            placeholder="비워도 됩니다"
-            className="input !py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label htmlFor="bulk-live" className="label !mb-1 text-xs">불라방 수강료 <span className="font-normal text-mist">(선택)</span></label>
-          <input
-            id="bulk-live"
-            inputMode="numeric"
-            value={common.live}
-            onChange={(e) => setCommon({ ...common, live: digits(e.target.value) })}
-            placeholder="비우면 불라방 미운영"
-            className="input !py-2 text-sm"
-          />
-        </div>
+      <div className="grid gap-3 rounded-xl2 border border-line bg-surface p-4 sm:grid-cols-2">
         <div>
           <label htmlFor="bulk-capacity" className="label !mb-1 text-xs">정원 <span className="font-normal text-mist">(선택)</span></label>
           <input
@@ -189,7 +161,7 @@ export function BulkCreateSections({
           </select>
         </div>
         {isAdmin && instructors && (
-          <div className="sm:col-span-2 lg:col-span-4">
+          <div className="sm:col-span-2">
             <label htmlFor="bulk-instructor" className="label !mb-1 text-xs">담당 강사 <span className="font-normal text-mist">(고른 반 전체)</span></label>
             <select id="bulk-instructor" value={instructorId} onChange={(e) => setInstructorId(e.target.value)} className="input !py-2 text-sm">
               {/* 담당은 LC 교재로 DB 가 저절로 정한다 (2026-09-18). 고르면 과목을 못 읽는 반(교재 미지정)에만 들어간다 */}
@@ -207,7 +179,6 @@ export function BulkCreateSections({
       <div className="space-y-4">
         {courses.map((c) => {
           const rows = rowsOf(c);
-          const fee = feeOf(c.id);
           const hasSlots = rows.some((r) => r.slot);
           const allOn = rows.every((r) => TRACKS.every((t) => isTaken(c, r.slot, t) || checked.has(cellKey(c.id, r.slot?.id ?? null, t))));
           return (
@@ -231,26 +202,6 @@ export function BulkCreateSections({
                   )}
                 </div>
                 <div className="flex flex-wrap items-end gap-2">
-                  <div>
-                    <label htmlFor={`fee-${c.id}`} className="label !mb-1 text-xs">현장 수강료 <span className="font-normal text-mist">(선택)</span></label>
-                    <input
-                      id={`fee-${c.id}`}
-                      inputMode="numeric"
-                      value={fee.tuition}
-                      onChange={(e) => setFees({ ...fees, [c.id]: { ...fee, tuition: digits(e.target.value) } })}
-                      className="input !w-32 !py-1.5 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor={`live-${c.id}`} className="label !mb-1 text-xs">불라방 수강료</label>
-                    <input
-                      id={`live-${c.id}`}
-                      inputMode="numeric"
-                      value={fee.live}
-                      onChange={(e) => setFees({ ...fees, [c.id]: { ...fee, live: digits(e.target.value) } })}
-                      className="input !w-32 !py-1.5 text-sm"
-                    />
-                  </div>
                   <button type="button" onClick={() => toggleCourse(c, !allOn)} className="btn-ghost !px-3 !py-1.5 text-xs">
                     {allOn ? "전체 해제" : "전체 선택"}
                   </button>

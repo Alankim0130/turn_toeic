@@ -13,7 +13,7 @@ export type PlannerStudy = {
   materialCount: number;
 };
 
-/** 반 편성(월) 화면 안의 "스터디 시간 설정" 영역 */
+/** "스터디 시간 설정" 영역 — 전용 화면 `/admin/study/plan` 과 반 편성(월) 화면 아래에 함께 쓴다 (2026-09-18) */
 export function StudyPlanner({ termId, termLabel, termKey, studies }: { termId: number; termLabel: string; termKey: string; studies: PlannerStudy[] }) {
   const byKind = new Map(studies.map((s) => [s.kind, { ...s, slots: sortSlots(s.slots) }]));
 

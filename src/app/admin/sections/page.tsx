@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
-import { formatDate, formatWon, TRACK_LABEL, COURSE_TYPE_LABEL, todayKST, cn } from "@/lib/utils";
+import { formatDate, TRACK_LABEL, COURSE_TYPE_LABEL, todayKST, cn } from "@/lib/utils";
 import { CreateSectionForm } from "@/components/admin/sections/CreateSectionForm";
 import { BulkCreateSections, type BulkSlot } from "@/components/admin/sections/BulkCreateSections";
 import { AssignInstructor } from "@/components/admin/sections/AssignInstructor";
@@ -71,7 +71,7 @@ export default async function AdminSectionsPage({
         supabase
           .from("class_sections")
           .select(
-            "id, bundle_id, track, time_block, book_set, recorded, course_id, capacity, tuition, live_tuition, status, instructor_id, course:courses(name, course_type, target_score, program), instructor:profiles(name), session_dates(count), section_live_links(section_id)",
+            "id, bundle_id, track, time_block, book_set, recorded, course_id, capacity, status, instructor_id, course:courses(name, course_type, target_score, program), instructor:profiles(name), session_dates(count), section_live_links(section_id)",
           )
           .eq("term_id", term.id)
           .order("course_id")
@@ -121,6 +121,21 @@ export default async function AdminSectionsPage({
   }
   // 묶음 반(120분·140분) ↔ 시간 단위 반(60분·70분): 같은 강좌·트랙에서 시간이 안에 들어오는 반 (2026-09-16 Alan)
   const packages = sectionPackages(sections ?? []);
+  // 묶음 반(120분·140분)·스파르타 반은 담당이 한 명이 아니라 DB 에는 비어 있다 (도메인 규칙 1 "담당 강사").
+  // **화면에는 두 강사 이름을 다 적는다** (2026-09-18 Alan "종합에는 LC·RC 둘 다 수업을 하니 두 쌤 이름을 다") —
+  // 안에 든 시간 단위 반의 담당을 모으고, 아직 아무도 없으면 과목 강사(이혜영 LC · 이영수 RC) 둘을 적는다
+  const subjectInstructorNames = (instructors ?? [])
+    .filter((i) => i.subject === "lc" || i.subject === "rc")
+    .map((i) => i.name)
+    .sort((a, b) => a.localeCompare(b, "ko"));
+  const instructorLabel = (s: NonNullable<typeof sections>[number]): string | null => {
+    if (s.instructor?.name) return s.instructor.name;
+    const parts = packages.get(s.id)?.parts ?? [];
+    const names = [...new Set(parts.map((p) => p.instructor?.name).filter((n): n is string => !!n))].sort((a, b) => a.localeCompare(b, "ko"));
+    if (names.length > 0) return names.join(" · ");
+    if (parts.length > 0 || s.course?.program === "sparta") return subjectInstructorNames.length > 0 ? subjectInstructorNames.join(" · ") : null;
+    return null;
+  };
   // 시간대 라벨 → "120분" 같은 분량 (묶음은 안에 든 시간 단위의 합)
   const minutesOf = new Map<string, string | null>();
   for (const c of new Set((sections ?? []).map((s) => s.course_id))) {
@@ -267,7 +282,7 @@ export default async function AdminSectionsPage({
                 track: s.track,
                 timeBlock: s.time_block,
                 bookSet: s.book_set,
-                instructor: s.instructor?.name ?? null,
+                instructor: instructorLabel(s),
                 // 묶음 반(안에 시간 단위 반이 든 반)·스파르타 반은 한 시간씩 강사가 갈린다
                 package: (packages.get(s.id)?.parts.length ?? 0) > 0 || s.course?.program === "sparta",
               }))}
@@ -371,17 +386,11 @@ export default async function AdminSectionsPage({
                               </span>
                             </div>
 
-                            <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                              <div>
-                                <dt className="text-xs text-mist">수강료 (현장 / 불라방)</dt>
-                                <dd className="font-semibold text-ink">
-                                  {s.tuition != null ? formatWon(s.tuition) : "미입력"} / {s.live_tuition != null ? formatWon(s.live_tuition) : "미운영"}
-                                </dd>
-                              </div>
+                            <dl className="mt-4 text-sm">
                               <div>
                                 <dt className="text-xs text-mist">강사</dt>
                                 <dd className="font-semibold text-ink">
-                                  {s.instructor?.name ?? "미지정"}
+                                  {instructorLabel(s) ?? "미지정"}
                                   {s.instructor_id === user.id && <span className="ml-1 text-xs text-brand-600">(나)</span>}
                                 </dd>
                               </div>

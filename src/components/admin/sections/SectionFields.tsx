@@ -1,32 +1,19 @@
 "use client";
 
 /**
- * 반 개설/수정 폼의 공통 입력 필드 (수강료·정원·LC 교재 세트·상태). 수업일·개강일·종강일은 반 편성 달력에서 정한다.
+ * 반 개설/수정 폼의 공통 입력 필드 (정원·LC 교재 세트·상태). 수업일·개강일·종강일은 반 편성 달력에서 정한다.
+ * 수강료 칸은 없다 (2026-09-18 Alan "수강료 부분은 다 삭제" — 등록은 YBM 에서 하고 이 사이트는 학생 관리용).
  * bookSetNote 가 있으면 교재를 고를 수 없는 반(묶음 반 · 스파르타 반)이라 라디오 대신 안내만 보여 준다.
  */
 export function SectionFields({ values, mode, bookSetNote }: { values: Record<string, string | undefined>; mode: "create" | "edit"; bookSetNote?: string }) {
   const v = values;
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div>
-          <label htmlFor="tuition" className="label">
-            현장 수강료 (원) <span className="font-normal text-mist">(선택)</span>
-          </label>
-          <input id="tuition" name="tuition" type="number" min={0} step={1000} inputMode="numeric" className="input" placeholder="비워도 됩니다" defaultValue={v.tuition ?? ""} />
-        </div>
-        <div>
-          <label htmlFor="live_tuition" className="label">
-            불라방 수강료 <span className="font-normal text-mist">(선택)</span>
-          </label>
-          <input id="live_tuition" name="live_tuition" type="number" min={0} step={1000} inputMode="numeric" className="input" placeholder="비우면 미운영" defaultValue={v.live_tuition ?? ""} />
-        </div>
-        <div>
-          <label htmlFor="capacity" className="label">
-            정원 <span className="font-normal text-mist">(선택)</span>
-          </label>
-          <input id="capacity" name="capacity" type="number" min={1} className="input" defaultValue={v.capacity ?? ""} />
-        </div>
+      <div className="sm:max-w-xs">
+        <label htmlFor="capacity" className="label">
+          정원 <span className="font-normal text-mist">(선택)</span>
+        </label>
+        <input id="capacity" name="capacity" type="number" min={1} className="input" defaultValue={v.capacity ?? ""} />
       </div>
 
       {bookSetNote ? (

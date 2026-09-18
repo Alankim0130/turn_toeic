@@ -11,7 +11,7 @@ import { blockContains } from "@/lib/time-blocks";
 /**
  * 반 일괄 개설: 시간표(레벨·시간대) × 강좌 × 트랙 조합에서 고른 것만 한 번에 만든다.
  * 한 달에 열리는 반이 수십 개라 하나씩 만들면 오래 걸린다 (2026-09-16 Alan 요청).
- * 불라방은 별도 반이 아니라 같은 반의 수강 방식이므로, 반마다 현장·불라방 수강료를 함께 넣는다.
+ * 수강료는 받지 않는다 (2026-09-18 Alan "수강료 부분은 다 삭제") — 불라방은 별도 반이 아니라 같은 반의 수강 방식(enrollments.mode)이다.
  * 같은 (강좌 · 트랙 · 시간대) 반이 이미 있으면 건너뛴다.
  */
 type SectionInsert = Database["public"]["Tables"]["class_sections"]["Insert"];
@@ -20,8 +20,6 @@ export type BulkRow = {
   courseId: number;
   slotId: number | null;
   track: string;
-  tuition: number | null;
-  liveTuition: number | null;
   capacity: number | null;
   status: string;
   /** LC 교재 세트 (A|B). 시간대마다 정해지고 달마다 뒤바뀐다 */
@@ -74,11 +72,6 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
     if (r.track !== "mwf" && r.track !== "ttf") return { ok: false, error: "트랙 값이 올바르지 않아요." };
     if (!["draft", "open"].includes(r.status)) return { ok: false, error: "상태 값이 올바르지 않아요." };
 
-    // 수강료는 선택 — 등록은 YBM 에서 한다 (2026-09-16 Alan)
-    const tuition = r.tuition == null ? null : Number(r.tuition);
-    if (tuition !== null && (!Number.isInteger(tuition) || tuition < 0)) return { ok: false, error: "현장 수강료는 0 이상 숫자로 입력해 주세요." };
-    const live = r.liveTuition == null ? null : Number(r.liveTuition);
-    if (live !== null && (!Number.isInteger(live) || live < 0)) return { ok: false, error: "불라방 수강료는 0 이상 숫자로 입력해 주세요." };
     const capacity = r.capacity == null ? null : Number(r.capacity);
     if (capacity !== null && (!Number.isInteger(capacity) || capacity < 1)) return { ok: false, error: "정원은 1명 이상이어야 해요." };
 
@@ -117,8 +110,6 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
       closes_at: term.closes_at,
       target_sessions: sessionsOf(r.track),
       instructor_id: isPackage || course.program === "sparta" ? null : pickedInstructor,
-      tuition,
-      live_tuition: live,
       capacity,
       status: r.status,
       book_set: bookSet,

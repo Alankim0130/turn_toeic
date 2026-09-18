@@ -38,8 +38,8 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
         <EmptyState
           icon="study"
           title="아직 만든 스터디가 없어요"
-          description="반 편성 화면에서 그 달 스터디를 열고 시간대를 정하면, 수강생 신청이 여기에 모입니다."
-          action={{ href: "/admin/sections", label: "반 편성에서 스터디 열기" }}
+          description="스터디 시간 설정에서 그 달 스터디를 열고 시간대를 정하면, 수강생 신청이 여기에 모입니다."
+          action={{ href: "/admin/study/plan", label: "스터디 시간 설정으로" }}
         />
       </>
     );
@@ -68,7 +68,8 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
   return (
     <>
       <PageHeader icon="study" title="스터디 신청자" description="대면·단어 스터디는 시간대별로, 비대면 스터디는 숙제 제출 현황과 함께 보여 드려요.">
-        <Link href={`/admin/sections?term=${termKey}`} className="btn-secondary">
+        {/* 시간대는 전용 화면에서 (2026-09-18 Alan — 반 편성으로 보내면 한참 스크롤해야 했다) */}
+        <Link href={`/admin/study/plan?term=${termKey}`} className="btn-secondary">
           <Icon name="timeslot" size={18} />
           시간대 설정
         </Link>
@@ -93,7 +94,7 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
 
       {isSlotKind(kind) ? (
         slots.length === 0 ? (
-          <EmptyState icon="timeslot" title="시간대가 아직 없어요" description="반 편성 화면에서 시간대를 추가하면 수강생이 신청할 수 있어요." action={{ href: `/admin/sections?term=${termKey}`, label: "시간대 추가하기" }} />
+          <EmptyState icon="timeslot" title="시간대가 아직 없어요" description="시간대를 추가하면 수강생이 골라 신청할 수 있어요." action={{ href: `/admin/study/plan?term=${termKey}`, label: "시간대 추가하기" }} />
         ) : (
           <div className="space-y-5">
             {slots.map((slot, i) => {

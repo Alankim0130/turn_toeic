@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
-import { cn, formatDate, formatWon, TRACK_LABEL, COURSE_TYPE_LABEL } from "@/lib/utils";
+import { cn, formatDate, TRACK_LABEL, COURSE_TYPE_LABEL } from "@/lib/utils";
 import { SectionEditForm } from "@/components/admin/sections/SectionEditForm";
 import { LiveLinkForm } from "@/components/admin/sections/LiveLinkForm";
 import { DeleteSectionButton } from "@/components/admin/sections/DeleteSectionButton";
@@ -265,12 +265,6 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
             <dd className="font-semibold text-ink">{TRACK_LABEL[section.track] ?? section.track}</dd>
           </div>
           <div>
-            <dt className="text-xs text-mist">수강료 (현장 / 불라방)</dt>
-            <dd className="font-semibold text-ink">
-              {section.tuition != null ? formatWon(section.tuition) : "미입력"} / {section.live_tuition != null ? formatWon(section.live_tuition) : "미운영"}
-            </dd>
-          </div>
-          <div>
             <dt className="text-xs text-mist">담당 강사</dt>
             <dd className="font-semibold text-ink">{section.instructor?.name ?? "미지정"}</dd>
           </div>
@@ -280,8 +274,6 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
             id={section.id}
             values={{
               capacity: section.capacity != null ? String(section.capacity) : "",
-              tuition: section.tuition != null ? String(section.tuition) : "",
-              live_tuition: section.live_tuition != null ? String(section.live_tuition) : "",
               status: section.status,
               book_set: section.book_set ?? "",
               instructor_id: section.instructor_id ?? "",
