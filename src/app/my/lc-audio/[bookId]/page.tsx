@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { todayKST, TRACK_LABEL } from "@/lib/utils";
 import { studentTrackLabel } from "@/lib/week5";
 import { holidayNamesBetween } from "@/lib/holidays";
-import { BOOK_SET_LABEL, BOOK_SET_MONTHS, DAYS, DAY_COUNT, bookLabel, bookSetOfSection, coverSrc, explicitBookSet, lessonLabel, sortTracks } from "@/lib/lc-audio";
+import { BOOK_SET_LABEL, DAYS, DAY_COUNT, bookLabel, bookTimeLabel, coverSrc, explicitBookSet, lessonRangeLabel, sortTracks } from "@/lib/lc-audio";
 import { getMySessions, getMyWeek5 } from "../../_lib/queries";
 
 export const metadata: Metadata = { title: "LC 음원듣기", robots: { index: false } };
@@ -39,13 +39,13 @@ export default async function LcBookPage({ params }: { params: Promise<{ bookId:
 
   /**
    * 이 교재를 쓰는 내 반의 수업일을 찾는다. 내 반의 회차(seq)가 곧 강 번호 칸이다.
-   * 교재는 달이 아니라 **듣는 시간대**로 정해진다 (2026-09-16 Alan 확인) — 반의 book_set 을 본다.
+   * 교재는 달이 아니라 **듣는 시간대 · 트랙**이 정한다 (2026-09-16 편성표, 2026-09-19 Alan 재지적) —
+   * 반의 `book_set` 하나만 본다. **달 홀짝으로 짐작하지 않는다** — 지정이 없으면 그 시간엔 LC 교재가 없다는 뜻이고,
+   * 그때는 달력 대신 강 버튼으로 고르게 둔다 (짐작한 달력은 남의 반 날짜를 보여 준다).
+   * 스파르타 반 자체는 교재가 없다 — 함께 듣는 점수보장반(RLS 로 같이 내려온다)의 수업일을 쓴다.
    */
-  // 스파르타 반 자체는 교재가 없다 — 함께 듣는 점수보장반(RLS 로 같이 내려온다)의 수업일을 쓴다.
-  // 교재는 LC 시간 단위 반에만 지정돼 있다. 지정된 반이 하나도 없는 예전 데이터일 때만 달 홀짝으로 짐작한다
   const scoreSessions = sessions.filter((s) => s.section && s.section.course?.program !== "sparta");
-  const anyExplicit = scoreSessions.some((s) => explicitBookSet(s.section));
-  const sameSet = scoreSessions.filter((s) => (anyExplicit ? explicitBookSet(s.section) : bookSetOfSection(s.section)) === book.book_set);
+  const sameSet = scoreSessions.filter((s) => explicitBookSet(s.section) === book.book_set);
   const levelMatch = sameSet.filter((s) => s.section?.course?.target_score === book.level);
   const usable = levelMatch.length ? levelMatch : sameSet;
 
@@ -82,10 +82,11 @@ export default async function LcBookPage({ params }: { params: Promise<{ bookId:
 
   return (
     <div className="space-y-6">
+      {/* 설명은 달(홀수/짝수)이 아니라 **이 교재로 수업하는 내 시간**이다 (2026-09-19 Alan) */}
       <PageHeader
         icon="headphones"
         title={`${book.level} ${bookLabel(book)}`}
-        description={book.description || `${BOOK_SET_MONTHS[book.book_set]} · ${lessonLabel(1, offset)}부터 ${lessonLabel(DAY_COUNT, offset)}까지`}
+        description={book.description || [section ? `${bookTimeLabel(section, TRACK_LABEL)} 수업` : null, lessonRangeLabel(offset)].filter(Boolean).join(" · ")}
       >
         <Link href="/my/lc-audio" className="btn-secondary">
           <Icon name="headphones" size={18} />
