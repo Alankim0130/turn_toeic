@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { NAV_BOTTOM, NAV_DRAWER, NAV_MAIN, STUDENT_FEATURES } from "./site";
+import { NAV_BOTTOM, NAV_DRAWER, NAV_MAIN, STUDENT_FEATURES, STUDENT_HUB } from "./site";
 
 /**
  * 햄버거 메뉴 묶음 (2026-09-18 Alan — 마이페이지 메뉴 줄을 없애고 햄버거에 정리해 담았다).
@@ -34,6 +34,12 @@ describe("햄버거 메뉴 묶음 (NAV_DRAWER)", () => {
       expect(s.label).toBeTruthy();
       expect(s.items.length).toBeGreaterThan(0);
     }
+  });
+
+  // 아래로 내려 두면 학습 묶음까지 지나야 나와서, 처음 온 사람이 "여기가 뭐 하는 곳인가" 를 못 찾는다
+  it("소개 · 수강생전용 안내가 맨 위 묶음이다 (2026-09-19 Alan)", () => {
+    expect(NAV_DRAWER[0].label).toBe("안내");
+    expect(NAV_DRAWER[0].items.map((i) => i.href)).toEqual(["/", STUDENT_HUB.href]);
   });
 
   it("아이콘 파일이 전부 있다 (public/icons — 이모지 대신 힉스필드 아이콘)", () => {
