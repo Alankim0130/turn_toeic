@@ -12,8 +12,9 @@ export const metadata: Metadata = { title: "알림", robots: { index: false } };
 
 /**
  * 학생 알림함 (2026-09-18 Alan — "학생 계정에서 선생님에게 알림을 받을 수 있는 공간").
- * 스태프가 보낸 알림(`student_messages`)만 쌓인다. 문자·카톡·푸시가 아니라 **앱 안에서만** 보인다.
- * 열면 안 읽은 것이 읽음으로 바뀐다. 비대면 스터디 인증 알림에는 내 스터디로 가는 버튼이 붙는다.
+ * `student_messages` 가 쌓인다 — 스태프가 보낸 것과 **수업 시작 알림**(2026-09-19, 크론이 보낸다) 둘 다.
+ * 문자·카톡·푸시가 아니라 **앱 안에서만** 보인다. 열면 안 읽은 것이 읽음으로 바뀐다.
+ * 보낸 이름이 비어 있으면 자동 알림이라 시각만 적는다. 종류마다 할 일로 가는 버튼이 다르다.
  */
 export default async function NotificationsPage() {
   await requireUser("/my/notifications");
@@ -23,10 +24,10 @@ export default async function NotificationsPage() {
   return (
     <div className="space-y-6">
       <MarkRead unread={unread} />
-      <PageHeader icon="bell" title="알림" description="선생님이 보낸 알림이 여기에 쌓여요." />
+      <PageHeader icon="bell" title="알림" description="선생님이 보낸 알림과 수업 시작 알림이 여기에 쌓여요." />
 
       {messages.length === 0 ? (
-        <EmptyState icon="bell" title="아직 알림이 없어요" description="선생님이 보낸 안내나 확인 요청이 오면 여기에서 볼 수 있어요." />
+        <EmptyState icon="bell" title="아직 알림이 없어요" description="선생님이 보낸 안내나 불라방 수업 시작 알림이 오면 여기에서 볼 수 있어요." />
       ) : (
         <Reveal>
           <ul className="space-y-3">
@@ -54,6 +55,12 @@ export default async function NotificationsPage() {
                   {m.kind === "homework_checked" && (
                     <Link href="/my/homework" className="btn-primary mt-3 !px-4 !py-2 text-sm">
                       숙제업로드에서 확인하기
+                    </Link>
+                  )}
+                  {/* 수업 시작 알림 — 불라방 학생에게만 간다 (크론). 늦게 열어도 그 날 링크는 그대로다 */}
+                  {m.kind === "live_start" && (
+                    <Link href="/my/live" className="btn-primary mt-3 !px-4 !py-2 text-sm">
+                      불라방 입장하기
                     </Link>
                   )}
                 </li>
