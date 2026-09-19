@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { isAdmin, isAssistant, isCrew, isStaff, isStudentPlus, ROLE_LABEL, TEST_ROLES, type UserRole } from "./auth";
+import { canAssignRole, isAdmin, isAssistant, isCrew, isStaff, isStudentGrade, isStudentPlus, ROLE_LABEL, STUDENT_GRADES, TEST_ROLES, type UserRole } from "./auth";
+import { NAV_ADMIN } from "./site";
 
 /**
  * 등급 체계를 지키는 테스트 (2026-09-17 Alan 요청 — "다른 워크트리에서도 항상 고려할 수 있도록").
@@ -64,6 +65,43 @@ describe("등급 판정 — 앱 안에서 어긋나지 않는다", () => {
   it("등급마다 한국어 이름이 있다 (화면에 영어가 새지 않는다)", () => {
     for (const r of ROLES) expect(ROLE_LABEL[r]?.length, r).toBeGreaterThan(0);
   });
+
+  it("학생 등급 = 관리자 화면을 하나도 못 쓰는 등급 (DB 의 private.is_student_grade() 와 같은 집합)", () => {
+    expect([...STUDENT_GRADES].sort()).toEqual(["alumni", "guest", "member", "student"]);
+    expect(ROLES.filter(isStudentGrade).sort()).toEqual(ROLES.filter((r) => !isCrew(r)).sort());
+  });
+});
+
+/**
+ * 조교의 등급 변경 (2026-09-19 Alan — "조교에게도 등급권한을 부여해주는 권한").
+ * DB 정책 "profiles: 본인·스태프·조교 수정" 과 같은 집합이어야 한다 (마이그레이션 20260919130000).
+ */
+describe("등급을 누가 바꿀 수 있나 — canAssignRole", () => {
+  const ROLES = Object.keys(ROLE_LABEL) as UserRole[];
+
+  it("강사·관리자는 무엇이든 바꾼다", () => {
+    for (const actor of ["instructor", "admin"] as UserRole[])
+      for (const target of ROLES) for (const next of ROLES) expect(canAssignRole(actor, target, next), `${actor}:${target}→${next}`).toBe(true);
+  });
+
+  it("조교는 학생 등급인 사람만 건드린다 — 강사·관리자·조교 계정은 못 바꾼다", () => {
+    for (const target of ["instructor", "admin", "assistant"] as UserRole[])
+      expect(canAssignRole("assistant", target, "member"), target).toBe(false);
+  });
+
+  it("조교는 누구도 스태프 등급으로 못 올린다 (스스로 권한을 올리는 길 차단)", () => {
+    for (const next of ["instructor", "admin", "assistant"] as UserRole[])
+      expect(canAssignRole("assistant", "student", next), next).toBe(false);
+  });
+
+  it("조교는 학생 등급 사이는 바꾼다", () => {
+    for (const target of STUDENT_GRADES) for (const next of STUDENT_GRADES) expect(canAssignRole("assistant", target, next)).toBe(true);
+  });
+
+  it("학생·회원·졸업생·비회원은 아무것도 못 바꾼다", () => {
+    for (const actor of [...STUDENT_GRADES, null] as (UserRole | null)[])
+      expect(canAssignRole(actor, "member", "student"), String(actor)).toBe(false);
+  });
 });
 
 describe("관리자 화면은 화면마다 가드가 있다", () => {
@@ -102,6 +140,24 @@ describe("관리자 서버 액션은 함수마다 가드가 있다", () => {
       .map(({ name }) => name);
 
     expect(unguarded, `가드 없는 액션: ${unguarded.join(", ")}`).toEqual([]);
+  });
+});
+
+/**
+ * 메뉴와 가드가 어긋나면 조용히 틀린다 — 조교에게 보이는 메뉴인데 화면이 막거나(눌러도 튕긴다),
+ * 조교에게 안 보이는 화면인데 가드가 느슨하면(주소를 직접 치면 들어온다).
+ */
+describe("관리자 메뉴와 화면 가드가 같은 말을 한다", () => {
+  const src = (href: string) => readFileSync(`src/app${href}/page.tsx`, "utf8");
+
+  it.each(NAV_ADMIN.filter((n) => n.crew).map((n) => n.href))("조교 메뉴 %s 는 requireCrew 로 연다", (href) => {
+    expect(src(href)).toContain("requireCrew(");
+  });
+
+  it.each(NAV_ADMIN.filter((n) => !n.crew).map((n) => n.href))("조교에게 안 보이는 %s 는 requireStaff 로 막는다", (href) => {
+    const body = src(href);
+    expect(body).toContain("requireStaff(");
+    expect(body).not.toContain("requireCrew(");
   });
 });
 

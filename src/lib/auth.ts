@@ -22,6 +22,33 @@ export const isCrew = (role?: UserRole | null) => isStaff(role) || isAssistant(r
 export const isStudentPlus = (role?: UserRole | null) => role === "student" || isCrew(role);
 
 /**
+ * 학생 등급 — 관리자 화면을 하나도 쓰지 못하는 등급들 (DB 의 private.is_student_grade()).
+ * 조교가 바꿀 수 있는 범위를 이 집합으로 못박는다.
+ */
+export const STUDENT_GRADES = ["guest", "member", "student", "alumni"] as const satisfies readonly UserRole[];
+export const isStudentGrade = (role?: UserRole | null) =>
+  (STUDENT_GRADES as readonly (UserRole | null | undefined)[]).includes(role);
+
+/**
+ * 등급을 바꿀 수 있나 — **한곳 판정** (2026-09-19 Alan: "조교가 등업관리를 다 하기 때문에
+ * 등업신청을 보고 수락하거나 등급권한을 부여해주는 권한이 있으면 좋겠어").
+ *
+ * - 강사·관리자: 전부
+ * - **조교: 학생 등급인 사람을 학생 등급으로만.** 스태프 계정은 손대지 못하고(관리자를 졸업생으로
+ *   내려 서비스를 멈추는 길을 막는다), 누구도 강사·관리자·조교로 **올리지 못한다**(스스로 권한을
+ *   올리는 길을 막는다). 본인 등급도 못 바꾼다.
+ * - 그 밖: 아무도 못 바꾼다
+ *
+ * DB 정책 "profiles: 본인·스태프·조교 수정" 과 같은 집합이어야 한다 — 한쪽만 고치면
+ * 화면은 열리는데 RLS 가 막거나, 그 반대가 된다 (마이그레이션 20260919130000).
+ */
+export function canAssignRole(actor: UserRole | null | undefined, target: UserRole, next: UserRole) {
+  if (isAdmin(actor)) return true;
+  if (isAssistant(actor)) return isStudentGrade(target) && isStudentGrade(next);
+  return false;
+}
+
+/**
  * 테스터(2026-09-16 Alan 요청): 강사·관리자 계정은 테스트 등급(profiles.test_role)을 켜서 학생처럼 볼 수 있다.
  * 켜져 있으면 DB 의 private.user_role() 도 그 값을 돌려줘 RLS 가 그 등급으로 판정한다.
  * 학생 화면의 판정은 effectiveRole 을, 관리자 화면에 들어갈 수 있는지(진짜 등급)는 profile.role 을 쓴다.

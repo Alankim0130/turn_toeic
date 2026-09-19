@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireStaff } from "@/lib/auth";
+import { requireCrew } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { approveVerificationWith } from "@/lib/approve-verification";
 
@@ -22,7 +22,7 @@ function revalidateAll(id: number) {
  * 주5일은 같은 달의 월수금·화목금 두 반을 함께 고른다.
  */
 export async function approveVerification(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  await requireStaff();
+  await requireCrew();
 
   const id = Number(formData.get("verification_id"));
   const sectionIds = [...new Set(formData.getAll("section_ids").map(Number).filter((n) => Number.isInteger(n) && n > 0))];
@@ -45,7 +45,7 @@ export async function approveVerification(_prev: ActionState, formData: FormData
 }
 
 export async function rejectVerification(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  await requireStaff();
+  await requireCrew();
   const id = Number(formData.get("verification_id"));
   const reason = String(formData.get("reject_reason") ?? "").trim();
   if (!id) return { error: "잘못된 요청입니다." };
@@ -65,7 +65,7 @@ export async function rejectVerification(_prev: ActionState, formData: FormData)
 
 /** 오배정 정정: 배정된 반 / 수강 방식 변경 */
 export async function updateEnrollment(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  await requireStaff();
+  await requireCrew();
   const verificationId = Number(formData.get("verification_id"));
   const enrollmentId = Number(formData.get("enrollment_id"));
   const sectionId = Number(formData.get("section_id"));
