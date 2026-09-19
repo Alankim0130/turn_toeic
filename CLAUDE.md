@@ -161,6 +161,15 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   `/my` 바로가기 · 등록이 없는 학생에게 뜨는 큰 버튼(`EmptyState`) · 햄버거 서랍의 마이페이지 묶음 · PC 상단 메뉴.
   칸은 다섯 개(`grid-cols-5`)라 하나를 더하려면 하나를 빼야 하고, **이름은 한 줄로 끝나는 길이**로 적는다
   (`whitespace-nowrap` 11px — `LC음원듣기` 대신 `LC음원`). 기능 줄에는 `feature` 를 붙여 못 쓰는 학생에게 자물쇠가 붙게 한다
+- **하단 바는 `visualViewport` 로 보이는 화면 바닥에 붙인다** (2026-09-19 Alan — "스크롤을 밑으로 내리니 하단 네비게이션바가 위로 조금 올라오고 있어").
+  `position: fixed; bottom: 0` 은 **레이아웃 뷰포트** 바닥이라, iOS 사파리가 스크롤 중에 주소창을 접었다 펴면
+  보이는 화면만 바뀌고 고정 요소는 한 박자 늦게 따라온다 — 그 동안 바가 화면 중간에 뜬 채로 그려지고 그 아래로 내용이 비친다
+  (바의 `backdrop-filter`(glass) 때문에 더 눈에 띈다). 그래서 `visualViewport` 의 `resize`·`scroll` 마다
+  **어긋난 만큼 `translateY` 로 올린다** — 어긋남이 0 이어도 값을 다시 써 주는 것 자체가 늦은 그림을 제자리로 되돌린다.
+  계산은 `src/lib/bottom-nav.ts` 한곳(`bottom-nav.test.ts`)이고 **키보드만큼 크게 어긋나면(150px 초과) 손대지 않는다** —
+  올리면 바가 자판 위에 올라타 입력칸을 가린다 (글자를 치는 중일 때도 마찬가지). `visualViewport` 가 없으면 아무것도 하지 않는다.
+  **훅은 `/admin` early return 보다 위에 둘 것** — 아래에 두면 관리자 화면을 드나들 때 훅 개수가 달라져 React 가 깨진다.
+  한 프레임에 한 번만(`requestAnimationFrame`) 고쳐 쓴다 — 스크롤 중에는 이벤트가 픽셀마다 온다
 - **홈 화면 앱(PWA)** (2026-09-16 Alan 요청): `app/manifest.ts`(시작 `/my`, standalone, 바로가기 = 불라방·다시보기·숙제업로드·LC음원),
   홈 화면 아이콘은 `public/pwa/`(핫핑크 바탕 흰 화살표, maskable 별도)·`app/apple-icon.png`(iOS 는 투명을 검게 칠하므로 불투명). 탭 아이콘 `app/icon.png` 은 그대로.
   `public/sw.js` 는 관리자 푸시 + **페이지 이동 실패 시에만** `offline.html` 을 보여 준다 — 페이지·데이터는 캐시하지 않는다(로그인별 화면).
@@ -636,6 +645,14 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   앱의 학생 판정(`getStudentAccess`, 학생 화면의 스태프 여부)도 `effectiveRole(profile)` = test_role ?? role 을 쓴다.
   관리자 화면 출입(`requireStaff`, proxy)은 **진짜 등급**으로 본다 — 테스트 중에도 /admin 에 들어와 끌 수 있다(데이터는 끈 뒤에 보인다).
 - 반 배정은 실제 학생과 똑같이 한다: 9월 반 → 수강생, 개강 전 달 반 → 예비등록생, 스파르타 반 → 650·850 권한.
+  **그래서 반 배정·수강증 승인은 `test_role` 도 함께 올린다** (2026-09-19 Alan — "관리자가 650 주5 120분 10시로
+  등급설정을 해놨는데, 등업신청이 안되있다고 나오고 있어"). 테스터는 진짜 등급이 강사·관리자라 `role` 은 안 올라가는데
+  학생 화면 판정(`effectiveRole`)과 RLS(`private.user_role()`)는 둘 다 test_role 을 본다 — `회원` 인 채로 반만 배정되면
+  **배정은 됐는데 불라방·다시보기가 잠긴 채** 남고, 잠금 화면은 "수강증을 올려 등업하세요" 라는 엉뚱한 안내를 한다.
+  올리는 일은 `src/lib/student-role.ts` 의 `promoteToStudent()` 한곳이고 반 배정(`assignSections`)과
+  수강증 승인(`approveVerificationWith`)이 함께 쓴다. 개강일에 올리는 몫은 배치
+  (`private.run_daily_status_transition`, 마이그레이션 20260919120000)가 같은 규칙으로 한다.
+  **내리지는 않는다** — 반 배정 없이 `수강생` 으로 테스트 중인 스태프가 다음 날 00:05 에 조용히 `졸업생` 이 되면 안 된다.
 - test_role 은 authenticated 에 쓰기 권한이 없다. `src/app/admin/students/tester-actions.ts` 가 진짜 등급을 확인하고 서비스 롤로 바꾼다
   (내 계정은 강사·관리자 누구나, 다른 테스터 계정은 관리자만).
 - 테스트 중에는 모든 화면 맨 위에 **테스트 띠**(`TestModeBanner`: 지금 등급 · 등급 바꾸기 · 테스트 끝내기)가 뜬다.
@@ -660,8 +677,13 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   `enrollment_orders` 에는 authenticated INSERT 권한이 없어 서비스 롤로 쓰고 권한은 `requireStaff()` 가 본다.
   등록 이력에 `스태프 배정` 칩으로 구분된다.
 - 주5일은 **월수금·화목금 두 반을 한 번에 골라야** 등록 1건에 함께 들어간다 (따로 고르면 등록이 두 건 생긴다).
-- 배정하면 개강일이 지난 경우 `member`·`alumni` 만 `student` 로 올라간다 — 강사·관리자 등급은 그대로 둔다.
-  그래서 **스태프 계정을 반에 배정해 학생 화면을 실제 데이터로 확인**할 수 있다.
+- 배정하면 개강일이 지난 경우 `member`·`alumni` 만 `student` 로 올라간다 — 강사·관리자 등급은 그대로 둔다
+  (테스트 등급은 함께 올라간다 — 위 "테스터"). 그래서 **스태프 계정을 반에 배정해 학생 화면을 실제 데이터로 확인**할 수 있다.
+- **수강증 승인과 똑같이 열린다.** 불라방·다시보기·수업일·LC 교재는 전부 `private.has_section_access()` 하나를 거치고,
+  그 함수는 **등록(`enrollment_orders.status='active'`) · 반 배정 · 종강일**만 본다 — `verification_id` 는 보지 않는다.
+  그래서 수강증 없이 스태프가 배정한 등록도 승인된 등록과 권한이 같다. 열리지 않는다면 원인은 셋 중 하나다:
+  ① 등급이 `수강생` 이 아니다(테스터의 test_role — 위), ② 등록이 아직 `preliminary`(개강 전), ③ 종강일이 지났다.
+  **불라방 링크·녹화본은 시간 단위 반에 올려야 보인다** — 120분 묶음 반에 배정해도 링크는 그 안의 60분 반에 둔다 (도메인 규칙 1 "반 권한").
 
 ```
 콘텐츠 접근 =  role 이 student 이상

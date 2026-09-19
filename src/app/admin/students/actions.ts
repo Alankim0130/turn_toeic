@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { isAdmin, requireStaff, ROLE_LABEL, type UserRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { promoteToStudent } from "@/lib/student-role";
 import { todayKST } from "@/lib/utils";
 import type { TablesInsert } from "@/lib/supabase/database.types";
 
@@ -114,8 +115,8 @@ export async function assignSections(_prev: StudentActionState, formData: FormDa
     return { error: enrErr.code === "23505" ? "이미 그 반에 배정된 학생이에요." : `반 배정에 실패했어요. ${enrErr.message}` };
   }
 
-  // 개강일이 지났으면 수강생으로 올린다 (강사·관리자는 그대로 둔다)
-  if (status === "active") await admin.from("profiles").update({ role: "student" }).eq("id", id).in("role", ["member", "alumni"]);
+  // 개강일이 지났으면 수강생으로 올린다 — 진짜 등급과 테스트 등급 둘 다 (promoteToStudent 참고)
+  if (status === "active") await promoteToStudent(admin, id);
 
   revalidateStudent(id);
   return {
