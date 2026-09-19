@@ -37,9 +37,11 @@ const QUICK: { href: string; label: string; desc: string; icon: IconName }[] = [
   { href: "/my/study", label: "내 스터디", desc: "신청 · 비대면 자료", icon: "study" },
   { href: "/my/homework", label: "숙제업로드", desc: "풀이 사진 올리기", icon: "homework" },
   { href: "/my/lc-audio", label: "LC음원듣기", desc: "레벨별 음원", icon: "headphones" },
-  { href: "/my/account", label: "내 계정", desc: "이름·전화 확인, 계정 합치기", icon: "verify" },
   { href: "/my/notifications", label: "알림", desc: "선생님이 보낸 알림", icon: "bell" },
 ];
+// `내 계정`(/my/account) 은 바로가기에 두지 않는다 (2026-09-19 Alan) — 이름·전화번호 확인과
+// 계정 합치기는 등업 흐름(/my/verify) 안에서 한다. 그 페이지는 **반대쪽 계정이 합치기를 확인할 때만**
+// 필요하므로, 아래 `계정 통합을 기다리고 있어요` 띠가 그때만 길을 연다. 바로가기로 되살리지 말 것.
 
 /**
  * 주5일 한 줄에 적을 수강 방식. 두 줄을 한 줄로 합쳤으니 **두 트랙의 방식이 다르면 둘 다 적는다** —
