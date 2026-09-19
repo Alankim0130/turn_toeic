@@ -40,6 +40,14 @@ describe("sectionChip — 명단 카드의 반 배지", () => {
   it("반이 없으면 반 미배정", () => {
     expect(sectionChip(null)).toBe("반 미배정");
   });
+
+  // 스터디 신청자처럼 화면 전체가 한 기수인 곳 — 줄마다 `9월` 이 되풀이되면 레벨·시간이 뒤로 밀린다
+  it("withTerm: false 면 달을 뺀다 (2026-09-19 Alan — 인증 표의 반)", () => {
+    const week5 = week5SectionIds([mwf, ttf]);
+    expect(sectionChip(mwf, week5, { withTerm: false })).toBe("650+ · 주5일 10:00~12:10");
+    expect(sectionChip(solo, undefined, { withTerm: false })).toBe("750+ · 화목금 11:10~12:10");
+    expect(sectionChip(null, undefined, { withTerm: false })).toBe("반 미배정");
+  });
 });
 
 describe("명단 카드가 주5일 두 줄을 한 줄로 합친다", () => {

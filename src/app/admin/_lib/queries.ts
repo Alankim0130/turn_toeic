@@ -41,6 +41,9 @@ export function sectionSummary(
  * 명단 카드용 짧은 반 이름 — "9월 · 650+ · 월수금 · 10:00~12:10".
  * `sectionSummary` 의 강좌 전체 이름("650+ 왕기초반")은 카드 배지에 넣기엔 길어서 **레벨 숫자로 줄인다.**
  * 레벨을 못 읽으면(강좌에 target_score 가 없으면) 강좌 이름을 그대로 쓴다 — 짐작해서 적지 않는다.
+ *
+ * `withTerm: false` 는 **화면 전체가 이미 한 기수인 곳**에서 쓴다 (스터디 신청자처럼) — 줄마다 `9월` 이
+ * 되풀이되면 정작 봐야 할 레벨·시간이 뒤로 밀린다. 그 밖에는 달을 적는다 (학생명단은 여러 달이 섞인다).
  */
 export function sectionChip(
   s: {
@@ -53,6 +56,7 @@ export function sectionChip(
   } | null | undefined,
   /** 그 학생의 주5일 반 id 들 (`week5SectionIds`) — 있으면 트랙 대신 `주5일` 로 적는다 */
   week5?: Set<number>,
+  opts: { withTerm?: boolean } = {},
 ) {
   if (!s) return "반 미배정";
   const level = s.course?.target_score
@@ -61,7 +65,8 @@ export function sectionChip(
   const track = s.id != null && week5?.has(s.id) ? WEEK5_LABEL : s.track ? (TRACK_LABEL[s.track] ?? s.track) : null;
   // 트랙과 시간은 한 덩어리로 붙여 쓴다 — 가운뎃점을 넷 찍으면 배지가 휴대폰에서 두 줄로 접힌다
   const when = [track, s.start_time ? formatTime(s.start_time) : (s.time_block ?? null)].filter(Boolean).join(" ");
-  return [termLabel(s.term, true), level, when || null].filter(Boolean).join(" · ");
+  const term = opts.withTerm === false ? null : termLabel(s.term, true);
+  return [term, level, when || null].filter(Boolean).join(" · ");
 }
 
 /** 이번 달 기수. 없으면 가장 가까운 다음 기수 */

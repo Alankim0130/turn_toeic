@@ -4,13 +4,19 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { sendStudentMessages } from "@/app/admin/study/message-actions";
 import { Alert } from "@/components/ui/Alert";
-import { StatusBadge } from "@/components/admin/StatusBadge";
 import { Icon } from "@/components/ui/Icon";
 import { cn, formatDate } from "@/lib/utils";
 import { missingCheckinMessage } from "@/lib/study-checkin";
 
-/** 인증 표의 한 사람. **전화번호 대신 등급을 적는다** (2026-09-19 Alan) — 아래 신청자 표에 연락처가 이미 있다 */
-export type RosterStudent = { id: string; name: string; role: string | null };
+/**
+ * 인증 표의 한 사람. 이름 옆은 **그 달에 듣는 반**이다 (2026-09-19 Alan — "650 주5일 10:00~12:10 이런거").
+ *
+ * 등급을 적지 않는 이유: 스터디는 **그 달 반에 배정된 수강생만** 신청할 수 있어서
+ * (`private.is_term_enrollee`, 예비등록생 포함) 여기 선 사람은 전원 같은 등급이다 — 자리만 먹는다.
+ * 연락처도 적지 않는다 — 바로 아래 신청자 표에 이미 있다.
+ * `classes` 는 주5일을 한 줄로 합친 반 이름이고 달(`9월`)은 뺀다 — 화면 전체가 한 기수다.
+ */
+export type RosterStudent = { id: string; name: string; classes: string[] };
 export type RosterMaterial = { id: number; date: string; title: string | null };
 export type RosterCheckin = { material_id: number; user_id: string; created_at: string; files: number };
 
@@ -24,6 +30,18 @@ export type RosterCheckin = { material_id: number; user_id: string; created_at: 
  * 인증을 안 한 학생에게 **자료를 막는 규정은 아직 없다** (Alan: "정확한 규정은 아직 확인을 안 해봤지만") —
  * 여기서 임의로 막지 말 것.
  */
+/** 반 이름 줄. 한 사람이 두 반이면 줄을 쌓는다 (주5일은 이미 한 줄로 합쳐져 넘어온다) */
+function ClassLines({ classes, small }: { classes: string[]; small?: boolean }) {
+  if (classes.length === 0) return <span className={cn(small ? "text-[11px]" : "text-xs", "text-mist")}>반 미배정</span>;
+  return (
+    <>
+      {classes.map((c, i) => (
+        <span key={i} className={cn("block font-semibold", small ? "text-[11px] text-slate" : "text-xs text-ink")}>{c}</span>
+      ))}
+    </>
+  );
+}
+
 export function CheckinRoster({ students, materials, checkins }: { students: RosterStudent[]; materials: RosterMaterial[]; checkins: RosterCheckin[] }) {
   const router = useRouter();
   const [openId, setOpenId] = useState<number | null>(materials[0]?.id ?? null);
@@ -95,7 +113,12 @@ export function CheckinRoster({ students, materials, checkins }: { students: Ros
                   return (
                     <tr key={st.id} className={cn(missed > 0 && "bg-amber-50/40")}>
                       <th scope="row" className={cn("sticky left-0 z-10 px-4 py-1.5 text-left font-bold text-ink", missed > 0 ? "bg-[#fffbeb]" : "bg-paper")}>
-                        {st.name || "-"}
+                        <span className="block whitespace-nowrap">{st.name || "-"}</span>
+                        {/* 반은 한 줄씩 쌓는다 — 옆으로 이어 붙이면 고정된 이름 칸이 넓어져 날짜 칸이 밀려난다 */}
+                        {st.classes.map((c, i) => (
+                          <span key={i} className="block whitespace-nowrap text-[11px] font-semibold text-slate">{c}</span>
+                        ))}
+                        {st.classes.length === 0 && <span className="block text-[11px] font-semibold text-mist">반 미배정</span>}
                       </th>
                       {materials.map((m) => {
                         const c = byMaterial.get(m.id)?.get(st.id);
@@ -162,7 +185,8 @@ export function CheckinRoster({ students, materials, checkins }: { students: Ros
                   <thead className="bg-surface text-left text-xs text-slate">
                     <tr>
                       <th className="px-5 py-2 font-bold">이름</th>
-                      <th className="px-3 py-2 font-bold">등급</th>
+                      {/* 좁은 화면에서는 칸을 접고 이름 아래로 내린다 — 칸으로 두면 320px 에서 이름이 한 글자씩 세로로 쪼개진다 */}
+                      <th className="hidden px-3 py-2 font-bold sm:table-cell">반</th>
                       <th className="px-3 py-2 font-bold">인증</th>
                       {compose?.materialId === m.id && <th className="px-3 py-2 font-bold">보내기</th>}
                     </tr>
@@ -172,8 +196,11 @@ export function CheckinRoster({ students, materials, checkins }: { students: Ros
                       const c = done.get(s.id);
                       return (
                         <tr key={s.id} className={cn(!c && "bg-amber-50/40")}>
-                          <td className="px-5 py-2 font-bold text-ink">{s.name || "-"}</td>
-                          <td className="px-3 py-2"><StatusBadge status={s.role} /></td>
+                          <td className="px-5 py-2 font-bold text-ink">
+                            <span className="block whitespace-nowrap">{s.name || "-"}</span>
+                            <span className="sm:hidden"><ClassLines classes={s.classes} small /></span>
+                          </td>
+                          <td className="hidden px-3 py-2 sm:table-cell"><ClassLines classes={s.classes} /></td>
                           <td className="px-3 py-2">
                             {c ? (
                               <span className="inline-flex items-center gap-1 text-xs font-bold text-brand-700">

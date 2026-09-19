@@ -11,7 +11,8 @@ import { TableWrap, Th, Td } from "@/components/admin/Table";
 import { CancelSignupButton } from "@/components/admin/studies/CancelSignupButton";
 import { CheckinRoster } from "@/components/admin/studies/CheckinRoster";
 import { isSlotKind, slotTime, sortSlots, STUDY_KIND_LABEL, STUDY_STATUS_LABEL, termParam } from "@/lib/study";
-import { pickTerm, termLabel } from "../_lib/queries";
+import { pickTerm, termLabel, sectionChip } from "../_lib/queries";
+import { week5SectionIds, collapseWeek5 } from "@/lib/week5";
 import { requireCrew } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "스터디 신청자", robots: { index: false } };
@@ -59,7 +60,7 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
 
   const { data: signups } = await supabase
     .from("study_signups")
-    .select("id, slot_id, created_at, user:profiles!study_signups_user_id_fkey(id, name, phone, role)")
+    .select("id, slot_id, created_at, user:profiles!study_signups_user_id_fkey(id, name, phone)")
     .eq("study_id", study.id)
     .order("created_at");
 
@@ -67,19 +68,48 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
   const slots = sortSlots(study.study_slots ?? []);
 
   // 비대면: 자료(날짜)마다 누가 인증했는지 (2026-09-18 Alan — 미인증 학생에게 알림)
-  const [{ data: materialRows }, { data: checkinRows }] =
-    kind === "online"
-      ? await Promise.all([
-          supabase.from("study_materials").select("id, date, title").eq("study_id", study.id).order("date", { ascending: false }),
-          supabase.from("study_checkins").select("material_id, user_id, created_at, study_checkin_files(count)"),
-        ])
-      : [{ data: [] as never[] }, { data: [] as never[] }];
+  // 세 번째는 신청자의 **반 배정** — 인증 표의 이름 옆에 적는다 (2026-09-19 Alan)
+  const online = kind === "online";
+  const signupIds = rows.filter((r) => r.user).map((r) => r.user!.id);
+  const [{ data: materialRows }, { data: checkinRows }, { data: enrollRows }] = await Promise.all([
+    online ? supabase.from("study_materials").select("id, date, title").eq("study_id", study.id).order("date", { ascending: false }) : Promise.resolve({ data: null }),
+    online ? supabase.from("study_checkins").select("material_id, user_id, created_at, study_checkin_files(count)") : Promise.resolve({ data: null }),
+    online && signupIds.length
+      ? supabase
+          .from("enrollments")
+          // enrollments 는 class_sections 를 두 번 참조한다(section_id · pending_from_section_id) — FK 이름을 꼭 적는다
+          .select("student_id, section:class_sections!enrollments_section_id_fkey(id, term_id, course_id, track, start_time, time_block, course:courses(name, target_score, program))")
+          .in("student_id", signupIds)
+          .order("id")
+      : Promise.resolve({ data: null }),
+  ]);
   const materialIds = new Set((materialRows ?? []).map((m) => m.id));
   const rosterCheckins = (checkinRows ?? [])
     .filter((c) => materialIds.has(c.material_id))
     .map((c) => ({ material_id: c.material_id, user_id: c.user_id, created_at: c.created_at, files: c.study_checkin_files?.[0]?.count ?? 0 }));
-  // 인증 표에는 연락처 대신 **등급**을 넘긴다 (2026-09-19 Alan) — 연락처는 아래 신청자 표에 그대로 있다
-  const rosterStudents = rows.filter((r) => r.user).map((r) => ({ id: r.user!.id, name: r.user!.name, role: r.user!.role }));
+
+  // 인증 표에는 **그 달에 듣는 반**을 넘긴다 (2026-09-19 Alan — "650 주5일 10:00~12:10 이런거").
+  // 등급은 적지 않는다 — 스터디는 그 달 반에 배정된 수강생만 신청할 수 있어(private.is_term_enrollee) 전원 같은 값이다.
+  // **이 기수의 배정만** 남긴다 — 지난달 반까지 적으면 한 사람이 여러 반을 듣는 것처럼 보인다
+  const enrollByUser = new Map<string, NonNullable<typeof enrollRows>>();
+  for (const e of enrollRows ?? []) {
+    if (e.section?.term_id !== term.id) continue;
+    enrollByUser.set(e.student_id, [...(enrollByUser.get(e.student_id) ?? []), e]);
+  }
+  const rosterStudents = rows
+    .filter((r) => r.user)
+    .map((r) => {
+      const mine = enrollByUser.get(r.user!.id) ?? [];
+      // 주5일은 한 줄로 합친다 (도메인 규칙 1). 짝은 **그 학생이 듣는 반 안에서만** 찾는다 —
+      // 명단 전체로 찾으면 다른 학생의 반과 짝이 된다
+      const week5 = week5SectionIds(mine.map((e) => e.section).filter((x) => !!x));
+      return {
+        id: r.user!.id,
+        name: r.user!.name,
+        // 달(`9월`)은 뺀다 — 화면 전체가 이미 한 기수라 줄마다 되풀이하면 레벨·시간이 뒤로 밀린다
+        classes: collapseWeek5(mine, (e) => e.section, week5).map((e) => sectionChip(e.section, week5, { withTerm: false })),
+      };
+    });
 
   return (
     <>
