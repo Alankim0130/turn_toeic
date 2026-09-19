@@ -331,6 +331,16 @@ export type NavSection = { label: string; items: NavItem[] };
 
 /** 햄버거 메뉴의 묶음 (학생 모드). 관리자 모드는 navAdminFor(role) 한 묶음이다 */
 export const NAV_DRAWER: NavSection[] = [
+  // **소개·수강생전용 안내가 맨 위다** (2026-09-19 Alan — "안내 카테고리 안에 소개랑 수강생전용은 맨 위로").
+  // 아래로 내려 두면 학습 묶음까지 지나야 나와서, 처음 온 사람이 "여기가 뭐 하는 곳인가" 를 못 찾는다.
+  // 연락하기·네이버 상담예약은 같이 올리지 않고 맨 아래 `연락` 묶음에 남겼다 — 부르신 두 줄만 옮긴다
+  {
+    label: "안내",
+    items: [
+      { href: "/", label: "소개", icon: "home" },
+      { href: STUDENT_HUB.href, label: "수강생전용 안내", icon: STUDENT_HUB.icon },
+    ],
+  },
   {
     label: "마이페이지",
     items: [
@@ -359,10 +369,8 @@ export const NAV_DRAWER: NavSection[] = [
     ],
   },
   {
-    label: "안내",
+    label: "연락",
     items: [
-      { href: "/", label: "소개", icon: "home" },
-      { href: STUDENT_HUB.href, label: "수강생전용 안내", icon: STUDENT_HUB.icon },
       { href: "/contact", label: "연락하기", icon: "contact" },
       { href: site.academy.naverBookingUrl, label: "네이버 상담예약", icon: "calendar", external: true },
     ],
