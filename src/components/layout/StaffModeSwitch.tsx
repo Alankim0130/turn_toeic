@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
+import { adminHomeFor } from "@/lib/site";
 
 /** 지금 보고 있는 화면이 관리자 화면인가 */
 export const isStaffMode = (pathname: string) => pathname === "/admin" || pathname.startsWith("/admin/");
@@ -14,7 +15,7 @@ const staffLabelOf = (role?: string | null) => STAFF_LABEL[role ?? ""] ?? "강�
 
 const modesFor = (role?: string | null): { key: "student" | "staff"; label: string; href: string; icon: IconName }[] => [
   { key: "student", label: "학생 모드", href: "/my", icon: "profile" },
-  { key: "staff", label: staffLabelOf(role), href: "/admin", icon: "admin" },
+  { key: "staff", label: staffLabelOf(role), href: adminHomeFor(role), icon: "admin" },
 ];
 
 /**

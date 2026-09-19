@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { isAdmin, isStaff, requireStaff, ROLE_LABEL, TEST_ROLES, type UserRole } from "@/lib/auth";
+import { canAssignRole, isAdmin, isAssistant, isStaff, requireCrew, ROLE_LABEL, TEST_ROLES, type UserRole } from "@/lib/auth";
 import { TestRoleSelect, type TestRoleOption } from "@/components/admin/students/TestRoleSelect";
 import { todayKST, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -35,7 +35,7 @@ export default async function StudentDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ term?: string }>;
 }) {
-  const [{ id }, sp, { profile: me }] = await Promise.all([params, searchParams, requireStaff()]);
+  const [{ id }, sp, { profile: me }] = await Promise.all([params, searchParams, requireCrew()]);
   const supabase = await createClient();
   const today = todayKST();
 
@@ -56,8 +56,13 @@ export default async function StudentDetailPage({
     supabase.from("terms").select("id, year, month").order("year").order("month"),
   ]);
 
-  // 같은 사람으로 보이는 다른 계정 (이름 또는 전화번호가 같음). 판정·권한은 DB 함수가 본다
-  const { data: mergeCandidateRows } = await supabase.rpc("staff_merge_candidates", { p_user: id });
+  // 같은 사람으로 보이는 다른 계정 (이름 또는 전화번호가 같음). 판정·권한은 DB 함수가 본다.
+  // **계정 합치기는 스태프만** — 기록을 통째로 옮기는 되돌리기 어려운 일이라 조교에게는 열지 않는다
+  // (DB 함수도 스태프만 통과시키므로, 조교일 때는 부르지 않고 칸도 그리지 않는다)
+  const canMerge = isStaff(me.role);
+  const { data: mergeCandidateRows } = canMerge
+    ? await supabase.rpc("staff_merge_candidates", { p_user: id })
+    : { data: null };
   const mergeCandidates = (mergeCandidateRows ?? []) as StaffMergeCandidate[];
 
   const term = pickTerm(terms ?? [], sp.term, today);
@@ -74,8 +79,11 @@ export default async function StudentDetailPage({
   const takenIds = new Set((enrollments ?? []).map((e) => e.section?.id).filter(Boolean));
   const sectionOptions: PickerSection[] = (termSections ?? []).map((s) => ({ ...s, taken: takenIds.has(s.id) }));
 
-  const roleOptions: RoleOption[] = (Object.keys(ROLE_LABEL) as UserRole[]).map((r) => ({ value: r, label: ROLE_LABEL[r], hint: ROLE_HINT[r] }));
-  const canChangeRole = isAdmin(me.role);
+  // 고를 수 있는 등급은 canAssignRole 한곳이 정한다 — 조교에게는 학생 등급만 남는다
+  const roleOptions: RoleOption[] = (Object.keys(ROLE_LABEL) as UserRole[])
+    .filter((r) => canAssignRole(me.role, student.role, r))
+    .map((r) => ({ value: r, label: ROLE_LABEL[r], hint: ROLE_HINT[r] }));
+  const canChangeRole = roleOptions.length > 0;
 
   // 테스터: 강사·관리자 계정은 진짜 등급을 그대로 두고 테스트 등급으로 학생 화면을 확인한다 (2026-09-16 Alan)
   const tester = isStaff(student.role);
@@ -129,7 +137,21 @@ export default async function StudentDetailPage({
             <RoleSelect id={student.id} current={student.role} options={roleOptions} />
           ) : (
             <p className="rounded-xl bg-brand-50/60 px-4 py-6 text-sm text-slate">
-              등급은 <strong className="text-ink">관리자</strong>만 바꿀 수 있어요. 바꿔야 하면 관리자에게 요청해 주세요.
+              {isAssistant(me.role) ? (
+                <>
+                  조교는 <strong className="text-ink">학생 등급</strong>(회원 · 수강생 · 졸업생)만 바꿀 수 있어요.
+                  이 계정은 강사·관리자라 관리자에게 요청해 주세요.
+                </>
+              ) : (
+                <>
+                  등급은 <strong className="text-ink">강사·관리자</strong>만 바꿀 수 있어요. 바꿔야 하면 관리자에게 요청해 주세요.
+                </>
+              )}
+            </p>
+          )}
+          {canChangeRole && isAssistant(me.role) && (
+            <p className="mt-2 rounded-xl bg-brand-50/60 px-3 py-2 text-xs text-slate">
+              조교는 <b>회원 · 수강생 · 졸업생</b> 사이만 바꿀 수 있어요. 강사·관리자·조교로 올리는 것은 관리자만 합니다.
             </p>
           )}
           <p className="mt-3 text-xs text-mist">
@@ -142,7 +164,8 @@ export default async function StudentDetailPage({
           )}
         </section>
 
-        {/* 계정 합치기 (2026-09-18 Alan 요청) — 학생이 계정을 여러 개 만들었을 때 강사가 직접 합친다 */}
+        {/* 계정 합치기 (2026-09-18 Alan 요청) — 학생이 계정을 여러 개 만들었을 때 강사가 직접 합친다. 스태프만 */}
+        {canMerge && (
         <section aria-labelledby="merge-title" className="card p-5 lg:col-span-2">
           <h2 id="merge-title" className="text-lg font-black text-ink">계정 합치기</h2>
           <p className="mt-1 text-sm text-slate">
@@ -150,6 +173,7 @@ export default async function StudentDetailPage({
           </p>
           <MergeAccounts student={{ id: student.id, name: student.name }} candidates={mergeCandidates} />
         </section>
+        )}
 
         {/* 테스터: 테스트 등급 */}
         {tester && (

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { isAdmin, requireStaff, ROLE_LABEL, type UserRole } from "@/lib/auth";
+import { canAssignRole, isAssistant, requireCrew, requireStaff, ROLE_LABEL, type UserRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { promoteToStudent } from "@/lib/student-role";
@@ -21,15 +21,17 @@ function revalidateStudent(id: string) {
 }
 
 /**
- * 등급(profiles.role) 변경 — 관리자만 (2026-09-16 Alan 요청).
+ * 등급(profiles.role) 변경 — 강사·관리자는 전부, **조교는 학생 등급만**
+ * (2026-09-16 Alan 요청 / 2026-09-19 Alan "조교에게도 등급권한을 부여해주는 권한").
  *
- * 일부러 서비스 롤을 쓰지 않고 **로그인한 사람의 세션으로** 쓴다. 그래야 RLS 정책
- * ("profiles: 본인·admin 수정", with check private.is_admin())이 한 번 더 막아 준다 —
- * 화면 판정이 틀려도 강사는 등급을 못 바꾼다.
+ * 누가 누구를 어디까지 바꿀 수 있나는 `canAssignRole()` 한곳이 정하고, DB 정책
+ * "profiles: 본인·스태프·조교 수정" 이 같은 집합을 한 번 더 본다.
+ *
+ * 일부러 서비스 롤을 쓰지 않고 **로그인한 사람의 세션으로** 쓴다. 그래야 RLS 가 한 번 더 막아 준다 —
+ * 화면 판정이 틀려도 조교는 스태프 계정을 건드리거나 누군가를 관리자로 올릴 수 없다.
  */
 export async function updateStudentRole(_prev: StudentActionState, formData: FormData): Promise<StudentActionState> {
-  const { profile } = await requireStaff();
-  if (!isAdmin(profile.role)) return { error: "등급 변경은 관리자만 할 수 있어요." };
+  const { profile } = await requireCrew();
   // 테스트 중에는 RLS 가 이 관리자를 학생으로 보므로 세션 UPDATE 가 막힌다 — 먼저 끄게 안내한다
   if (profile.test_role) return { error: "테스트 중에는 등급을 바꿀 수 없어요. 화면 위 띠에서 테스트를 먼저 끝내 주세요." };
 
@@ -40,6 +42,15 @@ export async function updateStudentRole(_prev: StudentActionState, formData: For
   const supabase = await createClient();
   const { data: target } = await supabase.from("profiles").select("id, name, role, test_role").eq("id", id).maybeSingle();
   if (!target) return { error: "학생을 찾을 수 없어요." };
+
+  // 누가 누구를 어디까지 바꿀 수 있나는 canAssignRole 한곳이 정한다 (DB 정책과 같은 집합)
+  if (!canAssignRole(profile.role, target.role, role)) {
+    return {
+      error: isAssistant(profile.role)
+        ? "조교는 학생 등급(회원 · 수강생 · 졸업생)만 바꿀 수 있어요. 강사·관리자 계정이나 스태프 등급은 관리자에게 요청해 주세요."
+        : "등급 변경은 강사·관리자만 할 수 있어요.",
+    };
+  }
   if (target.role === role) return { ok: true, message: `이미 ${ROLE_LABEL[role]}이에요.` };
 
   // 마지막 관리자를 내리면 아무도 등급을 되돌릴 수 없다
@@ -58,7 +69,13 @@ export async function updateStudentRole(_prev: StudentActionState, formData: For
 
   const { data, error } = await supabase.from("profiles").update({ role }).eq("id", id).select("id");
   if (error) {
-    if (error.code === "42501") return { error: "권한이 없어요. 관리자만 등급을 바꿀 수 있어요." };
+    // RLS 정책과 조교 가드 트리거(assistant_role_only)가 같은 코드로 막는다
+    if (error.code === "42501")
+      return {
+        error: isAssistant(profile.role)
+          ? "권한이 없어요. 조교는 학생 등급만 바꿀 수 있어요."
+          : "권한이 없어요. 강사·관리자만 등급을 바꿀 수 있어요.",
+      };
     // 새 등급(조교)을 넣었는데 DB 마이그레이션이 아직 안 올라간 동안 — 무슨 일인지 알려 준다
     if (error.code === "22P02") return { error: `${ROLE_LABEL[role]} 등급이 아직 서버에 올라가지 않았어요. 잠시 뒤 다시 해 주세요.` };
     if (error.code === "23514") return { error: "테스트 중인 계정이라 등급을 바꾸지 못했어요. 그 계정의 테스트를 먼저 끝내 주세요." };
@@ -81,7 +98,7 @@ export async function updateStudentRole(_prev: StudentActionState, formData: For
  * enrollment_orders 에는 authenticated INSERT 권한이 없어 서비스 롤로 쓰고, 권한은 requireStaff 가 본다.
  */
 export async function assignSections(_prev: StudentActionState, formData: FormData): Promise<StudentActionState> {
-  await requireStaff();
+  await requireCrew();
 
   const id = String(formData.get("id") ?? "");
   const sectionIds = [...new Set(formData.getAll("section_ids").map(Number).filter((n) => Number.isInteger(n) && n > 0))];
@@ -127,7 +144,7 @@ export async function assignSections(_prev: StudentActionState, formData: FormDa
 
 /** 배정 해제. 등록에 남은 반이 없으면 등록도 함께 지운다 */
 export async function removeEnrollment(enrollmentId: number): Promise<StudentActionState> {
-  await requireStaff();
+  await requireCrew();
   if (!Number.isInteger(enrollmentId)) return { error: "잘못된 요청이에요." };
 
   const admin = createAdminClient();

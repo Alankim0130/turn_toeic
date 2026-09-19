@@ -285,10 +285,10 @@ export const NAV_BOTTOM: NavItem[] = [
  */
 export const NAV_ADMIN: NavItem[] = [
   { href: "/admin", label: "대시보드", icon: "analytics" },
-  { href: "/admin/students", label: "학생명단", icon: "students" },
+  { href: "/admin/students", label: "학생명단", icon: "students", crew: true },
   { href: "/admin/sections", label: "반 편성", icon: "calendar" },
   { href: "/admin/lectures", label: "특강 신청", icon: "bolt" },
-  { href: "/admin/verifications", label: "등업 로그", icon: "verify" },
+  { href: "/admin/verifications", label: "등업 로그", icon: "verify", crew: true },
   { href: "/admin/textbook-orders", label: "교재주문", icon: "orders", crew: true },
   { href: "/admin/replays", label: "다시보기", icon: "replay" },
   { href: "/admin/analytics", label: "마케팅 분석", icon: "analytics" },
@@ -303,6 +303,16 @@ export const NAV_ADMIN: NavItem[] = [
 /** 그 등급이 쓸 수 있는 관리자 메뉴. 조교는 crew 항목만 */
 export function navAdminFor(role?: string | null): NavItem[] {
   return role === "assistant" ? NAV_ADMIN.filter((n) => n.crew) : NAV_ADMIN;
+}
+
+/**
+ * 관리자 모드로 들어갈 때의 첫 화면 (2026-09-19).
+ * `/admin` 대시보드는 `requireStaff()` 가 막으므로 **조교를 그리로 보내면 곧바로 튕긴다** —
+ * 조교는 쓸 수 있는 첫 화면으로 보낸다. 조교에게 열린 화면이 하나도 없으면 학생 모드로.
+ */
+export function adminHomeFor(role?: string | null): string {
+  if (role !== "assistant") return "/admin";
+  return navAdminFor(role)[0]?.href ?? "/my";
 }
 
 // ─── 햄버거 메뉴 (모바일·태블릿) ────────────────────────────────────────────

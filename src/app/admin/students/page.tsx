@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { StudentCard, type StudentCardMeta } from "@/components/admin/students/StudentCard";
 import { getRosterSets, getCurrentOrUpcomingTerm, sectionChip } from "../_lib/queries";
-import { ROLE_LABEL, requireStaff } from "@/lib/auth";
+import { ROLE_LABEL, requireCrew } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "학생명단", robots: { index: false } };
 
@@ -30,7 +30,7 @@ const studyShort = (kind: string) => (STUDY_KIND_LABEL[kind] ?? kind).replace("�
 
 export default async function StudentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string }> }) {
   // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
-  await requireStaff();
+  await requireCrew();
   const { tab: tabParam, q: qParam } = await searchParams;
   const tab = TABS.some((t) => t.value === tabParam) ? (tabParam as string) : "active";
   const q = (qParam ?? "").trim();
