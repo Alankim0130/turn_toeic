@@ -35,6 +35,10 @@ describe("실물 수강증 OCR (휴대폰 전체 캡처)", () => {
     expect(p.mode).toBe("live"); // `라이브방송` 이 두 줄로 갈려 있다
     expect(p.time?.timeBlock).toBe("10:00~12:10");
     expect(p.courseMonth).toBe(8);
+    // 캡처 시각은 **초까지** 읽혀야 한다 (2026-09-19) — 이 값으로 다른 계정의 복사본을 잡는다.
+    // 합성한 문자열이 아니라 진짜 OCR 원문에서 나오는지 여기서 확인한다
+    expect(p.capturedOn).toBe("2026-08-07");
+    expect(p.capturedAt).toBe("2026-08-07T16:19:02");
 
     // 8월 반이 열려 있었다면 월수금·화목금 120분 반 한 쌍에 붙는다
     const c650 = { id: 1, name: "650", program: "score", target_score: 650 };

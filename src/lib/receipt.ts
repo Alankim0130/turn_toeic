@@ -63,6 +63,12 @@ export type ParsedReceipt = {
    * 너무 오래된 캡처(지난달 것을 다시 올리기)를 자동 승인에서 빼는 데 쓴다 — 위조 판별은 아니다.
    */
   capturedOn: string | null;
+  /**
+   * 같은 줄의 **초까지** (`2026-08-07T16:19:02`). 시각이 안 읽혔으면 null.
+   * 두 계정이 **같은 초**의 수강증을 냈으면 한쪽이 복사본이다 — 사람이 같은 초에 두 번 캡처할 수는 없다.
+   * 파일 해시와 달리 **글자를 고쳐도 살아남아**, 친구 수강증의 이름만 바꾼 경우를 잡는다 (2026-09-19).
+   */
+  capturedAt: string | null;
   /** 참고용. 판정에 쓰지 않는다 (수강료는 선택 항목) */
   tuition: number | null;
   warnings: string[];
@@ -240,6 +246,20 @@ export function parseCapturedOn(text: string): string | null {
   return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
+/**
+ * `현재시간 2026-08-07 16:19:02` → "2026-08-07T16:19:02". 시·분·초가 다 있어야 돌려준다.
+ * 날짜는 `parseCapturedOn` 과 같은 것을 쓰고, **초가 없으면 null** 이다 — 분까지만으로는 남과 겹칠 수 있다.
+ */
+export function parseCapturedAt(text: string): string | null {
+  const day = parseCapturedOn(text);
+  if (!day) return null;
+  const m = text.match(/현재\s*시간[^\d]{0,6}\d{4}[-./]\d{1,2}[-./]\d{1,2}[^\d]{0,4}(\d{1,2}):(\d{2}):(\d{2})/);
+  if (!m) return null;
+  const [h, mi, se] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (h > 23 || mi > 59 || se > 59) return null;
+  return `${day}T${[h, mi, se].map((v) => String(v).padStart(2, "0")).join(":")}`;
+}
+
 function parseTuition(compact: string): number | null {
   const m = compact.match(/(\d{1,3}(?:,\d{3})+|\d{5,})원/);
   if (!m) return null;
@@ -322,6 +342,7 @@ export function parseReceipt(raw: string): ParsedReceipt {
     months: parseReceiptMonths(text),
     courseMonth: parseCourseMonth(text),
     capturedOn: parseCapturedOn(text),
+    capturedAt: parseCapturedAt(text),
     tuition: parseTuition(compact),
     warnings,
   };

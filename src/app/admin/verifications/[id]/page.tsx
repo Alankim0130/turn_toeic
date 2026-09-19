@@ -99,13 +99,23 @@ export default async function VerificationDetailPage({
   // 수동 등업신청 — 학생이 직접 고른 반 (2026-09-17). 신청 기록일 뿐 확정이 아니다
   const requestedManual = (v.requested_section_ids ?? []).filter((n): n is number => typeof n === "number");
   // OCR 이 반을 찾았는데 자동 승인 조건(이름 일치 등)에 못 미친 건 — 찾은 반을 미리 골라 둔다 (2026-09-18)
-  const matchLog = v.candidates as { result?: { kind?: string; sectionIds?: number[] }; flags?: { duplicateImage?: boolean; staleCapture?: boolean }; correctionOf?: number } | null;
+  const matchLog = v.candidates as {
+    result?: { kind?: string; sectionIds?: number[] };
+    flags?: { duplicateImage?: boolean; staleCapture?: boolean; sameCapture?: boolean; paletteOff?: boolean; paletteNote?: string };
+    correctionOf?: number;
+  } | null;
   // 자동 승인 뒤 학생이 "반이 달라요" 로 낸 정정 요청 — 새로 승인하면 등록이 두 건 생기니 기존 승인의 배정 수정으로 보낸다 (2026-09-18)
   const correctionOf = typeof matchLog?.correctionOf === "number" ? matchLog.correctionOf : null;
   // 위조·돌려쓰기 의심 — 자동 승인이 막힌 이유. 스태프가 수강증을 더 자세히 본다 (2026-09-18)
   const suspicious = [
     matchLog?.flags?.duplicateImage ? "다른 계정이 같은 이미지 파일을 올렸어요 — 수강증을 돌려 쓰는 것일 수 있어요. 두 계정의 이름·전화번호를 확인해 주세요." : null,
     matchLog?.flags?.staleCapture ? "수강증 캡처 시각이 45일 넘게 오래됐어요 — 지난 수강증을 다시 올린 것일 수 있어요. 이번 달 등록이 맞는지 확인해 주세요." : null,
+    // 같은 초 = 같은 캡처다. 글자를 고쳐도 남으므로 "친구 수강증에 내 이름만 얹은" 경우가 여기 걸린다 (2026-09-19)
+    matchLog?.flags?.sameCapture ? "다른 계정에 **같은 초에 캡처된** 수강증이 있어요 — 한쪽이 상대의 그림을 받아 쓴 것일 수 있어요 (글자를 고쳐도 캡처 시각은 남아요). 두 계정을 확인해 주세요." : null,
+    // 색 팔레트 — AI 로 만들었거나 손으로 그린 그림, 다른 학원 수강증이 걸린다 (2026-09-19)
+    matchLog?.flags?.paletteOff
+      ? `화면 색이 YBM 수강증 팔레트와 달라요 — 만들어 낸 그림이거나 다른 곳의 수강증일 수 있어요. 그림을 직접 봐 주세요.${matchLog.flags.paletteNote ? ` (${matchLog.flags.paletteNote})` : ""}`
+      : null,
   ].filter((s): s is string => !!s);
   const suggested = matchLog?.result?.kind === "match" ? (matchLog.result.sectionIds ?? []).filter((n) => typeof n === "number") : [];
   const requested = requestedManual.length > 0 ? requestedManual : suggested;
@@ -125,6 +135,9 @@ export default async function VerificationDetailPage({
         ["주 · 트랙", [parsed.weekly ? `주${parsed.weekly}일` : "-", (parsed.tracks as string[] | undefined)?.map((t) => (t === "mwf" ? "월수금" : "화목금")).join("+") || "-"].join(" · ")],
         ["수강 시간", (parsed.time as { timeBlock?: string } | null)?.timeBlock ?? "-"],
         ["이름 일치", parsed.nameMatches === true ? "일치" : parsed.nameMatches === false ? "다름 — 확인 필요" : "확인 못 함"],
+        // 화면 색 — 통과해도 적는다. "왜 자동으로 됐나" 를 스태프가 볼 수 있어야 한다 (2026-09-19)
+        ["화면 색", matchLog?.flags?.paletteNote ?? "재지 못함"],
+        ["캡처 시각", typeof parsed.capturedAt === "string" ? parsed.capturedAt.replace("T", " ") : typeof parsed.capturedOn === "string" ? parsed.capturedOn : "-"],
       ]
     : [];
   // 반 대조 기록 — { rule, result, log[], nameMatches } (2026-09-18 자동 승인). 예전 점수 배열이어도 그대로 보여 준다
