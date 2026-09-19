@@ -18,8 +18,18 @@ function revalidateHomework() {
 /**
  * 브라우저가 homework/{내 id}/{레벨}-{과목}/ 에 올린 사진을 제출 1건으로 등록한다.
  * 지금 수강 중인지는 RLS(private.has_term_access)가 확인한다.
+ *
+ * `classDate` 는 학생이 달력에서 고른 **수업 날짜**다 (2026-09-19 Alan). 화면이 보낸 값을 믿지 않고
+ * **내 수업일에 정말 있는 날짜인지** 서버가 다시 본다 — `session_dates` 조회는 RLS 가 이미
+ * 접근 가능한 반으로 걸러 주므로, 날짜 하나만 맞춰 보면 된다.
  */
-export async function submitHomework(input: { level: number; subject: string; question: string; files: UploadedFile[] }): Promise<HomeworkResult> {
+export async function submitHomework(input: {
+  level: number;
+  subject: string;
+  classDate: string;
+  question: string;
+  files: UploadedFile[];
+}): Promise<HomeworkResult> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -28,11 +38,17 @@ export async function submitHomework(input: { level: number; subject: string; qu
 
   const level = Number(input.level);
   const subject = String(input.subject ?? "");
+  const classDate = String(input.classDate ?? "").trim();
   const question = String(input.question ?? "").trim();
   const files = Array.isArray(input.files) ? input.files : [];
   if (!Number.isInteger(level) || !isSubject(subject)) return { ok: false, error: "레벨과 과목을 다시 골라 주세요." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(classDate)) return { ok: false, error: "수업 날짜를 달력에서 골라 주세요." };
   if (files.length === 0 || files.length > MAX_PHOTOS) return { ok: false, error: `사진은 1~${MAX_PHOTOS}장 올릴 수 있어요.` };
   if (question.length > MAX_QUESTION) return { ok: false, error: `질문은 ${MAX_QUESTION}자 이내로 적어 주세요.` };
+
+  // 내 수업일이 맞는지 (RLS 가 접근 가능한 반의 회차만 내려 준다)
+  const { data: session } = await supabase.from("session_dates").select("id").eq("date", classDate).limit(1).maybeSingle();
+  if (!session) return { ok: false, error: "그 날짜에는 내 수업이 없어요. 달력에서 다시 골라 주세요." };
 
   const folder = homeworkFolder(user.id, level, subject);
   const prefix = `${folder}/`;
@@ -54,7 +70,7 @@ export async function submitHomework(input: { level: number; subject: string; qu
 
   const { data: created, error } = await supabase
     .from("homework_submissions")
-    .insert({ user_id: user.id, level, subject, question: question || null })
+    .insert({ user_id: user.id, level, subject, class_date: classDate, question: question || null })
     .select("id")
     .single();
   if (error || !created) {

@@ -595,7 +595,9 @@ export type Database = {
         Row: {
           checked_at: string | null
           checked_by: string | null
+          class_date: string | null
           created_at: string
+          feedback: string | null
           id: number
           level: number
           question: string | null
@@ -606,7 +608,9 @@ export type Database = {
         Insert: {
           checked_at?: string | null
           checked_by?: string | null
+          class_date?: string | null
           created_at?: string
+          feedback?: string | null
           id?: number
           level: number
           question?: string | null
@@ -617,7 +621,9 @@ export type Database = {
         Update: {
           checked_at?: string | null
           checked_by?: string | null
+          class_date?: string | null
           created_at?: string
+          feedback?: string | null
           id?: number
           level?: number
           question?: string | null

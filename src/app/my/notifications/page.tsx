@@ -45,9 +45,15 @@ export default async function NotificationsPage() {
                     </span>
                   </div>
                   <p className="mt-2 whitespace-pre-wrap text-sm text-ink">{m.body}</p>
+                  {/* 알림 종류마다 할 일이 다르다 — 비대면 인증과 숙제 점검은 **완전히 다른 것**이다 */}
                   {m.kind === "study_checkin" && (
                     <Link href="/my/study" className="btn-primary mt-3 !px-4 !py-2 text-sm">
                       내 스터디에서 인증하기{related.date ? ` (${formatDate(related.date, { month: "numeric", day: "numeric" })})` : ""}
+                    </Link>
+                  )}
+                  {m.kind === "homework_checked" && (
+                    <Link href="/my/homework" className="btn-primary mt-3 !px-4 !py-2 text-sm">
+                      숙제업로드에서 확인하기
                     </Link>
                   )}
                 </li>

@@ -1,96 +1,128 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { HomeworkCalendar, type HomeworkDay, type HomeworkMonth } from "@/components/my/homework/HomeworkCalendar";
 import { SubmissionCard } from "@/components/my/homework/SubmissionCard";
-import { cn } from "@/lib/utils";
-import { getHomeworkLevels, getMyAccessibleSections, getMyHomework } from "../_lib/queries";
+import type { CalendarMark } from "@/components/my/MonthCalendar";
+import { requireUser } from "@/lib/auth";
+import { initialDay, initialMonth } from "@/lib/class-day";
+import { levelsOfDay } from "@/lib/homework";
+import { todayKST } from "@/lib/utils";
+import { getHomeworkLevels, getMyHomework, getMySessions } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "숙제업로드",
   robots: { index: false },
 };
 
-function LevelCard({ level, mine, small = false }: { level: number; mine: boolean; small?: boolean }) {
-  return (
-    <Link
-      href={`/my/homework/${level}`}
-      className={cn(
-        "card group flex items-center gap-4 transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-pink active:scale-[0.98]",
-        small ? "p-4" : "p-5 sm:flex-col sm:items-start sm:gap-2",
-      )}
-    >
-      <span className={cn("font-black tracking-tight text-ink transition group-hover:text-brand-600", small ? "text-2xl" : "text-4xl")}>{level}</span>
-      <span className="min-w-0">
-        <span className="block font-bold text-ink">{level}점 목표반</span>
-        {mine && <span className="chip mt-1">내 레벨</span>}
-      </span>
-      <span aria-hidden className={cn("ml-auto text-xl font-black text-mist transition group-hover:translate-x-1 group-hover:text-brand-500", !small && "sm:ml-0 sm:mt-auto")}>
-        →
-      </span>
-    </Link>
-  );
-}
+type Course = { target_score?: number | null; includes_levels?: number[] | null } | null;
 
-/** 1단계: 레벨 고르기 + 최근 올린 숙제 */
-export default async function HomeworkLevelStep() {
-  const [levels, sections, recent] = await Promise.all([getHomeworkLevels(), getMyAccessibleSections(), getMyHomework()]);
+/**
+ * 숙제업로드 — **달력에서 수업 날짜를 고른다** (2026-09-19 Alan).
+ *
+ * 줄은 여기(서버)에서 다 만들어 넘긴다 — 클라이언트로는 Map·중첩 객체가 못 넘어가고,
+ * 넘길 수 있더라도 반·기수 전체를 실어 보낼 이유가 없다 (내 시간표와 같은 규칙).
+ */
+export default async function HomeworkPage() {
+  const [{ user }, sessions, levels, mine] = await Promise.all([
+    requireUser("/my/homework"),
+    getMySessions(),
+    getHomeworkLevels(),
+    getMyHomework(),
+  ]);
+  const today = todayKST();
 
-  // 내 레벨: 지금 접근할 수 있는 반의 목표 점수 (스파르타면 함께 듣는 레벨까지). LC 음원듣기와 같은 기준
-  const myLevels = levels.filter((l) => sections.some((s) => s.course?.target_score === l || (s.course?.includes_levels ?? []).includes(l)));
-  const primary = myLevels.length ? myLevels : levels; // 반 배정이 없는 강사·테스터는 전체
-  const others = levels.filter((l) => !primary.includes(l));
+  // 같은 날 여러 반이 내려온다 (주5일 60분 둘 · 스파르타 셋) — 날짜로 묶어 레벨을 모은다
+  const byDate = new Map<string, { courses: Set<string>; list: Course[]; track: string }>();
+  for (const s of sessions) {
+    const sec = s.section;
+    if (!sec) continue;
+    const b = byDate.get(s.date) ?? { courses: new Set<string>(), list: [], track: sec.track };
+    if (sec.course?.name) b.courses.add(sec.course.name);
+    b.list.push(sec.course ?? null);
+    byDate.set(s.date, b);
+  }
+
+  const days: HomeworkDay[] = [...byDate.entries()]
+    .map(([date, b]) => ({
+      date,
+      course: [...b.courses].join(" · ") || "수업",
+      // lc_levels 에 없는 레벨은 뺀다 — 제출이 FK(23503)로 튕긴다
+      levels: levelsOfDay(b.list).filter((l) => levels.includes(l)),
+    }))
+    .filter((d) => d.levels.length > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // 달력 칸에는 그 날 낸 건수를 적는다 — 어느 날이 남았는지 한눈에 보이게
+  const submittedOn = new Map<string, number>();
+  for (const s of mine) if (s.class_date) submittedOn.set(s.class_date, (submittedOn.get(s.class_date) ?? 0) + 1);
+
+  const groups = new Map<string, { year: number; month: number; marks: CalendarMark[]; dates: string[] }>();
+  for (const d of days) {
+    const year = Number(d.date.slice(0, 4));
+    const month = Number(d.date.slice(5, 7));
+    const key = `${year}-${String(month).padStart(2, "0")}`;
+    const g = groups.get(key) ?? { year, month, marks: [], dates: [] };
+    const n = submittedOn.get(d.date) ?? 0;
+    g.marks.push({
+      date: d.date,
+      // 달력 색은 내 시간표와 같다 — 월수금 분홍 · 화목금 잉크 (도메인 규칙 1)
+      track: byDate.get(d.date)?.track ?? "mwf",
+      label: n > 0 ? `제출 ${n}` : d.levels.join("·"),
+    });
+    g.dates.push(d.date);
+    groups.set(key, g);
+  }
+
+  const months: HomeworkMonth[] = [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, g]) => ({ year: g.year, month: g.month, marks: g.marks, initial: initialDay(g.dates, today) }));
+
+  if (months.length === 0) {
+    return (
+      <EmptyState
+        icon="homework"
+        title="아직 수업일이 없어요"
+        description="반에 배정되면 여기에 내 수업 달력이 나오고, 날짜를 눌러 그 날 숙제를 올릴 수 있어요."
+        action={{ href: "/my/class", label: "내 시간표 보기" }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-8">
-      <section aria-labelledby="step1-title" className="space-y-4">
-        <h2 id="step1-title" className="text-xl font-black text-ink">어느 레벨 숙제인가요?</h2>
-        {levels.length === 0 ? (
-          <EmptyState icon="homework" title="아직 레벨이 없어요" description="강사가 레벨을 만들면 여기에서 고를 수 있어요." />
-        ) : (
-          <>
-            <ul className={cn("grid gap-3", primary.length > 1 && "sm:grid-cols-3")}>
-              {primary.map((l, i) => (
-                <li key={l} className="animate-fade-up" style={{ animationDelay: `${i * 70}ms` }}>
-                  <LevelCard level={l} mine={myLevels.includes(l)} />
-                </li>
-              ))}
-            </ul>
-            {others.length > 0 && (
-              <details className="group rounded-xl2 border border-dashed border-line px-4 py-3">
-                <summary className="cursor-pointer list-none text-sm font-bold text-slate transition hover:text-brand-600">
-                  <span className="mr-1 inline-block transition group-open:rotate-90">▸</span>
-                  다른 레벨 숙제 올리기
-                </summary>
-                <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {others.map((l) => (
-                    <li key={l}>
-                      <LevelCard level={l} mine={false} small />
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            )}
-          </>
-        )}
-      </section>
+      <HomeworkCalendar
+        userId={user.id}
+        today={today}
+        months={months}
+        days={days}
+        submissions={mine}
+        startIndex={initialMonth(months, today)}
+      />
 
-      <section aria-labelledby="recent-title">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 id="recent-title" className="text-lg font-black text-ink">최근 올린 숙제</h2>
-          {recent.length > 0 && <span className="text-xs text-mist">최근 {Math.min(recent.length, 6)}건</span>}
-        </div>
-        {recent.length === 0 ? (
-          <p className="card px-5 py-8 text-center text-sm text-slate">아직 올린 숙제가 없어요. 위에서 레벨을 골라 시작해 보세요.</p>
-        ) : (
-          <ul className="grid gap-4 lg:grid-cols-2">
-            {recent.slice(0, 6).map((s) => (
+      {mine.length > 0 && (
+        <details className="group rounded-xl2 border border-dashed border-line px-4 py-3">
+          <summary className="cursor-pointer list-none text-sm font-bold text-slate transition hover:text-brand-600">
+            <span className="mr-1 inline-block transition group-open:rotate-90">▸</span>
+            지금까지 낸 숙제 전체 보기 ({mine.length})
+          </summary>
+          <ul className="mt-3 grid gap-4 lg:grid-cols-2">
+            {mine.map((s) => (
               <li key={s.id}>
                 <SubmissionCard submission={s} />
               </li>
             ))}
           </ul>
-        )}
-      </section>
+        </details>
+      )}
+
+      <p className="text-center text-xs text-mist">
+        비대면 스터디 인증은 다른 곳이에요 —{" "}
+        <Link href="/my/study" className="font-bold text-brand-600 underline decoration-brand-200 underline-offset-2">
+          내 스터디
+        </Link>
+        에서 날짜마다 인증해 주세요.
+      </p>
     </div>
   );
 }

@@ -5,8 +5,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { FilterTabs } from "@/components/admin/FilterTabs";
-import { HomeworkCheckButton } from "@/components/admin/studies/HomeworkCheckButton";
-import { HOMEWORK_SUBJECTS, homeworkLabel, isSubject, SUBJECT_LABEL } from "@/lib/homework";
+import { HomeworkCheckForm } from "@/components/admin/studies/HomeworkCheckForm";
+import { classDayLabel, HOMEWORK_SUBJECTS, homeworkLabel, isSubject, SUBJECT_LABEL } from "@/lib/homework";
 import { isImageType } from "@/lib/upload";
 import { requireStaff } from "@/lib/auth";
 
@@ -44,7 +44,7 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
     supabase
       .from("homework_submissions")
       .select(
-        "id, level, subject, question, status, created_at, checked_at, user:profiles!homework_submissions_user_id_fkey(name, phone), checker:profiles!homework_submissions_checked_by_fkey(name), homework_files(id, file_name, content_type, created_at)",
+        "id, level, subject, class_date, question, feedback, status, created_at, checked_at, user:profiles!homework_submissions_user_id_fkey(name, phone), checker:profiles!homework_submissions_checked_by_fkey(name), homework_files(id, file_name, content_type, created_at)",
       ),
   );
   if (status !== "all") listQuery = listQuery.eq("status", status);
@@ -60,21 +60,23 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
 
   return (
     <>
-      <PageHeader icon="homework" title="숙제점검" description="수강생이 레벨·과목(RC·LC)을 골라 올린 풀이 사진입니다. 확인한 뒤 점검완료를 눌러 주세요. 질문이 있으면 카드 안에 보여요." />
+      <PageHeader icon="homework" title="숙제점검" description="정규 수업 숙제입니다 (비대면 스터디 인증은 스터디 신청자 화면에 있어요). 과목 → 레벨로 훑어보고, 질문에 답하거나 코멘트를 적어 점검완료를 누르면 학생 알림함으로 갑니다." />
 
+      {/* **과목이 먼저, 그 안에서 레벨** (2026-09-19 Alan — "RC와 LC가 구분되어 있고 과목안에서도 레벨까지만 구분이 되면 좋겠어").
+          날짜로는 나누지 않는다 — 강사는 과목 × 레벨로 훑는다 */}
+      <FilterTabs
+        basePath="/admin/homework"
+        paramKey="subject"
+        current={subject ?? "all"}
+        keep={{ level: keep.level, status }}
+        tabs={[{ value: "all", label: "RC · LC 전체" }, ...HOMEWORK_SUBJECTS.map((s) => ({ value: s, label: SUBJECT_LABEL[s] }))]}
+      />
       <FilterTabs
         basePath="/admin/homework"
         paramKey="level"
         current={level ? String(level) : "all"}
         keep={{ subject: keep.subject, status }}
         tabs={[{ value: "all", label: "모든 레벨" }, ...levels.map((l) => ({ value: String(l), label: `${l}` }))]}
-      />
-      <FilterTabs
-        basePath="/admin/homework"
-        paramKey="subject"
-        current={subject ?? "all"}
-        keep={{ level: keep.level, status }}
-        tabs={[{ value: "all", label: "RC · LC" }, ...HOMEWORK_SUBJECTS.map((s) => ({ value: s, label: SUBJECT_LABEL[s] }))]}
       />
       <FilterTabs basePath="/admin/homework" paramKey="status" current={status} keep={{ level: keep.level, subject: keep.subject }} tabs={STATUS_TABS.map((t) => ({ ...t, count: counts[t.value] }))} />
 
@@ -95,6 +97,7 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
                       <p className="text-lg font-black text-ink">{s.user?.name || "이름 없음"}</p>
                       <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
                         {s.level != null && s.subject && <span className="rounded-full bg-ink px-2.5 py-0.5 font-black text-white">{homeworkLabel(s.level, s.subject)}</span>}
+                        {s.class_date && <span className="rounded-full bg-brand-50 px-2.5 py-0.5 font-black text-brand-700">{classDayLabel(s.class_date)} 수업</span>}
                         {s.user?.phone && (
                           <a href={`tel:${s.user.phone}`} className="text-brand-600 hover:underline">
                             {s.user.phone}
@@ -105,14 +108,11 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
                         {formatDate(s.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 제출 · 사진 {files.length}장
                       </p>
                     </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
-                      {isChecked && (
-                        <span className="rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-bold text-brand-700">
-                          점검완료{s.checker?.name ? ` · ${s.checker.name}` : ""}
-                        </span>
-                      )}
-                      <HomeworkCheckButton id={s.id} checked={isChecked} />
-                    </div>
+                    {isChecked && (
+                      <span className="shrink-0 rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-bold text-brand-700">
+                        점검완료{s.checker?.name ? ` · ${s.checker.name}` : ""}
+                      </span>
+                    )}
                   </div>
 
                   {s.question && (
@@ -147,11 +147,16 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
                       ))}
                     </ul>
                   )}
+
+                  {/* 코멘트·질문 답변을 적고 점검완료하면 학생 알림함으로 간다 */}
+                  <div className="mt-auto">
+                    <HomeworkCheckForm id={s.id} checked={isChecked} question={s.question} feedback={s.feedback} />
+                  </div>
                 </li>
               );
             })}
           </ul>
-          {list.length >= LIMIT && <p className="mt-4 text-center text-xs text-mist">최근 {LIMIT}건만 보여요. 레벨·과목·상태로 좁혀 주세요.</p>}
+          {list.length >= LIMIT && <p className="mt-4 text-center text-xs text-mist">최근 {LIMIT}건만 보여요. 과목·레벨·상태로 좁혀 주세요.</p>}
         </>
       )}
     </>
