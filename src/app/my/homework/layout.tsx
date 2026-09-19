@@ -1,12 +1,10 @@
-import { Suspense } from "react";
 import { studentGate } from "@/components/student/StudentGate";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { StepHeader } from "@/components/my/homework/StepHeader";
 
 /**
- * 숙제업로드 3단계(레벨 → 과목 → 사진)의 공통 틀.
- * 단계 표시는 주소에서 읽으므로 layout 에 두면 페이지가 바뀌어도 그대로 남아 진행 막대가 이어서 움직인다.
- * 페이지 전환 애니메이션은 template.tsx 가 맡는다.
+ * 숙제업로드의 공통 틀. 2026-09-19 Alan 요청으로 **레벨 → 과목 → 사진 3단계를 없애고**
+ * 달력 한 화면으로 바꿨다 (`HomeworkCalendar`) — 단계 표시(StepHeader)·전환(template.tsx)도 함께 지웠다.
+ * **3단계로 되돌리지 말 것.**
  */
 export default async function HomeworkLayout({ children }: { children: React.ReactNode }) {
   // 수강생이 아니면 기능 대신 잠금 안내를 보여준다
@@ -15,10 +13,11 @@ export default async function HomeworkLayout({ children }: { children: React.Rea
 
   return (
     <div className="space-y-6">
-      <PageHeader icon="homework" title="숙제업로드" description="레벨 → 과목 → 사진 순서로 올려요. 강사가 확인하면 점검완료로 바뀝니다." />
-      <Suspense fallback={null}>
-        <StepHeader />
-      </Suspense>
+      <PageHeader
+        icon="homework"
+        title="숙제업로드"
+        description="정규 수업 숙제예요. 달력에서 수업 날짜를 고르고 RC·LC 풀이 사진을 올리면, 강사가 확인해 코멘트와 함께 점검완료 알림을 보내 줍니다."
+      />
       {children}
     </div>
   );

@@ -280,7 +280,7 @@ export async function getMyHomework(filter?: { level?: number; subject?: string 
   const supabase = await createClient();
   let q = supabase
     .from("homework_submissions")
-    .select("id, level, subject, question, status, created_at, checked_at, homework_files(id, file_name, file_size, content_type, created_at)")
+    .select("id, level, subject, class_date, question, feedback, status, created_at, checked_at, homework_files(id, file_name, file_size, content_type, created_at)")
     .order("created_at", { ascending: false })
     .limit(60);
   if (filter?.level) q = q.eq("level", filter.level);

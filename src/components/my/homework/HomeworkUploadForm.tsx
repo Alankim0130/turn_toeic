@@ -13,8 +13,23 @@ const BUCKET = "homework";
 
 type Picked = { key: string; file: File; url: string };
 
-/** 3단계: 사진 고르기(여러 장, 최대 10장) + 질문(선택) → 브라우저에서 Storage 로 바로 올린 뒤 서버 액션에 등록 */
-export function HomeworkUploadForm({ userId, level, subject }: { userId: string; level: number; subject: HomeworkSubject }) {
+/**
+ * 사진 고르기(여러 장, 최대 10장) + 질문(선택) → 브라우저에서 Storage 로 바로 올린 뒤 서버 액션에 등록.
+ * `classDate` 는 학생이 달력에서 고른 **수업 날짜**다 (2026-09-19 Alan).
+ */
+export function HomeworkUploadForm({
+  userId,
+  level,
+  subject,
+  classDate,
+  onDone,
+}: {
+  userId: string;
+  level: number;
+  subject: HomeworkSubject;
+  classDate: string;
+  onDone?: (id: number) => void;
+}) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [photos, setPhotos] = useState<Picked[]>([]);
@@ -83,13 +98,18 @@ export function HomeworkUploadForm({ userId, level, subject }: { userId: string;
         uploaded.push(await uploadFile(BUCKET, `${folder}/${objectName(photos[i].file)}`, photos[i].file));
       }
       setProgress("제출하는 중…");
-      const res = await submitHomework({ level, subject, question: q, files: uploaded });
+      const res = await submitHomework({ level, subject, classDate, question: q, files: uploaded });
       if (!res.ok || !res.id) return await fail(res.error ?? "제출하지 못했어요.");
 
-      // 완료 화면으로 이동. 이동이 끝날 때까지 버튼은 잠긴 채 둔다
+      // 같은 화면에서 목록만 새로 받는다 (달력·고른 날짜는 그대로 둔다)
       setProgress("완료! 잠시만요…");
       photos.forEach((p) => URL.revokeObjectURL(p.url));
-      router.push(`/my/homework/${level}/${subject}?done=${res.id}`);
+      setPhotos([]);
+      setQuestion("");
+      router.refresh();
+      onDone?.(res.id);
+      setBusy(false);
+      setProgress(null);
     } catch (err) {
       await fail(err instanceof Error ? err.message : "제출하지 못했어요.");
     }

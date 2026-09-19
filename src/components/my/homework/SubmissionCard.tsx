@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { cn, formatDate } from "@/lib/utils";
-import { HOMEWORK_STATUS_LABEL, homeworkLabel } from "@/lib/homework";
+import { classDayLabel, HOMEWORK_STATUS_LABEL, homeworkLabel } from "@/lib/homework";
 import { isImageType } from "@/lib/upload";
 import { DeleteSubmissionButton } from "./DeleteSubmissionButton";
 
@@ -8,7 +8,11 @@ export type SubmissionLite = {
   id: number;
   level: number | null;
   subject: string | null;
+  /** 어느 수업일의 숙제인지 (달력에서 고른 날). 달력 이전에 낸 옛 제출은 비어 있다 */
+  class_date?: string | null;
   question: string | null;
+  /** 강사 코멘트 · 질문 답변 (점검완료와 함께 온다) */
+  feedback?: string | null;
   status: string;
   created_at: string;
   checked_at: string | null;
@@ -24,6 +28,7 @@ export function SubmissionCard({ submission: s, highlight = false }: { submissio
     <article className={cn("card p-4 sm:p-5", checked && "border-brand-200", highlight && "ring-2 ring-brand-300")}>
       <div className="flex flex-wrap items-center gap-2">
         {s.level != null && s.subject && <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-black text-white">{homeworkLabel(s.level, s.subject)}</span>}
+        {s.class_date && <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-black text-brand-700">{classDayLabel(s.class_date)} 수업</span>}
         <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-black", checked ? "bg-brand-500 text-white" : "bg-brand-50 text-brand-700")}>
           {HOMEWORK_STATUS_LABEL[s.status] ?? s.status}
         </span>
@@ -60,6 +65,17 @@ export function SubmissionCard({ submission: s, highlight = false }: { submissio
         <div className="mt-3 rounded-xl bg-surface px-3 py-2 text-sm">
           <p className="text-xs font-bold text-brand-700">질문</p>
           <p className="whitespace-pre-line text-ink-soft">{s.question}</p>
+        </div>
+      )}
+
+      {/* 강사 코멘트 — 질문 답변이거나 그냥 하는 말. 점검완료와 함께 알림함으로도 간다 */}
+      {s.feedback && (
+        <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50/60 px-3 py-2 text-sm">
+          <p className="flex items-center gap-1 text-xs font-bold text-brand-700">
+            <Icon name="lc" size={14} />
+            강사 코멘트
+          </p>
+          <p className="whitespace-pre-line text-ink">{s.feedback}</p>
         </div>
       )}
 

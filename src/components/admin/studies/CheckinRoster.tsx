@@ -13,8 +13,14 @@ export type RosterMaterial = { id: number; date: string; title: string | null };
 export type RosterCheckin = { material_id: number; user_id: string; created_at: string; files: number };
 
 /**
- * 비대면 스터디 — **날짜별 인증 현황** (2026-09-18 Alan: "날짜별로 누가 인증을 안 했는지 보고, 그 학생에게 메시지").
- * 자료(날짜)마다 신청자 전원을 인증함/미인증으로 나눠 보여 주고, 미인증 학생을 골라 알림함으로 메시지를 보낸다.
+ * 비대면 스터디 **인증 현황**. 두 가지로 보여 준다:
+ *  ① **한눈에 보기** — 학생 × 날짜 격자 (2026-09-19 Alan: "학생들이 비대면을 신청하고 난 뒤,
+ *     인증을 했는지 안했는지 강사모드에서 한번에 쭈욱 확인이 가능하면 좋겠어")
+ *  ② **날짜별 카드** — 자료마다 인증함/미인증으로 나누고 미인증 학생에게 알림을 보낸다 (2026-09-18 Alan)
+ *
+ * **숙제점검(`/admin/homework`)과 완전히 다른 것이다** — 그쪽은 정규 수업 숙제다 (2026-09-19 Alan).
+ * 인증을 안 한 학생에게 **자료를 막는 규정은 아직 없다** (Alan: "정확한 규정은 아직 확인을 안 해봤지만") —
+ * 여기서 임의로 막지 말 것.
  */
 export function CheckinRoster({ students, materials, checkins }: { students: RosterStudent[]; materials: RosterMaterial[]; checkins: RosterCheckin[] }) {
   const router = useRouter();
@@ -49,9 +55,88 @@ export function CheckinRoster({ students, materials, checkins }: { students: Ros
     return <p className="card p-6 text-center text-sm text-slate">아직 올린 자료가 없어요. 비대면 자료를 날짜별로 올리면 그 날짜의 인증 현황이 여기 나옵니다.</p>;
   }
 
+  // 한눈에 보기: 미인증이 많은 학생을 위로 (2026-09-19 Alan — "인증을 했는지 안했는지 강사모드에서 한번에 쭈욱 확인")
+  const missedOf = (id: string) => materials.filter((m) => !byMaterial.get(m.id)?.has(id)).length;
+  const ranked = [...students].sort((a, b) => missedOf(b.id) - missedOf(a.id) || (a.name || "").localeCompare(b.name || ""));
+
   return (
     <div className="space-y-3">
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+
+      {/* ─── 한눈에 보기 (학생 × 날짜) ───────────────────────────────────────
+          날짜별 카드만 있으면 한 사람이 어느 날을 빠뜨렸는지 보려고 자료를 하나씩 펼쳐야 한다.
+          자료가 한 달에 18~19개라 가로 스크롤은 어쩔 수 없다 — 이름 칸만 왼쪽에 고정한다 */}
+      {students.length > 0 && (
+        <section className="card overflow-hidden">
+          <div className="border-b border-line bg-brand-50/60 px-4 py-3">
+            <p className="font-black text-ink">한눈에 보기</p>
+            <p className="mt-0.5 text-xs text-slate">
+              신청 {students.length}명 × 자료 {materials.length}일 · 미인증이 많은 학생이 위로 옵니다. 알림 보내기는 아래 날짜별 칸에서 해요.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-max text-sm">
+              <thead className="bg-surface text-xs text-slate">
+                <tr>
+                  <th className="sticky left-0 z-10 bg-surface px-4 py-2 text-left font-bold">이름</th>
+                  {materials.map((m) => (
+                    <th key={m.id} className="px-1.5 py-2 text-center font-bold tabular-nums" title={formatDate(m.date)}>
+                      {Number(m.date.slice(5, 7))}/{Number(m.date.slice(8, 10))}
+                    </th>
+                  ))}
+                  <th className="px-3 py-2 text-right font-bold">인증</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {ranked.map((st) => {
+                  const missed = missedOf(st.id);
+                  return (
+                    <tr key={st.id} className={cn(missed > 0 && "bg-amber-50/40")}>
+                      <th scope="row" className={cn("sticky left-0 z-10 px-4 py-1.5 text-left font-bold text-ink", missed > 0 ? "bg-[#fffbeb]" : "bg-paper")}>
+                        {st.name || "-"}
+                      </th>
+                      {materials.map((m) => {
+                        const c = byMaterial.get(m.id)?.get(st.id);
+                        return (
+                          <td key={m.id} className="px-1.5 py-1.5 text-center">
+                            {c ? (
+                              <span
+                                role="img"
+                                aria-label={`${formatDate(m.date)} 인증함`}
+                                className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-brand-500 text-white"
+                                title={`${formatDate(m.date)} 인증 · 사진 ${c.files}장`}
+                              >
+                                {/* 12px 에서는 힉스필드 PNG 가 뭉개진다 — 도형(인라인 SVG)으로 그린다 (디자인 원칙) */}
+                                <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                  <path d="M3.5 8.5l3 3 6-7" />
+                                </svg>
+                              </span>
+                            ) : (
+                              // `sr-only` 자식을 두지 말 것 — position:absolute 라 가로 스크롤 상자를 빠져나가
+                              // **페이지 전체가 옆으로 밀린다** (320px 에서 15px 넘쳤다). 설명은 aria-label 로 단다
+                              <span
+                                role="img"
+                                aria-label={`${formatDate(m.date)} 미인증`}
+                                className="inline-block h-5 w-5 rounded-full bg-line align-middle"
+                                title={`${formatDate(m.date)} 미인증`}
+                              />
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className="px-3 py-1.5 text-right text-xs font-black tabular-nums">
+                        <span className={cn(missed > 0 ? "text-amber-800" : "text-brand-700")}>
+                          {materials.length - missed} / {materials.length}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
       {materials.map((m) => {
         const done = byMaterial.get(m.id) ?? new Map<string, RosterCheckin>();
         const missing = students.filter((s) => !done.has(s.id));
