@@ -319,4 +319,25 @@ describe("캡처 시각 (현재시간 줄)", () => {
     expect(parseReceipt("허재시간 2026-09-02 19:27:43").capturedOn).toBe("2026-09-02");
     expect(parseReceipt("역전토익 [종합반] 650 목표").capturedOn).toBeNull();
   });
+
+  /**
+   * capturedAt 은 **초까지** 남긴다 (2026-09-19) — 두 계정에 같은 초의 수강증이 있으면 한쪽이 복사본이다.
+   * 사람이 같은 초에 두 번 캡처할 수는 없고, **글자를 고쳐도 이 값은 남는다** (파일 해시와 다른 점).
+   */
+  it("capturedAt 은 시·분·초까지 남긴다", () => {
+    expect(parseReceipt("현재시간 2026-08-07 16:19:02\n08월 과정").capturedAt).toBe("2026-08-07T16:19:02");
+    expect(parseReceipt("현재시간 2026-08-0716:19:02").capturedAt).toBe("2026-08-07T16:19:02");
+    expect(parseReceipt("현재시간 2026-08-07 9:05:07").capturedAt).toBe("2026-08-07T09:05:07");
+  });
+
+  it("초가 없거나 말이 안 되는 시각이면 null — 분까지만으로는 남과 겹칠 수 있다", () => {
+    expect(parseReceipt("현재시간 2026-08-07 16:19").capturedAt).toBeNull();
+    expect(parseReceipt("현재시간 2026-08-07 25:19:02").capturedAt).toBeNull();
+    expect(parseReceipt("역전토익 [종합반] 650 목표").capturedAt).toBeNull();
+  });
+
+  it("현재시간 라벨을 못 읽으면 날짜는 살아도 시각은 안 쓴다 — 엉뚱한 숫자를 시각으로 읽지 않는다", () => {
+    expect(parseReceipt("허재시간 2026-09-02 19:27:43").capturedOn).toBe("2026-09-02");
+    expect(parseReceipt("허재시간 2026-09-02 19:27:43").capturedAt).toBeNull();
+  });
 });

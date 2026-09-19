@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { PALETTE_SAMPLE_WIDTH, PALETTE_TOLERANCE, paletteColors, type PaletteShares } from "./receipt-forensics";
 
 /**
  * 수강증 이미지 전처리 — OCR 전에 **흑백으로** 바꾼 변형 여러 장을 만든다 (2026-09-18 실물 수강증으로 실측).
@@ -41,4 +42,48 @@ export async function receiptVariants(input: Uint8Array): Promise<OcrVariant[]> 
   out.push({ name: "gray", bytes: await gray().png().toBuffer() });
 
   return out;
+}
+
+/**
+ * 수강증 화면의 **색 팔레트**를 잰다 (2026-09-19, 위조 신호 — `src/lib/receipt-forensics.ts`).
+ *
+ * 팔레트에 든 색마다 "화면에서 몇 %를 차지하나" 를 돌려준다. 판정은 하지 않는다 (`paletteVerdict` 가 한다).
+ * **폭 480px 으로 줄여서 센다** — 비율이라 값이 안 변하고(실측 39.99% → 39.98%) 시간이 절반이 된다 (실측 72ms → 54ms).
+ * 줄일 때 `kernel: "nearest"` 를 쓰는 것이 중요하다 — 기본값(보간)은 이웃 픽셀을 섞어 **평평한 색을 흐려 놓아**
+ * 정확히 같은 값이 아니게 만든다. 그러면 진짜 화면도 색이 안 맞는 것으로 나온다.
+ *
+ * 못 재면 **null** 이다 (이미지가 아니거나 sharp 가 실패). 판정 쪽이 null 을 통과로 본다 — 근거 없이 막지 않는다.
+ */
+export async function measurePalette(input: Uint8Array): Promise<PaletteShares | null> {
+  try {
+    const { data, info } = await sharp(Buffer.from(input), { failOn: "none", limitInputPixels: MAX_PIXELS })
+      .rotate()
+      .removeAlpha()
+      .resize({ width: PALETTE_SAMPLE_WIDTH, kernel: "nearest", fit: "inside", withoutEnlargement: true })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const total = info.width * info.height;
+    if (!total) return null;
+
+    const colors = paletteColors();
+    const hits = new Array<number>(colors.length).fill(0);
+    const tol2 = PALETTE_TOLERANCE * PALETTE_TOLERANCE;
+    for (let i = 0; i < data.length; i += info.channels) {
+      for (let k = 0; k < colors.length; k++) {
+        const [r, g, b] = colors[k].rgb;
+        const dr = data[i] - r, dg = data[i + 1] - g, db = data[i + 2] - b;
+        if (dr * dr + dg * dg + db * db <= tol2) {
+          hits[k]++;
+          break; // 한 픽셀은 한 색에만 센다
+        }
+      }
+    }
+    const out: PaletteShares = {};
+    colors.forEach((c, k) => { out[c.key] = (hits[k] / total) * 100; });
+    return out;
+  } catch (e) {
+    console.error("[ocr] 팔레트를 재지 못했어요", e);
+    return null;
+  }
 }

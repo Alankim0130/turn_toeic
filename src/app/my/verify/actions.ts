@@ -12,6 +12,8 @@ import { resolveEnrollChoice, type EnrollSection } from "@/lib/enroll-options";
 import { getOpenEnrollSections } from "../_lib/queries";
 import { parseReceipt, receiptComplete, receiptHasName, type ParsedReceipt } from "@/lib/receipt";
 import { readReceiptText, tesseractOcr } from "@/lib/ocr";
+import { measurePalette } from "@/lib/ocr-image";
+import { paletteVerdict, type PaletteShares } from "@/lib/receipt-forensics";
 import { matchSections } from "@/lib/match-sections";
 import { assignedLabels } from "@/lib/assigned-label";
 import { approveVerificationWith } from "@/lib/approve-verification";
@@ -107,6 +109,8 @@ type ReadOk = {
   nameMatches: boolean | null;
   /** 파일 SHA-256 — 다른 계정이 같은 파일을 올렸는지 본다 (돌려쓰기 의심, 2026-09-18) */
   hash: string;
+  /** 화면의 색이 YBM 수강증 팔레트와 맞는가 (2026-09-19, `src/lib/receipt-forensics.ts`). 못 쟀으면 null */
+  palette: PaletteShares | null;
 };
 /** 못 읽었을 때도 **왜** 못 읽었는지는 남긴다 (`ocr_raw.error`) — 승인 화면과 Vercel 로그에서 원인을 볼 수 있게 */
 type ReadReceipt = ReadOk | { ok: false; ocr: { engine: string; error: string } };
@@ -124,7 +128,11 @@ async function readReceipt(admin: ReturnType<typeof createAdminClient>, filePath
 
   const bytes = new Uint8Array(await file.arrayBuffer());
   const hash = createHash("sha256").update(bytes).digest("hex");
-  const outcome = await readReceiptText({ bytes, mimeType: file.type, filePath, enough: receiptComplete });
+  // 색 팔레트는 OCR 과 무관하게 잰다 — 글자를 못 읽어도 "우리 화면인가" 는 알 수 있다 (실측 35~54ms)
+  const [outcome, palette] = await Promise.all([
+    readReceiptText({ bytes, mimeType: file.type, filePath, enough: receiptComplete }),
+    measurePalette(bytes),
+  ]);
   if (!outcome.ok) return { ok: false, ocr: { engine: tesseractOcr.name, error: outcome.reason } };
   const ocr = outcome.result;
 
@@ -139,13 +147,16 @@ async function readReceipt(admin: ReturnType<typeof createAdminClient>, filePath
     ocr: { engine: ocr.engine, text: ocr.text, confidence: typeof confidence === "number" ? confidence : null },
     nameMatches,
     hash,
+    palette,
   };
 }
 
 /** 스태프 화면에 보여 줄 판독 결과. 원문은 ocr_raw 에 있으니 여기서는 뺀다 */
 function parsedSummary({ parsed, nameMatches }: ReadOk) {
   const { gates, mode, weekly, tracks, levels, level, program, times, time, months, tuition, warnings } = parsed;
-  return { gates, mode, weekly, tracks, levels, level, program, times, time, months, tuition, warnings, nameMatches };
+  // capturedAt 은 **중복 검사가 다시 읽는 값**이라 반드시 남긴다 (`parsed->>capturedAt`)
+  const { capturedOn, capturedAt } = parsed;
+  return { gates, mode, weekly, tracks, levels, level, program, times, time, months, tuition, warnings, nameMatches, capturedOn, capturedAt };
 }
 
 /**
@@ -162,6 +173,18 @@ function parsedSummary({ parsed, nameMatches }: ReadOk) {
  *   **딱 맞는 반이 정확히 그 수만큼**(주3일 1 · 주5일 2) 있음 (`matchSections`). 하나라도 어긋나면 스태프 검토로 간다 —
  *   애매한데 넣으면 오배정이고, 오배정은 남의 반 다시보기를 열어 준다.
  * 이미지가 아니거나(PDF) OCR 이 실패하면 읽은 것이 없으니 그대로 검토 대기로 간다.
+ *
+ * **위조 신호 네 가지도 자동 승인을 막는다** (2026-09-18 · 2026-09-19 Alan). 넷 다 **거절하지 않는다** —
+ * 스태프 검토로 보내고 승인 화면에 까닭을 적을 뿐이다. 진짜 학생이 걸릴 수 있기 때문이다.
+ *   1. `duplicateImage` — 같은 파일(SHA-256)을 다른 계정이 올렸다
+ *   2. `staleCapture` — 캡처한 지 45일이 넘었다 (지난 수강증 재사용)
+ *   3. `sameCapture` — **같은 초**에 캡처된 수강증이 다른 계정에 있다. 수강증 맨 위 `현재시간` 은 초까지 찍히므로
+ *      두 사람이 같은 초에 각자 캡처할 수 없다. 파일 해시와 달리 **글자를 고쳐도 살아남는다**
+ *   4. `paletteOff` — 화면 색이 YBM 수강증 팔레트가 아니다 (`src/lib/receipt-forensics.ts`).
+ *      AI 로 만들었거나 손으로 그린 그림, 다른 학원 수강증이 여기 걸린다
+ *
+ * **학생에게는 "위조 의심" 을 말하지 않는다** — 진짜 학생에게 실례고, 위조하는 쪽에는 무엇을 고쳐야 하는지 알려 주는 꼴이다.
+ * 학생 화면에는 늘 "강사가 직접 확인해 드려요" 만 나가고, 까닭은 승인 화면에만 적는다.
  */
 export async function submitVerification(input: { filePath: string }): Promise<SubmitVerificationResult> {
   const guarded = await guardUpload(String(input?.filePath ?? ""));
@@ -190,7 +213,30 @@ export async function submitVerification(input: { filePath: string }): Promise<S
     duplicateImage = (count ?? 0) > 0; // 다른 계정이 같은 파일을 올렸다
   }
   const staleCapture = !!read && !isCaptureFresh(read.parsed.capturedOn, todayKST()); // 캡처가 45일 넘게 오래됐다
-  const flags = { duplicateImage, staleCapture };
+
+  // **같은 초에 캡처된 수강증이 다른 계정에도 있다** (2026-09-19). 수강증 맨 위 `현재시간` 은 초까지 찍히므로
+  // 두 사람이 같은 초에 각자 캡처할 수는 없다 — 한쪽이 상대의 그림을 받아 쓴 것이다.
+  // **파일 해시와 달리 글자를 고쳐도 살아남는다** (친구 수강증에 자기 이름만 얹은 경우).
+  //
+  // 지금은 훑어 세지만(수강증이 수천 건 수준) 느려지면 `parsed->>'capturedAt'` 에 인덱스를 건다.
+  // **조회가 실패하면 통과시킨다** — 근거 없이 막지 않는다. 다만 조용히 넘어가지 않게 로그는 남긴다
+  let sameCapture = false;
+  if (read?.parsed.capturedAt) {
+    const { count, error: dupError } = await admin
+      .from("enrollment_verifications")
+      .select("id", { count: "exact", head: true })
+      .eq("parsed->>capturedAt", read.parsed.capturedAt)
+      .neq("user_id", user.id);
+    if (dupError) console.error(`[verify] 캡처 시각 중복을 확인하지 못했어요: ${dupError.message}`);
+    sameCapture = (count ?? 0) > 0;
+  }
+
+  // **색 팔레트** — YBM 수강증 화면의 색(파란 티켓 카드 · 노란 과정 배지)이 큰 면적을 차지하는가.
+  // 실측: 진짜 37.8~40.0%(카톡 JPEG q70 · 1080px 축소 포함) vs 생성물·다른 사진 0.00~0.05% (`src/lib/receipt-forensics.ts`)
+  const palette = paletteVerdict(read?.palette);
+  const paletteOff = !!read && !palette.ok;
+
+  const flags = { duplicateImage, staleCapture, sameCapture, paletteOff, paletteNote: palette.note, palette: read?.palette ?? null };
 
   const autoApprove =
     !!read &&
@@ -200,7 +246,9 @@ export async function submitVerification(input: { filePath: string }): Promise<S
     read.parsed.gates.brand &&
     read.nameMatches === true &&
     !duplicateImage &&
-    !staleCapture;
+    !staleCapture &&
+    !sameCapture &&
+    !paletteOff;
 
   const { data: inserted, error } = await admin
     .from("enrollment_verifications")
