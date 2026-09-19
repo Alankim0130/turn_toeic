@@ -262,10 +262,16 @@ export const NAV_MAIN: NavItem[] = [
   { href: site.academy.naverBookingUrl, label: "네이버 상담예약", icon: "calendar", external: true },
 ];
 
-/** 모바일 하단 네비게이션 (5개) */
+/**
+ * 모바일 하단 네비게이션 (5개).
+ * **등업신청은 여기 두지 않는다** (2026-09-19 Alan "하단 네비게이션바에서 등업을 LC음원으로 바꿔줘") —
+ * 등업은 한 번 하면 끝이고 LC음원은 매일 듣는다. 등업신청으로 가는 길은 그대로 있다:
+ * `/my` 바로가기·등록 없는 학생에게 뜨는 큰 버튼 · 햄버거 서랍(마이페이지) · PC 상단 메뉴.
+ */
 export const NAV_BOTTOM: NavItem[] = [
   { href: "/", label: "홈", icon: "home" },
-  { href: "/my/verify", label: "등업", icon: "verify" },
+  // featureNav 는 아래에서 선언되어 여기서 못 쓴다 (TDZ) — 불라방 줄과 같은 꼴로 적는다
+  { href: "/my/lc-audio", label: "LC음원", icon: "headphones", feature: "lc-audio" },
   { href: STUDENT_HUB.href, label: STUDENT_HUB.label, icon: STUDENT_HUB.icon },
   { href: "/my/live", label: "불라방", icon: "live", feature: "live" },
   { href: "/my", label: "마이", icon: "profile" },
