@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database.types";
 import { formatTime, TRACK_LABEL, MODE_LABEL } from "@/lib/utils";
+import { WEEK5_LABEL } from "@/lib/week5";
 
 export type DB = SupabaseClient<Database>;
 
@@ -43,21 +44,23 @@ export function sectionSummary(
  */
 export function sectionChip(
   s: {
+    id?: number;
     track?: string | null;
     start_time?: string | null;
     time_block?: string | null;
     term?: { year: number; month: number } | null;
     course?: { name: string; target_score?: number | null; program?: string | null } | null;
   } | null | undefined,
+  /** 그 학생의 주5일 반 id 들 (`week5SectionIds`) — 있으면 트랙 대신 `주5일` 로 적는다 */
+  week5?: Set<number>,
 ) {
   if (!s) return "반 미배정";
   const level = s.course?.target_score
     ? `${s.course.program === "sparta" ? "스파르타 " : ""}${s.course.target_score}+`
     : (s.course?.name ?? "강좌");
+  const track = s.id != null && week5?.has(s.id) ? WEEK5_LABEL : s.track ? (TRACK_LABEL[s.track] ?? s.track) : null;
   // 트랙과 시간은 한 덩어리로 붙여 쓴다 — 가운뎃점을 넷 찍으면 배지가 휴대폰에서 두 줄로 접힌다
-  const when = [s.track ? (TRACK_LABEL[s.track] ?? s.track) : null, s.start_time ? formatTime(s.start_time) : (s.time_block ?? null)]
-    .filter(Boolean)
-    .join(" ");
+  const when = [track, s.start_time ? formatTime(s.start_time) : (s.time_block ?? null)].filter(Boolean).join(" ");
   return [termLabel(s.term, true), level, when || null].filter(Boolean).join(" · ");
 }
 
