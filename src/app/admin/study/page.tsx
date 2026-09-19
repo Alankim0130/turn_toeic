@@ -59,7 +59,7 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
 
   const { data: signups } = await supabase
     .from("study_signups")
-    .select("id, slot_id, created_at, user:profiles!study_signups_user_id_fkey(id, name, phone)")
+    .select("id, slot_id, created_at, user:profiles!study_signups_user_id_fkey(id, name, phone, role)")
     .eq("study_id", study.id)
     .order("created_at");
 
@@ -78,7 +78,8 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
   const rosterCheckins = (checkinRows ?? [])
     .filter((c) => materialIds.has(c.material_id))
     .map((c) => ({ material_id: c.material_id, user_id: c.user_id, created_at: c.created_at, files: c.study_checkin_files?.[0]?.count ?? 0 }));
-  const rosterStudents = rows.filter((r) => r.user).map((r) => ({ id: r.user!.id, name: r.user!.name, phone: r.user!.phone }));
+  // 인증 표에는 연락처 대신 **등급**을 넘긴다 (2026-09-19 Alan) — 연락처는 아래 신청자 표에 그대로 있다
+  const rosterStudents = rows.filter((r) => r.user).map((r) => ({ id: r.user!.id, name: r.user!.name, role: r.user!.role }));
 
   return (
     <>

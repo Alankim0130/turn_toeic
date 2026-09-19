@@ -4,11 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { sendStudentMessages } from "@/app/admin/study/message-actions";
 import { Alert } from "@/components/ui/Alert";
+import { StatusBadge } from "@/components/admin/StatusBadge";
 import { Icon } from "@/components/ui/Icon";
 import { cn, formatDate } from "@/lib/utils";
 import { missingCheckinMessage } from "@/lib/study-checkin";
 
-export type RosterStudent = { id: string; name: string; phone: string | null };
+/** 인증 표의 한 사람. **전화번호 대신 등급을 적는다** (2026-09-19 Alan) — 아래 신청자 표에 연락처가 이미 있다 */
+export type RosterStudent = { id: string; name: string; role: string | null };
 export type RosterMaterial = { id: number; date: string; title: string | null };
 export type RosterCheckin = { material_id: number; user_id: string; created_at: string; files: number };
 
@@ -160,7 +162,7 @@ export function CheckinRoster({ students, materials, checkins }: { students: Ros
                   <thead className="bg-surface text-left text-xs text-slate">
                     <tr>
                       <th className="px-5 py-2 font-bold">이름</th>
-                      <th className="px-3 py-2 font-bold">연락처</th>
+                      <th className="px-3 py-2 font-bold">등급</th>
                       <th className="px-3 py-2 font-bold">인증</th>
                       {compose?.materialId === m.id && <th className="px-3 py-2 font-bold">보내기</th>}
                     </tr>
@@ -171,7 +173,7 @@ export function CheckinRoster({ students, materials, checkins }: { students: Ros
                       return (
                         <tr key={s.id} className={cn(!c && "bg-amber-50/40")}>
                           <td className="px-5 py-2 font-bold text-ink">{s.name || "-"}</td>
-                          <td className="px-3 py-2 text-slate">{s.phone ? <a href={`tel:${s.phone}`} className="text-brand-600 hover:underline">{s.phone}</a> : "-"}</td>
+                          <td className="px-3 py-2"><StatusBadge status={s.role} /></td>
                           <td className="px-3 py-2">
                             {c ? (
                               <span className="inline-flex items-center gap-1 text-xs font-bold text-brand-700">
