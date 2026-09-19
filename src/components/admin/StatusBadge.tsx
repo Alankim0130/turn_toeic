@@ -40,6 +40,7 @@ export const STATUS_META: Record<string, { label: string; tone: Tone }> = {
   student: { label: "수강생", tone: "green" },
   alumni: { label: "졸업생", tone: "ink" },
   instructor: { label: "강사", tone: "pink" },
+  assistant: { label: "조교", tone: "pink" },
   admin: { label: "관리자", tone: "pink" },
   guest: { label: "비회원", tone: "gray" },
   // modes
