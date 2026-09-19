@@ -52,7 +52,7 @@ export function MergePanel({ me, candidates, requests }: { me: string; candidate
             )}
             <form action={cancelAction} className="mt-2">
               <input type="hidden" name="request_id" value={r.id} />
-              <SubmitButton pendingText="취소 중…" className="btn-secondary !py-2 w-full sm:w-auto">신청 취소</SubmitButton>
+              <SubmitButton pendingText="취소 중…" variant="secondary" className="!py-2 w-full sm:w-auto">신청 취소</SubmitButton>
             </form>
           </div>
         );
@@ -76,7 +76,7 @@ export function MergePanel({ me, candidates, requests }: { me: string; candidate
               <form action={reqAction}>
                 <input type="hidden" name="other" value={c.user_id} />
                 <input type="hidden" name="keep" value={c.user_id} />
-                <SubmitButton pendingText="신청 중…" className="btn-secondary w-full sm:w-full">이 계정을 남기기</SubmitButton>
+                <SubmitButton pendingText="신청 중…" variant="secondary" className="w-full sm:w-full">이 계정을 남기기</SubmitButton>
               </form>
             </div>
           </div>
