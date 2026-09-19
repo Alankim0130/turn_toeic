@@ -4,6 +4,7 @@ import { todayKST, formatDate, MODE_LABEL } from "@/lib/utils";
 import { formatPhone } from "@/lib/phone";
 import { loginLabel, lastSeenLabel, kstDay, shortDay } from "@/lib/account";
 import { STUDY_KIND_LABEL, STUDY_KINDS } from "@/lib/study";
+import { week5SectionIds, collapseWeek5, pairKey } from "@/lib/week5";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterTabs } from "@/components/admin/FilterTabs";
@@ -57,7 +58,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
     ids.length
       ? supabase
           .from("enrollments")
-          .select("id, student_id, mode, status, section:class_sections!enrollments_section_id_fkey(track, start_time, time_block, closes_at, term:terms(year, month), course:courses(name, target_score, program))")
+          .select("id, student_id, mode, status, section:class_sections!enrollments_section_id_fkey(id, term_id, course_id, track, start_time, time_block, closes_at, term:terms(year, month), course:courses(name, target_score, program))")
           .in("student_id", ids)
           .order("id")
       : Promise.resolve({ data: [] as never[] }),
@@ -131,6 +132,18 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
               const prelimOrder = orders.filter((o) => o.status === "preliminary").sort((a, b) => a.activates_on.localeCompare(b.activates_on))[0];
               const activeOrder = orders.filter((o) => o.status === "active").sort((a, b) => b.access_until.localeCompare(a.access_until))[0];
               const myEnroll = enrollByUser.get(p.id) ?? [];
+              // 주5일이면 월수금·화목금 두 줄을 한 줄 `주5일` 로 합친다 (2026-09-19 Alan).
+              // 짝은 **그 학생이 듣는 반 안에서만** 찾는다 — 전체 명단으로 찾으면 다른 학생의 반과 짝이 된다
+              const mySections = myEnroll.map((e) => e.section).filter((x) => !!x);
+              const week5 = week5SectionIds(mySections);
+              // 합친 줄의 수강 방식은 두 트랙이 다르면 둘 다 적는다 — 한쪽만 적으면 없는 말이 된다
+              const pairModes = new Map<string, Set<string>>();
+              for (const e of myEnroll) {
+                if (!e.section || !week5.has(e.section.id)) continue;
+                const k = pairKey(e.section);
+                if (k) pairModes.set(k, (pairModes.get(k) ?? new Set<string>()).add(e.mode));
+              }
+              const myClasses = collapseWeek5(myEnroll, (e) => e.section, week5);
               const account = accountById.get(p.id);
               const kinds = studiesByUser.get(p.id);
               const studyValue = kinds ? STUDY_KINDS.filter((k) => kinds.has(k)).map(studyShort).join(" · ") : "";
@@ -166,12 +179,17 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
                   testRoleLabel={p.test_role ? ROLE_LABEL[p.test_role] : null}
                   affiliation={[p.university, p.department].filter(Boolean).join(" · ")}
                   chip={tab === "preliminary" && prelimOrder ? `${Number(prelimOrder.activates_on.slice(5, 7))}월 예비등록생` : undefined}
-                  classes={myEnroll.map((e) => ({
-                    id: e.id,
-                    label: sectionChip(e.section),
-                    mode: e.mode,
-                    modeLabel: MODE_LABEL[e.mode] ?? e.mode,
-                  }))}
+                  classes={myClasses.map((e) => {
+                    const k = e.section && week5.has(e.section.id) ? pairKey(e.section) : null;
+                    const modes = [...(k ? (pairModes.get(k) ?? new Set([e.mode])) : new Set([e.mode]))];
+                    return {
+                      id: e.id,
+                      label: sectionChip(e.section, week5),
+                      // 둘이 섞이면 색을 한쪽으로 칠할 수 없다 (null = 잉크)
+                      mode: modes.length === 1 ? modes[0] : null,
+                      modeLabel: modes.map((m) => MODE_LABEL[m] ?? m).join(" · "),
+                    };
+                  })}
                   metas={metas}
                 />
               );
