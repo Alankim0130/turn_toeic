@@ -1,6 +1,7 @@
 import "server-only";
 import type { createAdminClient } from "./supabase/admin";
 import type { Json, TablesInsert, TablesUpdate } from "./supabase/database.types";
+import { promoteToStudent } from "./student-role";
 import { todayKST } from "./utils";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -68,9 +69,7 @@ export async function approveVerificationWith(admin: Admin, input: ApproveInput)
     return { ok: false, error: `승인 기록 저장에 실패했습니다. ${verErr.message}` };
   }
 
-  if (status === "active") {
-    await admin.from("profiles").update({ role: "student" }).eq("id", input.userId).in("role", ["member", "alumni"]);
-  }
+  if (status === "active") await promoteToStudent(admin, input.userId);
 
   return { ok: true, orderId: order.id, status };
 }
