@@ -26,7 +26,7 @@ export default async function LivePage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader icon="live" title="불라방" description="현장 강의를 실시간 라이브로. 수업 시작 10분 전부터 입장하세요." />
+      <PageHeader icon="live" title="불라방" description="현장 강의를 실시간 라이브로. 수업이 시작되면 알림으로 알려 드려요." />
 
       {cards.length === 0 ? (
         <EmptyState
@@ -90,7 +90,7 @@ export default async function LivePage() {
                       {c.kind === "today" && s.live_to_replay
                         ? "수업이 끝나면 이 주소가 그대로 다시보기에 올라와요. "
                         : ""}
-                      수업 시작 10분 전부터 입장하세요. 링크는 본인만 사용해 주세요.
+                      수업이 시작되면 알림이 와요. 링크는 본인만 사용해 주세요.
                     </p>
                   </div>
                 </article>

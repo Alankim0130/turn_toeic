@@ -161,7 +161,7 @@ export const STUDENT_FEATURES: StudentFeature[] = [
     icon: "live",
     summary: "현장 강의 실시간 입장",
     desc: "현장 강의를 실시간 라이브로 들어요. 집에서도 같은 시간에 같은 수업을 받습니다.",
-    points: ["수업 시작 10분 전부터 바로 입장", "입장 링크를 매번 찾을 필요 없이 한곳에서"],
+    points: ["수업이 시작되면 알림으로 알려 줘요", "입장 링크를 매번 찾을 필요 없이 한곳에서"],
     access: "active",
   },
   {
