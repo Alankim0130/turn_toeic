@@ -1921,7 +1921,10 @@ where p.role='student'
    - 순서: ① [searchadvisor.naver.com](https://searchadvisor.naver.com) 웹마스터도구에 `https://winnertoeic.com` 등록 →
      ② 소유확인에서 **HTML 태그**를 골라 **`content="…"` 안의 값만** 복사 →
      ③ Vercel 환경변수 `NAVER_SITE_VERIFICATION`(Type **Config** · Production) → **재배포** →
-     ④ 네이버에서 소유확인 → ⑤ 사이트맵 `https://winnertoeic.com/sitemap.xml` 제출.
+     ④ 네이버에서 소유확인 → ⑤ 왼쪽 메뉴 **`요청` → `사이트맵 제출`** (소유확인을 끝내야 열린다).
+   - **사이트맵 칸에는 `sitemap.xml` 만 적는다** — 네이버는 도메인을 앞에 이미 적어 두고 **뒷부분만** 받는다.
+     주소를 통째로 넣으면 `https://winnertoeic.com/https://winnertoeic.com/sitemap.xml` 이 되어 실패한다
+     (Vercel DNS 의 `Name` 칸과 같은 함정이다). 같은 메뉴의 `RSS 제출` 은 우리에게 필요 없다.
    - **`<meta …>` 태그를 통째로 붙여 넣지 말 것** — `content` 안의 값만이다. 태그째 넣으면 태그 안에 태그가 들어가 확인이 실패한다.
    - **네이버 크롤러 `Yeti` 를 위해 `robots.ts` 에 줄을 따로 만들지 말 것** — 지금 `User-Agent: *` 라 이미 허용이고,
      따로 만들면 공개·비공개 목록을 두 벌 관리하게 되어 한쪽만 고치는 날 `/my`·`/admin` 이 네이버에 열린다.
