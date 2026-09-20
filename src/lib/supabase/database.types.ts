@@ -406,7 +406,8 @@ export type Database = {
           candidates: Json | null
           confidence: number | null
           created_at: string
-          file_path: string
+          file_path: string
+
 
           file_hash: string | null
           id: number
@@ -423,7 +424,8 @@ export type Database = {
           candidates?: Json | null
           confidence?: number | null
           created_at?: string
-          file_path: string
+          file_path: string
+
 
           file_hash?: string | null
           id?: number
@@ -440,7 +442,8 @@ export type Database = {
           candidates?: Json | null
           confidence?: number | null
           created_at?: string
-          file_path?: string
+          file_path?: string
+
 
           file_hash?: string | null
           id?: number
@@ -1666,6 +1669,13 @@ export type Database = {
         Returns: {
           included_id: number
           section_id: number
+        }[]
+      }
+      term_recorded_pairs: {
+        Args: { p_term_id: number }
+        Returns: {
+          recorded_id: number
+          source_id: number
         }[]
       }
     }

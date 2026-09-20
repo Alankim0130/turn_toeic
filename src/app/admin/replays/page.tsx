@@ -44,9 +44,27 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
     list[0] ||
     null;
 
-  const { data: sessions } = selected
-    ? await supabase.from("session_dates").select("id, seq, date, start_time, end_time, replays(id, video_url, published_at)").eq("section_id", selected.id).order("date")
-    : { data: [] as never[] };
+  const [{ data: sessions }, { data: pairRows }] = await Promise.all([
+    selected
+      ? supabase.from("session_dates").select("id, seq, date, start_time, end_time, replays(id, video_url, published_at)").eq("section_id", selected.id).order("date")
+      : Promise.resolve({ data: [] as never[] }),
+    // 인강 반 ↔ 녹화본을 올릴 오전 짝 (마이그레이션 20260920120000). 규칙은 DB 한곳(private.recorded_source_section) —
+    // **화면에서 다시 계산하지 않는다** (도메인 규칙 1 "반 권한")
+    selected?.term_id != null
+      ? supabase.rpc("term_recorded_pairs", { p_term_id: selected.term_id })
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const pairs = pairRows ?? [];
+  const byId = new Map(list.map((s) => [s.id, s]));
+  const sectionName = (id: number) => {
+    const s = byId.get(id);
+    return s ? [TRACK_LABEL[s.track] ?? s.track, s.time_block ?? formatTime(s.start_time)].filter(Boolean).join(" ") : `반 #${id}`;
+  };
+  /** 이 인강 반 학생이 실제로 보는 녹화본이 올라갈 반 */
+  const recordedSource = selected ? (pairs.find((p) => p.recorded_id === selected.id)?.source_id ?? null) : null;
+  /** 이 반의 녹화본을 함께 보는 인강 반들 */
+  const feedsRecorded = selected ? pairs.filter((p) => p.source_id === selected.id).map((p) => p.recorded_id) : [];
 
   /**
    * **올릴 수 있는 반만 목록에 둔다** (2026-09-20 Alan — "스파르타반은 결국 두개의 다른 레벨에 접근권한이 다 있는데
@@ -150,10 +168,36 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
             </Alert>
           )}
 
-          {/* 인강 반 — 그 날 오전 수업 녹화본을 본다. 오전 짝을 찾는 일은 DB(private.recorded_source_section) 몫이라 여기서 계산하지 않는다 */}
+          {/* 인강 반 — 다시보기가 이 학생들의 수업 그 자체다 (2026-09-20 Alan "인강이라는 말이 녹화된 방송을 본다는 말이야").
+              그런데 영상은 이 반이 아니라 **오전 짝 반**에 올라가야 보인다. 짝은 DB 가 정한다 — 화면에서 계산하지 않는다 */}
           {selected?.recorded && (
             <Alert kind="warning" title="인강 반이에요 — 녹화본은 오전 반에 올려 주세요">
-              이 반 학생은 교실에 나오지 않고 <strong className="text-ink">그 날 오전 수업의 녹화본</strong>을 봅니다. 같은 과목 오전 반에 올리면 여기서도 그대로 보여요.
+              이 반 학생은 교실에 나오지 않고 <strong className="text-ink">그 날 오전 수업의 녹화본</strong>을 봅니다 — 다시보기가 이 반의 수업 그 자체예요.
+              {recordedSource ? (
+                <>
+                  {" "}
+                  영상은{" "}
+                  <Link href={`/admin/replays?section=${recordedSource}`} className="font-bold text-brand-600 hover:underline">
+                    {sectionName(recordedSource)}
+                  </Link>{" "}
+                  반에 올려 주세요. 여기에 올리면 저녁 학생만 보고 오전 녹화본과 두 벌이 됩니다.
+                </>
+              ) : (
+                " 같은 과목·같은 트랙의 오전 반에 올리면 여기서도 그대로 보여요."
+              )}
+            </Alert>
+          )}
+
+          {/* 이 반이 저녁 인강 반의 공급원이다 — 여기가 비면 저녁 학생은 볼 것이 없다 */}
+          {feedsRecorded.length > 0 && (
+            <Alert kind="info" title="저녁 인강 반도 이 녹화본을 봅니다">
+              {feedsRecorded.map((id, i) => (
+                <span key={id}>
+                  {i > 0 && " · "}
+                  <strong className="text-ink">{sectionName(id)}</strong>
+                </span>
+              ))}{" "}
+              학생은 교실에 나오지 않고 <strong className="text-ink">이 반의 녹화본</strong>으로 수업합니다 — 여기가 비어 있으면 그 학생들은 볼 것이 없어요.
             </Alert>
           )}
 
