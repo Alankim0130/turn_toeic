@@ -45,17 +45,43 @@ const isSparta = (s: ReplaySection) => s.course?.program === "sparta";
 const isPackage = (s: ReplaySection, packages: PackageMap) => (packages.get(s.id)?.parts.length ?? 0) > 0;
 
 /**
- * 이 반에 녹화본을 올려도 되는가. **시간 단위 반만 참이다.**
+ * **저녁 줄인가** (2026-09-20 Alan — "650 A 라이브방송을 하고 나면 이 영상링크가 다시보기로 자동으로 연결되면 되잖아.
+ * 그러면 굳이 저녁시간을 나타낼 필요가 없잖아").
+ *
+ * 저녁 반은 오전 반이 한 라이브방송의 녹화본을 본다 — 화목금은 인강이라 `private.recorded_source_section` 이
+ * 오전 짝을 열어 주고, 오전 반은 `live_to_replay` 가 켜져 있어 회차 링크가 저절로 다시보기가 된다.
+ * 그래서 **올릴 자리는 오전 반뿐**이고 저녁 줄은 목록에 있을 이유가 없다.
+ *
+ * **시각을 코드에 못박지 않는다** (도메인 규칙 1). 저녁 줄은 시간표가 이미 표시하고 있다 —
+ * `timetable_slots.ttf_recorded`(그 시간대는 화목금이 인강)가 켜진 라벨이 곧 저녁 줄이다.
+ * `eveningBlocks` 는 그 라벨 집합이고, 비어 있으면(시간표를 못 읽었으면) **아무도 빼지 않는다** —
+ * 근거가 없을 때 목록을 지우면 강사가 올릴 데를 잃는다.
+ */
+const isEvening = (s: ReplaySection, eveningBlocks: ReadonlySet<string>) => !!s.time_block && eveningBlocks.has(s.time_block);
+
+/**
+ * 이 반에 녹화본을 올려도 되는가. **오전 시간 단위 반만 참이다.**
  * 거짓이어도 목록에서 무조건 지우지는 않는다 — 이미 녹화본이 붙어 있으면 남겨야 고치고 지울 수 있다 (화면 몫).
  */
-const uploadable = (s: ReplaySection, packages: PackageMap) => !isSparta(s) && !isPackage(s, packages);
+const uploadable = (s: ReplaySection, packages: PackageMap, eveningBlocks: ReadonlySet<string> = new Set()) =>
+  !isSparta(s) && !isPackage(s, packages) && !isEvening(s, eveningBlocks);
 
-/** 드롭다운 묶음 이름 — `10월 · 650`. 레벨을 모르면 강좌 이름으로 대신한다 (짐작해 적지 않는다) */
+/** 레벨 탭에 쓸 값. 스파르타는 레벨이 같아도 섞지 않는다 (교재·시간이 다르다) */
+const levelOf = (s: ReplaySection): number | null => (typeof s.course?.target_score === "number" ? s.course.target_score : null);
+
+/** 목록에 있는 레벨들 — 오름차순. **코드에 650·750·850 을 적지 않는다** (작업 원칙 4) */
+function levels(list: ReplaySection[]): number[] {
+  return [...new Set(list.map(levelOf).filter((n): n is number => n !== null))].sort((a, b) => a - b);
+}
+
+/**
+ * 드롭다운 묶음 이름 — **기수(월)만** (2026-09-20 Alan "위에 따로 레벨 버튼을 만들어서 구분하게 해줘").
+ * 레벨은 위 탭이 이미 갈라 놓았으므로 여기 또 적으면 같은 말이 두 번 나온다.
+ * 스파르타는 레벨이 같아도 상품이 달라 이름을 남긴다 (이미 녹화본이 붙어 목록에 남은 경우).
+ */
 function groupLabel(s: ReplaySection): string {
   const term = s.term ? `${s.term.month}월` : "기수 미지정";
-  const level = s.course?.target_score;
-  const name = typeof level === "number" ? `${isSparta(s) ? "스파르타 " : ""}${level}` : (s.course?.name ?? "강좌");
-  return `${term} · ${name}`;
+  return isSparta(s) ? `${term} · 스파르타` : term;
 }
 
 /** 기수는 최신이 위, 그 안에서 레벨 오름차순 → 시간 → 트랙. 스파르타는 레벨이 같아도 뒤로 */
@@ -71,7 +97,7 @@ function compare(a: ReplaySection, b: ReplaySection): number {
   );
 }
 
-export const replayTargets = { isSparta, isPackage, uploadable, groupLabel, compare };
+export const replayTargets = { isSparta, isPackage, isEvening, uploadable, levelOf, levels, groupLabel, compare };
 
 /** 화면이 쓰는 트랙 이름표의 타입만 빌려 온다 (값은 utils 한곳) */
 export type TrackLabel = typeof TRACK_LABEL;
