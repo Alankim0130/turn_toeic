@@ -41,6 +41,12 @@ export const metadata: Metadata = {
   },
   robots: { index: true, follow: true },
   alternates: { canonical: "/" },
+  /**
+   * 구글 서치 콘솔 소유 확인 (2026-09-20 Alan). **코드가 아니라 Vercel 환경변수로 넣는다** —
+   * DNS TXT 로 확인했으면 필요 없고, 값이 비면 태그를 아예 그리지 않는다 (빈 `content` 를 남기면 확인이 실패한다).
+   * 환경변수는 빌드 때 박히므로 넣은 뒤 다시 배포해야 한다. 자세한 절차는 CLAUDE.md 미확정 7.
+   */
+  verification: { google: process.env.GOOGLE_SITE_VERIFICATION || undefined },
   formatDetection: { telephone: true },
 };
 

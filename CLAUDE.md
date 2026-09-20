@@ -1852,7 +1852,36 @@ where p.role='student'
      `/tmp/tesseract-cache/kor.traineddata` 로 꺼내 두면 캐시로 잡힌다 (`ocr.integration.test.ts` 가 그 캐시 폴더를 쓴다). 실측: 전체 화면 캡쳐
      1242×2688 이 변형 셋 합쳐 약 3초, 워커 준비 0.2초.
 6. **수강증 원본 보관 기간**
-7. **도메인** — 현재 veterantoiec.com. 유지 여부 미정.
+7. ~~**도메인**~~ → **해결 (2026-09-20 Alan): `winnertoeic.com` 을 샀다.** 옛 후보 veterantoiec.com 은 버린다.
+   YBM 의 역전토익 페이지 주소(`ybmedu.com/seomyon/winnertoeic`)와 같은 낱말이라 학생이 두 곳을 같은 브랜드로 읽는다.
+   - **코드에 도메인을 적지 않는다.** 공개 주소는 `site.url`(`src/lib/site.ts`) 한곳에서 나오고
+     `NEXT_PUBLIC_SITE_URL` → Vercel 프로덕션 도메인(`VERCEL_PROJECT_PRODUCTION_URL`) → `localhost` 순으로 고른다.
+     사이트맵·robots·OG·JSON-LD·가입 메일의 돌아올 주소·네이버 웹훅 안내 주소가 전부 이 값을 쓰므로
+     **Vercel 에 도메인을 붙이면 저절로 따라온다.** 그래도 `NEXT_PUBLIC_SITE_URL=https://winnertoeic.com` 을 명시해 두는 쪽이 안전하다 —
+     도메인이 여러 개 붙으면 Vercel 이 어느 것을 프로덕션으로 보는지에 따라 사이트맵에 적히는 주소가 흔들린다.
+   - **★ 도메인을 붙였으면 반드시 다시 배포한다** (2026-09-20 실측). `robots.txt` 와 `sitemap.xml` 은
+     **정적 파일이라 주소가 빌드 때 박힌다** — 실측: 빌드를 localhost 로 해 두고 주소만 바꿔 띄우니
+     `canonical`·`og:url` 은 새 도메인으로 바뀌는데 `robots.txt` 와 `sitemap.xml` 은 `http://localhost:3000` 인 채였다.
+     운영에서는 도메인을 붙이기 **전에** 마지막 배포가 돌았으면 그 둘이 옛 `vercel.app` 주소를 가리킨 채로 남고,
+     **구글은 사이트맵 안의 주소가 다른 호스트면 그 줄을 통째로 버린다** — 제출은 성공했다고 나오는데 아무것도 색인되지 않는다.
+     증상이 조용하니 도메인 연결 뒤 `https://winnertoeic.com/robots.txt` 를 눈으로 확인할 것 (`Host:` 가 새 도메인이어야 한다).
+   - **도메인을 붙이면 Supabase 의 Redirect URL 허용 목록에 `https://winnertoeic.com/**` 를 꼭 더한다** —
+     소셜 로그인 콜백 주소는 **요청 origin** 으로 만들기 때문에(도메인 규칙 3 "로그인 방법"), 허용 목록에 없으면
+     **새 도메인으로 들어온 사람만** 카카오·구글 로그인이 깨진다 (vercel.app 으로는 멀쩡해서 늦게 발견된다). Site URL 도 새 도메인으로 바꾼다.
+     구글·카카오 쪽 Redirect URI 는 Supabase 콜백 주소라 **손대지 않는다.**
+   - **apex 와 `www` 중 하나만 정본으로 쓴다** — 나머지는 Vercel 에서 넘긴다. 둘 다 열어 두면
+     검색엔진이 같은 화면을 두 주소로 세고 `alternates.canonical`(루트 레이아웃)과도 어긋난다.
+
+   **구글 서치 콘솔 등록** (2026-09-20 Alan 요청). 소유 확인은 두 길이 있고 **DNS 를 권한다** —
+   `www` 와 `http`/`https` 까지 한 번에 덮는 도메인 속성이 되고, 배포와 무관해 다시 깨지지 않는다.
+   - **① DNS TXT (권장)**: 서치 콘솔에서 `도메인` 속성으로 `winnertoeic.com` 을 넣고, 나오는 TXT 값을 도메인 산 곳(또는 Vercel DNS)에 넣는다.
+     **코드는 손대지 않는다.**
+   - **② 메타 태그** (DNS 를 못 건드릴 때): `URL 접두어` 속성으로 받은 코드를 Vercel 환경변수 `GOOGLE_SITE_VERIFICATION` 에 넣는다.
+     루트 레이아웃이 **값이 있을 때만** `google-site-verification` 태그를 그린다 (`src/app/layout.tsx`) — 비어 있으면 태그가 아예 없다.
+     **환경변수는 빌드 때 박히므로 넣은 뒤 다시 배포해야 한다.**
+   - 확인이 끝나면 **사이트맵 `https://winnertoeic.com/sitemap.xml` 을 제출한다.** 목록은 `src/app/sitemap.ts` 의 공개 6쪽이고
+     `/my`·`/admin`·`/auth`·`/files` 는 `robots.ts` 가 막는다 — **새 공개 페이지를 만들면 두 파일을 같이 갱신할 것.**
+   - **네이버 서치어드바이저는 아직 안 했다** — 부산 학원이라 네이버 유입이 더 클 수 있다. 할지는 Alan 이 정한다 (같은 자리에 태그 한 줄이면 된다).
 8. **YBM 수강후기 수집 + 특강 신청** (2026-09-15 사전 공유 → 2026-09-16 Alan 이 첫토익 화면으로 구체화. 아직 구현하지 않는다)
 
    **확정된 것 (2026-09-16)**
