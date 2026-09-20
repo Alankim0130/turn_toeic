@@ -16,6 +16,7 @@ import {
   type EnrollTrack,
 } from "@/lib/enroll-options";
 import { submitManualVerification, submitVerification } from "./actions";
+import { RETENTION_LABEL } from "@/lib/receipt-retention";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPT = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
@@ -436,7 +437,7 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
 
       <label className="flex items-start gap-2 text-sm text-slate">
         <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-1 h-4 w-4 accent-brand-500" disabled={busy} />
-        <span>수강 확인을 위해 수강증 이미지·이름을 수집·이용하는 데 동의합니다. 원본은 인증이 끝나면 삭제됩니다.</span>
+        <span>수강 확인을 위해 수강증 이미지·이름을 수집·이용하는 데 동의합니다. 원본은 인증이 끝나고 {RETENTION_LABEL} 뒤 삭제됩니다.</span>
       </label>
 
       <div className="flex flex-wrap items-center gap-3">
