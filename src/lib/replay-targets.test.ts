@@ -61,15 +61,50 @@ describe("레벨당 LC 는 둘뿐이다 (2026-09-20 Alan: '650에서 두개밖�
   });
 });
 
-describe("묶음 이름 · 순서", () => {
-  it("기수와 레벨로 묶는다 — `10월 · 650`", () => {
-    expect(replayTargets.groupLabel(MWF_1000)).toBe("10월 · 650");
-    expect(replayTargets.groupLabel(SPARTA)).toBe("10월 · 스파르타 650");
+describe("저녁 줄은 뺀다 (2026-09-20 Alan: '굳이 저녁시간을 나타낼 필요가 없잖아')", () => {
+  /** 저녁 줄은 시간표의 `ttf_recorded` 가 표시한다 — 시각을 코드에 적지 않는다 */
+  const EVENING = new Set(["18:30~19:30", "19:40~20:40", "18:30~20:40"]);
+  const ttf1830 = sec(10, "ttf", "18:30~19:30", "B", { recorded: true });
+  const mwf1940 = sec(11, "mwf", "19:40~20:40", "A");
+
+  it("인강이든 현장이든 저녁 줄이면 뺀다 — 오전 라이브가 그대로 다시보기가 된다", () => {
+    expect(replayTargets.isEvening(ttf1830, EVENING)).toBe(true);
+    expect(replayTargets.isEvening(mwf1940, EVENING)).toBe(true);
+    expect(replayTargets.uploadable(ttf1830, packages, EVENING)).toBe(false);
+    expect(replayTargets.uploadable(mwf1940, packages, EVENING)).toBe(false);
   });
 
-  it("레벨을 모르면 강좌 이름으로 대신한다 — 짐작해 적지 않는다", () => {
-    expect(replayTargets.groupLabel({ id: 9, track: "mwf", time_block: null, term, course: { name: "특별반" } })).toBe("10월 · 특별반");
-    expect(replayTargets.groupLabel({ id: 9, track: "mwf", time_block: null })).toBe("기수 미지정 · 강좌");
+  it("오전 줄은 그대로 남는다", () => {
+    expect(replayTargets.isEvening(TTF_1000, EVENING)).toBe(false);
+    expect(replayTargets.uploadable(TTF_1000, packages, EVENING)).toBe(true);
+  });
+
+  it("**시간표를 못 읽었으면 아무도 빼지 않는다** — 근거 없이 지우면 올릴 데가 사라진다", () => {
+    expect(replayTargets.uploadable(ttf1830, packages, new Set())).toBe(true);
+    expect(replayTargets.uploadable(ttf1830, packages)).toBe(true);
+  });
+});
+
+describe("레벨 버튼 (2026-09-20 Alan: '위에 따로 레벨 버튼을 만들어서 구분하게 해줘')", () => {
+  it("목록에 있는 레벨만 오름차순으로 — 코드에 650·750·850 을 적지 않는다", () => {
+    const s850 = sec(8, "mwf", "12:30~13:40", null, { course: { name: "850", program: "score", target_score: 850 } });
+    expect(replayTargets.levels([s850, MWF_1000, SPARTA])).toEqual([650, 850]);
+  });
+
+  it("레벨을 모르는 반은 탭을 만들지 않는다", () => {
+    expect(replayTargets.levelOf({ id: 9, track: "mwf", time_block: null })).toBeNull();
+    expect(replayTargets.levels([{ id: 9, track: "mwf", time_block: null }])).toEqual([]);
+  });
+});
+
+describe("묶음 이름 · 순서", () => {
+  it("묶음은 **기수만** — 레벨은 위 탭이 이미 갈랐다 (2026-09-20 Alan)", () => {
+    expect(replayTargets.groupLabel(MWF_1000)).toBe("10월");
+    expect(replayTargets.groupLabel(SPARTA)).toBe("10월 · 스파르타");
+  });
+
+  it("기수를 모르면 그렇게 적는다 — 짐작해 적지 않는다", () => {
+    expect(replayTargets.groupLabel({ id: 9, track: "mwf", time_block: null })).toBe("기수 미지정");
   });
 
   it("기수는 최신이 위, 그 안에서 레벨 오름차순 → 시간 → 트랙(월수금 먼저)", () => {

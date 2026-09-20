@@ -12,15 +12,17 @@ import { sectionPackages } from "@/lib/time-blocks";
 import { SUBJECT_LABEL, subjectOf } from "@/lib/instructor-subject";
 import { groupHasBookSet, groupKeyOf } from "@/lib/section-type";
 import { replayTargets } from "@/lib/replay-targets";
+import { timeBlockOf } from "@/components/admin/sections/bulk";
+import { FilterTabs } from "@/components/admin/FilterTabs";
 
 export const metadata: Metadata = { title: "다시보기 등록", robots: { index: false } };
 
-export default async function AdminReplaysPage({ searchParams }: { searchParams: Promise<{ section?: string }> }) {
+export default async function AdminReplaysPage({ searchParams }: { searchParams: Promise<{ section?: string; level?: string }> }) {
   const { user, profile } = await requireStaff();
-  const { section: sectionParam } = await searchParams;
+  const { section: sectionParam, level: levelParam } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: sections }, { data: usedRows }] = await Promise.all([
+  const [{ data: sections }, { data: usedRows }, { data: slots }] = await Promise.all([
     supabase
       .from("class_sections")
       .select(
@@ -30,18 +32,37 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
       .limit(200),
     // 녹화본이 이미 붙은 반 — 목록에서 빼면 그 기록에 닿을 길이 사라지므로 무엇이든 남긴다
     supabase.from("session_dates").select("section_id, replays!inner(id)"),
+    // 저녁 줄 = 시간표에서 `화목금 인강` 이 켜진 시간대. **시각을 코드에 적지 않는다** (도메인 규칙 1)
+    supabase.from("timetable_slots").select("start_time, end_time, ttf_recorded").eq("ttf_recorded", true),
   ]);
 
   const list = sections ?? [];
   // 묶음 반(120분·140분)에는 녹화본을 올리지 않는다 — 안에 든 시간 단위 반에 올리면 묶음 반 학생도 본다
   const packages = sectionPackages(list);
   const hasReplay = new Set((usedRows ?? []).map((r) => r.section_id));
+  const eveningBlocks = new Set((slots ?? []).map((t) => timeBlockOf(t.start_time, t.end_time)).filter((b): b is string => !!b));
+  const canUpload = (s: (typeof list)[number]) => replayTargets.uploadable(s, packages, eveningBlocks);
   const requested = Number(sectionParam);
+  const requestedSection = (Number.isInteger(requested) && list.find((s) => s.id === requested)) || null;
+
+  /**
+   * **레벨은 위 버튼으로 가른다** (2026-09-20 Alan "위에 따로 레벨 버튼을 만들어서 구분하게 해줘").
+   * 드롭다운 optgroup 하나에 650·750·850 을 다 담으면 한 번에 스무 줄이라 눈으로 훑기 어렵다.
+   * 값은 `courses.target_score` 에서 읽는다 — 코드에 레벨을 적지 않는다 (작업 원칙 4).
+   * 주소로 들어온 반이 있으면 **그 반의 레벨**을 켜 준다 (인강 반 안내의 오전 짝 링크가 다른 레벨일 수 있다).
+   */
+  const listable = list.filter((s) => canUpload(s) || hasReplay.has(s.id));
+  const levelTabs = replayTargets.levels(listable);
+  const currentLevel = levelTabs.includes(Number(levelParam))
+    ? Number(levelParam)
+    : (requestedSection && replayTargets.levelOf(requestedSection)) || levelTabs[0] || null;
+  const inLevel = (s: (typeof list)[number]) => currentLevel == null || replayTargets.levelOf(s) === currentLevel;
+
   const selected =
-    (Number.isInteger(requested) && list.find((s) => s.id === requested)) ||
-    list.find((s) => s.status === "open" && replayTargets.uploadable(s, packages)) ||
-    list.find((s) => s.status === "open") ||
-    list[0] ||
+    requestedSection ||
+    listable.find((s) => s.status === "open" && canUpload(s) && inLevel(s)) ||
+    listable.find((s) => inLevel(s)) ||
+    list.find((s) => inLevel(s)) ||
     null;
 
   const [{ data: sessions }, { data: pairRows }] = await Promise.all([
@@ -74,9 +95,8 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
    * 단 **이미 녹화본이 붙은 반은 남긴다** — 목록에서 빼면 그 기록을 고치거나 지울 길이 없어진다.
    */
   const groupHasBook = groupHasBookSet(list);
-  const shown = list
-    .filter((s) => replayTargets.uploadable(s, packages) || hasReplay.has(s.id) || s.id === selected?.id)
-    .sort(replayTargets.compare);
+  // 고른 반은 레벨이 달라도 늘 목록에 둔다 — 안 그러면 드롭다운이 빈 값을 가리킨다
+  const shown = list.filter((s) => s.id === selected?.id || (inLevel(s) && (canUpload(s) || hasReplay.has(s.id)))).sort(replayTargets.compare);
 
   const options = shown.map((s) => {
     const pkg = replayTargets.isPackage(s, packages);
@@ -120,6 +140,15 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
       ) : (
         <>
           <section className="card p-5">
+            {/* 레벨 버튼 — 누르면 `section` 은 버린다. 안 버리면 다른 레벨 반이 고른 채로 남는다 */}
+            {levelTabs.length > 1 && (
+              <FilterTabs
+                basePath="/admin/replays"
+                paramKey="level"
+                current={String(currentLevel ?? "")}
+                tabs={levelTabs.map((n) => ({ value: String(n), label: `${n}` }))}
+              />
+            )}
             <label htmlFor="section-select" className="label">반 선택</label>
             <SectionSelect options={options} value={selected?.id ?? null} />
             {selected && (
