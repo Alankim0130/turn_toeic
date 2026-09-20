@@ -1,13 +1,29 @@
+/**
+ * 공개 주소를 한 꼴로 맞춘다 — **끝의 `/` 를 떼고, 비어 있으면 로컬로 되돌린다.**
+ *
+ * `site.url` 은 곳곳에서 `${site.url}/sitemap.xml` 처럼 **이어 붙인다** (사이트맵 · robots · JSON-LD ·
+ * 가입 메일의 돌아올 주소 · 네이버 웹훅 안내 주소). 그래서 환경변수에 `https://winnertoeic.com/` 처럼
+ * 슬래시를 붙여 넣으면 `//sitemap.xml` 이 되고 **가입 메일의 돌아올 주소까지 어긋난다.**
+ * 사람이 대시보드에서 손으로 넣는 값이라 여기서 막는다 (2026-09-20).
+ *
+ * 빈 문자열도 여기서 걸러진다 — `??` 는 `""` 를 통과시키므로 환경변수를 만들어 두고 값을 비우면
+ * `new URL("")` 이 터져 **빌드가 통째로 실패한다.**
+ */
+export function normalizeSiteUrl(value: string): string {
+  return value.trim().replace(/\/+$/, "") || "http://localhost:3000";
+}
+
 /** 사이트 공통 설정. 운영 데이터(반·시간대·수강료)는 여기 두지 않는다 — DB 에서 읽는다. */
 export const site = {
   name: "역전토익",
   fullName: "역전토익 | 부산 서면 YBM어학원",
   // 우선순위: 직접 지정한 주소 → Vercel 프로덕션 도메인(자동, 커스텀 도메인 연결 시 그 도메인) → 로컬
-  url:
+  url: normalizeSiteUrl(
     process.env.NEXT_PUBLIC_SITE_URL ??
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : "http://localhost:3000"),
+      (process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : "http://localhost:3000"),
+  ),
   description:
     "부산 서면 YBM어학원 역전토익. 이혜영(LC)·이영수(RC) 강사의 귀에 꽂히는 압도적인 전달력. 현장 강의와 불라방(실시간 라이브)으로 목표 점수까지 최단 거리.",
   keywords: ["역전토익", "서면 토익", "부산 토익학원", "YBM 서면", "토익 불라방", "이혜영", "이영수", "토익 학원"],
