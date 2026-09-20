@@ -1865,6 +1865,10 @@ where p.role='student'
      운영에서는 도메인을 붙이기 **전에** 마지막 배포가 돌았으면 그 둘이 옛 `vercel.app` 주소를 가리킨 채로 남고,
      **구글은 사이트맵 안의 주소가 다른 호스트면 그 줄을 통째로 버린다** — 제출은 성공했다고 나오는데 아무것도 색인되지 않는다.
      증상이 조용하니 도메인 연결 뒤 `https://winnertoeic.com/robots.txt` 를 눈으로 확인할 것 (`Host:` 가 새 도메인이어야 한다).
+     **2026-09-20 완료** — Vercel 에 도메인을 붙이고 `NEXT_PUBLIC_SITE_URL` 을 넣어 재배포했고,
+     `robots.txt` 가 `Host: https://winnertoeic.com` · `Sitemap: https://winnertoeic.com/sitemap.xml` 로 나오는 것을 확인했다.
+     **환경변수 Type 은 `Config` 다** — Vercel 이 `Secret` 을 기본으로 고르는데, `NEXT_PUBLIC_` 은 어차피 브라우저 번들에
+     실려 나가고 Secret 으로 두면 저장 뒤 값을 못 봐 오타를 확인할 길이 없다 (기준은 `.env.example` 두 묶음의 머리말).
    - **도메인을 붙이면 Supabase 의 Redirect URL 허용 목록에 `https://winnertoeic.com/**` 를 꼭 더한다** —
      소셜 로그인 콜백 주소는 **요청 origin** 으로 만들기 때문에(도메인 규칙 3 "로그인 방법"), 허용 목록에 없으면
      **새 도메인으로 들어온 사람만** 카카오·구글 로그인이 깨진다 (vercel.app 으로는 멀쩡해서 늦게 발견된다). Site URL 도 새 도메인으로 바꾼다.
