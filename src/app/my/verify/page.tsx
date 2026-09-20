@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { IdentityConfirmForm } from "@/components/my/IdentityConfirmForm";
 import { MergePanel, type MergeCandidate, type MergeRequest } from "../account/MergePanel";
 import { getMyMergeRequests } from "../_lib/queries";
+import { RETENTION_LABEL } from "@/lib/receipt-retention";
 
 /**
  * 이 페이지 함수 안에서 수강증 OCR 서버 액션이 돈다. Vercel 기본 제한(요금제에 따라 10초)에 걸리지 않게 늘린다 —
@@ -126,7 +127,7 @@ export default async function VerifyPage() {
                 </div>
                 <div className="flex gap-2">
                   <dt className="w-20 shrink-0 font-bold text-slate">보관</dt>
-                  <dd className="text-ink">인증이 끝나면 원본 파일은 삭제됩니다</dd>
+                  <dd className="text-ink">인증이 끝나고 {RETENTION_LABEL} 뒤 원본 파일을 삭제합니다</dd>
                 </div>
               </dl>
               <p className="mt-3 text-xs text-mist">가입한 실명과 수강증의 이름이 다르면 등업이 반려됩니다. 수강증 1건은 1개 계정에만 사용할 수 있어요.</p>

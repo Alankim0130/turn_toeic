@@ -10,6 +10,7 @@ import type { PickerSection } from "@/components/admin/SectionPicker";
 import { sectionSummary, termLabel } from "../../_lib/queries";
 import { DecisionForms, type Candidate, type OrderInfo } from "./DecisionForms";
 import { requireCrew } from "@/lib/auth";
+import { RETENTION_LABEL } from "@/lib/receipt-retention";
 
 export const metadata: Metadata = { title: "등업 검토", robots: { index: false } };
 
@@ -44,7 +45,10 @@ export default async function VerificationDetailPage({
   if (!v) notFound();
 
   const [{ data: signed }, { data: sections }, { data: order }] = await Promise.all([
-    supabase.storage.from("receipts").createSignedUrl(v.file_path, 600),
+    // 보관 기간이 지나 지운 파일은 서명 URL 을 만들 이유가 없다 (2026-09-20)
+    v.file_deleted_at
+      ? Promise.resolve({ data: null as { signedUrl: string } | null })
+      : supabase.storage.from("receipts").createSignedUrl(v.file_path, 600),
     supabase
       .from("class_sections")
       .select("id, track, start_time, end_time, time_block, tuition, live_tuition, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(id, name, program, target_score)")
@@ -167,6 +171,10 @@ export default async function VerificationDetailPage({
               ) : (
                 <a href={signed.signedUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary">PDF 열기</a>
               )
+            ) : v.file_deleted_at ? (
+              <p className="text-sm text-slate">
+                보관 기간({RETENTION_LABEL})이 지나 <b className="text-ink">원본을 삭제했습니다</b>. 아래 OCR 기록과 판정 결과는 그대로 남아 있습니다.
+              </p>
             ) : (
               <p className="text-sm text-slate">파일을 불러올 수 없습니다. (삭제되었거나 경로 오류)</p>
             )}

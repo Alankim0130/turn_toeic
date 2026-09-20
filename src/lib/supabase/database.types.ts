@@ -407,8 +407,7 @@ export type Database = {
           confidence: number | null
           created_at: string
           file_path: string
-
-
+          file_deleted_at: string | null
           file_hash: string | null
           id: number
           matched_section: number | null
@@ -425,8 +424,7 @@ export type Database = {
           confidence?: number | null
           created_at?: string
           file_path: string
-
-
+          file_deleted_at?: string | null
           file_hash?: string | null
           id?: number
           matched_section?: number | null
@@ -443,8 +441,7 @@ export type Database = {
           confidence?: number | null
           created_at?: string
           file_path?: string
-
-
+          file_deleted_at?: string | null
           file_hash?: string | null
           id?: number
           matched_section?: number | null
