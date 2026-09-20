@@ -9,6 +9,9 @@ import { formatDate, formatTime, formatTimeRange, TRACK_LABEL } from "@/lib/util
 import { SectionSelect } from "@/components/admin/replays/SectionSelect";
 import { ReplayRow } from "@/components/admin/replays/ReplayRow";
 import { sectionPackages } from "@/lib/time-blocks";
+import { SUBJECT_LABEL, subjectOf } from "@/lib/instructor-subject";
+import { groupHasBookSet, groupKeyOf } from "@/lib/section-type";
+import { replayTargets } from "@/lib/replay-targets";
 
 export const metadata: Metadata = { title: "다시보기 등록", robots: { index: false } };
 
@@ -17,18 +20,26 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
   const { section: sectionParam } = await searchParams;
   const supabase = await createClient();
 
-  const { data: sections } = await supabase
-    .from("class_sections")
-    .select("id, term_id, course_id, track, start_time, end_time, time_block, status, closes_at, instructor_id, course:courses(name, program), term:terms(year, month)")
-    .order("id", { ascending: false })
-    .limit(200);
+  const [{ data: sections }, { data: usedRows }] = await Promise.all([
+    supabase
+      .from("class_sections")
+      .select(
+        "id, term_id, course_id, track, start_time, end_time, time_block, status, closes_at, instructor_id, book_set, recorded, course:courses(name, program, target_score, includes_levels), term:terms(year, month)",
+      )
+      .order("id", { ascending: false })
+      .limit(200),
+    // 녹화본이 이미 붙은 반 — 목록에서 빼면 그 기록에 닿을 길이 사라지므로 무엇이든 남긴다
+    supabase.from("session_dates").select("section_id, replays!inner(id)"),
+  ]);
 
   const list = sections ?? [];
   // 묶음 반(120분·140분)에는 녹화본을 올리지 않는다 — 안에 든 시간 단위 반에 올리면 묶음 반 학생도 본다
   const packages = sectionPackages(list);
+  const hasReplay = new Set((usedRows ?? []).map((r) => r.section_id));
   const requested = Number(sectionParam);
   const selected =
     (Number.isInteger(requested) && list.find((s) => s.id === requested)) ||
+    list.find((s) => s.status === "open" && replayTargets.uploadable(s, packages)) ||
     list.find((s) => s.status === "open") ||
     list[0] ||
     null;
@@ -37,14 +48,37 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
     ? await supabase.from("session_dates").select("id, seq, date, start_time, end_time, replays(id, video_url, published_at)").eq("section_id", selected.id).order("date")
     : { data: [] as never[] };
 
-  const options = list.map((s) => ({
-    id: s.id,
-    label: [s.course?.name ?? "강좌", TRACK_LABEL[s.track] ?? s.track, formatTime(s.start_time), s.time_block, (packages.get(s.id)?.parts.length ?? 0) > 0 ? "묶음 반" : null]
-      .filter(Boolean)
-      .join(" · "),
-    group: s.term ? `${s.term.year}년 ${s.term.month}월` : "기수 미지정",
-    status: s.status,
-  }));
+  /**
+   * **올릴 수 있는 반만 목록에 둔다** (2026-09-20 Alan — "스파르타반은 결국 두개의 다른 레벨에 접근권한이 다 있는데
+   * 왜 다시보기에 추가 되어있는지 모르겠어"). 도메인 규칙 1 "반 권한" 에 적힌 그대로다 —
+   * 녹화본은 **시간 단위 반에 한 번만** 두고 묶음 반·스파르타 반에는 올리지 않는다.
+   * 그동안 화면은 묶음 반만 고른 뒤에 경고했고 스파르타 반은 아무 처리가 없어 36개가 통째로 쏟아졌다.
+   * 단 **이미 녹화본이 붙은 반은 남긴다** — 목록에서 빼면 그 기록을 고치거나 지울 길이 없어진다.
+   */
+  const groupHasBook = groupHasBookSet(list);
+  const shown = list
+    .filter((s) => replayTargets.uploadable(s, packages) || hasReplay.has(s.id) || s.id === selected?.id)
+    .sort(replayTargets.compare);
+
+  const options = shown.map((s) => {
+    const pkg = replayTargets.isPackage(s, packages);
+    // 과목은 반의 LC 교재가 말해 준다 (도메인 규칙 1 "담당 강사는 과목으로 저절로 정해진다")
+    const subject = subjectOf({ bookSet: s.book_set, isPackage: pkg || replayTargets.isSparta(s), groupHasBook: groupHasBook.has(groupKeyOf(s)) });
+    return {
+      id: s.id,
+      label: [
+        subject ? SUBJECT_LABEL[subject] : null,
+        TRACK_LABEL[s.track] ?? s.track,
+        s.time_block ?? formatTime(s.start_time),
+        s.recorded ? "인강" : null,
+        replayTargets.isSparta(s) ? "스파르타" : pkg ? "묶음 반" : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      group: replayTargets.groupLabel(s),
+      status: s.status,
+    };
+  });
 
   const canManage = selected ? profile.role === "admin" || selected.instructor_id === user.id : false;
   const registered = (sessions ?? []).filter((s) => (s.replays?.length ?? 0) > 0).length;
@@ -102,6 +136,24 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
                   </span>
                 ))}{" "}
               반의 다시보기를 그대로 봅니다. 시간마다 강사가 다르니 그 반에 각각 올리면 60분만 듣는 학생도 자기 시간만 보게 돼요.
+            </Alert>
+          )}
+
+          {/* 스파르타 반 — 올릴 자리가 아니다. 이 학생들은 포함 레벨의 시간 단위 반 녹화본을 그대로 본다 (2026-09-20 Alan) */}
+          {selected && replayTargets.isSparta(selected) && (
+            <Alert kind="warning" title="스파르타 반이에요 — 녹화본은 시간 단위 반에 올려 주세요">
+              이 반 학생은{" "}
+              <strong className="text-ink">
+                {[selected.course?.target_score, ...(selected.course?.includes_levels ?? [])].filter((n) => typeof n === "number").join(" · ")}
+              </strong>{" "}
+              반의 다시보기를 그대로 봅니다. 여기에 올리면 스파르타 학생만 보게 되고, 오전 녹화본과 같은 영상이 두 번 생겨요.
+            </Alert>
+          )}
+
+          {/* 인강 반 — 그 날 오전 수업 녹화본을 본다. 오전 짝을 찾는 일은 DB(private.recorded_source_section) 몫이라 여기서 계산하지 않는다 */}
+          {selected?.recorded && (
+            <Alert kind="warning" title="인강 반이에요 — 녹화본은 오전 반에 올려 주세요">
+              이 반 학생은 교실에 나오지 않고 <strong className="text-ink">그 날 오전 수업의 녹화본</strong>을 봅니다. 같은 과목 오전 반에 올리면 여기서도 그대로 보여요.
             </Alert>
           )}
 
