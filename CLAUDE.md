@@ -1877,11 +1877,15 @@ where p.role='student'
    - **① DNS TXT — Alan 이 이 길로 갔다 (2026-09-20)**: 서치 콘솔에서 `도메인` 속성으로 `winnertoeic.com` 을 넣고,
      나오는 `google-site-verification=…` 을 TXT 로 넣는다. 호스트는 **`@`**(도메인 그 자체, 비워 두는 업체도 있다) — `www` 가 아니다.
      **코드는 손대지 않고, 사이트가 아직 안 붙어 있어도 확인된다** (DNS 만 보므로). 사이트맵 제출만 사이트가 살아 있어야 한다.
-     - **★ DNS 를 어디서 관리할지 먼저 정하고 넣는다.** 도메인 산 곳에 TXT 를 넣어 확인해 두고 **나중에 네임서버를 Vercel 로 넘기면
-       그 TXT 가 통째로 사라져 소유권 확인이 풀린다** (구글이 주기적으로 다시 확인한다). 두 갈래 중 하나로 간다:
-       **(A) 산 곳 DNS 를 그대로 쓴다** — 지금 TXT 를 넣고, Vercel 이 알려 주는 A·CNAME 만 나중에 더한다 (간단해서 권한다).
-       **(B) 네임서버를 Vercel 로 넘긴다** — **Vercel 에 도메인을 먼저 연결하고** Vercel DNS 화면에서 TXT 를 넣는다.
-       Vercel 에 넣을 A·CNAME 값은 **화면에 적힌 것을 그대로 쓴다** — 주소를 기억해 적지 말 것.
+     - **★ 도메인은 Vercel 에서 샀다 (2026-09-20 Alan). 그러니 DNS 도 Vercel 이다** — 등록업체와 DNS 가 한 곳이다.
+       **TXT 는 Vercel 대시보드의 그 도메인 DNS 레코드 화면에 넣는다** (프로젝트 Settings → Domains, 또는 팀 대시보드의 Domains 탭).
+       구글 안내문이 "godaddy.com 또는 namecheap.com 에 로그인" 이라고 적어 두어 **다른 업체를 찾게 만드는데, 그런 곳은 없다.**
+       `Name` 칸은 **비우거나 `@`** — Vercel 이 뒤에 도메인을 자동으로 붙이므로 `winnertoeic.com` 을 적으면
+       `winnertoeic.com.winnertoeic.com` 이 된다. Vercel DNS 는 기본 TTL 이 60초라 대개 몇 분 안에 퍼진다.
+       - 덕분에 **네임서버를 옮길 일이 없어 TXT 가 사라질 걱정도 없다** — 산 곳과 DNS 가 처음부터 같아서다.
+         (다른 데서 산 도메인이었다면, 산 곳에 TXT 를 넣고 나중에 네임서버를 Vercel 로 넘기는 순간 그 TXT 가 통째로 사라져
+         소유권 확인이 풀린다. 앞으로 다른 도메인을 붙일 때는 이 함정을 다시 볼 것.)
+       - **A·CNAME 을 손으로 넣지 않는다** — Vercel 에서 산 도메인을 프로젝트에 붙이면 Vercel 이 알아서 맞춘다.
    - **② 메타 태그** (DNS 를 못 건드릴 때): `URL 접두어` 속성으로 받은 코드를 Vercel 환경변수 `GOOGLE_SITE_VERIFICATION` 에 넣는다.
      루트 레이아웃이 **값이 있을 때만** `google-site-verification` 태그를 그린다 (`src/app/layout.tsx`) — 비어 있으면 태그가 아예 없다.
      **환경변수는 빌드 때 박히므로 넣은 뒤 다시 배포해야 한다.**
