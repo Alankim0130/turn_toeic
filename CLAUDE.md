@@ -704,7 +704,10 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 - `/signup/complete` 는 `requireUser` 를 쓰지 않는다 (미완성 계정이 자기 자신으로 튕긴다). `npm test` 의 `profile-completion.test.ts` 가 지킨다.
 - **켜는 법 (Alan 이 한다) — 구글**: Google Cloud Console → OAuth 동의 화면 → 사용자 인증 정보 → OAuth 클라이언트 ID(웹 애플리케이션),
   승인된 리디렉션 URI 에 `https://grldodnbvznnnwpuunnt.supabase.co/auth/v1/callback` → Supabase 대시보드 Authentication → Sign In / Providers → Google 에
-  클라이언트 ID·시크릿. Supabase 의 Redirect URL 허용 목록은 이미 `localhost:3000/**` · 운영 `/**` · 프리뷰 `/**` 라 손댈 것이 없다.
+  클라이언트 ID·시크릿. Supabase 의 Redirect URL 허용 목록은 `localhost:3000/**` · 운영 `/**` · 프리뷰 `/**` 에
+  **`https://winnertoeic.com/**` 를 더했다** (2026-09-20 Alan, Site URL 도 새 도메인으로 바꿨다 — 미확정 7).
+  **새 도메인을 붙일 때마다 여기에 더해야 한다** — 콜백 주소를 요청 origin 으로 만들기 때문에, 빠뜨리면
+  그 도메인으로 들어온 사람만 조용히 로그인이 깨진다. 기존 줄은 지우지 말 것 (지우면 로컬 개발이 막힌다).
 - **켜는 법 — 카카오**: Kakao Developers 에서 앱을 만들고 **비즈 앱으로 전환**한다 (개인 개발자 비즈 앱도 된다). Supabase 가
   `account_email` 동의항목을 **항상 요청**하는데 이 항목은 비즈 앱만 쓸 수 있어서, 전환하지 않으면 카카오가 KOE205 오류를 띄운다.
   카카오 로그인 **활성화 ON**, Redirect URI 에 위와 같은 Supabase 콜백 주소, 동의항목 `닉네임` · `프로필 사진` · **`카카오계정(이메일)` 필수 동의**,
@@ -1895,6 +1898,10 @@ where p.role='student'
      **환경변수는 빌드 때 박히므로 넣은 뒤 다시 배포해야 한다.**
    - 확인이 끝나면 **사이트맵 `https://winnertoeic.com/sitemap.xml` 을 제출한다.** 목록은 `src/app/sitemap.ts` 의 공개 6쪽이고
      `/my`·`/admin`·`/auth`·`/files` 는 `robots.ts` 가 막는다 — **새 공개 페이지를 만들면 두 파일을 같이 갱신할 것.**
+     **2026-09-20 제출 완료** (Alan). 소유권 확인 → 도메인 연결 → 재배포 → 사이트맵 제출까지 끝났다.
+
+   **→ 미확정 7 은 여기서 닫는다.** 도메인·서치 콘솔·Supabase 주소까지 다 끝났다 (2026-09-20).
+   남은 출시 준비는 **보안 점검의 "아직 안 된 것" 2번**(이메일 확인 + SMTP 등)이다 — 이 항목이 아니라 거기서 관리한다.
    - **네이버 서치어드바이저는 아직 안 했다** — 부산 학원이라 네이버 유입이 더 클 수 있다. 할지는 Alan 이 정한다 (같은 자리에 태그 한 줄이면 된다).
 8. **YBM 수강후기 수집 + 특강 신청** (2026-09-15 사전 공유 → 2026-09-16 Alan 이 첫토익 화면으로 구체화. 아직 구현하지 않는다)
 
