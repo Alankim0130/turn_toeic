@@ -12,6 +12,8 @@
 2. **미확정 항목은 추측해서 구현하지 않는다.** 문서 맨 아래 "미확정" 목록에 해당하면
    구현을 멈추고 질문한다.
 3. 결제·수강신청은 **YBM 공식 사이트(ybmedu.com)에서만** 이뤄진다. 이 사이트는 결제를 다루지 않는다.
+   **예외 하나 — 불라방 교재비** (2026-09-21 Alan): 강사가 등록한 계좌와 금액을 **안내만** 하고 입금자명을 받는다.
+   돈은 이 사이트를 지나지 않는다 — 강사가 통장과 대조해 "입금 확인" 을 누른다 (도메인 규칙 7-1). 카드·간편결제를 붙이지 말 것.
 4. 반·시간대·수강료 같은 운영 데이터는 **DB에서 읽는다. 코드에 하드코딩 금지.**
 
 ---
@@ -394,7 +396,7 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   맨 아래 시간대별 `합계` 줄. 반 편성에서 시간을 받지 않으므로 **시간이 없는 반은 강좌 이름으로 묶고 `시간 미정` 열**에 넣는다.
   열 순서는 시간대 라벨 앞의 `HH:MM` 기준이고 `시간 미정` 이 맨 뒤. 좁은 화면에서는 시작 시각만 적는다 (`10:00~12:10` → `10:00`)
 - **네이버 예약**: 다가오는 예약(칸마다 인원) + 최근 변동 5건 + 마지막 확인 시각 (도메인 규칙 8 — 10분마다 예약 페이지를 확인한다)
-- **교재주문**: 불라방 수강생의 교재 배송 신청 목록 (`textbook_orders`) 최근 5건
+- **교재주문**: 입금 확인을 기다리는 불라방 교재 주문 (`textbook_orders`) 최근 5건 — 교재 수와 합계
 - **마케팅 분석**: 가입 시 수집한 대학·학과·성별 차트. 자세히 보기는 `/admin/analytics`.
   차트 범례는 칸이 좁으면 한 줄씩 내려온다 — 열 수를 못박으면 글자가 한 자씩 접힌다
 
@@ -1108,6 +1110,31 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   서명 URL 로 리다이렉트한다 — 행 RLS 와 storage 정책이 같은 규칙으로 막는다.
 - 서버 액션 본문 한도(1MB) 때문에 파일은 **브라우저 → Storage 직접 업로드**, 서버 액션은 경로·이름만 등록한다.
 
+### 7-1. 불라방 교재주문 — 강사가 교재·계좌를 등록한다 (2026-09-21 Alan 요청, 마이그레이션 20260921110500)
+
+> "교재비를 받는 계좌번호와 교재 과목 등록은 강사가 직접 할 수 있도록 해보자." (첫토익 교재주문을 옮겨 오며)
+
+- **강사·관리자가** `/admin/textbook-orders/setup` 에서 등록한다 — 입금 계좌(`textbook_accounts`: 은행·계좌번호·예금주·이름표) ·
+  교재(`textbook_items`: 이름 · 레벨(비우면 모든 레벨) · 가격 · 받는 계좌 · 설명) · 배송비·기본 계좌·안내 문구(`textbook_settings`, 한 줄).
+  **가격·계좌를 코드에 적지 않는다** (첫토익은 앱 설정 파일에 있어 바꿀 때마다 배포해야 했다). 조교는 주문 처리만 하고 이 화면은 못 연다.
+- **학생 흐름**: 교재를 고른다(내 레벨 + 모든 레벨. 속성반은 두 레벨) → 합계와 **계좌별 입금액**이 보인다 → 입금하고 **입금자명**을 적어 주문.
+  강사·조교가 통장과 대조해 `입금 확인`, 보내면 `발송` + 송장번호. 상태는 `requested(입금 확인 전) → confirmed(입금 확인) → shipped(발송)` + `cancelled`.
+  입금 확인 전에는 학생이 취소할 수 있다.
+- **돈은 이 사이트를 지나지 않는다** (작업 원칙 3 의 예외는 "안내" 까지다). 카드·간편결제를 붙이지 말 것.
+- **지킬 것**
+  1. **주문은 DB 함수 `public.create_textbook_order` 하나로만 들어간다.** 학생의 INSERT 권한과 정책을 없앴다 — 표에 직접 넣으면
+     품목·금액을 마음대로 적을 수 있다 (첫토익은 앱이 계산한 금액을 그대로 넣었다). **함수가 자격·레벨·금액·계좌를 정해 주문에 박아 둔다**
+     (`items`·`items_total`·`shipping_fee`·`total_amount`·`pay_to`). 그래서 강사가 가격·계좌를 바꿔도 **지난 주문의 안내는 그대로**다.
+     학생의 수정 정책도 없앴다 — 취소는 `public.cancel_textbook_order` 로만.
+  2. **화면의 합계는 미리보기다** — `src/lib/textbook.ts` 의 `textbookQuote` 가 같은 규칙(교재는 제 계좌, 없거나 안 쓰면 기본 계좌 ·
+     배송비는 기본 계좌 · 기본 계좌가 비면 쓰는 중인 첫 계좌)으로 계산한다. **규칙을 바꾸면 SQL 함수와 `textbook.test.ts` 를 같이** 고친다.
+  3. **한 달에 한 건** — unique `(user_id, term_id)` (취소 제외). 주5일 학생은 월수금·화목금 반이 한 달에 묶인다 (예전에는 반마다 한 건씩 두 번 주문할 수 있었다).
+  4. **예비등록생도 주문한다** (`STUDENT_FEATURES.textbook.access = "enrollee"`) — 개강 전에 교재를 받아야 한다. 자격은 불라방(`enrollments.mode = 'live'`)
+     배정 + 등록 예비·수강 중 + 종강 전 (`private.has_live_enrollment`). 계좌·교재 목록도 이 학생과 crew 만 읽는다 (계좌를 전체 공개로 열지 말 것 — 첫토익 사고).
+  5. 낼 돈이 있는데 받을 계좌가 없으면 주문을 받지 않는다 (`no_account`) — 강사가 계좌부터 등록해야 학생 화면이 열린다.
+- 예전 주문(교재 목록이 생기기 전)은 `items` 가 비어 있고 `quantity` 만 있다 — 화면은 `N권 (예전 주문)` 으로 적는다.
+- 아직 없는 것: 데스크 직접수령 · 송장 사진 OCR · 택배 조회 링크 · 상태가 바뀔 때 학생 알림 · 주소 파기 크론. 필요하면 Alan 에게 묻고 만든다.
+
 ### 8. 관리자 알림 · 네이버 예약 (2026-09-15 Alan 요청)
 
 - **알림은 웹 푸시만 쓴다.** 이메일·문자·카카오톡 알림은 쓰지 않는다. 받는 사람은 스태프(강사·관리자)뿐이다.
@@ -1660,6 +1687,22 @@ create table notification_settings (       -- 사람별 알림 종류 켜기·�
   verification bool, textbook_order bool, contact bool, naver_reservation bool, daily_digest bool
 );
 
+-- ─── 불라방 교재주문 (마이그레이션 20260921110500 — 도메인 규칙 7-1) ───
+create table textbook_accounts (           -- 교재비 입금 계좌 (강사가 등록). crew + 불라방 배정 학생만 조회
+  id bigint primary key, bank_name text, account_no text, holder text, label text, active bool, sort_order int
+);
+create table textbook_items (              -- 교재 (강사가 등록). level null = 모든 레벨
+  id bigint primary key, name text, level int references lc_levels, price int,
+  account_id bigint references textbook_accounts,   -- null = 기본 계좌
+  note text, active bool, sort_order int
+);
+create table textbook_settings (           -- 한 줄: shipping_fee · default_account_id · notice
+  id boolean primary key, shipping_fee int, default_account_id bigint, notice text
+);
+-- textbook_orders 에 더한 칸: term_id · items(jsonb, 주문한 때 이름·가격) · items_total · shipping_fee · total_amount ·
+--   depositor_name · pay_to(jsonb, 계좌별 금액). unique (user_id, term_id) where status <> 'cancelled'.
+--   넣기는 public.create_textbook_order(...) 로만, 학생 취소는 public.cancel_textbook_order(id) 로만
+
 -- ─── 네이버 예약 자동 확인 (마이그레이션 20260921101500 — 도메인 규칙 8) ───
 create table naver_booking_slots (         -- 칸마다 예약 건수 (10분마다 갱신). 쓰기는 서버만, 조회는 스태프
   slot_at timestamptz primary key, booking_count int, stock int, is_sale_day bool, updated_at timestamptz
@@ -1741,7 +1784,7 @@ where p.role='student'
 | `/my/class` | 내 시간표 — **달력에서 고른 날짜의 수업만** (처음엔 오늘) + 특강 신청 바로가기. `이 달 전체` 로 한 달을 펼친다 | student |
 | `/my/lecture` | **특강 신청** — 그 달 특강·모의고사 카드에서 신청·취소 (정원·신청 시작 카운트다운) | 그 달 수강생 |
 | `/my/live` | 불라방 입장 — 반마다 오늘 회차 → 다음 회차 → 상시 링크 중 하나. **수업이 시작되면 알림함으로 알려 준다**(불라방 수강생만) | student |
-| `/my/textbook` | 불라방 교재주문 (불라방 수강생만) | student |
+| `/my/textbook` | 불라방 교재주문 — 내 레벨 교재를 골라 합계·입금 계좌를 보고 입금자명을 적어 주문 (한 달 한 건), 내역·송장번호 | 불라방 수강생 (**예비등록생 포함**) |
 | `/my/replay` | 강의 다시보기. 종강일까지. 저녁 화목금 인강 학생은 오전 짝 반의 녹화본(`인강 · 오전 수업 녹화본` 배지) | student |
 | `/my/study` | 내 스터디: 신청한 스터디·시간대, 비대면 자료 받기(해당 날짜부터) + **날짜마다 인증하기**(풀이 사진) | 그 달 수강생 |
 | `/my/notifications` | **알림** — 선생님이 보낸 알림 + 불라방 수업 시작 알림(앱 안 알림함). 열면 읽음 처리 | member |
@@ -1764,7 +1807,8 @@ where p.role='student'
 | `/admin/sections/[id]` | 반 상세: 달력에서 파생된 수업일(읽기 전용) + **회차별 불라방 링크**·다시보기 여부, "끝나면 다시보기로" 스위치, 상시 불라방 링크, 정원·상태·강사 수정, 삭제 | instructor |
 | `/admin/replays` | 녹화본 등록·회차 연결. 맨 위 **레벨 버튼**(650·750·850)으로 가르고 드롭다운은 기수별. 줄마다 `LC/RC · 트랙 · 시간`. **오전 시간 단위 반만** 나온다 — 묶음·스파르타·저녁 줄은 뺀다 (10월 36개 → 12개) | instructor |
 | `/admin/verifications` | 등업신청 목록·상세: 수강증 이미지, OCR 로그, 반 골라 승인 · 거절 · 오배정 정정 | instructor · **조교** |
-| `/admin/textbook-orders` | 교재주문 처리 | instructor · **조교** |
+| `/admin/textbook-orders` | 교재주문 처리 — 교재·금액·입금자명을 보고 `입금 확인` → `발송`(송장번호) | instructor · **조교** |
+| `/admin/textbook-orders/setup` | **교재·입금 계좌 설정** — 입금 계좌 · 교재(레벨·가격·계좌) · 배송비·기본 계좌·안내 문구 | instructor |
 | `/admin/analytics` | 마케팅 분석 (대학·학과·성별) | instructor |
 | `/admin/study` | 스터디 신청자 명단 (월 · 유형 · 시간대별). 비대면은 **날짜별 인증 현황 + 미인증 학생에게 알림 보내기**. "시간대 설정" 버튼은 아래 전용 화면으로 | instructor · **조교** |
 | `/admin/study/plan` | **스터디 시간 설정** — 기수별 대면·단어 시간대 추가, 비대면 열기 (반 편성 아래에 있던 것을 따로 뗀 화면) | instructor |
@@ -2117,7 +2161,9 @@ where p.role='student'
 후기 작성 기능, **YBM 후기 수집**(미확정 8 — 사전 공유만 받았다), 특강 라이브 시청 링크·특강 자료 배포
 
 ### 확장 기능의 가정 (Alan 확인 전까지의 기본값)
-- **교재신청**: 불라방 수강생만, 본인 반 기준, 배송지 입력. 결제 없음(교재비는 YBM/현장 처리). 상태 requested → confirmed → shipped
+- ~~**교재신청**: 불라방 수강생만, 본인 반 기준, 배송지 입력. 결제 없음(교재비는 YBM/현장 처리)~~ →
+  **2026-09-21 Alan 확정: 강사가 교재와 입금 계좌를 직접 등록하고, 학생은 교재를 골라 입금하고 입금자명을 적어 주문한다** (도메인 규칙 7-1).
+  배송은 택배뿐이다 (데스크 직접수령은 정하지 않았다 — 만들지 말 것)
 - **스터디 신청 자격**: 그 달 반에 배정된 수강생만 (예비등록생 포함). 비회원·일반 회원은 안내만 본다
 - **스터디 신청 방식**: 신청 즉시 확정(스태프 승인 없음). 유형마다 시간대 1개. 본인 취소는 '신청 받는 중'일 때만, 그 뒤엔 스태프가 명단에서 취소
 - **대면·단어 시간대**: 그 달 내내 같은 시간대(요일·장소는 안내 문구에 적는다). 정원은 선택

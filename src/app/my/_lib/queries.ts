@@ -200,17 +200,6 @@ export async function getMyReplays() {
 }
 export type MyReplay = Awaited<ReturnType<typeof getMyReplays>>[number];
 
-/** 불라방(live) 활성 등록 — 교재신청 대상 */
-export async function getMyLiveEnrollments() {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("enrollments")
-    .select(`id, mode, status, section:class_sections!enrollments_section_id_fkey(${SECTION_COLS})`)
-    .eq("mode", "live")
-    .eq("status", "active");
-  return (data ?? []).filter((e) => e.section);
-}
-export type MyLiveEnrollment = Awaited<ReturnType<typeof getMyLiveEnrollments>>[number];
 
 export async function getMyTextbookOrders() {
   const supabase = await createClient();
@@ -218,11 +207,39 @@ export async function getMyTextbookOrders() {
     .from("textbook_orders")
     .select(
       `id, recipient_name, phone, postal_code, address, address_detail, quantity, memo, status, tracking_no, created_at,
+       term_id, items, items_total, shipping_fee, total_amount, depositor_name, pay_to,
        section:class_sections(id, track, course:courses(name), term:terms(year, month))`,
     )
     .order("created_at", { ascending: false });
   return data ?? [];
 }
+
+/**
+ * 불라방 교재를 주문할 수 있는 달 (2026-09-21) — 그 달 불라방 배정이 있고, 등록이 예비·수강 중이며, 종강 전.
+ * **예비등록생도 들어간다** — 개강 전에 등업한 학생이 개강 전에 교재를 받아야 한다.
+ * 달마다 한 번 주문한다 (주5일이면 두 반이 한 달에 묶인다). 판정은 DB 함수 create_textbook_order 가 한 번 더 한다.
+ */
+export async function getMyTextbookTerms(orders?: MyOrder[]) {
+  const list = orders ?? (await getMyOrders());
+  const today = todayKST();
+  type Section = NonNullable<MyOrder["enrollments"][number]["section"]>;
+  const byTerm = new Map<number, { termId: number; term: Section["term"]; sections: Section[]; levels: number[] }>();
+  for (const o of list) {
+    if (o.status !== "preliminary" && o.status !== "active") continue;
+    for (const e of o.enrollments) {
+      const s = e.section;
+      if (e.status !== "active" || e.mode !== "live" || !s || today > s.closes_at) continue;
+      const t = byTerm.get(s.term_id) ?? { termId: s.term_id, term: s.term, sections: [], levels: [] };
+      if (!t.sections.some((x) => x.id === s.id)) t.sections.push(s);
+      for (const lv of [s.course?.target_score, ...(s.course?.includes_levels ?? [])]) {
+        if (typeof lv === "number" && !t.levels.includes(lv)) t.levels.push(lv);
+      }
+      byTerm.set(s.term_id, t);
+    }
+  }
+  return [...byTerm.values()].sort((a, b) => (a.term?.year ?? 0) - (b.term?.year ?? 0) || (a.term?.month ?? 0) - (b.term?.month ?? 0));
+}
+export type MyTextbookTerm = Awaited<ReturnType<typeof getMyTextbookTerms>>[number];
 export type MyTextbookOrder = Awaited<ReturnType<typeof getMyTextbookOrders>>[number];
 
 /**
@@ -316,12 +333,6 @@ export const ORDER_STATUS_LABEL: Record<string, string> = {
 };
 export const VERIFICATION_STATUS_LABEL = (result: string | null) =>
   result === "approved" ? "승인" : result === "rejected" ? "반려" : "확인 중";
-export const TEXTBOOK_STATUS_LABEL: Record<string, string> = {
-  requested: "신청됨",
-  confirmed: "확인됨",
-  shipped: "발송됨",
-  cancelled: "취소됨",
-};
 
 export function termLabel(term: { year: number; month: number } | null | undefined) {
   return term ? `${term.year}년 ${term.month}월` : "기수 미정";

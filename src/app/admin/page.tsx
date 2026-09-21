@@ -33,7 +33,7 @@ export default async function AdminDashboardPage() {
     getCurrentOrUpcomingTerm(supabase, today),
     supabase
       .from("textbook_orders")
-      .select("id, recipient_name, quantity, created_at, section:class_sections(track, course:courses(name), term:terms(year, month))")
+      .select("id, recipient_name, quantity, items, total_amount, created_at, section:class_sections(track, course:courses(name), term:terms(year, month))")
       .eq("status", "requested")
       .order("created_at", { ascending: false })
       .limit(5),
@@ -299,7 +299,11 @@ export default async function AdminDashboardPage() {
                 <li key={o.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
                   <div className="min-w-0">
                     <p className="font-bold text-ink">
-                      {o.recipient_name} <span className="font-semibold text-slate">· {o.quantity}권</span>
+                      {o.recipient_name}{" "}
+                      <span className="font-semibold text-slate">
+                        · {Array.isArray(o.items) && o.items.length > 0 ? `교재 ${o.items.length}권` : `${o.quantity}권`}
+                        {o.total_amount > 0 ? ` · ${o.total_amount.toLocaleString("ko-KR")}원` : ""}
+                      </span>
                     </p>
                     <p className="truncate text-xs text-slate">
                       {termLabel(o.section?.term, true)} · {o.section?.course?.name ?? "강좌"}

@@ -1529,51 +1529,162 @@ export type Database = {
         }
         Relationships: []
       }
-      textbook_orders: {
+      textbook_accounts: {
         Row: {
-          address: string
-          address_detail: string | null
+          account_no: string
+          active: boolean
+          bank_name: string
+          created_at: string
+          holder: string
+          id: number
+          label: string | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          account_no: string
+          active?: boolean
+          bank_name: string
+          created_at?: string
+          holder: string
+          id?: number
+          label?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          account_no?: string
+          active?: boolean
+          bank_name?: string
+          created_at?: string
+          holder?: string
+          id?: number
+          label?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      textbook_items: {
+        Row: {
+          account_id: number | null
+          active: boolean
           created_at: string
           id: number
+          level: number | null
+          name: string
+          note: string | null
+          price: number
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          account_id?: number | null
+          active?: boolean
+          created_at?: string
+          id?: number
+          level?: number | null
+          name: string
+          note?: string | null
+          price: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          account_id?: number | null
+          active?: boolean
+          created_at?: string
+          id?: number
+          level?: number | null
+          name?: string
+          note?: string | null
+          price?: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "textbook_items_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "textbook_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "textbook_items_level_fkey"
+            columns: ["level"]
+            isOneToOne: false
+            referencedRelation: "lc_levels"
+            referencedColumns: ["level"]
+          },
+        ]
+      }
+      textbook_orders: {
+        Row: {
+          address_detail: string | null
+          address: string
+          created_at: string
+          depositor_name: string | null
+          id: number
+          items_total: number
+          items: Json
           memo: string | null
+          pay_to: Json
           phone: string
           postal_code: string | null
           quantity: number
           recipient_name: string
           section_id: number
+          shipping_fee: number
           status: string
+          term_id: number | null
+          total_amount: number
           tracking_no: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
-          address: string
           address_detail?: string | null
+          address: string
           created_at?: string
+          depositor_name?: string | null
           id?: number
+          items_total?: number
+          items?: Json
           memo?: string | null
+          pay_to?: Json
           phone: string
           postal_code?: string | null
           quantity?: number
           recipient_name: string
           section_id: number
+          shipping_fee?: number
           status?: string
+          term_id?: number | null
+          total_amount?: number
           tracking_no?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
-          address?: string
           address_detail?: string | null
+          address?: string
           created_at?: string
+          depositor_name?: string | null
           id?: number
+          items_total?: number
+          items?: Json
           memo?: string | null
+          pay_to?: Json
           phone?: string
           postal_code?: string | null
           quantity?: number
           recipient_name?: string
           section_id?: number
+          shipping_fee?: number
           status?: string
+          term_id?: number | null
+          total_amount?: number
           tracking_no?: string | null
           updated_at?: string
           user_id?: string
@@ -1598,6 +1709,38 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      textbook_settings: {
+        Row: {
+          default_account_id: number | null
+          id: boolean
+          notice: string | null
+          shipping_fee: number
+          updated_at: string
+        }
+        Insert: {
+          default_account_id?: number | null
+          id?: boolean
+          notice?: string | null
+          shipping_fee?: number
+          updated_at?: string
+        }
+        Update: {
+          default_account_id?: number | null
+          id?: boolean
+          notice?: string | null
+          shipping_fee?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "textbook_settings_default_account_id_fkey"
+            columns: ["default_account_id"]
+            isOneToOne: false
+            referencedRelation: "textbook_accounts"
             referencedColumns: ["id"]
           },
         ]
@@ -1779,6 +1922,14 @@ export type Database = {
       naver_sync_failed: {
         Args: { p_error: string; p_retry_after?: string }
         Returns: number
+      }
+      create_textbook_order: {
+        Args: { p_address: string; p_address_detail: string; p_depositor: string; p_item_ids: number[]; p_memo: string; p_phone: string; p_postal_code: string; p_recipient: string; p_term_id: number }
+        Returns: number
+      }
+      cancel_textbook_order: {
+        Args: { p_id: number }
+        Returns: boolean
       }
     }
     Enums: {

@@ -226,9 +226,10 @@ export const STUDENT_FEATURES: StudentFeature[] = [
     label: "불라방교재주문",
     icon: "textbook",
     summary: "교재 집으로 받기",
-    desc: "불라방으로 듣는 수강생은 교재를 집으로 받아볼 수 있어요.",
-    points: ["배송지만 남기면 신청 끝", "처리 상태와 송장번호 확인"],
-    access: "active",
+    desc: "불라방으로 듣는 수강생은 교재를 집으로 받아볼 수 있어요. 개강 전에도 주문할 수 있어요.",
+    points: ["내 레벨 교재를 골라 입금하고 주문", "입금 확인 · 발송 · 송장번호 확인"],
+    // 예비등록생도 쓴다 (2026-09-21) — 개강 전에 등업한 불라방 학생이 개강 전에 교재를 받아야 한다
+    access: "enrollee",
   },
   {
     key: "lc-audio",
