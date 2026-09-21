@@ -1,27 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { qrPath, QR_QUIET, type QrMatrix } from "@/lib/qr-svg";
 import { getAttendanceQr, type QrFrame } from "../actions";
 
 /** 칸 모양(0/1) → 네모 조각. 라이브러리 SVG 를 innerHTML 로 넣지 않고 React 로 그린다 */
-function QrSvg({ size, cells }: { size: number; cells: string }) {
-  const q = 4; // 조용한 여백 (규격상 4칸)
-  const rects: string[] = [];
-  for (let y = 0; y < size; y++) {
-    let x = 0;
-    while (x < size) {
-      if (cells[y * size + x] === "1") {
-        let w = 1;
-        while (x + w < size && cells[y * size + x + w] === "1") w++;
-        rects.push(`M${x + q} ${y + q}h${w}v1h-${w}z`);
-        x += w;
-      } else x++;
-    }
-  }
+function QrSvg(m: QrMatrix) {
+  const side = m.size + QR_QUIET * 2;
   return (
-    <svg viewBox={`0 0 ${size + q * 2} ${size + q * 2}`} className="h-full w-full" role="img" aria-label="출석 QR 코드" shapeRendering="crispEdges">
+    <svg viewBox={`0 0 ${side} ${side}`} className="h-full w-full" role="img" aria-label="출석 QR 코드" shapeRendering="crispEdges">
       <rect width="100%" height="100%" fill="#fff" />
-      <path d={rects.join("")} fill="#17121F" />
+      <path d={qrPath(m)} fill="#17121F" />
     </svg>
   );
 }

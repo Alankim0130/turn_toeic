@@ -117,6 +117,24 @@ describe("관리자 화면은 화면마다 가드가 있다", () => {
   });
 });
 
+describe("관리자 라우트 핸들러도 함수마다 가드가 있다", () => {
+  // 라우트 핸들러는 레이아웃도 화면도 타지 않는다 — 가드를 빠뜨리면 로그인한 누구에게나 열린다 (출석 포스터 인쇄, 2026-09-21)
+  const routes = walk(ADMIN_DIR, (f) => f === "route.ts");
+
+  it("찾은 파일이 있다 (경로가 바뀌면 이 테스트가 헛돈다)", () => {
+    expect(routes.length).toBeGreaterThan(0);
+  });
+
+  it.each(routes)("%s 의 모든 요청 처리 함수가 권한을 본다", (p) => {
+    const unguarded = readFileSync(p, "utf8")
+      .split(/export async function /)
+      .slice(1)
+      .filter((chunk) => !GUARDS.some((g) => chunk.includes(`${g}(`)))
+      .map((chunk) => chunk.slice(0, chunk.indexOf("(")));
+    expect(unguarded, `가드 없는 처리 함수: ${unguarded.join(", ")}`).toEqual([]);
+  });
+});
+
 describe("관리자 서버 액션은 함수마다 가드가 있다", () => {
   const files = walk(ADMIN_DIR, (f) => /actions.*\.ts$/.test(f));
 

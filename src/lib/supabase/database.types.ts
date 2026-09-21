@@ -2113,6 +2113,14 @@ export type Database = {
         Args: { p_date: string }
         Returns: { check_in_at: string | null; check_out_at: string | null; course_name: string; decided_by_name: string | null; decided_note: string | null; late: boolean; phone: string | null; section_id: number; status: string | null; student_id: string; student_name: string; target_score: number | null; tester: boolean; time_block: string | null; track: string }[]
       }
+      attendance_poster_token: {
+        Args: never
+        Returns: Json
+      }
+      rotate_attendance_poster: {
+        Args: never
+        Returns: Json
+      }
     }
     Enums: {
       user_role:

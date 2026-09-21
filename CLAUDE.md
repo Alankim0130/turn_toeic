@@ -703,7 +703,7 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   **DB 와 앱의 두 함수는 늘 같은 집합이어야 한다** — 한쪽만 고치면 화면은 열리는데 RLS 가 막는(또는 그 반대의) 상태가 된다.
 - **조교는 스태프가 아니다.** `private.is_staff()` 를 넓히지 않고, 조교에게 열어 준 곳에만
   `private.is_crew()`(스태프 + 조교, 앱은 `isCrew()`)를 쓴다. 지금 열린 곳은 다섯 화면뿐이다:
-  **학생명단**(`/admin/students`·`/admin/students/[id]`) · **출석**(`/admin/attendance`·`/admin/attendance/qr`, 2026-09-21 Alan "조교에게도 명단을 열어줘") ·
+  **학생명단**(`/admin/students`·`/admin/students/[id]`) · **출석**(`/admin/attendance`·`/admin/attendance/qr`·`/admin/attendance/poster` — 새로 뽑기만 스태프, 2026-09-21 Alan "조교에게도 명단을 열어줘") ·
   **등업 로그**(`/admin/verifications`) · **불라방 교재주문**(`/admin/textbook-orders` — 처리만, 교재·계좌 설정 화면은 스태프) · **스터디 신청자**(`/admin/study`).
   명단에 학생 이름과 반이 함께 나오므로 `profiles`·`enrollment_orders`·`enrollments` **조회**도 함께 열었다.
   반 편성·다시보기 등록·불라방 자동 연결·숙제점검·LC 음원·문의·알림·마케팅 분석·대시보드는 조교에게 계속 닫혀 있다.
@@ -1174,7 +1174,20 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   QR 은 주소(`https://winnertoeic.com/attend?t=토큰`)라 **휴대폰 기본 카메라로 찍으면 출석 화면이 열린다** — 앱 안 스캐너가 없다
   (사이트는 응답 헤더로 카메라를 꺼 두었다. 스캐너를 넣으려면 그 헤더부터 바꿔야 한다). 앱 안 `/my/attendance` 에서 6자리를 쳐도 된다.
   **아이폰은 홈 화면 앱과 사파리의 로그인이 따로**라 카메라가 연 사파리에서 한 번 로그인해야 할 수 있다 — 그래서 코드 입력을 함께 둔다.
-- **판정은 DB 함수 `public.attendance_scan` 한곳** — 토큰(지금 칸 + 앞 세 칸 = 2분) · 로그인한 학생의 배정 · 서버 시각으로 정한다.
+- **인쇄용 포스터** (2026-09-21 Alan — "QR을 A5 크기로 2개 해서 A4로 인쇄할 수 있도록 디자인해서 만들어줘. 힉스필드로 제작부탁해!", 마이그레이션 20260921150500).
+  `/admin/attendance/poster` → `포스터 열어서 인쇄하기`(`/admin/attendance/poster/print`): **A4 가로 한 장에 A5 세로 포스터 두 장** —
+  선생님마다 한 장(이혜영 가리키기 · 이영수 엄지척 컷)이고 QR 은 같다. 가운데 점선을 잘라 강의실마다 붙인다.
+  30초 QR 은 종이에 못 찍으므로 **바뀌지 않는 인쇄용 토큰**(`private.attendance_poster`, 20자)을 따로 두고 `attendance_scan` 이 함께 받는다 (기록 `method = 'poster'`).
+  **대가: 포스터 사진을 찍어 보내면 교실 밖에서도 찍힌다** (첫토익 문서가 말한 정적 QR 의 한계) — 수업 시간 창·현장 배정·입실 30분 뒤 퇴실은 그대로 막는다.
+  새어 나가면 강사·관리자가 `새 QR 로 바꾸기`(`public.rotate_attendance_poster`) — **붙어 있는 종이는 그 순간 모두 무효**라 다시 인쇄해 바꿔 붙인다
+  (포스터 오른쪽 아래 `…발행` 시각과 관리 화면의 시각이 다르면 옛 종이). 인쇄는 조교도 하고, 새로 뽑기는 강사·관리자만 (함수가 `is_staff` 를 다시 본다).
+  더 엄격하게 하고 싶은 날은 교실 화면 QR 을 함께 띄운다 — 둘은 같이 써도 된다.
+  그림(QR 을 찍는 휴대폰 · 출석 도장)은 힉스필드 `gpt_image_2_5` 로 만든 `public/posters/` 이고 **QR 과 글자는 코드로 그린다** — AI 가 그린 QR 은 안 찍히고 한글은 깨진다.
+  문서는 `src/lib/attendance-poster.ts` 한곳(`attendance-poster.test.ts`)이 만들고, **루트 레이아웃(헤더·하단 바)이 같이 인쇄되지 않게 라우트 핸들러가 완성된 HTML 을 돌려준다.**
+  QR 은 H(30% 복구) + 가운데 브랜드 심벌, 칸은 순검정(컬러 레이저 번짐), 중요한 것은 종이 가장자리 7mm 안쪽(프린터가 못 찍는 테두리), `print-color-adjust: exact`(배경 그래픽을 안 켜도 분홍이 나온다).
+  **포스터 문구에도 규칙 숫자(30분 전 · 7분 지각 · 입실 30분 뒤 퇴실 · 끝나고 30분)가 있다** — 규칙을 바꾸면 여기도 고친다.
+  관리자 라우트 핸들러도 가드가 있어야 한다 — `roles.test.ts` 가 `src/app/admin/**/route.ts` 도 본다.
+- **판정은 DB 함수 `public.attendance_scan` 한곳** — 토큰(지금 칸 + 앞 세 칸 = 2분, 또는 인쇄용 토큰) · 로그인한 학생의 배정 · 서버 시각으로 정한다.
   토큰은 DB 금고의 `attendance_qr_secret` 으로 만든 HMAC 이라 앱·저장소에 값이 없다. 학생은 출석 표에 직접 못 쓴다(권한 없음).
   틀린 코드를 10분에 10번 넣으면 잠시 잠긴다 (6자리를 맞혀 보는 것을 막는다).
 - **규칙 (첫토익 값 그대로 — Alan 이 따로 정하지 않았다. 바꾸면 SQL 과 `src/lib/attendance.ts` 문구를 같이)**:
@@ -1747,7 +1760,7 @@ create table notification_settings (       -- 사람별 알림 종류 켜기·�
 create table attendance_stamps (           -- 한 칸 = 학생 · 직접 배정된 반 · 날짜. 본인·crew 조회, 쓰기는 함수로만
   id bigint primary key, student_id uuid references profiles, section_id bigint references class_sections, class_date date,
   status text,                             -- in(입실만) | out(입실+퇴실 = 출석) | manual(출석 인정) | absent(결석)
-  check_in_at timestamptz, check_out_at timestamptz, late bool, method text,   -- qr | code | manual
+  check_in_at timestamptz, check_out_at timestamptz, late bool, method text,   -- qr | code | poster(인쇄용 QR, 20260921150500) | manual
   decided_by uuid, decided_note text,      -- 강사·조교가 정한 것 (사유 필수)
   unique (student_id, section_id, class_date)
 );
@@ -1756,6 +1769,8 @@ create table attendance_events (           -- 쌓기만: enter · exit · manual
 );
 -- Vault attendance_qr_secret · private.attendance_token(30초 칸) → public.attendance_display()(crew) · public.attendance_scan(토큰, 방법)(학생)
 -- public.attendance_set(학생, 반, 날짜, 상태, 사유)(crew) · public.attendance_roster(날짜)(crew)
+-- private.attendance_poster(한 줄: token 20자 · created_at · created_by) — 인쇄용 QR 토큰 (20260921150500). 앱에서 못 읽는다
+--   → public.attendance_poster_token()(crew) · public.rotate_attendance_poster()(스태프, 옛 종이 무효)
 
 -- ─── 유튜브 불라방 자동 연결 (마이그레이션 20260921120500 — 도메인 규칙 1 "유튜브 방송을 감지해") ───
 create table youtube_channels (            -- 강사 채널 연결. 토큰 칸은 service_role 만 (authenticated 는 상태 칸만 칸 단위 grant)
@@ -1886,6 +1901,7 @@ where p.role='student'
 | `/admin/students/[id]` | 학생 관리: 기본 정보, **등급 변경**(조교는 학생 등급끼리만), **반 배정 추가·해제**(기수별), **계정 합치기**(스태프만), 등록 이력 | instructor · **조교** |
 | `/admin/attendance` | **출석 명단** — 날짜별·반별 현장 수강생의 입실·퇴실·지각, 출석 인정·결석·되돌리기(사유 필수) | instructor · **조교** |
 | `/admin/attendance/qr` | **교실 QR** — 30초마다 바뀌는 출석 QR 과 6자리 코드 (교실 태블릿·TV에 띄운다) | instructor · **조교** |
+| `/admin/attendance/poster` | **출석 QR 포스터** — A4 한 장에 A5 두 장 인쇄(`/print`), 발행 시각, 종이 QR 과 화면 QR 의 차이, `새 QR 로 바꾸기`(강사·관리자만) | instructor · **조교** |
 | `/admin/sections` | 반 편성 달력(개강일·종강일·월수금·화목금·특강 → 항목별 저장 / 전체 저장, 이전/다음 달, 이미지 저장), 그 달 반 일괄 개설(강좌 × 시간대 × 트랙 표 → 고른 칸 한 번에) + 하나씩 만들기, **담당 강사 일괄 지정**, 스터디 시간 설정 | instructor |
 | `/admin/lectures` | 특강 신청: 기수별 특강마다 신청 받기·정원·신청 시작 설정 + 신청자 명단(스태프 취소) | instructor |
 | `/admin/sections/[id]` | 반 상세: 달력에서 파생된 수업일(읽기 전용) + **회차별 불라방 링크**·다시보기 여부, "끝나면 다시보기로" 스위치, 상시 불라방 링크, 정원·상태·강사 수정, 삭제 | instructor |

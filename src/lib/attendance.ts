@@ -46,7 +46,11 @@ export function scanView(r: ScanResult): ScanView {
     case "not_started":
       return { tone: "info", title: "아직 개강 전이에요", body: "개강일부터 출석을 찍을 수 있어요." };
     case "bad_token":
-      return { tone: "warning", title: "코드가 맞지 않아요", body: "강의실 화면의 QR 을 다시 찍거나, 화면에 보이는 6자리 코드를 입력해 주세요. 코드는 30초마다 바뀌어요." };
+      return {
+        tone: "warning",
+        title: "코드가 맞지 않아요",
+        body: "강의실 QR 을 다시 찍어 주세요. 화면 QR 이면 6자리 코드를 입력해도 돼요 (30초마다 바뀌어요). 붙어 있는 종이 QR 이 안 찍히면 선생님께 말씀해 주세요.",
+      };
     case "too_many":
       return { tone: "warning", title: "잠시 뒤 다시 해 주세요", body: "틀린 코드를 여러 번 넣어 10분 동안 잠겼어요. 강의실 화면을 보고 다시 찍어 주세요." };
     case "login_required":

@@ -1,10 +1,10 @@
 "use server";
 
-import QRCode from "qrcode";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireCrew } from "@/lib/auth";
 import { attendUrl } from "@/lib/attendance";
+import { qrMatrix } from "@/lib/qr";
 import { site } from "@/lib/site";
 import { createClient } from "@/lib/supabase/server";
 
@@ -43,9 +43,5 @@ export async function getAttendanceQr(): Promise<QrFrame> {
   if (error || !data) return { error: "코드를 받지 못했어요" };
   const d = data as { token: string; code: string; expires_at: string };
   const url = attendUrl(site.url, d.token);
-  const qr = QRCode.create(url, { errorCorrectionLevel: "M" });
-  const size = qr.modules.size;
-  let cells = "";
-  for (let i = 0; i < size * size; i++) cells += qr.modules.data[i] ? "1" : "0";
-  return { url, code: d.code, expiresAt: d.expires_at, size, cells };
+  return { url, code: d.code, expiresAt: d.expires_at, ...qrMatrix(url, "M") };
 }
