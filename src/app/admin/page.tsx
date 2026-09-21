@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { DonutChart } from "@/components/admin/charts/DonutChart";
 import { BarChart } from "@/components/admin/charts/BarChart";
 import { NaverReservationsWidget } from "@/components/admin/NaverReservationsWidget";
-import { koreanTime } from "@/lib/naver-reservation";
+import { slotLabel } from "@/lib/naver-booking";
 import { countBy, GENDER_LABEL, getCurrentOrUpcomingTerm, getRosterSets, termLabel } from "./_lib/queries";
 import { requireStaff } from "@/lib/auth";
 
@@ -42,14 +42,14 @@ export default async function AdminDashboardPage() {
     supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null),
     supabase.from("homework_submissions").select("id", { count: "exact", head: true }).eq("status", "submitted"),
     supabase.from("contact_messages").select("id", { count: "exact", head: true }).eq("status", "new"),
+    // 네이버 예약은 10분마다 예약 페이지를 확인한 칸 기록에서 읽는다 (2026-09-21 — 첫토익과 같은 방식)
     supabase
-      .from("naver_reservations")
-      .select("reserved_date, reserved_time", { count: "exact" })
-      .gte("reserved_date", today)
-      .neq("status", "cancelled")
-      .order("reserved_date", { ascending: true })
-      .order("reserved_time", { ascending: true, nullsFirst: false })
-      .limit(1),
+      .from("naver_booking_slots")
+      .select("slot_at, booking_count")
+      .gt("booking_count", 0)
+      .gte("slot_at", new Date().toISOString())
+      .order("slot_at", { ascending: true })
+      .limit(200),
   ]);
 
   /* 수업시간대별 인원수 — 강좌(행) × 시간대(열) 표 */
@@ -112,7 +112,7 @@ export default async function AdminDashboardPage() {
   const univData = countBy(profiles.data ?? [], (p) => p.university).slice(0, 5);
 
   const naverNext = naver.data?.[0];
-  const naverCount = naver.count ?? 0;
+  const naverCount = (naver.data ?? []).reduce((n, s) => n + s.booking_count, 0);
 
   const todo: { label: string; value: number; href: string; icon: IconName; zero: string; some: string }[] = [
     { label: "등업 검토", value: pendingVer.count ?? 0, href: "/admin/verifications?status=pending", icon: "verify", zero: "검토할 수강증이 없어요", some: "검토를 기다리는 수강증" },
@@ -131,9 +131,7 @@ export default async function AdminDashboardPage() {
       unit: "건",
       href: "#naver-reservations",
       icon: "calendar",
-      hint: naverNext?.reserved_date
-        ? `${formatDate(naverNext.reserved_date, { month: "numeric", day: "numeric" })} ${naverNext.reserved_time ? koreanTime(naverNext.reserved_time) : "시간 확인 필요"}`
-        : "잡힌 예약 없음",
+      hint: naverNext ? `가장 이른 예약 ${slotLabel(naverNext.slot_at)}` : "잡힌 예약 없음",
     },
   ];
 

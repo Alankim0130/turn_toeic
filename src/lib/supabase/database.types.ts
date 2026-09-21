@@ -847,6 +847,60 @@ export type Database = {
         }
         Relationships: []
       }
+      naver_booking_events: {
+        Row: {
+          created_at: string
+          id: number
+          kind: string
+          new_count: number
+          prev_count: number
+          slot_at: string
+          stock: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          kind: string
+          new_count: number
+          prev_count: number
+          slot_at: string
+          stock?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          kind?: string
+          new_count?: number
+          prev_count?: number
+          slot_at?: string
+          stock?: number | null
+        }
+        Relationships: []
+      }
+      naver_booking_slots: {
+        Row: {
+          booking_count: number
+          is_sale_day: boolean
+          slot_at: string
+          stock: number
+          updated_at: string
+        }
+        Insert: {
+          booking_count?: number
+          is_sale_day?: boolean
+          slot_at: string
+          stock?: number
+          updated_at?: string
+        }
+        Update: {
+          booking_count?: number
+          is_sale_day?: boolean
+          slot_at?: string
+          stock?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       naver_reservations: {
         Row: {
           booking_number: string | null
@@ -892,6 +946,45 @@ export type Database = {
           source?: string
           status?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      naver_sync_status: {
+        Row: {
+          consecutive_failures: number
+          held_signature: string | null
+          id: boolean
+          last_error: string | null
+          last_error_at: string | null
+          last_run_at: string | null
+          last_success_at: string | null
+          range_to: string | null
+          retry_after: string | null
+          slots: number
+        }
+        Insert: {
+          consecutive_failures?: number
+          held_signature?: string | null
+          id?: boolean
+          last_error?: string | null
+          last_error_at?: string | null
+          last_run_at?: string | null
+          last_success_at?: string | null
+          range_to?: string | null
+          retry_after?: string | null
+          slots?: number
+        }
+        Update: {
+          consecutive_failures?: number
+          held_signature?: string | null
+          id?: boolean
+          last_error?: string | null
+          last_error_at?: string | null
+          last_run_at?: string | null
+          last_success_at?: string | null
+          range_to?: string | null
+          retry_after?: string | null
+          slots?: number
         }
         Relationships: []
       }
@@ -1674,6 +1767,18 @@ export type Database = {
           recorded_id: number
           source_id: number
         }[]
+      }
+      app_cron_secret: {
+        Args: never
+        Returns: string
+      }
+      naver_apply_snapshot: {
+        Args: { p_from: string; p_slots: Json; p_to: string }
+        Returns: Json
+      }
+      naver_sync_failed: {
+        Args: { p_error: string; p_retry_after?: string }
+        Returns: number
       }
     }
     Enums: {

@@ -3,8 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Icon } from "@/components/ui/Icon";
 import { PushSetup } from "@/components/admin/notifications/PushSetup";
 import { SettingsForm } from "@/components/admin/notifications/SettingsForm";
-import { CopyField } from "@/components/admin/notifications/CopyField";
-import { isAdmin, requireStaff } from "@/lib/auth";
+import { requireStaff } from "@/lib/auth";
 import { NOTIFICATION_KINDS } from "@/lib/push";
 import { createClient } from "@/lib/supabase/server";
 import { site } from "@/lib/site";
@@ -37,18 +36,15 @@ function deviceLabel(ua: string | null) {
 const dateTime = (iso: string) => formatDate(iso, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 export default async function NotificationsPage() {
-  const { user, profile } = await requireStaff();
+  const { user } = await requireStaff();
   const supabase = await createClient();
-  const [{ data: settings }, { data: devices }, { count: naverCount }] = await Promise.all([
+  const [{ data: settings }, { data: devices }, { data: naver }] = await Promise.all([
     supabase.from("notification_settings").select("*").eq("user_id", user.id).maybeSingle(),
     supabase.from("push_subscriptions").select("id, user_agent, created_at, last_sent_at").eq("user_id", user.id).order("created_at", { ascending: false }),
-    supabase.from("naver_reservations").select("id", { count: "exact", head: true }),
+    supabase.from("naver_sync_status").select("last_success_at, last_error, consecutive_failures, slots").maybeSingle(),
   ]);
 
   const values = Object.fromEntries(NOTIFICATION_KINDS.map((k) => [k.key, settings ? settings[k.key] : true]));
-  const admin = isAdmin(profile.role);
-  const webhookUrl = `${site.url}/api/naver-reservations`;
-  const secret = admin ? (process.env.NAVER_WEBHOOK_SECRET ?? "") : "";
 
   return (
     <>
@@ -99,41 +95,33 @@ export default async function NotificationsPage() {
 
         <section id="naver" aria-labelledby="naver-title" className="card scroll-mt-24 p-5 lg:col-span-2">
           <h2 id="naver-title" className="flex items-center gap-2 text-lg font-black text-ink">
-            <Icon name="calendar" size={26} />네이버 예약 연결
+            <Icon name="calendar" size={26} />네이버 예약 자동 확인
           </h2>
           <p className="mt-2 text-sm leading-relaxed text-slate">
-            네이버는 예약 목록을 외부에 열어 주지 않아요. 그래서 네이버가 보내는 예약 알림(문자·메일·앱 알림)을 아래 주소로 전달받아 예약 날짜와 시각을 읽고,
-            대시보드에 표시하면서 푸시로 알려 드려요. 지금까지 받은 알림은 <b className="text-ink">{naverCount ?? 0}건</b>이에요.
+            10분마다 네이버 예약 페이지의 &ldquo;역전토익 강사상담&rdquo; 칸을 확인해요. 예약이 새로 잡히거나 취소되면 위에서 &ldquo;네이버 예약&rdquo;을 켜 둔
+            기기로 바로 알림이 가고, 대시보드에도 바로 보여요. 네이버는 예약한 사람이 누구인지 알려 주지 않아서 날짜·시각·인원만 와요.
           </p>
-
-          {admin ? (
-            <div className="mt-5 grid gap-4 lg:grid-cols-2">
-              <CopyField label="연결 주소" value={webhookUrl} />
-              <CopyField label="연결 코드 (다른 사람에게 알려주지 마세요)" value={secret} secret />
+          <dl className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl bg-surface px-4 py-3">
+              <dt className="text-xs font-bold text-slate">마지막 확인</dt>
+              <dd className="mt-1 font-black text-ink">{naver?.last_success_at ? dateTime(naver.last_success_at) : "아직 없음"}</dd>
             </div>
-          ) : (
-            <p className="mt-4 rounded-xl bg-surface px-4 py-3 text-sm text-slate">연결 주소와 코드는 관리자 계정에서만 볼 수 있어요.</p>
-          )}
-
-          <div className="mt-6 grid gap-4 lg:grid-cols-2">
-            <article className="rounded-xl2 border border-line p-4">
-              <h3 className="font-black text-ink">아이폰에서 예약 문자를 전달할 때</h3>
-              <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-slate">
-                <li>단축어 앱 &gt; 자동화 &gt; 새로운 자동화 &gt; 메시지를 고릅니다.</li>
-                <li>&ldquo;메시지 내용에 포함&rdquo;에 네이버 예약 문자에 늘 들어가는 단어를 넣고 &ldquo;즉시 실행&rdquo;으로 둡니다.</li>
-                <li>동작으로 &ldquo;URL의 콘텐츠 가져오기&rdquo;를 추가하고 방법 POST, 헤더 Authorization 에 <code>Bearer 연결코드</code>를 넣습니다.</li>
-                <li>요청 본문은 JSON 으로 두고 키 <code>text</code> 에 &ldquo;단축어 입력&rdquo;을 넣으면 끝이에요.</li>
-              </ol>
-            </article>
-            <article className="rounded-xl2 border border-line p-4">
-              <h3 className="font-black text-ink">안드로이드·메일로 받을 때</h3>
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate">
-                <li>안드로이드는 매크로드로이드 같은 자동화 앱으로 네이버 예약 문자나 앱 알림을 받으면 같은 주소로 보내면 돼요.</li>
-                <li>보낼 내용은 알림 원문 그대로 <code>{`{"text": "원문"}`}</code> 형식이면 됩니다.</li>
-                <li>메일로 알림을 받는다면 메일 전달 연결이 따로 필요해요.</li>
-              </ul>
-            </article>
-          </div>
+            <div className="rounded-xl bg-surface px-4 py-3">
+              <dt className="text-xs font-bold text-slate">지금 보고 있는 칸</dt>
+              <dd className="mt-1 font-black text-ink">{naver?.slots ?? 0}개</dd>
+            </div>
+            <div className={naver?.consecutive_failures ? "rounded-xl bg-amber-50 px-4 py-3" : "rounded-xl bg-surface px-4 py-3"}>
+              <dt className="text-xs font-bold text-slate">상태</dt>
+              <dd className={naver?.consecutive_failures ? "mt-1 text-sm font-bold text-amber-800" : "mt-1 font-black text-ink"}>
+                {naver?.consecutive_failures ? `${naver.consecutive_failures}번 연속 실패 · ${naver.last_error ?? "알 수 없는 오류"}` : "정상"}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-4 text-sm">
+            <a href={site.academy.naverBookingUrl} target="_blank" rel="noopener noreferrer" className="font-bold text-brand-600 hover:underline">
+              네이버 예약 페이지 열기
+            </a>
+          </p>
         </section>
       </div>
     </>

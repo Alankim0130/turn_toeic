@@ -58,7 +58,7 @@
 - **버킷 5개 전부 private**, 크기·MIME 제한 있음(`receipts` 10MB 이미지·PDF, `homework` 20MB 이미지, `lc-audio` 50MB 오디오).
   본인 폴더 업로드(`{uid}/…`)·본인/스태프 조회 정책. 파일은 `/files/{kind}/{id}` 가 **사용자 세션으로 행을 읽고**(RLS) 서명 URL 로 보낸다.
 - 서비스 롤은 서버 액션·`src/lib`·API 라우트에서만 (`server-only`). 클라이언트 번들에는 없다. 비밀은 `.env*`(gitignore) 에만 있고 저장소에 없다.
-- 두 API 라우트(네이버 웹훅·크론)는 비밀이 없으면 **거절(fail-closed)**, 비교는 `timingSafeEqual`, 웹훅 본문은 64KB 상한.
+- API 라우트(네이버 웹훅·크론, 그리고 DB 크론이 부르는 `/api/cron/naver-sync` 등)는 비밀이 없거나 못 읽으면 **거절(fail-closed)**, 비교는 `timingSafeEqual`, 웹훅 본문은 64KB 상한.
 - 로그인 뒤 이동 주소(`safeNext`)는 `/` 로 시작하고 `//` 가 아닌 것만 — 외부로 튕기는 오픈 리다이렉트 없음.
 - 서버 액션은 Next 가 Origin 을 확인한다(CSRF). `dangerouslySetInnerHTML` 두 곳은 상수·JSON 이고 JSON-LD 는 `<` 를 이스케이프한다.
 - 응답 헤더(`next.config.ts`): `X-Frame-Options: DENY` · `nosniff` · `Referrer-Policy` · `Permissions-Policy`(카메라·마이크·위치 끔) · HSTS.
@@ -106,6 +106,16 @@
   **미리보기 브랜치(Preview branches)는 켜지 않는다** — Branching Compute 는 별도 과금이다.
 - OCR: **tesseract.js 한국어, 서버에서 자체 실행** (`src/lib/ocr.ts` — 미확정 5 에서 확정됐다).
   외부 OCR API 를 부르지 않는다 — 수강증의 실명이 밖으로 나가지 않게 하려는 것이다
+- **DB 크론 → 우리 API** (2026-09-21, 마이그레이션 20260921100500). 10분·30초 간격으로 외부(네이버·유튜브)를 부르고 강사에게 웹 푸시를
+  보내야 하는 일은 **pg_cron 이 pg_net 으로 우리 API 를 부르게** 했다 — `private.call_app('/api/cron/…')`.
+  Vercel 크론은 요금제에 따라 하루 한 번만 되고, Edge Function 은 저장소에 없어 배포 길을 늘리지 않았다.
+  - 부르는 주소는 `private.app_config` 의 `site_url`(`https://winnertoeic.com`). **도메인을 옮기면 이 한 줄을 고친다** (docs/HANDOVER.md).
+  - 비밀은 Vault 의 `app_cron_secret` — **마이그레이션이 DB 안에서 만들었고 저장소·환경변수 어디에도 값이 없다.**
+    API 는 `authorizedAppCall()`(`src/lib/cron-auth.ts`)이 service_role 로 `public.app_cron_secret()` 을 읽어 `x-app-cron-secret` 과
+    `timingSafeEqual` 로 비교한다. 손으로 부를 때는 `Authorization: Bearer <CRON_SECRET>` 도 받는다.
+  - **pg_net 은 비동기라 크론 기록의 '성공' 은 결과가 아니다.** 실제 응답은 `net._http_response`(6시간 보관)에서 본다:
+    `select status_code, left(content, 200), created from net._http_response order by created desc limit 10;`
+  - 크론 기록은 `cron-history-cleanup` 이 7일치만 남긴다
 
 **소유권을 넘길 때는 `docs/HANDOVER.md` 를 본다** (2026-09-21 Alan — "소유권 전체를 다 넘겨줘야할것 같아" ·
 **"완전히 손을 때는거야"**). 소유권은 코드 한 곳이 아니라 **여덟 곳에 흩어져 있다** — GitHub ·
@@ -383,7 +393,7 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 - **수업시간대별 인원수**: **강좌(행) × 시간대(열) 표**. 칸은 `현장 (불라방)` 이고 불라방이 0이면 숫자만, 반이 없으면 `–`.
   맨 아래 시간대별 `합계` 줄. 반 편성에서 시간을 받지 않으므로 **시간이 없는 반은 강좌 이름으로 묶고 `시간 미정` 열**에 넣는다.
   열 순서는 시간대 라벨 앞의 `HH:MM` 기준이고 `시간 미정` 이 맨 뒤. 좁은 화면에서는 시작 시각만 적는다 (`10:00~12:10` → `10:00`)
-- **네이버 예약**: 다가오는 예약 + 최근 받은 알림 5건 (도메인 규칙 8)
+- **네이버 예약**: 다가오는 예약(칸마다 인원) + 최근 변동 5건 + 마지막 확인 시각 (도메인 규칙 8 — 10분마다 예약 페이지를 확인한다)
 - **교재주문**: 불라방 수강생의 교재 배송 신청 목록 (`textbook_orders`) 최근 5건
 - **마케팅 분석**: 가입 시 수집한 대학·학과·성별 차트. 자세히 보기는 `/admin/analytics`.
   차트 범례는 칸이 좁으면 한 줄씩 내려온다 — 열 수를 못박으면 글자가 한 자씩 접힌다
@@ -1107,16 +1117,33 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   - 바로 알림: 네이버 예약 · 등업신청 접수 · 불라방 교재주문 · 연락하기 문의 (서버 액션에서 `after()` 로 `notifyStaff()`).
     하루 요약: 매일 21:00 KST Vercel Cron `/api/cron/daily-digest` — 최근 24시간 스터디 신청·숙제업로드·신규 가입 수 (0건이면 안 보냄).
   - 발송은 `src/lib/push.ts`. 404/410 구독은 자동 삭제. 키: `NEXT_PUBLIC_VAPID_PUBLIC_KEY`·`VAPID_PRIVATE_KEY`·`VAPID_SUBJECT`, 크론은 `CRON_SECRET`.
-- **네이버 예약**: 서면 YBM 네이버 예약(사업장 459658)은 센터 전체 예약이고, 그중 "역전토익 강사상담"이 우리 상품이다.
-  - 네이버는 개별 사업자용 예약 조회 API 가 없고, 파트너센터 자동 수집은 약관 위반이다. **긁어오지 않는다.**
-  - 대신 네이버가 보내는 예약 알림(문자·메일·앱 알림) **원문을 연결 주소로 전달받는다**:
-    `POST /api/naver-reservations` + `Authorization: Bearer <NAVER_WEBHOOK_SECRET>`, 본문 `{"text": "원문"}` (메일 form·html 도 받음).
-  - `src/lib/naver-reservation.ts` 가 원문에서 예약 날짜·시각·상품·예약자(가운데 글자 가림)·예약번호·상태를 뽑는다.
-    "이용일시·방문일시" 줄을 우선하고 "신청일시·접수일시" 줄은 피한다. 원문의 전화번호는 가려서 보관한다.
-    날짜를 못 읽어도 원문을 저장하고 알림은 원문 앞부분으로 보낸다 (정보를 버리지 않는다).
-  - 같은 예약번호가 다시 오면 상태·일시가 바뀐 경우만 갱신·알림 (중복 전달 무시).
-  - 대시보드 위젯: 다가오는 예약(오늘부터, 취소 제외) + 최근 받은 알림 5건.
-  - **미확정**: 실제로 어떤 경로(문자·메일·스마트플레이스 앱)로 알림을 받는지, 원문 형식 샘플. 샘플을 받으면 해석 규칙을 맞춘다.
+- **네이버 예약**: 서면 YBM 네이버 예약(사업장 459658)은 센터 전체 예약이고, 그중 "역전토익 강사상담"(상품 4139011)이 우리 상품이다.
+  **예약 페이지를 10분마다 확인한다 — 첫토익과 같은 방식** (2026-09-21 Alan — "네이버는 첫토익 설정과 똑같이해주면 좋겠어.
+  예약이 잡히면 강사에게 알림이 오고 동시에 대시보드에서 바로 보이도록", 마이그레이션 20260921100500 · 20260921101500).
+  - 본사가 관리하는 예약이라 강사에게 네이버 관리자 권한이 없다 — 네이버가 보내는 알림을 받을 길이 없다 (첫토익도 같은 이유였다).
+    그래서 **공개 예약 페이지가 쓰는 조회(`hourlySchedule`, 로그인·쿠키 없음)** 로 칸마다 예약 건수만 받는다.
+    이것은 네이버가 공개한 API 가 아니다 — **Alan 이 약관 위험을 알고 정했다.** 예전 규칙 "긁어오지 않는다" 는 **파트너센터**(관리자 화면)를 두고 한 말이고 지금도 그대로다.
+  - 길: pg_cron `naver-booking-sync`(10분마다) → `private.call_app` → **우리 API `/api/cron/naver-sync`** →
+    네이버 조회 한 번(60일치 범위) → `parseHourly`(`src/lib/naver-booking.ts`)가 응답 모양을 **엄격하게** 검사 →
+    `public.naver_apply_snapshot` 이 직전 기록과 비교·저장(한 트랜잭션, advisory lock) → 변동이 있으면 `notifyStaff("naver_reservation")`.
+    DB 크론이 우리 API 를 부르는 길은 기술 스택 "DB 크론 → 우리 API" 에 적었다.
+  - **예약자가 누구인지는 모른다** — 이 조회는 칸마다 건수·정원뿐이다. 알림·대시보드에는 날짜·시각·인원만 간다.
+    **예약 상세·방문자 조회를 로그인 세션으로 부르지 말 것** (첫토익 문서 6.5 — 개인정보). 정원은 칸마다 2명이다 (2026-09-21 실측, 20분 칸).
+  - **지킬 것 — 어기면 거짓 알림이 강사 전원에게 간다**
+    1. **응답을 기본값으로 메우지 않는다.** `bookingCount` 이름만 바뀌어도 `?? 0` 이면 예약된 칸이 전부 취소로 보인다. 모양이 이상하면 저장하지 않고 멈춘다 (`naver-booking.test.ts`).
+    2. **처음 본 칸은 기준선** 이다 (첫 실행 알림 폭탄 방지). 첫 실행 판정은 칸 표가 아니라 `naver_sync_status.last_success_at` 이 비었는가로 한다.
+       단 지난번에도 보던 범위 안에 새로 생긴 칸의 예약은 접수로 본다 (그 사이 연 칸에 바로 잡힌 예약).
+    3. **조회 범위(60일)는 예약을 여는 기간보다 길어야 한다** — 짧으면 먼 날짜의 예약이 범위에 들어올 때 기준선으로 묻힌다 (`NAVER_DAYS_AHEAD`).
+    4. **날짜는 시간대 표시 없이** 보낸다 (`2026-09-21T00:00:00`). `+09:00` 을 붙이면 HTTP 200 에 본문 오류가 온다.
+  - 보완 (첫토익 문서 6.4): 취소가 한꺼번에 3건 이상이면 **한 번 보류**하고 10분 뒤에도 같으면 반영한다 ·
+    범위 안인데 응답에서 사라진 칸은 지우고, 예약이 있던 칸(한 시간 넘게 남은 것)이면 `vanished` 로 남겨 **확인 필요** 알림 ·
+    403·429 를 받으면 **한 시간 쉰다**(`retry_after`, 우회하지 않는다) · 한 시간 연속 실패하면 한 번 알린다 ·
+    대시보드와 알림 설정 화면에 **마지막 확인 시각**을 보여 준다 (크론 '성공' 기록은 믿을 수 없다).
+  - 표: `naver_booking_slots`(칸 기록, 하루 지난 칸은 지운다) · `naver_booking_events`(변동: booked · cancelled · vanished, 쌓기만) ·
+    `naver_sync_status`(한 줄). 전부 스태프 조회, 쓰기는 서버(service_role)만.
+  - 대시보드 위젯(`NaverReservationsWidget`): 다가오는 예약(칸마다 `2/2명`) + 최근 변동 5건 + 마지막 확인. `오늘 현황` 카드는 다가오는 예약 인원 합계.
+  - **예전 방식(알림 원문 전달)은 쓰지 않는다** — `POST /api/naver-reservations` 와 `naver_reservations` 표·`src/lib/naver-reservation.ts` 는
+    지우지 않고 남겼지만 운영에서 한 건도 받지 못했고 대시보드·설정 화면이 더는 읽지 않는다. 되살릴 일이 없으면 나중에 정리 마이그레이션으로 지운다.
 
 ---
 
@@ -1633,7 +1660,22 @@ create table notification_settings (       -- 사람별 알림 종류 켜기·�
   verification bool, textbook_order bool, contact bool, naver_reservation bool, daily_digest bool
 );
 
-create table naver_reservations (          -- 네이버 예약 알림에서 뽑은 예약 (쓰기는 서버만, 조회는 스태프)
+-- ─── 네이버 예약 자동 확인 (마이그레이션 20260921101500 — 도메인 규칙 8) ───
+create table naver_booking_slots (         -- 칸마다 예약 건수 (10분마다 갱신). 쓰기는 서버만, 조회는 스태프
+  slot_at timestamptz primary key, booking_count int, stock int, is_sale_day bool, updated_at timestamptz
+);
+create table naver_booking_events (        -- 변동 기록 (쌓기만). 알림은 이 행마다 한 번
+  id bigint primary key, slot_at timestamptz,
+  kind text,                               -- booked | cancelled | vanished(예약이 있던 칸이 사라짐 — 확인 필요)
+  prev_count int, new_count int, stock int, created_at timestamptz
+);
+create table naver_sync_status (           -- 한 줄. 마지막 성공·연속 실패·retry_after(차단 뒤 쉼)·held_signature(취소 여러 건 보류)
+  id boolean primary key, last_run_at, last_success_at, last_error, last_error_at, consecutive_failures, retry_after, held_signature, slots, range_to
+);
+-- private.app_config(key, value)          -- site_url = DB 크론이 부르는 우리 사이트 주소 (20260921100500)
+-- Vault app_cron_secret                   -- DB 크론 → 우리 API 호출 비밀 (DB 안에서 만든 값). public.app_cron_secret() 은 service_role 전용
+
+create table naver_reservations (          -- (쓰지 않음) 예전 알림 원문 전달 방식. 대시보드가 더는 읽지 않는다
   id             bigint primary key,
   dedupe_key     text unique not null,       -- 예약번호, 없으면 원문 해시
   status         text,                       -- requested | confirmed | cancelled | changed | unknown
@@ -1730,7 +1772,7 @@ where p.role='student'
 | `/admin/homework` | 숙제점검: **과목(RC·LC) → 레벨 → 상태** 필터, 최근순 목록, 학생 질문·수업 날짜 표시. 코멘트를 적고 점검완료하면 학생 알림함으로 간다 | instructor |
 | `/admin/lc-audio` | 레벨 탭 → A반·B반 교재 2권의 표지·교재명·설명, 교재별 수업/숙제 음원 등록(강별, 한 강에 여러 개, 올리기 전 배치 확인) | instructor |
 | `/admin/contacts` | 문의 처리 | instructor |
-| `/admin/notifications` | 알림 설정: 이 기기에서 푸시 받기, 알림 종류 켜기·끄기, 네이버 예약 연결 주소·코드(관리자만) | instructor |
+| `/admin/notifications` | 알림 설정: 이 기기에서 푸시 받기, 알림 종류 켜기·끄기, 네이버 예약 자동 확인 상태(마지막 확인 · 실패) | instructor |
 
 ---
 
@@ -1982,7 +2024,7 @@ where p.role='student'
      - 목록: 단계/레벨 필터 탭, "총 N개의 후기", YBM 공식 홈페이지로 나가는 배너(더 보기), 후기 카드 목록
      - 카드: 아바타(성씨) · **마스킹된 이름**(유\*빈) · 작성일 · 채널 배지(어학원) · 목표 점수 배지 · 단계 배지 · 제목 · 본문 일부 + 더 보기
      - 상세: 본문 전체 + 접기, 👍 평가 태그 (예: 커리큘럼이 탄탄해요 · 피드백이 상세해요 · 실전 대비가 잘돼요)
-   - **네이버 예약은 "들어왔는지 안 왔는지"만 알면 된다** (Alan 확인). 지금 구현(웹훅으로 원문 받기)이 이미 그 이상을 한다.
+   - **네이버 예약은 "들어왔는지 안 왔는지"만 알면 된다** (Alan 확인). → 2026-09-21 첫토익과 같은 방식(예약 페이지 10분 확인)으로 만들었다 (도메인 규칙 8).
      첫토익 화면은 달력에 예약 있는 날 표시 + 그 날 예약 시각 목록 + 대시보드에 건수·가장 이른 시각. 10분마다 수집.
    - **특강 신청 화면** (첫토익 참고): 종류 배지 · 상태 배지(곧 시작 / 신청 마감) · 날짜 · 강사 ·
      신청 현황 `N / 정원명` + 진행바 + 남은 자리 · **신청 오픈 카운트다운**(“신청 시작까지 hh:mm:ss”, 오픈 일시 표기) ·
