@@ -304,7 +304,7 @@ export const NAV_ADMIN: NavItem[] = [
   { href: "/admin", label: "대시보드", icon: "analytics" },
   { href: "/admin/students", label: "학생명단", icon: "students", crew: true },
   // QR 출석 명단 · 교실 QR (2026-09-21 Alan "조교에게도 명단을 열어줘"). 학생명단 뒤에 둔다 — 조교의 첫 화면(adminHomeFor)이 바뀌지 않게
-  { href: "/admin/attendance", label: "출석", icon: "success", crew: true },
+  { href: "/admin/attendance", label: "출석", icon: "location", crew: true },
   { href: "/admin/sections", label: "반 편성", icon: "calendar" },
   { href: "/admin/lectures", label: "특강 신청", icon: "bolt" },
   { href: "/admin/verifications", label: "등업 로그", icon: "verify", crew: true },
@@ -324,6 +324,18 @@ export const NAV_ADMIN: NavItem[] = [
 /** 그 등급이 쓸 수 있는 관리자 메뉴. 조교는 crew 항목만 */
 export function navAdminFor(role?: string | null): NavItem[] {
   return role === "assistant" ? NAV_ADMIN.filter((n) => n.crew) : NAV_ADMIN;
+}
+
+/**
+ * 요청 가로채기(`src/lib/supabase/proxy.ts`)가 `/admin` 아래로 들여보낼지 (2026-09-21).
+ * 강사·관리자는 전부, **조교는 자기에게 열린 화면(메뉴의 crew 항목)과 그 아래만.** 판정은 진짜 등급(`profiles.role`)으로 한다.
+ * 그 전에는 강사·관리자만 통과시켜서 **조교가 관리자 화면에 하나도 못 들어갔다** — 조교에게 연 화면이 전부 `/my?denied=admin` 으로 튕겼다.
+ * 여기를 통과해도 화면마다 `requireStaff()`/`requireCrew()` 가 한 번 더 본다 (예: 교재주문 아래 교재·계좌 설정은 스태프만).
+ */
+export function canEnterAdminPath(role: string | null | undefined, pathname: string): boolean {
+  if (role === "instructor" || role === "admin") return true;
+  if (role !== "assistant") return false;
+  return navAdminFor(role).some((n) => pathname === n.href || pathname.startsWith(`${n.href}/`));
 }
 
 /**
@@ -375,7 +387,7 @@ export const NAV_DRAWER: NavSection[] = [
     items: [
       { href: "/my/class", label: "내 시간표", icon: "calendar" },
       // 현장 수강생의 QR 출석 — 강의실 화면의 6자리 코드를 치는 곳이자 내 출석 기록 (2026-09-21)
-      { href: "/my/attendance", label: "출석", icon: "success" },
+      { href: "/my/attendance", label: "출석", icon: "location" },
       featureNav("live"),
       featureNav("replay"),
       featureNav("lecture"),

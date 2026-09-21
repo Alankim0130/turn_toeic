@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { canEnterAdminPath } from "@/lib/site";
 
 /**
  * 요청마다 Supabase 세션 쿠키를 갱신하고, 로그인 필요 경로를 보호한다.
@@ -51,10 +52,11 @@ export async function updateSession(request: NextRequest) {
 
   // /admin 은 렌더링 전에 역할을 확인한다. (레이아웃의 redirect 는 페이지 세그먼트의
   // 병렬 렌더링을 막지 못하므로, 진짜 307 은 여기서 내려야 한다.)
+  // 조교는 자기에게 열린 화면만 통과한다 (canEnterAdminPath — 2026-09-21 까지는 조교가 전부 막혀 있었다)
   if (user && pathname.startsWith("/admin")) {
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
     const role = profile?.role as string | undefined;
-    if (role !== "instructor" && role !== "admin") {
+    if (!canEnterAdminPath(role, pathname)) {
       const url = request.nextUrl.clone();
       url.pathname = "/my";
       url.search = "?denied=admin";

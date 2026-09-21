@@ -27,7 +27,7 @@ export default async function MyAttendancePage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader icon="success" title="출석" description="강의실 화면의 QR 을 휴대폰 카메라로 찍거나, 아래에 6자리 코드를 입력하세요. 들어올 때 한 번, 나갈 때 한 번이에요." />
+      <PageHeader icon="location" title="출석" description="강의실 화면의 QR 을 휴대폰 카메라로 찍거나, 아래에 6자리 코드를 입력하세요. 들어올 때 한 번, 나갈 때 한 번이에요." />
 
       <Reveal className="card p-5 sm:p-6">
         <CodeForm />

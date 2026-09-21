@@ -62,9 +62,9 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
 
   return (
     <>
-      <PageHeader icon="success" title="출석" description="강의실 QR 로 찍은 입실·퇴실이에요. 퇴실까지 찍어야 출석이고, 기기 문제 등은 사유를 적어 출석 인정으로 바꿔 주세요.">
+      <PageHeader icon="location" title="출석" description="강의실 QR 로 찍은 입실·퇴실이에요. 퇴실까지 찍어야 출석이고, 기기 문제 등은 사유를 적어 출석 인정으로 바꿔 주세요.">
         <Link href="/admin/attendance/qr" className="btn-primary">
-          <Icon name="success" size={18} />
+          <Icon name="location" size={18} />
           교실에 QR 띄우기
         </Link>
       </PageHeader>
@@ -88,7 +88,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
       </nav>
 
       {sections.size === 0 ? (
-        <EmptyState icon="success" title="이 날 현장 수업이 있는 학생이 없어요" description="수업일이 아니거나, 이 날 수업을 듣는 현장 수강생이 없어요. 불라방·인강 학생은 출석을 찍지 않아요." />
+        <EmptyState icon="location" title="이 날 현장 수업이 있는 학생이 없어요" description="수업일이 아니거나, 이 날 수업을 듣는 현장 수강생이 없어요. 불라방·인강 학생은 출석을 찍지 않아요." />
       ) : (
         <div className="space-y-6">
           {[...sections.entries()].map(([sectionId, { head, rows: list }]) => (
