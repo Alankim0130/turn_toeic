@@ -50,7 +50,7 @@
 | 2 | **Vercel — 프로젝트** | 배포, 환경변수 11개, 크론 2개 | 배포가 멈추고 ★크론(수강증 삭제·하루 요약)이 조용히 선다 |
 | 3 | **Supabase — 프로젝트** | 학생 데이터 전부, 로그인, 파일 6개 버킷, pg_cron 3개 | 결제가 끊기면 **DB 가 정지**하고 사이트 전체가 선다 |
 | 4 | **GitHub — 저장소** | 코드, 마이그레이션 49개 | ★옮긴 뒤 연동을 다시 안 붙이면 **DB 마이그레이션이 조용히 안 돈다** |
-| 5 | **Google Cloud — OAuth** | 구글 로그인 | Alan 계정이 지워지면 **학생 구글 로그인이 전원 불가** |
+| 5 | **Google Cloud — OAuth** | 구글 로그인 · 유튜브 불라방 자동 연결(켰다면) | Alan 계정이 지워지면 **학생 구글 로그인이 전원 불가**, 불라방 링크가 저절로 안 들어간다 |
 | 6 | **Kakao Developers** | 카카오 로그인 | 위와 같음 (켜 두었을 경우) |
 | 7 | **구글 서치 콘솔** | 검색 노출·색인 현황 | 검색 문제를 볼 눈이 사라진다 (사이트는 멀쩡) |
 | 8 | **네이버 서치어드바이저** | 네이버 검색 노출 | 위와 같음 |
@@ -178,12 +178,14 @@ Supabase 의 Google 설정에 갈아 끼우고, 승인된 리디렉션 URI 에
 | `NAVER_WEBHOOK_SECRET` | 아무 긴 임의 문자열 | 네이버 예약 알림을 전달하는 쪽 설정도 같이 고쳐야 한다 |
 | Google Client Secret | Google Cloud Console | 바꾸는 순간부터 Supabase 에 새 값을 넣을 때까지 **구글 로그인이 끊긴다** — 연달아 할 것 |
 | Kakao Client Secret | Kakao Developers → 보안 | 위와 같음 |
+| `YOUTUBE_CLIENT_ID` · `YOUTUBE_CLIENT_SECRET` (켰다면) | Google Cloud Console → 유튜브용 OAuth 클라이언트 | 클라이언트를 새로 만들면 **강사님들이 `/admin/live-channels` 에서 채널을 다시 연결**해야 한다. 그 전까지는 반 상세에서 링크를 손으로 넣는다 |
 
 **환경변수 11개 목록** (전체는 `.env.example`):
 `NEXT_PUBLIC_SUPABASE_URL` · `NEXT_PUBLIC_SUPABASE_ANON_KEY` · `SUPABASE_SERVICE_ROLE_KEY` ·
 `NEXT_PUBLIC_SITE_URL` · `GOOGLE_SITE_VERIFICATION` · `NAVER_SITE_VERIFICATION` ·
 `NEXT_PUBLIC_VAPID_PUBLIC_KEY` · `VAPID_PRIVATE_KEY` · `VAPID_SUBJECT` ·
 `NAVER_WEBHOOK_SECRET` · `CRON_SECRET`
+(유튜브 불라방 자동 연결을 켰다면 `YOUTUBE_CLIENT_ID` · `YOUTUBE_CLIENT_SECRET` 두 개가 더 있다)
 (`SUPABASE_PROJECT_REF`·`SUPABASE_DB_PASSWORD`·`SUPABASE_ACCESS_TOKEN` 은 개발용이라 Vercel 에는 없어도 된다)
 
 ### 9단계 · 떠난 뒤 (Alan 이 지킬 것)

@@ -308,6 +308,8 @@ export const NAV_ADMIN: NavItem[] = [
   { href: "/admin/verifications", label: "등업 로그", icon: "verify", crew: true },
   { href: "/admin/textbook-orders", label: "교재주문", icon: "orders", crew: true },
   { href: "/admin/replays", label: "다시보기", icon: "replay" },
+  // 강사 유튜브 채널 연결 · 오늘 회차 자동 연결 상태 (2026-09-21) — 강사·관리자만
+  { href: "/admin/live-channels", label: "불라방 자동 연결", icon: "live" },
   { href: "/admin/analytics", label: "마케팅 분석", icon: "analytics" },
   { href: "/admin/study", label: "스터디 신청자", icon: "study", crew: true },
   { href: "/admin/study-materials", label: "비대면 자료", icon: "online" },

@@ -615,24 +615,51 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   저녁 19:40 RC → 오전 11:10 RC · 저녁 묶음 18:30~20:40 → 오전 묶음 10:00~12:10.
 - 반 배정 · 승인 화면의 반 이름은 시간 컬럼이 없으면 `time_block` 을 붙인다 (`sectionSummary`) — 같은 강좌의 오전·저녁반, 60분·120분을 구분한다
 
-**수업이 시작되면 불라방 학생에게 알림** (2026-09-19 Alan 요청, 마이그레이션 20260919150000)
-- Alan: "불라방 안내에서 수업시작 10분전 입장이라는 문구가 있는데, 아니야. 수업이 시작되면 알림을 보내주도록 설정해줘. 불라방학생들에게만"
+**유튜브 방송을 감지해 불라방 링크를 저절로 넣는다** (2026-09-21 Alan 요청 — 첫토익 "OBS 방송 자동 게시", 마이그레이션 20260921120500)
+- Alan: "두 강사가 각자 유튜브 채널에서 일부공개로 새 방송을 킬꺼야. 해당시간 5~10분 전후로 방송이 올라오면 그 시간대에 불라방 링크가
+  들어가면 되고, 오전시간에 했던 영상링크는 다시보기로 올라가면 될 것 같아!" · "방송이 잡힌 순간 보내는 알림."
+- 강사마다 `/admin/live-channels` 에서 **자기 유튜브 채널을 한 번 연결**한다 (구글 동의, `youtube.readonly` 하나).
+  일부공개 방송은 채널 페이지·검색에 안 나와 긁어서는 영영 못 찾는다 — 채널 주인의 승인으로 조회한다 (첫토익 A2).
+  토큰은 `youtube_channels` 에 두고 **service_role 만 읽는다** — authenticated 에는 상태 칸만 칸 단위로 열었다 (`select *` 를 하면 권한 오류다).
+  키 `YOUTUBE_CLIENT_ID` · `YOUTUBE_CLIENT_SECRET` 이 없으면 연결 버튼 대신 설정 안내가 뜨고 감지는 아무것도 안 한다.
+- 길: pg_cron `live-detect`(**30초**) → `private.live_detect_due()` 가 **감지할 회차가 있을 때만** `private.call_app('/api/cron/live-detect')` →
+  `public.live_detect_candidates()`(오늘 · 시간 단위 반 · 인강 아님 · 담당 강사가 채널 연결 · 링크 없음 · 수업 시작 −10분 ~ +30분) →
+  담당 강사 토큰으로 `liveBroadcasts.list(active)` → **방송이 시작한 시각이 수업 시작 ±10분**(`LIVE_MATCH_MINUTES`, `src/lib/live-detect.ts`)이면
+  `public.register_detected_live` 가 그 회차에 넣는다(`session_live_links.source = 'youtube'`). 강사에게 확인 푸시(`live_detected`, 알림 설정에서 끈다).
+- **지킬 것**
+  1. **매칭은 "담당 강사 = 채널 주인"** 이다 — 강사 한 분은 한 시간대에 한 반만 맡는다 (9월 편성 실측). 그래서 **그 달 LC 교재가 정해져
+     담당 강사가 채워져 있어야** 감지가 된다 (담당은 LC 교재로 저절로 정해진다 — 위 "담당 강사"). 2026-09-21 에 10월 반은 전부 비어 있었다.
+  2. **감지 시각이 아니라 방송 시작 시각으로 맞춘다** — 크론이 늦게 돌아도 같은 답이고, 앞 교시 방송을 켜 둔 채 다음 교시가 되어도 그 방송이
+     다음 교시로 가지 않는다. 그래서 **교시마다 새 방송**이어야 한다 (한 방송으로 두 교시를 이으면 뒤 교시는 손으로 넣는다).
+  3. **손으로 넣은 링크는 덮어쓰지 않는다** (`on conflict do nothing`). 강사가 자동 링크를 고치면 `source` 가 `manual` 로 바뀐다.
+  4. 응답에 영상 id·주소를 담지 않는다 — 일부공개는 주소가 곧 시청권이다 (첫토익 D5).
+  5. 링크는 시간 단위 반에만 들어간다. 묶음·속성반·인강 반은 후보가 아니다. 방학달 통짜 120분 반을 강사 두 분이 나눠 맡으면
+     한 반에 방송이 둘이라 이 규칙이 맞지 않는다 — 그 달이 오면 손으로 넣거나 규칙을 다시 정한다.
+- 오전반은 수업이 끝나면 **같은 주소가 그대로 다시보기**가 된다 — 이미 있던 `promote-live-replays` 가 한다 (위 "불라방 링크는 회차마다").
+- 반 상세 회차 표에 자동으로 들어간 링크는 `자동` 칩이 붙는다. `/admin/live-channels` 에 오늘 회차마다 상태(자동 연결 · 직접 넣음 · 방송 기다림 · 채널 미연결)가 보인다.
+- 첫토익 문서의 함정 중 미리 막은 것: 동의 화면이 "테스트" 상태면 7일 뒤 연결이 끊긴다(게시 상태로) · 다시 연결한 계정은 refresh token 을
+  안 줄 수 있다(`prompt=consent`, 안 되면 구글 계정에서 권한을 지우고 다시) · access token 은 만료 5분 전까지 재사용하고 401·403 이면 한 번만 새로 받는다 ·
+  연결이 끊기면(`invalid_grant`) 오류를 남기고 **처음 한 번** 강사에게 알린다.
+
+**불라방이 시작되면 불라방 학생에게 알림** (2026-09-19 Alan 요청 → 2026-09-21 "방송이 잡힌 순간" 으로 바꿈, 마이그레이션 20260919150000 · 20260921120500)
+- 2026-09-19 Alan: "불라방 안내에서 수업시작 10분전 입장이라는 문구가 있는데, 아니야. 수업이 시작되면 알림을 보내주도록 설정해줘. 불라방학생들에게만"
+  → 2026-09-21 Alan: "**방송이 잡힌 순간** 보내는 알림."
 - **`10분 전 입장` 문구는 지웠다** — 세 군데에 있었다 (`/my/live` 머리글 · 카드 바닥 · `STUDENT_FEATURES.live.points`). **되살리지 말 것.**
-- pg_cron `notify-live-class-start` 가 **5분마다** `private.notify_live_class_start()` 를 돈다. 오늘 회차가 있고
-  시작 시각(`start_time`, 없으면 시간대 라벨 앞 시각 `private.time_block_start`)이 **방금 지난** 반을 찾아,
-  그 반의 **불라방(`enrollments.mode = 'live'`) 학생**에게 앱 안 알림(`student_messages`, `kind = 'live_start'`)을 넣는다.
-  실제 수업 시작 시각이 전부 5의 배수라(10:00 · 11:10 · 12:30 · 13:50 · 18:30 · 19:40) 보통 0분 안에 나간다.
+- **링크가 들어오는 순간 보낸다** — `session_live_links` 트리거(`private.tg_session_live_link_notify`)가 그 회차가 오늘이고 수업 시각 앞뒤
+  (시작 15분 전 ~ 끝)면 `private.notify_live_session(반, 날짜)` 를 부른다. 유튜브 감지로 들어오든 강사가 손으로 넣든 같다.
+  **미리 넣어 둔 링크**와 반의 **상시 링크**(Zoom 등)는 pg_cron `notify-live-class-start`(5분마다)가 수업 시각에 보낸다.
+  **링크가 없으면 보내지 않는다** — 들어갈 곳이 없는 "시작했어요" 는 쓸모가 없다 (2026-09-19~21 에는 시각만 보고 보냈다).
 - **앱 안 알림함으로만 간다** (2026-09-19 Alan 선택). 문자·알림톡·**학생 푸시는 여전히 없다** — 규칙 8 의 웹 푸시는 스태프 전용이고,
-  학생에게 켜려면 학생용 `알림 받기` 화면과 분 단위 크론이 따로 필요하다. 임의로 만들지 말 것.
-- **지킬 네 가지 — 하나라도 어기면 엉뚱한 사람에게 가거나 같은 수업이 여러 번 간다**
+  학생에게 켜려면 학생용 `알림 받기` 화면이 따로 필요하다. 임의로 만들지 말 것.
+- **지킬 것 — 어기면 엉뚱한 사람에게 가거나 같은 방송이 여러 번 간다**
   1. **인강 반(`class_sections.recorded`)은 뺀다** — 그 시간에 라이브가 없다. 그 학생은 오전 수업 녹화본을 본다 (미확정 2-2).
-  2. **직접 배정된 반으로만 센다** — 묶음 반 학생에게 그 안의 시간 단위 반까지 세면 한 수업에 알림이 두세 개 간다 (위 "반 권한").
-  3. **보낸 표시는 `(반, 날짜)`** 다 (`private.live_start_notices`) — `session_dates.id` 는 편성을 고치면 지워졌다 다시 생겨 바뀐다.
-     id 로 잡으면 편성을 고친 날 알림이 두 번 간다.
-  4. **시작한 지 15분이 넘으면 보내지 않는다** — 크론이 멈췄다 살아났을 때 지난 수업까지 몰아 보내면 "지금 시작" 이 거짓말이 된다.
+  2. **받는 사람 = 그 시간 단위 반을 볼 수 있는 불라방 학생** — 직접 배정 + 그 반을 품는 묶음 반·속성반 배정(`private.section_includes`), 한 사람에 한 번.
+     그래서 **120분 학생은 방송이 바뀔 때마다(교시마다, 강사가 바뀔 때마다) 한 번씩 받는다** — 그때마다 새 링크로 들어가야 한다.
+     (2026-09-19~21 에는 "직접 배정된 반으로만" 셌다 — 시각 기준이라 한 수업에 두세 개가 한꺼번에 갔기 때문이다. 링크 기준이 되며 바뀌었다)
+  3. **보낸 표시는 `(링크가 있는 반, 날짜)`** 다 (`private.live_start_notices`) — `session_dates.id` 는 편성을 고치면 지워졌다 다시 생겨 바뀐다.
+  4. **시작한 지 15분이 넘으면 크론은 보내지 않는다** — 크론이 멈췄다 살아났을 때 지난 수업까지 몰아 보내면 "지금 시작" 이 거짓말이 된다.
 - 받는 사람은 등록이 `active` 인(개강했고 종강 전) 배정만이다 — 예비등록생·끝난 배정·현장 수강생에게는 가지 않는다.
-- **문구가 SQL 에 있다** (마이그레이션 한곳) — 크론이 보내는 것이라 TypeScript 를 거치지 않는다.
-  옮기려면 Supabase 에서 pg_net 을 켜고 우리 API 를 부르게 해야 한다. 같은 문구를 TS 에 베껴 두지 말 것 — 반드시 갈라진다.
+- **문구가 SQL 에 있다** (`private.notify_live_session` 한곳). 같은 문구를 TS 에 베껴 두지 말 것 — 반드시 갈라진다.
 - 보낸 이가 사람이 아니므로 **`sender_name` 을 비워 둔다** — 알림함은 이름이 비면 시각만 적는다.
 
 ### 2. 개강일 · 종강일 — 수업일과 **별개**로 강사가 지정
@@ -1142,6 +1169,7 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
     아이폰은 **홈 화면에 추가한 앱에서만** 된다 (iOS 16.4+). 서비스 워커는 `public/sw.js` (fetch 는 가로채지 않음).
   - 종류별 켜기·끄기는 `notification_settings` (행이 없으면 모두 켜짐).
   - 바로 알림: 네이버 예약 · 등업신청 접수 · 불라방 교재주문 · 연락하기 문의 (서버 액션에서 `after()` 로 `notifyStaff()`).
+    **내 불라방 자동 연결**(`live_detected`)은 방송한 강사 본인에게만 간다 (`notifyUser`, 2026-09-21).
     하루 요약: 매일 21:00 KST Vercel Cron `/api/cron/daily-digest` — 최근 24시간 스터디 신청·숙제업로드·신규 가입 수 (0건이면 안 보냄).
   - 발송은 `src/lib/push.ts`. 404/410 구독은 자동 삭제. 키: `NEXT_PUBLIC_VAPID_PUBLIC_KEY`·`VAPID_PRIVATE_KEY`·`VAPID_SUBJECT`, 크론은 `CRON_SECRET`.
 - **네이버 예약**: 서면 YBM 네이버 예약(사업장 459658)은 센터 전체 예약이고, 그중 "역전토익 강사상담"(상품 4139011)이 우리 상품이다.
@@ -1687,6 +1715,16 @@ create table notification_settings (       -- 사람별 알림 종류 켜기·�
   verification bool, textbook_order bool, contact bool, naver_reservation bool, daily_digest bool
 );
 
+-- ─── 유튜브 불라방 자동 연결 (마이그레이션 20260921120500 — 도메인 규칙 1 "유튜브 방송을 감지해") ───
+create table youtube_channels (            -- 강사 채널 연결. 토큰 칸은 service_role 만 (authenticated 는 상태 칸만 칸 단위 grant)
+  user_id uuid primary key references profiles, channel_id text unique, channel_title text,
+  refresh_token text, access_token text, access_token_expires_at timestamptz,
+  linked_at, last_checked_at, last_live_at, last_error, last_error_at
+);
+-- session_live_links.source : manual(강사가 붙여 넣음) | youtube(감지해 저절로 넣음)
+-- notification_settings.live_detected : 내 방송이 잡혀 링크가 들어가면 강사 본인에게
+-- public.live_detect_candidates() · public.register_detected_live(ids, url) — service_role 전용 · private.notify_live_session(반, 날짜)
+
 -- ─── 불라방 교재주문 (마이그레이션 20260921110500 — 도메인 규칙 7-1) ───
 create table textbook_accounts (           -- 교재비 입금 계좌 (강사가 등록). crew + 불라방 배정 학생만 조회
   id bigint primary key, bank_name text, account_no text, holder text, label text, active bool, sort_order int
@@ -1806,6 +1844,7 @@ where p.role='student'
 | `/admin/lectures` | 특강 신청: 기수별 특강마다 신청 받기·정원·신청 시작 설정 + 신청자 명단(스태프 취소) | instructor |
 | `/admin/sections/[id]` | 반 상세: 달력에서 파생된 수업일(읽기 전용) + **회차별 불라방 링크**·다시보기 여부, "끝나면 다시보기로" 스위치, 상시 불라방 링크, 정원·상태·강사 수정, 삭제 | instructor |
 | `/admin/replays` | 녹화본 등록·회차 연결. 맨 위 **레벨 버튼**(650·750·850)으로 가르고 드롭다운은 기수별. 줄마다 `LC/RC · 트랙 · 시간`. **오전 시간 단위 반만** 나온다 — 묶음·스파르타·저녁 줄은 뺀다 (10월 36개 → 12개) | instructor |
+| `/admin/live-channels` | **불라방 자동 연결** — 내 유튜브 채널 연결·끊기, 강사님 연결 상태, 오늘 회차마다 자동 연결 상태, 관리자 설정 안내 | instructor |
 | `/admin/verifications` | 등업신청 목록·상세: 수강증 이미지, OCR 로그, 반 골라 승인 · 거절 · 오배정 정정 | instructor · **조교** |
 | `/admin/textbook-orders` | 교재주문 처리 — 교재·금액·입금자명을 보고 `입금 확인` → `발송`(송장번호) | instructor · **조교** |
 | `/admin/textbook-orders/setup` | **교재·입금 계좌 설정** — 입금 계좌 · 교재(레벨·가격·계좌) · 배송비·기본 계좌·안내 문구 | instructor |

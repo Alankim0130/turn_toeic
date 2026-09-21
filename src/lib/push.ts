@@ -10,10 +10,11 @@ import type { Database } from "@/lib/supabase/database.types";
  */
 
 type SettingsRow = Database["public"]["Tables"]["notification_settings"]["Row"];
-export type NotificationKind = keyof Pick<SettingsRow, "verification" | "textbook_order" | "contact" | "naver_reservation" | "daily_digest">;
+export type NotificationKind = keyof Pick<SettingsRow, "verification" | "textbook_order" | "contact" | "naver_reservation" | "daily_digest" | "live_detected">;
 
 export const NOTIFICATION_KINDS: { key: NotificationKind; label: string; desc: string }[] = [
   { key: "naver_reservation", label: "네이버 예약", desc: "예약이 들어오거나 바뀌면 날짜·시각을 바로 알려줘요" },
+  { key: "live_detected", label: "내 불라방 자동 연결", desc: "내 유튜브 방송이 잡혀 불라방 링크가 저절로 들어가면 (내 것만)" },
   { key: "verification", label: "등업신청 접수", desc: "수강생이 수강증을 올리면 바로" },
   { key: "textbook_order", label: "불라방 교재주문", desc: "교재 배송 신청이 들어오면 바로" },
   { key: "contact", label: "연락하기 문의", desc: "새 문의가 오면 바로" },
@@ -89,6 +90,20 @@ export async function notifyStaff(kind: NotificationKind, message: PushMessage):
     return await deliver(subs ?? [], message);
   } catch (error) {
     console.error("[push] notifyStaff", error);
+    return EMPTY;
+  }
+}
+
+/** 한 사람에게만 보낸다 — 그 사람이 그 알림을 꺼 두었으면 보내지 않는다 (내 불라방 자동 연결 확인 등) */
+export async function notifyUser(userId: string, kind: NotificationKind, message: PushMessage): Promise<PushResult> {
+  try {
+    const admin = createAdminClient();
+    const { data: settings } = await admin.from("notification_settings").select("*").eq("user_id", userId).maybeSingle();
+    if (settings && settings[kind] === false) return EMPTY;
+    const { data: subs } = await admin.from("push_subscriptions").select("id, endpoint, p256dh, auth").eq("user_id", userId);
+    return await deliver(subs ?? [], message);
+  } catch (error) {
+    console.error("[push] notifyUser", error);
     return EMPTY;
   }
 }

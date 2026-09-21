@@ -155,6 +155,56 @@ export type Database = {
           },
         ]
       }
+      youtube_channels: {
+        Row: {
+          access_token: string | null
+          access_token_expires_at: string | null
+          channel_id: string
+          channel_title: string | null
+          last_checked_at: string | null
+          last_error: string | null
+          last_error_at: string | null
+          last_live_at: string | null
+          linked_at: string
+          refresh_token: string
+          user_id: string
+        }
+        Insert: {
+          access_token?: string | null
+          access_token_expires_at?: string | null
+          channel_id: string
+          channel_title?: string | null
+          last_checked_at?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
+          last_live_at?: string | null
+          linked_at?: string
+          refresh_token: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string | null
+          access_token_expires_at?: string | null
+          channel_id?: string
+          channel_title?: string | null
+          last_checked_at?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
+          last_live_at?: string | null
+          linked_at?: string
+          refresh_token?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "youtube_channels_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       account_merge_requests: {
         Row: {
           created_at: string
@@ -992,6 +1042,7 @@ export type Database = {
         Row: {
           contact: boolean
           daily_digest: boolean
+          live_detected: boolean
           naver_reservation: boolean
           textbook_order: boolean
           updated_at: string
@@ -1001,6 +1052,7 @@ export type Database = {
         Insert: {
           contact?: boolean
           daily_digest?: boolean
+          live_detected?: boolean
           naver_reservation?: boolean
           textbook_order?: boolean
           updated_at?: string
@@ -1010,6 +1062,7 @@ export type Database = {
         Update: {
           contact?: boolean
           daily_digest?: boolean
+          live_detected?: boolean
           naver_reservation?: boolean
           textbook_order?: boolean
           updated_at?: string
@@ -1144,18 +1197,21 @@ export type Database = {
           live_url: string
           promoted_at: string | null
           session_date_id: number
+          source: string
           updated_at: string
         }
         Insert: {
           live_url: string
           promoted_at?: string | null
           session_date_id: number
+          source?: string
           updated_at?: string
         }
         Update: {
           live_url?: string
           promoted_at?: string | null
           session_date_id?: number
+          source?: string
           updated_at?: string
         }
         Relationships: [
@@ -1930,6 +1986,14 @@ export type Database = {
       cancel_textbook_order: {
         Args: { p_id: number }
         Returns: boolean
+      }
+      live_detect_candidates: {
+        Args: never
+        Returns: { instructor_id: string; label: string; section_id: number; session_date_id: number; starts_at: string }[]
+      }
+      register_detected_live: {
+        Args: { p_session_date_ids: number[]; p_url: string }
+        Returns: number[]
       }
     }
     Enums: {
