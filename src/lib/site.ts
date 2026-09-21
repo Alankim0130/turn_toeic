@@ -303,6 +303,8 @@ export const NAV_BOTTOM: NavItem[] = [
 export const NAV_ADMIN: NavItem[] = [
   { href: "/admin", label: "대시보드", icon: "analytics" },
   { href: "/admin/students", label: "학생명단", icon: "students", crew: true },
+  // QR 출석 명단 · 교실 QR (2026-09-21 Alan "조교에게도 명단을 열어줘"). 학생명단 뒤에 둔다 — 조교의 첫 화면(adminHomeFor)이 바뀌지 않게
+  { href: "/admin/attendance", label: "출석", icon: "success", crew: true },
   { href: "/admin/sections", label: "반 편성", icon: "calendar" },
   { href: "/admin/lectures", label: "특강 신청", icon: "bolt" },
   { href: "/admin/verifications", label: "등업 로그", icon: "verify", crew: true },
@@ -372,6 +374,8 @@ export const NAV_DRAWER: NavSection[] = [
     label: "수업",
     items: [
       { href: "/my/class", label: "내 시간표", icon: "calendar" },
+      // 현장 수강생의 QR 출석 — 강의실 화면의 6자리 코드를 치는 곳이자 내 출석 기록 (2026-09-21)
+      { href: "/my/attendance", label: "출석", icon: "success" },
       featureNav("live"),
       featureNav("replay"),
       featureNav("lecture"),

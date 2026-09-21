@@ -238,6 +238,108 @@ export type Database = {
         }
         Relationships: []
       }
+      attendance_events: {
+        Row: {
+          actor_id: string | null
+          class_date: string | null
+          created_at: string
+          id: number
+          kind: string
+          method: string | null
+          note: string | null
+          result: string
+          section_id: number | null
+          student_id: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          class_date?: string | null
+          created_at?: string
+          id?: number
+          kind: string
+          method?: string | null
+          note?: string | null
+          result: string
+          section_id?: number | null
+          student_id?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          class_date?: string | null
+          created_at?: string
+          id?: number
+          kind?: string
+          method?: string | null
+          note?: string | null
+          result?: string
+          section_id?: number | null
+          student_id?: string | null
+        }
+        Relationships: []
+      }
+      attendance_stamps: {
+        Row: {
+          check_in_at: string | null
+          check_out_at: string | null
+          class_date: string
+          created_at: string
+          decided_by: string | null
+          decided_note: string | null
+          id: number
+          late: boolean
+          method: string | null
+          section_id: number
+          status: string
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          check_in_at?: string | null
+          check_out_at?: string | null
+          class_date: string
+          created_at?: string
+          decided_by?: string | null
+          decided_note?: string | null
+          id?: number
+          late?: boolean
+          method?: string | null
+          section_id: number
+          status: string
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          check_in_at?: string | null
+          check_out_at?: string | null
+          class_date?: string
+          created_at?: string
+          decided_by?: string | null
+          decided_note?: string | null
+          id?: number
+          late?: boolean
+          method?: string | null
+          section_id?: number
+          status?: string
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_stamps_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "class_sections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_stamps_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       class_sections: {
         Row: {
           book_set: string | null
@@ -1994,6 +2096,22 @@ export type Database = {
       register_detected_live: {
         Args: { p_session_date_ids: number[]; p_url: string }
         Returns: number[]
+      }
+      attendance_display: {
+        Args: never
+        Returns: Json
+      }
+      attendance_scan: {
+        Args: { p_method?: string; p_token: string }
+        Returns: Json
+      }
+      attendance_set: {
+        Args: { p_date: string; p_note: string; p_section: number; p_status: string; p_student: string }
+        Returns: boolean
+      }
+      attendance_roster: {
+        Args: { p_date: string }
+        Returns: { check_in_at: string | null; check_out_at: string | null; course_name: string; decided_by_name: string | null; decided_note: string | null; late: boolean; phone: string | null; section_id: number; status: string | null; student_id: string; student_name: string; target_score: number | null; tester: boolean; time_block: string | null; track: string }[]
       }
     }
     Enums: {
