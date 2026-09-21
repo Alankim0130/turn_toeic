@@ -53,10 +53,13 @@ export function TextbookForm({
   const term = terms.find((t) => t.id === termId) ?? open[0];
   const [picked, setPicked] = useState<Set<number>>(() => new Set(term && term.items.length === 1 ? [term.items[0].id] : []));
   const [recipient, setRecipient] = useState(v.recipient_name ?? "");
-  const [depositor, setDepositor] = useState(v.depositor_name ?? "");
+  // 입금자명은 받는 분 이름으로 미리 채운다 (첫토익과 같다) — 부모님 이름으로 보내면 고친다
+  const [depositor, setDepositor] = useState(v.depositor_name ?? v.recipient_name ?? "");
 
   const chosen = (term?.items ?? []).filter((i) => picked.has(i.id));
   const quote = textbookQuote(chosen, accounts, settings);
+  const missing =
+    chosen.length === 0 ? "교재를 하나 이상 골라 주세요" : quote.missingAccount ? "입금 계좌가 아직 없어요" : !depositor.trim() ? "입금자명을 적어 주세요" : null;
 
   if (state.ok) {
     return (
@@ -235,9 +238,13 @@ export function TextbookForm({
         </div>
       </section>
 
-      <SubmitButton pendingText="주문하는 중…" disabled={chosen.length === 0 || quote.missingAccount || !depositor.trim()}>
-        {quote.total > 0 ? `${formatWon(quote.total)} 입금하고 주문하기` : "주문하기"}
-      </SubmitButton>
+      <div className="flex flex-wrap items-center gap-3">
+        <SubmitButton pendingText="주문하는 중…" disabled={!!missing}>
+          {quote.total > 0 ? `${formatWon(quote.total)} 입금하고 주문하기` : "주문하기"}
+        </SubmitButton>
+        {/* 버튼이 왜 잠겼는지 적는다 — 잠긴 버튼만 있으면 무엇을 해야 할지 모른다 */}
+        {missing && <p className="text-sm font-bold text-slate">{missing}</p>}
+      </div>
     </form>
   );
 }
