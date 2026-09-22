@@ -39,11 +39,28 @@ export type ParsedReceipt = {
   gates: { academy: boolean; brand: boolean };
   mode: EnrollMode;
   /**
-   * 수강 방식을 **무엇을 보고** 정했나 (2026-09-22). `online` = 강의실 `온라인 강의` · `room` = 강의실 호실(`701호`) ·
-   * `live` = `라이브방송` 만 읽힘 · `null` = 아무것도 못 읽어 기본값(현장)으로 둠.
-   * **null 이면 자동 승인하지 않는다** — 불라방 학생이 강의실 줄을 못 읽어 현장으로 들어가면 교재주문·수업 알림이 막힌다.
+   * 수강 방식을 **무엇을 보고** 정했나 (2026-09-22). `online` = 강의실 칸의 `온라인 강의` · `room` = 강의실 칸의 호실(`701호`) ·
+   * `live` = 강의실 칸을 못 읽었는데 `라이브방송`·`온라인 강의` 글자는 어딘가에 있음 · `null` = 아무것도 못 읽어 기본값(현장).
+   * **자동 승인은 강의실 칸을 읽었을 때(`online`·`room`)만 한다** — 불라방 학생이 현장으로 들어가면 교재주문·수업 알림이 막히고,
+   * 광고 배너의 `온라인 강의` 글자로 현장 학생이 불라방이 되면 안 된다 (firsttoeic 사고 2: 배너 글자로 오배정).
    */
   modeEvidence: "online" | "room" | "live" | null;
+  /**
+   * 수강증 **카드의 칸 라벨**(`수강생` · `수강센터` · `수강시간`)이 다 보이나 (2026-09-22, firsttoeic 사고 2 "마이페이지 광고 배너의
+   * `550+ 1단계` 로 오배정"). 카드가 없는 화면의 글자로 반을 정하지 않게 — 없으면 자동 승인하지 않는다 (거절은 아니다).
+   */
+  card: boolean;
+  /**
+   * `역전토익` 글자를 **그대로** 읽었나 (2026-09-22, firsttoeic 사고 3 "다른 과정 수강증이 승인됐다").
+   * 게이트 G2 는 한 글자 오인식(`실전토익`)과 강사명만으로도 통과시키지만(덜 거절하려고), **자동 승인은 이 글자가 있어야** 한다 —
+   * 같은 강사가 맡은 다른 과정이나 `실전토익` 같은 비슷한 이름의 과정이 시간대만 맞아 자동으로 붙지 않게.
+   */
+  brandExact: boolean;
+  /**
+   * 다시보기권처럼 **등업이 아닌 상품**의 표시가 보이나 — `다시보기`(라벨이 사이에 끼어 `다시수강요일보기` 로 읽힌 것 포함) · `00:00~23:59`
+   * (2026-09-22, firsttoeic 사고 4 "다시보기권이 정규반으로 등업됐다"). 자동 승인하지 않고 승인 화면에 적는다.
+   */
+  replayPass: boolean;
   /** 5 = 주5일, 3 = 주3일, null = 못 읽음 */
   weekly: 5 | 3 | null;
   tracks: Track[];
@@ -160,12 +177,13 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
  *  - 시각 구분자 `. ; ：` → `:`  (숫자 사이에서만 — 금액 콤마·날짜는 건드리지 않는다)
  *  - 범위 구분자 `- – — ～` → `~` (시각 사이에서만 — 전화번호·날짜의 하이픈은 그대로)
  *
- * 시각의 앞자리는 **더 긴 숫자나 날짜의 일부가 아니어야** 한다 (`(?<![\d.])`) — 없으면 `2026.09.16` 의 `26.09` 를
+ * 시각의 앞자리는 **더 긴 숫자나 날짜의 일부가 아니어야** 한다 — 없으면 `2026.09.16` 의 `26.09` 를
  * 시각으로 보고 `2026:09.16` 으로 망가뜨려 날짜를 통째로 못 읽었다 (2026-09-22 재현).
+ * 막는 것은 **앞에 숫자** 또는 **`숫자.`** 가 붙은 경우뿐이다 — `수강시간.10.00` 처럼 라벨 뒤 잡점은 그대로 시각으로 고친다.
  */
 export function normalizeReceiptText(raw: string): { text: string; compact: string } {
   let t = (raw ?? "").normalize("NFKC").replace(/\r\n?/g, "\n");
-  t = t.replace(/(?<![\d.])(\d{1,2})\s*[.;:]\s*(\d{2})(?!\d)/g, "$1:$2");
+  t = t.replace(/(?<!\d)(?<!\d\.)(\d{1,2})\s*[.;:]\s*(\d{2})(?!\d)/g, "$1:$2");
   t = t.replace(/(\d{1,2}:\d{2})\s*[-–—~～]\s*(\d{1,2}:\d{2})/g, "$1~$2");
   return { text: t, compact: t.replace(/\s+/g, "") };
 }
@@ -359,6 +377,26 @@ function parseTuition(compact: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** 수강증 카드에만 있는 칸 라벨 — 셋 다 보여야 카드를 읽은 것이다 (`ParsedReceipt.card`) */
+const CARD_LABELS = ["수강생", "수강센터", "수강시간"] as const;
+
+/** 강의실 칸의 값이 `온라인 강의` 인가 — 라벨 바로 뒤(잡점 몇 자 허용)만 본다. 한 글자 오인식(`온라인 강으`)은 봐준다 */
+function roomValueIsOnline(compact: string): boolean {
+  for (let i = compact.indexOf("강의실"); i >= 0; i = compact.indexOf("강의실", i + 1)) {
+    if (fuzzyIncludes(compact.slice(i + 3, i + 3 + 8), RECEIPT_KEYWORDS.online, 1)) return true;
+  }
+  return false;
+}
+
+/**
+ * 다시보기권 표시 (firsttoeic 사고 4 에서 배운 것). 2단 배치를 OCR 이 읽으면 라벨이 값 사이에 끼어 `다시수강요일보기` 가 되므로
+ * 칸 라벨을 지운 뒤에도 한 번 더 본다. 하루 종일(`00:00~23:59`) 시간도 같은 표시다.
+ */
+const CARD_FIELD_LABELS = /수강요일|수강시간|수강료|수강생|수강센터|강의실/g;
+function isReplayPass(compact: string): boolean {
+  return compact.includes("다시보기") || compact.replace(CARD_FIELD_LABELS, "").includes("다시보기") || compact.includes("00:00~23:59");
+}
+
 /**
  * OCR 원문 → 판정 키. 못 읽은 항목은 null/빈 배열로 두고 warnings 에 이유를 남긴다.
  * 후보 대조(어느 반인가)는 여기서 하지 않는다 — 반 스키마(60분/120분 반·묶음 권한)가 정해진 뒤 별도 함수로 붙인다.
@@ -374,13 +412,23 @@ export function parseReceipt(raw: string): ParsedReceipt {
   // 수강 방식 — **강의실이 `온라인 강의` 면 불라방** (2026-09-18 Alan: "온라인 강의로 판단하면 되겠네").
   // 수강요일 줄의 `라이브방송` 은 화면 폭 때문에 `라이` / `브방송` 으로 갈려 자주 안 읽히므로 붙어서 읽힌 경우에만 보조로 본다.
   // 조각을 맞추는 짓은 하지 않는다 (헷갈린다 — Alan). `인강` 은 신호가 아니다 (화목금 인강 = 오전 녹화본, 현장)
-  const online = fuzzyIncludes(compact, RECEIPT_KEYWORDS.online, 1);
-  const live = fuzzyIncludes(compact, RECEIPT_KEYWORDS.live, 1);
-  // 현장이라는 **읽은 근거** — 강의실 칸의 호실 (`본관 701호`). 없으면 현장은 그냥 기본값이다 (2026-09-22)
+  //
+  // **강의실 칸의 값이 먼저다** (2026-09-22) — 칸 밖의 글자(광고 배너 `온라인 강의 무료체험` 등)가 현장 학생을 불라방으로 바꾸지 못하게.
+  // 칸의 값을 못 읽었을 때만 칸 밖의 `라이브방송`·`온라인 강의` 글자로 정하고(`live`), 그때는 자동 승인하지 않는다.
+  const online = roomValueIsOnline(compact);
+  // 현장이라는 **읽은 근거** — 강의실 칸의 호실 (`본관 701호`). 없으면 현장은 그냥 기본값이다
   const room = /강의실.{0,8}?\d{3,4}호/.test(compact);
-  const mode: EnrollMode = online || live ? "live" : "onsite";
-  const modeEvidence: ParsedReceipt["modeEvidence"] = online ? "online" : live ? "live" : room ? "room" : null;
+  const liveWords = fuzzyIncludes(compact, RECEIPT_KEYWORDS.live, 1) || fuzzyIncludes(compact, RECEIPT_KEYWORDS.online, 1);
+  const modeEvidence: ParsedReceipt["modeEvidence"] = online ? "online" : room ? "room" : liveWords ? "live" : null;
+  const mode: EnrollMode = modeEvidence === "online" || modeEvidence === "live" ? "live" : "onsite";
   if (!modeEvidence) warnings.push("강의실(온라인 강의/호실)을 못 읽어 수강 방식을 현장으로 두었어요");
+  else if (modeEvidence === "live") warnings.push("강의실 칸을 못 읽어 칸 밖의 글자로 불라방으로 봤어요");
+
+  const card = CARD_LABELS.every((label) => compact.includes(label));
+  if (!card) warnings.push(`수강증 카드의 칸(${CARD_LABELS.join("·")})이 다 보이지 않아요`);
+  const brandExact = compact.includes(RECEIPT_KEYWORDS.brand);
+  const replayPass = isReplayPass(compact);
+  if (replayPass) warnings.push("다시보기권처럼 보이는 표시(다시보기 · 00:00~23:59)가 있어요");
 
   // 주5일 먼저, 그다음 트랙 글자.
   // **회차 표기가 1순위다** (2026-09-22): 주5일은 늘 `월18회`, 주3일은 늘 `월9회` 가 붙는다 — 숫자라 또렷하게 읽힌다.
@@ -427,8 +475,13 @@ export function parseReceipt(raw: string): ParsedReceipt {
     warnings.push(`과정명(${courseLevel === 650 ? "중급속성" : "실전속성"} = ${courseLevel})과 레벨 숫자(${level})가 달라요`);
   }
 
+  // 수업 시간은 **수강시간 칸의 값**이다 (2026-09-22). 칸을 못 읽었을 때 시간이 하나뿐이면 그것을 쓰고,
+  // 여럿이면(배너·다른 글자) 어느 것인지 모르니 비워 둔다 — 첫 번째를 골라 엉뚱한 시간대 반에 붙이지 않게
   const times = parseTimes(compact);
+  const labeled = compact.match(/수강시간[^\d]{0,3}(\d{1,2}:\d{2}~\d{1,2}:\d{2})/);
+  const time = (labeled ? parseTimes(labeled[1])[0] : undefined) ?? (times.length === 1 ? times[0] : null);
   if (times.length === 0) warnings.push("수업 시간(HH:MM~HH:MM)을 찾지 못했어요");
+  else if (!time) warnings.push(`수업 시간이 여러 개라 어느 것인지 모르겠어요: ${times.map((t) => t.timeBlock).join(", ")}`);
 
   return {
     text,
@@ -436,6 +489,9 @@ export function parseReceipt(raw: string): ParsedReceipt {
     gates,
     mode,
     modeEvidence,
+    card,
+    brandExact,
+    replayPass,
     weekly,
     tracks,
     levels,
@@ -443,7 +499,7 @@ export function parseReceipt(raw: string): ParsedReceipt {
     courseLevel,
     program,
     times,
-    time: times[0] ?? null,
+    time,
     // 캡처 시각은 수강 날짜가 아니다 — 지우고 센다 (ParsedReceipt.months 참고)
     months: parseReceiptMonths(text.replace(CAPTURE_STAMP, " ")),
     courseMonth: parseCourseMonth(text),
@@ -486,12 +542,14 @@ export interface OcrEngine {
  * **캡처 시각(초)도 본다** (2026-09-22). 여기서 멈추면 뒤 변형은 읽지 않으므로, 멈추는 기준에 없는 값은 운영에서 조용히 비었다 —
  * 실물 수강증은 폭 700 변형 하나로 이 함수가 true 가 됐는데 그 변형에서는 캡처 시각을 못 읽어 "같은 초 캡처" 검사가 꺼져 있었다.
  * 학생 이름은 여기서 모른다 — 부르는 쪽(`submitVerification`)이 이름까지 읽혔는지 함께 본다.
+ * 자동 승인에 필요한 것(`역전토익` 글자 · 카드 칸 라벨)도 여기 넣는다 — 첫 변형이 놓쳤으면 다음 변형이 읽을 기회를 준다.
  */
 export function receiptComplete(text: string): boolean {
   const p = parseReceipt(text);
   return (
     p.gates.academy &&
-    p.gates.brand &&
+    p.brandExact &&
+    p.card &&
     p.level != null &&
     p.weekly != null &&
     p.time != null &&

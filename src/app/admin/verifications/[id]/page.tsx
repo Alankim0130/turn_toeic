@@ -105,7 +105,15 @@ export default async function VerificationDetailPage({
   // OCR 이 반을 찾았는데 자동 승인 조건(이름 일치 등)에 못 미친 건 — 찾은 반을 미리 골라 둔다 (2026-09-18)
   const matchLog = v.candidates as {
     result?: { kind?: string; sectionIds?: number[] } | null;
-    flags?: { duplicateImage?: boolean; staleCapture?: boolean; sameCapture?: boolean; paletteOff?: boolean; paletteNote?: string; alreadyEnrolled?: number[] };
+    flags?: {
+      duplicateImage?: boolean;
+      staleCapture?: boolean;
+      sameCapture?: boolean;
+      paletteOff?: boolean;
+      paletteNote?: string;
+      alreadyEnrolled?: number[];
+      decidedBefore?: "approved" | "rejected" | null;
+    };
     correctionOf?: number;
   } | null;
   // 자동 승인 뒤 학생이 "반이 달라요" 로 낸 정정 요청 — 새로 승인하면 등록이 두 건 생기니 기존 승인의 배정 수정으로 보낸다 (2026-09-18)
@@ -115,7 +123,7 @@ export default async function VerificationDetailPage({
     matchLog?.flags?.duplicateImage ? "다른 계정이 같은 이미지 파일을 올렸어요 — 수강증을 돌려 쓰는 것일 수 있어요. 두 계정의 이름·전화번호를 확인해 주세요." : null,
     matchLog?.flags?.staleCapture ? "수강증 캡처 시각이 45일 넘게 오래됐어요 — 지난 수강증을 다시 올린 것일 수 있어요. 이번 달 등록이 맞는지 확인해 주세요." : null,
     // 같은 초 = 같은 캡처다. 글자를 고쳐도 남으므로 "친구 수강증에 내 이름만 얹은" 경우가 여기 걸린다 (2026-09-19)
-    matchLog?.flags?.sameCapture ? "다른 계정에 **같은 초에 캡처된** 수강증이 있어요 — 한쪽이 상대의 그림을 받아 쓴 것일 수 있어요 (글자를 고쳐도 캡처 시각은 남아요). 두 계정을 확인해 주세요." : null,
+    matchLog?.flags?.sameCapture ? "다른 계정에 같은 초에 캡처된 수강증이 있어요 — 한쪽이 상대의 그림을 받아 쓴 것일 수 있어요 (글자를 고쳐도 캡처 시각은 남아요). 두 계정을 확인해 주세요." : null,
     // 색 팔레트 — AI 로 만들었거나 손으로 그린 그림, 다른 학원 수강증이 걸린다 (2026-09-19)
     matchLog?.flags?.paletteOff
       ? `화면 색이 YBM 수강증 팔레트와 달라요 — 만들어 낸 그림이거나 다른 곳의 수강증일 수 있어요. 그림을 직접 봐 주세요.${matchLog.flags.paletteNote ? ` (${matchLog.flags.paletteNote})` : ""}`
@@ -129,9 +137,21 @@ export default async function VerificationDetailPage({
   const preselected = requested.filter((id) => pickerSections.some((s) => s.id === id));
   // 이미 그 달 반에 배정돼 있다 — 새로 승인하면 등록이 두 건 생긴다 (2026-09-22). 정정 요청은 아래 안내가 따로 있다
   const alreadyEnrolled = correctionOf ? [] : (matchLog?.flags?.alreadyEnrolled ?? []).filter((n) => typeof n === "number");
+  // 같은 캡처를 전에 사람이 판정했다 (2026-09-22, firsttoeic 사고 5). 승인됐던 캡처인데 지금 배정이 없으면 환불·회수일 수 있다
+  const decidedBefore = matchLog?.flags?.decidedBefore;
+  const humanNotes = [
+    decidedBefore === "approved" && !correctionOf && alreadyEnrolled.length === 0 && v.result === null
+      ? "이 학생이 같은 수강증(같은 캡처)으로 전에 승인된 적이 있는데 지금은 이 달 반에 배정이 없어요 — 환불·회수로 배정을 풀었다면 승인하지 마세요."
+      : null,
+    decidedBefore === "rejected" && v.result === null ? "강사가 전에 반려한 수강증(같은 캡처)을 다시 올렸어요 — 지난 반려 사유를 확인해 주세요." : null,
+  ].filter((s): s is string => !!s);
 
   const isImage = /\.(png|jpe?g|webp|gif)$/i.test(v.file_path);
   const parsed = v.parsed as Record<string, unknown> | null;
+  // 다시보기권처럼 등업이 아닌 상품의 표시 (2026-09-22, firsttoeic 사고 4) — 자동 승인하지 않았다
+  if (parsed?.replayPass === true) {
+    humanNotes.push("다시보기권처럼 보이는 표시(다시보기 · 00:00~23:59)가 있어요 — 등업이 아닌 상품일 수 있어요. 정규반 수강증이 맞는지 확인해 주세요.");
+  }
   // OCR 이 실패했으면 사유가 ocr_raw.error 에 있다 (2026-09-18 — 조용히 비어 있으면 원인을 알 수 없다)
   const ocrErrorRaw = (v.ocr_raw as { error?: unknown } | null)?.error;
   const ocrError = typeof ocrErrorRaw === "string" ? ocrErrorRaw : null;
@@ -245,7 +265,7 @@ export default async function VerificationDetailPage({
               </Alert>
             )}
             <h2 className="mb-3 font-black text-ink">OCR 판독 결과</h2>
-            {suspicious.map((s) => (
+            {[...humanNotes, ...suspicious].map((s) => (
               <Alert key={s} kind="warning" className="mb-3">{s}</Alert>
             ))}
             {parsed ? (

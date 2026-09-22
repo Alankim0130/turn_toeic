@@ -57,6 +57,10 @@ describe("실물 수강증 OCR (휴대폰 전체 캡처)", () => {
     expect(p.weekly).toBe(5);
     expect(p.mode).toBe("live"); // 강의실 `온라인 강의`
     expect(p.modeEvidence).toBe("online");
+    // 자동 승인 조건 (2026-09-22, firsttoeic 사고 2·3·4) — 실물 캡처가 첫 변형에서 전부 통과해야 한다
+    expect(p.brandExact).toBe(true);
+    expect(p.card).toBe(true);
+    expect(p.replayPass).toBe(false);
     expect(p.time?.timeBlock).toBe("10:00~12:10");
     expect(p.courseMonth).toBe(8);
     // 캡처 시각은 **초까지** 읽혀야 한다 (2026-09-19) — 이 값으로 다른 계정의 복사본을 잡는다.

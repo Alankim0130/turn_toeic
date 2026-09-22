@@ -483,3 +483,77 @@ describe("오류 점검 (2026-09-22)", () => {
     expect(p.courseLevel).toBe(650);
   });
 });
+
+/**
+ * firsttoeic 운영에서 겪은 사고를 처음부터 막는다 (2026-09-22 Alan 이 운영 명세를 공유).
+ * 같은 YBM 앱 수강증이라 글자(과정명·강사·시간표)만 다르고 사고의 모양은 같다.
+ */
+describe("firsttoeic 사고에서 배운 것", () => {
+  const card = (extra: string[] = []) =>
+    screen(
+      [
+        ...extra,
+        "역전토익 [종합반]",
+        "650 목표",
+        "수강생 김민수",
+        "수강센터 부산 서면센터",
+        "강사 이혜영",
+        "강의실 본관 701호",
+        "수강요일 [4주-09/04] 월수금 (월9회)",
+        "수강시간 10:00~11:00",
+        "수강료 298,300원",
+      ].join("\n"),
+    );
+
+  it("사고 2 — 카드 밖 글자(배너)의 시간이 먼저 나와도 수강시간 칸의 값을 쓴다", () => {
+    const p = parseReceipt(card(["[광고] 저녁반 모집 18:30~20:40"]));
+    expect(p.time?.timeBlock).toBe("10:00~11:00");
+  });
+
+  it("사고 2 — 수강시간 칸을 못 읽었는데 시간이 여럿이면 고르지 않는다 (자동 승인 안 됨)", () => {
+    const p = parseReceipt(card(["[광고] 저녁반 모집 18:30~20:40"]).replace("수강시간 10:00~11:00", "10:00~11:00"));
+    expect(p.time).toBeNull();
+    expect(p.warnings.some((w) => w.includes("여러 개"))).toBe(true);
+    // 시간이 하나뿐이면 라벨이 없어도 그것이다
+    expect(parseReceipt(card().replace("수강시간 10:00~11:00", "10:00~11:00")).time?.timeBlock).toBe("10:00~11:00");
+  });
+
+  it("사고 2 — 배너의 `온라인 강의` 글자가 현장 학생(강의실 호실)을 불라방으로 바꾸지 못한다", () => {
+    const p = parseReceipt(card(["온라인 강의 무료체험 · 라이브방송 오픈"]));
+    expect(p.mode).toBe("onsite");
+    expect(p.modeEvidence).toBe("room");
+  });
+
+  it("사고 2 — 강의실 칸을 못 읽었으면 칸 밖 글자로 정하되 근거는 `live`(자동 승인 안 됨)", () => {
+    const p = parseReceipt(card(["온라인 강의 무료체험"]).replace("강의실 본관 701호\n", ""));
+    expect(p.mode).toBe("live");
+    expect(p.modeEvidence).toBe("live");
+    expect(receiptComplete(p.text)).toBe(false);
+  });
+
+  it("사고 2 — 카드 칸 라벨(수강생·수강센터·수강시간)이 다 있어야 카드다", () => {
+    expect(parseReceipt(card()).card).toBe(true);
+    expect(parseReceipt(card().replace("수강시간 ", "")).card).toBe(false);
+    expect(parseReceipt("역전토익 650+ 주5일 월18회 10:00~12:10 부산 서면센터").card).toBe(false); // 배너만 찍은 화면
+  });
+
+  it("사고 3 — `역전토익` 글자를 그대로 읽어야 자동 승인 후보다 (강사명·한 글자 다른 과정명은 게이트만 통과)", () => {
+    const near = parseReceipt(card().replace("역전토익", "실전토익"));
+    expect(near.gates.brand).toBe(true); // 거절하지는 않는다 (덜 거절하는 쪽)
+    expect(near.brandExact).toBe(false);
+    expect(receiptComplete(card().replace("역전토익", "력전토익"))).toBe(false);
+    expect(parseReceipt(card()).brandExact).toBe(true);
+  });
+
+  it("사고 4 — 다시보기권 표시: `다시보기` · 라벨이 끼어 `다시수강요일보기` · `00:00~23:59`", () => {
+    expect(parseReceipt(card(["역전토익 다시보기권"])).replayPass).toBe(true);
+    expect(parseReceipt(card(["다시", "수강요일", "보기"])).replayPass).toBe(true);
+    expect(parseReceipt(card().replace("10:00~11:00", "00:00~23:59")).replayPass).toBe(true);
+    expect(parseReceipt(card()).replayPass).toBe(false);
+  });
+
+  it("라벨 뒤 잡점이 붙은 시각(`수강시간.10.00~12.10`)도 시각으로 고친다 — 날짜(`2026.09.16`)는 그대로", () => {
+    expect(normalizeReceiptText("수강시간.10.00~12.10").compact).toBe("수강시간.10:00~12:10");
+    expect(normalizeReceiptText("2026.09.16").compact).toBe("2026.09.16");
+  });
+});
