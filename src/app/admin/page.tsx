@@ -114,11 +114,13 @@ export default async function AdminDashboardPage() {
   const naverNext = naver.data?.[0];
   const naverCount = (naver.data ?? []).reduce((n, s) => n + s.booking_count, 0);
 
-  const todo: { label: string; value: number; href: string; icon: IconName; zero: string; some: string }[] = [
-    { label: "등업 검토", value: pendingVer.count ?? 0, href: "/admin/verifications?status=pending", icon: "verify", zero: "검토할 수강증이 없어요", some: "검토를 기다리는 수강증" },
-    { label: "숙제 점검", value: pendingHomework.count ?? 0, href: "/admin/homework?status=submitted", icon: "homework", zero: "점검할 제출물이 없어요", some: "점검을 기다리는 제출물" },
-    { label: "교재주문", value: textbookCount.count ?? 0, href: "/admin/textbook-orders", icon: "orders", zero: "처리할 주문이 없어요", some: "배송을 기다리는 주문" },
-    { label: "새 문의", value: newContacts.count ?? 0, href: "/admin/contacts?status=new", icon: "contact", zero: "새로 온 문의가 없어요", some: "답변을 기다리는 문의" },
+  // 칸에는 이름과 숫자만 둔다 (2026-09-22 Alan — 이름 아래 "검토할 수강증이 없어요" 같은 설명 줄이 PC 에서 "검토할…" 로 잘려 보였다).
+  // 0건 · 1건 이상은 타일 색과 숫자가 말해 준다
+  const todo: { label: string; value: number; href: string; icon: IconName }[] = [
+    { label: "등업 검토", value: pendingVer.count ?? 0, href: "/admin/verifications?status=pending", icon: "verify" },
+    { label: "숙제 점검", value: pendingHomework.count ?? 0, href: "/admin/homework?status=submitted", icon: "homework" },
+    { label: "교재주문", value: textbookCount.count ?? 0, href: "/admin/textbook-orders", icon: "orders" },
+    { label: "새 문의", value: newContacts.count ?? 0, href: "/admin/contacts?status=new", icon: "contact" },
   ];
 
   const stats: { label: string; value: number; unit: string; href: string; icon: IconName; hint: string }[] = [
@@ -157,10 +159,7 @@ export default async function AdminDashboardPage() {
                   <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl2", on ? "bg-brand-500 shadow-pink" : "bg-surface")}>
                     <Icon name={t.icon} size={24} className={cn(on && "brightness-0 invert")} />
                   </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-black text-ink">{t.label}</span>
-                    <span className="block truncate text-xs text-mist">{on ? t.some : t.zero}</span>
-                  </span>
+                  <span className="min-w-0 flex-1 text-sm font-black text-ink">{t.label}</span>
                   <span className="flex shrink-0 items-baseline gap-0.5">
                     <span className={cn("text-2xl font-black tabular-nums", on ? "text-brand-600" : "text-mist")}>{t.value}</span>
                     <span className="text-xs font-bold text-slate">건</span>
