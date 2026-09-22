@@ -409,7 +409,8 @@ export async function upsertSessionLiveLink(_prev: ActionState, formData: FormDa
   // 링크를 바꾸면 DB 트리거가 이미 만든 다시보기의 주소도 함께 바꾼다 (session_live_links_changed)
   const { data, error } = await supabase
     .from("session_live_links")
-    .upsert({ session_date_id: sessionDateId, live_url: url }, { onConflict: "session_date_id" })
+    // 손으로 고친 링크는 '수동' 이다 — 자동으로 들어간 링크를 강사가 바로잡으면 출처도 바뀐다 (2026-09-21)
+    .upsert({ session_date_id: sessionDateId, live_url: url, source: "manual" }, { onConflict: "session_date_id" })
     .select("session_date_id");
   if (error) return { error: rlsMessage(error.code), values: { live_url: url } };
   if (!data || data.length === 0) return { error: "권한이 없어요. 본인 반만 수정할 수 있습니다.", values: { live_url: url } };

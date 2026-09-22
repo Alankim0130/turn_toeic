@@ -12,7 +12,7 @@ import { LectureSignupForm } from "@/components/admin/lectures/LectureSignupForm
 import { CancelLectureSignupButton } from "@/components/admin/lectures/CancelLectureSignupButton";
 import { formatKstDateTime, LECTURE_STATE_CLASS, LECTURE_STATE_LABEL, lectureState, lectureTitle, seatsLeft } from "@/lib/lecture";
 import { termParam } from "@/lib/study";
-import { pickTerm } from "../_lib/queries";
+import { pickTerm, type TermLite } from "../_lib/queries";
 
 export const metadata: Metadata = { title: "특강 신청", robots: { index: false } };
 
@@ -32,7 +32,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
   // 특강이 있는 기수만 고른다. signup 은 신청 마이그레이션에서 생긴 칸이라, 없으면 아직 적용 전이다
   const { data: allLectures, error: lectureError } = await supabase
     .from("special_lectures")
-    .select("term_id, signup, term:terms(id, year, month)");
+    .select("term_id, signup, term:terms(id, year, month, enrollment_opens_at, closes_at)");
   const needsMigration = !!lectureError && (lectureError.code === "42703" || lectureError.code === "PGRST204" || /signup/.test(lectureError.message ?? ""));
 
   const migrationNotice = needsMigration ? (
@@ -44,7 +44,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
       </p>
     </Alert>
   ) : null;
-  const termMap = new Map<number, { id: number; year: number; month: number }>();
+  const termMap = new Map<number, TermLite>();
   for (const l of allLectures ?? []) if (l.term) termMap.set(l.term.id, l.term);
   const terms = [...termMap.values()].sort((a, b) => b.year * 12 + b.month - (a.year * 12 + a.month));
   const term = pickTerm(terms, sp.term, today);

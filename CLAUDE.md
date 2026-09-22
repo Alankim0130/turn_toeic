@@ -8,10 +8,13 @@
 ## 작업 원칙 (반드시 준수)
 
 1. **요청하지 않은 기능을 추가하지 않는다.** 아래 "구현 범위"에 없는 것은 만들지 않는다.
-   좋아 보인다는 이유로 출결·채점·단어장·오답노트·알림톡·NFC 체크인 등을 끼워넣지 말 것.
+   좋아 보인다는 이유로 채점·단어장·오답노트·알림톡·NFC 체크인 등을 끼워넣지 말 것.
+   (출결은 2026-09-21 Alan 요청으로 **QR 출석(입실·퇴실)만** 들어왔다 — 도메인 규칙 7-2. 경고·교차수강·포인트·NFC·비콘은 여전히 아니다)
 2. **미확정 항목은 추측해서 구현하지 않는다.** 문서 맨 아래 "미확정" 목록에 해당하면
    구현을 멈추고 질문한다.
 3. 결제·수강신청은 **YBM 공식 사이트(ybmedu.com)에서만** 이뤄진다. 이 사이트는 결제를 다루지 않는다.
+   **예외 하나 — 불라방 교재비** (2026-09-21 Alan): 강사가 등록한 계좌와 금액을 **안내만** 하고 입금자명을 받는다.
+   돈은 이 사이트를 지나지 않는다 — 강사가 통장과 대조해 "입금 확인" 을 누른다 (도메인 규칙 7-1). 카드·간편결제를 붙이지 말 것.
 4. 반·시간대·수강료 같은 운영 데이터는 **DB에서 읽는다. 코드에 하드코딩 금지.**
 
 ---
@@ -24,7 +27,7 @@
 | 등급 | 관리자 화면 | 학생 화면 |
 |---|---|---|
 | `admin` (알런) · `instructor` (이혜영·이영수) | **전부** — 둘은 권한이 같다 | 전부 |
-| `assistant` (조교) | **등업 관리 네 개만** — 학생명단 · 등업 로그 · 교재주문 · 스터디 신청자 | 전부 |
+| `assistant` (조교) | **다섯 개만** — 학생명단 · 출석 · 등업 로그 · 교재주문 · 스터디 신청자 | 전부 |
 | `student` | 없음 | 배정된 반 (종강일까지) |
 | `member` · `alumni` · `guest` | 없음 | 잠금 안내만 |
 
@@ -37,6 +40,9 @@
 3. **새 관리자 화면·서버 액션에는 맨 위에 `requireStaff()`(조교에게 열 것만 `requireCrew()`).**
    `/admin` 레이아웃은 조교를 통과시키므로 **레이아웃만 믿으면 주소를 직접 쳐서 들어온다.**
 4. **메뉴에서 빼는 것은 권한이 아니다.** `navAdminFor(role)` 은 보이기만 정한다.
+   **요청 가로채기(`src/lib/supabase/proxy.ts`)의 입구는 `canEnterAdminPath(role, 경로)`** 한곳이 정한다 — 강사·관리자는 전부,
+   조교는 메뉴의 crew 화면과 그 아래만 (진짜 등급으로 본다). **2026-09-21 까지 이 입구가 강사·관리자만 통과시켜 조교는 관리자 화면에 하나도 못 들어갔다**
+   (메뉴·화면 가드는 열려 있었는데 입구에서 `/my?denied=admin` 으로 튕겼다). 조교 메뉴를 더하면 입구도 저절로 열린다 — `roles.test.ts` 가 같은 집합인지 본다.
 5. **등급 변경은 서비스 롤로 하지 않는다.** 로그인한 사람의 세션으로 UPDATE 해서 RLS 가 한 번 더 막게 한다.
    **마지막 관리자는 강등할 수 없다.** 누가 누구를 어디까지 바꿀 수 있나는 `canAssignRole()` 한곳이 정하고
    DB 정책 `profiles: 본인·스태프·조교 수정` 이 같은 집합을 본다 — **조교는 학생 등급인 사람을 학생 등급으로만.**
@@ -58,10 +64,10 @@
 - **버킷 5개 전부 private**, 크기·MIME 제한 있음(`receipts` 10MB 이미지·PDF, `homework` 20MB 이미지, `lc-audio` 50MB 오디오).
   본인 폴더 업로드(`{uid}/…`)·본인/스태프 조회 정책. 파일은 `/files/{kind}/{id}` 가 **사용자 세션으로 행을 읽고**(RLS) 서명 URL 로 보낸다.
 - 서비스 롤은 서버 액션·`src/lib`·API 라우트에서만 (`server-only`). 클라이언트 번들에는 없다. 비밀은 `.env*`(gitignore) 에만 있고 저장소에 없다.
-- 두 API 라우트(네이버 웹훅·크론)는 비밀이 없으면 **거절(fail-closed)**, 비교는 `timingSafeEqual`, 웹훅 본문은 64KB 상한.
+- API 라우트(네이버 웹훅·크론, 그리고 DB 크론이 부르는 `/api/cron/naver-sync` 등)는 비밀이 없거나 못 읽으면 **거절(fail-closed)**, 비교는 `timingSafeEqual`, 웹훅 본문은 64KB 상한.
 - 로그인 뒤 이동 주소(`safeNext`)는 `/` 로 시작하고 `//` 가 아닌 것만 — 외부로 튕기는 오픈 리다이렉트 없음.
 - 서버 액션은 Next 가 Origin 을 확인한다(CSRF). `dangerouslySetInnerHTML` 두 곳은 상수·JSON 이고 JSON-LD 는 `<` 를 이스케이프한다.
-- 응답 헤더(`next.config.ts`): `X-Frame-Options: DENY` · `nosniff` · `Referrer-Policy` · `Permissions-Policy`(카메라·마이크·위치 끔) · HSTS.
+- 응답 헤더(`next.config.ts`): `X-Frame-Options: DENY` · `nosniff` · `Referrer-Policy` · `Permissions-Policy`(마이크·위치·결제 끔, 카메라는 우리 사이트만 — 2026-09-22 앱 안 출석 카메라) · HSTS.
 - 문의(비회원 유일한 쓰기 경로): 안 보이는 `website` 칸(허니팟)이 채워지면 조용히 버리고, 이름 40·이메일 120·본문 2,000자 서버 상한.
 - OCR 입력 이미지는 4,000만 픽셀 상한(`limitInputPixels`) — 작은 파일이 거대한 픽셀로 풀리는 폭탄을 막는다.
 - 계정 통합은 두 계정 모두 로그인해야 한다(도메인 규칙 3-1). 등급·이름·과목·test_role 은 본인이 못 바꾼다(등급 체계).
@@ -106,6 +112,16 @@
   **미리보기 브랜치(Preview branches)는 켜지 않는다** — Branching Compute 는 별도 과금이다.
 - OCR: **tesseract.js 한국어, 서버에서 자체 실행** (`src/lib/ocr.ts` — 미확정 5 에서 확정됐다).
   외부 OCR API 를 부르지 않는다 — 수강증의 실명이 밖으로 나가지 않게 하려는 것이다
+- **DB 크론 → 우리 API** (2026-09-21, 마이그레이션 20260921100500). 10분·30초 간격으로 외부(네이버·유튜브)를 부르고 강사에게 웹 푸시를
+  보내야 하는 일은 **pg_cron 이 pg_net 으로 우리 API 를 부르게** 했다 — `private.call_app('/api/cron/…')`.
+  Vercel 크론은 요금제에 따라 하루 한 번만 되고, Edge Function 은 저장소에 없어 배포 길을 늘리지 않았다.
+  - 부르는 주소는 `private.app_config` 의 `site_url`(`https://winnertoeic.com`). **도메인을 옮기면 이 한 줄을 고친다** (docs/HANDOVER.md).
+  - 비밀은 Vault 의 `app_cron_secret` — **마이그레이션이 DB 안에서 만들었고 저장소·환경변수 어디에도 값이 없다.**
+    API 는 `authorizedAppCall()`(`src/lib/cron-auth.ts`)이 service_role 로 `public.app_cron_secret()` 을 읽어 `x-app-cron-secret` 과
+    `timingSafeEqual` 로 비교한다. 손으로 부를 때는 `Authorization: Bearer <CRON_SECRET>` 도 받는다.
+  - **pg_net 은 비동기라 크론 기록의 '성공' 은 결과가 아니다.** 실제 응답은 `net._http_response`(6시간 보관)에서 본다:
+    `select status_code, left(content, 200), created from net._http_response order by created desc limit 10;`
+  - 크론 기록은 `cron-history-cleanup` 이 7일치만 남긴다
 
 **소유권을 넘길 때는 `docs/HANDOVER.md` 를 본다** (2026-09-21 Alan — "소유권 전체를 다 넘겨줘야할것 같아" ·
 **"완전히 손을 때는거야"**). 소유권은 코드 한 곳이 아니라 **여덟 곳에 흩어져 있다** — GitHub ·
@@ -136,8 +152,8 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 | 영역 | 내용 |
 |---|---|
 | 공개 페이지 | 역전토익 소개(랜딩, 애니메이션), 수강생전용 소개, 스터디 신청하기(대면·비대면·단어), 연락하기 |
-| 수강생 포털 | 등업신청(수강증 업로드·자동 등업), 내 시간표, 내 스터디(비대면 자료 받기), 그리고 **수강생전용** 6개: 불라방, 다시보기, 숙제업로드, 스터디, 불라방교재주문, LC음원듣기 |
-| 관리자 페이지 | 대시보드(학생명단·교재주문·마케팅 분석·시간대별 인원수 위젯), 반 개설·편성(+ 그 달 스터디 시간 설정), 다시보기 등록, 등업 로그, 스터디 신청자 명단, 비대면 자료 등록, 숙제점검, LC 음원 등록, 문의 처리, **알림 설정(웹 푸시)**, **네이버 예약 위젯** |
+| 수강생 포털 | 등업신청(수강증 업로드·자동 등업), 내 시간표, 내 스터디(비대면 자료 받기), **출석(QR 입실·퇴실, 2026-09-21)**, 그리고 **수강생전용** 6개: 불라방, 다시보기, 숙제업로드, 스터디, 불라방교재주문, LC음원듣기 |
+| 관리자 페이지 | 대시보드(학생명단·교재주문·마케팅 분석·시간대별 인원수 위젯), 반 개설·편성(+ 그 달 스터디 시간 설정), 다시보기 등록, 등업 로그, 스터디 신청자 명단, 비대면 자료 등록, 숙제점검, LC 음원 등록, 문의 처리, **알림 설정(웹 푸시)**, **네이버 예약 위젯(10분마다 자동 확인)**, **출석 명단·출석 QR 포스터(PDF)**, **불라방 자동 연결(유튜브)**, **교재·입금 계좌 설정** (2026-09-21 첫토익 기능 이식) |
 
 ### 디자인·품질 원칙 (항상 적용)
 - **브랜드 컬러는 핫핑크.** 팔레트: brand #FF2E88 / hover #E61E75 / tint #FFE4EF, 텍스트 ink #17121F
@@ -383,8 +399,8 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 - **수업시간대별 인원수**: **강좌(행) × 시간대(열) 표**. 칸은 `현장 (불라방)` 이고 불라방이 0이면 숫자만, 반이 없으면 `–`.
   맨 아래 시간대별 `합계` 줄. 반 편성에서 시간을 받지 않으므로 **시간이 없는 반은 강좌 이름으로 묶고 `시간 미정` 열**에 넣는다.
   열 순서는 시간대 라벨 앞의 `HH:MM` 기준이고 `시간 미정` 이 맨 뒤. 좁은 화면에서는 시작 시각만 적는다 (`10:00~12:10` → `10:00`)
-- **네이버 예약**: 다가오는 예약 + 최근 받은 알림 5건 (도메인 규칙 8)
-- **교재주문**: 불라방 수강생의 교재 배송 신청 목록 (`textbook_orders`) 최근 5건
+- **네이버 예약**: 다가오는 예약(칸마다 인원) + 최근 변동 5건 + 마지막 확인 시각 (도메인 규칙 8 — 10분마다 예약 페이지를 확인한다)
+- **교재주문**: 입금 확인을 기다리는 불라방 교재 주문 (`textbook_orders`) 최근 5건 — 교재 수와 합계
 - **마케팅 분석**: 가입 시 수집한 대학·학과·성별 차트. 자세히 보기는 `/admin/analytics`.
   차트 범례는 칸이 좁으면 한 줄씩 내려온다 — 열 수를 못박으면 글자가 한 자씩 접힌다
 
@@ -603,24 +619,51 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   저녁 19:40 RC → 오전 11:10 RC · 저녁 묶음 18:30~20:40 → 오전 묶음 10:00~12:10.
 - 반 배정 · 승인 화면의 반 이름은 시간 컬럼이 없으면 `time_block` 을 붙인다 (`sectionSummary`) — 같은 강좌의 오전·저녁반, 60분·120분을 구분한다
 
-**수업이 시작되면 불라방 학생에게 알림** (2026-09-19 Alan 요청, 마이그레이션 20260919150000)
-- Alan: "불라방 안내에서 수업시작 10분전 입장이라는 문구가 있는데, 아니야. 수업이 시작되면 알림을 보내주도록 설정해줘. 불라방학생들에게만"
+**유튜브 방송을 감지해 불라방 링크를 저절로 넣는다** (2026-09-21 Alan 요청 — 첫토익 "OBS 방송 자동 게시", 마이그레이션 20260921120500)
+- Alan: "두 강사가 각자 유튜브 채널에서 일부공개로 새 방송을 킬꺼야. 해당시간 5~10분 전후로 방송이 올라오면 그 시간대에 불라방 링크가
+  들어가면 되고, 오전시간에 했던 영상링크는 다시보기로 올라가면 될 것 같아!" · "방송이 잡힌 순간 보내는 알림."
+- 강사마다 `/admin/live-channels` 에서 **자기 유튜브 채널을 한 번 연결**한다 (구글 동의, `youtube.readonly` 하나).
+  일부공개 방송은 채널 페이지·검색에 안 나와 긁어서는 영영 못 찾는다 — 채널 주인의 승인으로 조회한다 (첫토익 A2).
+  토큰은 `youtube_channels` 에 두고 **service_role 만 읽는다** — authenticated 에는 상태 칸만 칸 단위로 열었다 (`select *` 를 하면 권한 오류다).
+  키 `YOUTUBE_CLIENT_ID` · `YOUTUBE_CLIENT_SECRET` 이 없으면 연결 버튼 대신 설정 안내가 뜨고 감지는 아무것도 안 한다.
+- 길: pg_cron `live-detect`(**30초**) → `private.live_detect_due()` 가 **감지할 회차가 있을 때만** `private.call_app('/api/cron/live-detect')` →
+  `public.live_detect_candidates()`(오늘 · 시간 단위 반 · 인강 아님 · 담당 강사가 채널 연결 · 링크 없음 · 수업 시작 −10분 ~ +30분) →
+  담당 강사 토큰으로 `liveBroadcasts.list(active)` → **방송이 시작한 시각이 수업 시작 ±10분**(`LIVE_MATCH_MINUTES`, `src/lib/live-detect.ts`)이면
+  `public.register_detected_live` 가 그 회차에 넣는다(`session_live_links.source = 'youtube'`). 강사에게 확인 푸시(`live_detected`, 알림 설정에서 끈다).
+- **지킬 것**
+  1. **매칭은 "담당 강사 = 채널 주인"** 이다 — 강사 한 분은 한 시간대에 한 반만 맡는다 (9월 편성 실측). 그래서 **그 달 LC 교재가 정해져
+     담당 강사가 채워져 있어야** 감지가 된다 (담당은 LC 교재로 저절로 정해진다 — 위 "담당 강사"). 2026-09-21 에 10월 반은 전부 비어 있었다.
+  2. **감지 시각이 아니라 방송 시작 시각으로 맞춘다** — 크론이 늦게 돌아도 같은 답이고, 앞 교시 방송을 켜 둔 채 다음 교시가 되어도 그 방송이
+     다음 교시로 가지 않는다. 그래서 **교시마다 새 방송**이어야 한다 (한 방송으로 두 교시를 이으면 뒤 교시는 손으로 넣는다).
+  3. **손으로 넣은 링크는 덮어쓰지 않는다** (`on conflict do nothing`). 강사가 자동 링크를 고치면 `source` 가 `manual` 로 바뀐다.
+  4. 응답에 영상 id·주소를 담지 않는다 — 일부공개는 주소가 곧 시청권이다 (첫토익 D5).
+  5. 링크는 시간 단위 반에만 들어간다. 묶음·속성반·인강 반은 후보가 아니다. 방학달 통짜 120분 반을 강사 두 분이 나눠 맡으면
+     한 반에 방송이 둘이라 이 규칙이 맞지 않는다 — 그 달이 오면 손으로 넣거나 규칙을 다시 정한다.
+- 오전반은 수업이 끝나면 **같은 주소가 그대로 다시보기**가 된다 — 이미 있던 `promote-live-replays` 가 한다 (위 "불라방 링크는 회차마다").
+- 반 상세 회차 표에 자동으로 들어간 링크는 `자동` 칩이 붙는다. `/admin/live-channels` 에 오늘 회차마다 상태(자동 연결 · 직접 넣음 · 방송 기다림 · 채널 미연결)가 보인다.
+- 첫토익 문서의 함정 중 미리 막은 것: 동의 화면이 "테스트" 상태면 7일 뒤 연결이 끊긴다(게시 상태로) · 다시 연결한 계정은 refresh token 을
+  안 줄 수 있다(`prompt=consent`, 안 되면 구글 계정에서 권한을 지우고 다시) · access token 은 만료 5분 전까지 재사용하고 401·403 이면 한 번만 새로 받는다 ·
+  연결이 끊기면(`invalid_grant`) 오류를 남기고 **처음 한 번** 강사에게 알린다.
+
+**불라방이 시작되면 불라방 학생에게 알림** (2026-09-19 Alan 요청 → 2026-09-21 "방송이 잡힌 순간" 으로 바꿈, 마이그레이션 20260919150000 · 20260921120500)
+- 2026-09-19 Alan: "불라방 안내에서 수업시작 10분전 입장이라는 문구가 있는데, 아니야. 수업이 시작되면 알림을 보내주도록 설정해줘. 불라방학생들에게만"
+  → 2026-09-21 Alan: "**방송이 잡힌 순간** 보내는 알림."
 - **`10분 전 입장` 문구는 지웠다** — 세 군데에 있었다 (`/my/live` 머리글 · 카드 바닥 · `STUDENT_FEATURES.live.points`). **되살리지 말 것.**
-- pg_cron `notify-live-class-start` 가 **5분마다** `private.notify_live_class_start()` 를 돈다. 오늘 회차가 있고
-  시작 시각(`start_time`, 없으면 시간대 라벨 앞 시각 `private.time_block_start`)이 **방금 지난** 반을 찾아,
-  그 반의 **불라방(`enrollments.mode = 'live'`) 학생**에게 앱 안 알림(`student_messages`, `kind = 'live_start'`)을 넣는다.
-  실제 수업 시작 시각이 전부 5의 배수라(10:00 · 11:10 · 12:30 · 13:50 · 18:30 · 19:40) 보통 0분 안에 나간다.
+- **링크가 들어오는 순간 보낸다** — `session_live_links` 트리거(`private.tg_session_live_link_notify`)가 그 회차가 오늘이고 수업 시각 앞뒤
+  (시작 15분 전 ~ 끝)면 `private.notify_live_session(반, 날짜)` 를 부른다. 유튜브 감지로 들어오든 강사가 손으로 넣든 같다.
+  **미리 넣어 둔 링크**와 반의 **상시 링크**(Zoom 등)는 pg_cron `notify-live-class-start`(5분마다)가 수업 시각에 보낸다.
+  **링크가 없으면 보내지 않는다** — 들어갈 곳이 없는 "시작했어요" 는 쓸모가 없다 (2026-09-19~21 에는 시각만 보고 보냈다).
 - **앱 안 알림함으로만 간다** (2026-09-19 Alan 선택). 문자·알림톡·**학생 푸시는 여전히 없다** — 규칙 8 의 웹 푸시는 스태프 전용이고,
-  학생에게 켜려면 학생용 `알림 받기` 화면과 분 단위 크론이 따로 필요하다. 임의로 만들지 말 것.
-- **지킬 네 가지 — 하나라도 어기면 엉뚱한 사람에게 가거나 같은 수업이 여러 번 간다**
+  학생에게 켜려면 학생용 `알림 받기` 화면이 따로 필요하다. 임의로 만들지 말 것.
+- **지킬 것 — 어기면 엉뚱한 사람에게 가거나 같은 방송이 여러 번 간다**
   1. **인강 반(`class_sections.recorded`)은 뺀다** — 그 시간에 라이브가 없다. 그 학생은 오전 수업 녹화본을 본다 (미확정 2-2).
-  2. **직접 배정된 반으로만 센다** — 묶음 반 학생에게 그 안의 시간 단위 반까지 세면 한 수업에 알림이 두세 개 간다 (위 "반 권한").
-  3. **보낸 표시는 `(반, 날짜)`** 다 (`private.live_start_notices`) — `session_dates.id` 는 편성을 고치면 지워졌다 다시 생겨 바뀐다.
-     id 로 잡으면 편성을 고친 날 알림이 두 번 간다.
-  4. **시작한 지 15분이 넘으면 보내지 않는다** — 크론이 멈췄다 살아났을 때 지난 수업까지 몰아 보내면 "지금 시작" 이 거짓말이 된다.
+  2. **받는 사람 = 그 시간 단위 반을 볼 수 있는 불라방 학생** — 직접 배정 + 그 반을 품는 묶음 반·속성반 배정(`private.section_includes`), 한 사람에 한 번.
+     그래서 **120분 학생은 방송이 바뀔 때마다(교시마다, 강사가 바뀔 때마다) 한 번씩 받는다** — 그때마다 새 링크로 들어가야 한다.
+     (2026-09-19~21 에는 "직접 배정된 반으로만" 셌다 — 시각 기준이라 한 수업에 두세 개가 한꺼번에 갔기 때문이다. 링크 기준이 되며 바뀌었다)
+  3. **보낸 표시는 `(링크가 있는 반, 날짜)`** 다 (`private.live_start_notices`) — `session_dates.id` 는 편성을 고치면 지워졌다 다시 생겨 바뀐다.
+  4. **시작한 지 15분이 넘으면 크론은 보내지 않는다** — 크론이 멈췄다 살아났을 때 지난 수업까지 몰아 보내면 "지금 시작" 이 거짓말이 된다.
 - 받는 사람은 등록이 `active` 인(개강했고 종강 전) 배정만이다 — 예비등록생·끝난 배정·현장 수강생에게는 가지 않는다.
-- **문구가 SQL 에 있다** (마이그레이션 한곳) — 크론이 보내는 것이라 TypeScript 를 거치지 않는다.
-  옮기려면 Supabase 에서 pg_net 을 켜고 우리 API 를 부르게 해야 한다. 같은 문구를 TS 에 베껴 두지 말 것 — 반드시 갈라진다.
+- **문구가 SQL 에 있다** (`private.notify_live_session` 한곳). 같은 문구를 TS 에 베껴 두지 말 것 — 반드시 갈라진다.
 - 보낸 이가 사람이 아니므로 **`sender_name` 을 비워 둔다** — 알림함은 이름이 비면 시각만 적는다.
 
 ### 2. 개강일 · 종강일 — 수업일과 **별개**로 강사가 지정
@@ -635,6 +678,9 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   **시스템이 유예 기간을 임의로 더하지 않는다.**
 - 반 편성 달력에서 **기수(월) 단위로** 정한다 (`terms.enrollment_opens_at` / `closes_at`). 그 달 모든 반의 같은 컬럼과
   배정된 등록(`enrollment_orders.activates_on` / `access_until`)이 저장할 때 함께 맞춰진다. 반을 개설하려면 먼저 이 둘이 있어야 한다.
+- **이 두 날짜가 모든 것의 기준이다** (2026-09-22 Alan — "다른 것들도 항상 강사가 설정한 개강날, 종강날 개념이 제대로 잘 적용되어 있는지 두 번, 세 번").
+  수강생 권한 · 등록 상태 · 학생 등급 · 출석 · 출석률 · 관리자 화면의 "지금 기수" 가 전부 이 날짜로 정해지고, **강사가 날짜를 바꾸면 그 즉시** 따라간다
+  (끝난 등록도 되살아난다). 자세한 것은 "상태 전이" 절. 달력의 월(1일~말일)로 판정하는 코드를 새로 만들지 말 것.
 
 ### 3. 학생 등급 — 권한 × 반 배정 2축
 
@@ -647,7 +693,7 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 | `student` | 수강증 인증 통과 + 개강일 도래. 배정된 반의 불라방·다시보기 |
 | `alumni` | 종강일 경과로 자동 강등 |
 | `instructor` | **강사(이혜영·이영수). 권한은 관리자와 똑같다** (2026-09-16 Alan 확정) |
-| `assistant` | **조교.** 학생 화면은 전부, 관리자 화면은 **등업 관리 네 가지만** (학생명단·등업 로그·교재주문·스터디 신청자). 등급은 학생 등급끼리만 바꾼다 |
+| `assistant` | **조교.** 학생 화면은 전부, 관리자 화면은 **다섯 가지만** (학생명단·출석·등업 로그·교재주문·스터디 신청자). 등급은 학생 등급끼리만 바꾼다 |
 | `admin` | 전체 (알런) |
 
 > 요약과 "바꿀 때 지킬 것" 은 문서 맨 앞 **등급 체계 — 손대기 전에 꼭 본다** 에 있다.
@@ -659,11 +705,11 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   그래서 등급 변경·알림 연결 주소처럼 `admin` 만 열던 것이 이혜영·이영수에게도 열린다. 알런은 관리자 그대로 둔다.
   **DB 와 앱의 두 함수는 늘 같은 집합이어야 한다** — 한쪽만 고치면 화면은 열리는데 RLS 가 막는(또는 그 반대의) 상태가 된다.
 - **조교는 스태프가 아니다.** `private.is_staff()` 를 넓히지 않고, 조교에게 열어 준 곳에만
-  `private.is_crew()`(스태프 + 조교, 앱은 `isCrew()`)를 쓴다. 지금 열린 곳은 네 화면뿐이다:
-  **학생명단**(`/admin/students`·`/admin/students/[id]`) · **등업 로그**(`/admin/verifications`) ·
-  **불라방 교재주문**(`/admin/textbook-orders`) · **스터디 신청자**(`/admin/study`).
+  `private.is_crew()`(스태프 + 조교, 앱은 `isCrew()`)를 쓴다. 지금 열린 곳은 다섯 화면뿐이다:
+  **학생명단**(`/admin/students`·`/admin/students/[id]`) · **출석**(`/admin/attendance`·`/admin/attendance/poster` — 포스터 PDF 받기까지, 새로 만들기만 스태프, 2026-09-21 Alan "조교에게도 명단을 열어줘") ·
+  **등업 로그**(`/admin/verifications`) · **불라방 교재주문**(`/admin/textbook-orders` — 처리만, 교재·계좌 설정 화면은 스태프) · **스터디 신청자**(`/admin/study`).
   명단에 학생 이름과 반이 함께 나오므로 `profiles`·`enrollment_orders`·`enrollments` **조회**도 함께 열었다.
-  반 편성·다시보기 등록·숙제점검·LC 음원·문의·알림·마케팅 분석·대시보드는 조교에게 계속 닫혀 있다.
+  반 편성·다시보기 등록·불라방 자동 연결·숙제점검·LC 음원·문의·알림·마케팅 분석·대시보드는 조교에게 계속 닫혀 있다.
 - **조교가 등업 관리를 다 한다** (2026-09-19 Alan — "역전토익쌤들은 조교가 등업관리를 다 하기 때문에,
   조교에게도 등업신청을 보고 확인 후 수락해주거나 등급권한을 부여해주는 권한이 있으면 좋겠어", 마이그레이션 20260919130000).
   조교가 할 수 있는 것: **수강증 보기 · 승인 · 거절 · 배정 수정 · 반 배정 · 학생 등급 변경.**
@@ -760,7 +806,7 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   올리는 일은 `src/lib/student-role.ts` 의 `promoteToStudent()` 한곳이고 반 배정(`assignSections`)과
   수강증 승인(`approveVerificationWith`)이 함께 쓴다. 개강일에 올리는 몫은 배치
   (`private.run_daily_status_transition`, 마이그레이션 20260919120000)가 같은 규칙으로 한다.
-  **내리지는 않는다** — 반 배정 없이 `수강생` 으로 테스트 중인 스태프가 다음 날 00:05 에 조용히 `졸업생` 이 되면 안 된다.
+  **내리지는 않는다** — 반 배정 없이 `수강생` 으로 테스트 중인 스태프가 다음 날 00:00 배치에 조용히 `졸업생` 이 되면 안 된다 (2026-09-22 의 `refresh_student_roles` 도 test_role 은 올리기만 한다).
 - test_role 은 authenticated 에 쓰기 권한이 없다. `src/app/admin/students/tester-actions.ts` 가 진짜 등급을 확인하고 서비스 롤로 바꾼다
   (내 계정은 강사·관리자 누구나, 다른 테스터 계정은 관리자만).
 - 테스트 중에는 모든 화면 맨 위에 **테스트 띠**(`TestModeBanner`: 지금 등급 · 등급 바꾸기 · 테스트 끝내기)가 뜬다.
@@ -1123,6 +1169,99 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   서명 URL 로 리다이렉트한다 — 행 RLS 와 storage 정책이 같은 규칙으로 막는다.
 - 서버 액션 본문 한도(1MB) 때문에 파일은 **브라우저 → Storage 직접 업로드**, 서버 액션은 경로·이름만 등록한다.
 
+### 7-1. 불라방 교재주문 — 강사가 교재·계좌를 등록한다 (2026-09-21 Alan 요청, 마이그레이션 20260921110500)
+
+> "교재비를 받는 계좌번호와 교재 과목 등록은 강사가 직접 할 수 있도록 해보자." (첫토익 교재주문을 옮겨 오며)
+
+- **강사·관리자가** `/admin/textbook-orders/setup` 에서 등록한다 — 입금 계좌(`textbook_accounts`: 은행·계좌번호·예금주·이름표) ·
+  교재(`textbook_items`: 이름 · 레벨(비우면 모든 레벨) · 가격 · 받는 계좌 · 설명) · 배송비·기본 계좌·안내 문구(`textbook_settings`, 한 줄).
+  **가격·계좌를 코드에 적지 않는다** (첫토익은 앱 설정 파일에 있어 바꿀 때마다 배포해야 했다). 조교는 주문 처리만 하고 이 화면은 못 연다.
+- **학생 흐름**: 교재를 고른다(내 레벨 + 모든 레벨. 속성반은 두 레벨) → 합계와 **계좌별 입금액**이 보인다 → 입금하고 **입금자명**을 적어 주문.
+  강사·조교가 통장과 대조해 `입금 확인`, 보내면 `발송` + 송장번호. 상태는 `requested(입금 확인 전) → confirmed(입금 확인) → shipped(발송)` + `cancelled`.
+  입금 확인 전에는 학생이 취소할 수 있다.
+- **돈은 이 사이트를 지나지 않는다** (작업 원칙 3 의 예외는 "안내" 까지다). 카드·간편결제를 붙이지 말 것.
+- **지킬 것**
+  1. **주문은 DB 함수 `public.create_textbook_order` 하나로만 들어간다.** 학생의 INSERT 권한과 정책을 없앴다 — 표에 직접 넣으면
+     품목·금액을 마음대로 적을 수 있다 (첫토익은 앱이 계산한 금액을 그대로 넣었다). **함수가 자격·레벨·금액·계좌를 정해 주문에 박아 둔다**
+     (`items`·`items_total`·`shipping_fee`·`total_amount`·`pay_to`). 그래서 강사가 가격·계좌를 바꿔도 **지난 주문의 안내는 그대로**다.
+     학생의 수정 정책도 없앴다 — 취소는 `public.cancel_textbook_order` 로만.
+  2. **화면의 합계는 미리보기다** — `src/lib/textbook.ts` 의 `textbookQuote` 가 같은 규칙(교재는 제 계좌, 없거나 안 쓰면 기본 계좌 ·
+     배송비는 기본 계좌 · 기본 계좌가 비면 쓰는 중인 첫 계좌)으로 계산한다. **규칙을 바꾸면 SQL 함수와 `textbook.test.ts` 를 같이** 고친다.
+  3. **한 달에 한 건** — unique `(user_id, term_id)` (취소 제외). 주5일 학생은 월수금·화목금 반이 한 달에 묶인다 (예전에는 반마다 한 건씩 두 번 주문할 수 있었다).
+  4. **예비등록생도 주문한다** (`STUDENT_FEATURES.textbook.access = "enrollee"`) — 개강 전에 교재를 받아야 한다. 자격은 불라방(`enrollments.mode = 'live'`)
+     배정 + 등록 예비·수강 중 + 종강 전 (`private.has_live_enrollment`). 계좌·교재 목록도 이 학생과 crew 만 읽는다 (계좌를 전체 공개로 열지 말 것 — 첫토익 사고).
+  5. 낼 돈이 있는데 받을 계좌가 없으면 주문을 받지 않는다 (`no_account`) — 강사가 계좌부터 등록해야 학생 화면이 열린다.
+- 예전 주문(교재 목록이 생기기 전)은 `items` 가 비어 있고 `quantity` 만 있다 — 화면은 `N권 (예전 주문)` 으로 적는다.
+- 아직 없는 것: 데스크 직접수령 · 송장 사진 OCR · 택배 조회 링크 · 상태가 바뀔 때 학생 알림 · 주소 파기 크론. 필요하면 Alan 에게 묻고 만든다.
+
+### 7-2. QR 출석 — 입실 · 퇴실 (2026-09-21 Alan 요청, 마이그레이션 20260921130500)
+
+> "출석을 범위에 넣어줘. 입실과 퇴실 다 받자! 조교에게도 명단을 열어줘." (첫토익 QR 출석을 옮겨 오며)
+
+- **출석 QR 은 강의실 앞에 붙이는 인쇄용 포스터 하나다** (2026-09-22 Alan — "QR 자동으로 바뀌는 거는 없애줘. 그리고 새로 만들 수 있는 기능만 넣어놓고,
+  우리가 새로 만들고 싶을 때 새로 만들기 버튼을 누르면 인쇄까지 할 수 있도록 다운로드가 있으면 좋겠어", 마이그레이션 20260922103000).
+  그전(2026-09-21)에는 교실 화면(`/admin/attendance/qr`)의 **30초마다 바뀌는 QR + 6자리 코드 입력**(`/my/attendance`)이 따로 있었는데
+  화면·코드 입력·DB 함수(`attendance_display`·`private.attendance_token`)·금고 비밀(`attendance_qr_secret`)까지 모두 없앴다 — **다시 만들지 말 것** (두 길이 섞이면 "어느 QR 을 찍나" 가 흐려진다).
+- **학생 `출석` 화면은 들어오자마자 카메라가 켜진다** (2026-09-22 Alan — "출석을 누르면 카메라를 바로 실행해서 촬영할 수 있는 기능이 나오면 좋겠어!").
+  `AttendanceCamera`(`/my/attendance`): 뒷면 카메라 → QR 읽기(브라우저 `BarcodeDetector`, 없으면 — 아이폰 사파리 — `jsqr` 을 그때 불러온다) →
+  우리 출석 주소면(`tokenFromQr` — `/attend?t=…` 만, 다른 QR 은 "출석 QR 이 아니에요") 카메라를 끄고 그 자리에서 `scanAttendance`.
+  로그인한 앱 안에서 찍으므로 **아이폰에서 사파리 로그인을 따로 할 일이 없다.** 다른 탭으로 가면 카메라를 끄고, 권한을 거절하면 이유와 "카메라 켜기" 를 보여 준다.
+  카메라는 응답 헤더 `Permissions-Policy: camera=(self)` 로 **우리 사이트에만** 열려 있다 (그전에는 `camera=()` 로 꺼 두었다 — 켜는 곳은 이 화면 하나다).
+  휴대폰 기본 카메라로 포스터를 찍어 `/attend?t=토큰` 이 열리는 길도 그대로 된다 (아이폰은 거기서 사파리 로그인이 한 번 필요할 수 있다).
+- **제대로 찍히면 "출석!" 을 크게** 띄운다 (2026-09-22 Alan — "인식이 제대로 된다면, 출석! 이라는 문구가 나오면 좋겠어"). 입실 · 지각 입실 · 퇴실 모두 "출석!" 이고
+  아래 한 줄이 입실/퇴실을 가른다 (`scanView().headline`, `AttendanceResult` — 앱 안 카메라와 `/attend` 가 함께 쓴다). 그 밖의 결과(이미 입실 · 수업 없음 · 맞지 않는 QR)는 안내 카드다.
+- **포스터** (2026-09-21 Alan — "QR을 A5 크기로 2개 해서 A4로 인쇄할 수 있도록 디자인해서 만들어줘. 힉스필드로 제작부탁해!", 마이그레이션 20260921150500).
+  `/admin/attendance/poster` → **`포스터 PDF 받기`**(`/admin/attendance/poster/download`): **A4 가로 한 장에 A5 세로 포스터 두 장** PDF —
+  선생님마다 한 장(이혜영 가리키기 · 이영수 엄지척 컷)이고 QR 은 같다. 가운데 점선을 잘라 강의실마다 붙인다.
+  토큰은 **바뀌지 않는 인쇄용 토큰**(`private.attendance_poster`, 20자)이고 `attendance_scan` 은 이것만 받는다 (기록 `method = 'poster'`).
+  **대가: 포스터 사진을 찍어 보내면 교실 밖에서도 찍힌다** (정적 QR 의 한계 — Alan 이 알고 고른 것) — 수업 시간 창·현장 배정·입실 30분 뒤 퇴실은 그대로 막는다.
+  새어 나가면 강사·관리자가 **`새로 만들기`**(`public.rotate_attendance_poster`, 확인 칸 체크) — **붙어 있는 종이는 그 순간 모두 무효**다.
+  누르면 화면이 `새 포스터가 준비됐어요` + `포스터 PDF 받기` 로 바뀐다 (`?made=1`). 포스터 오른쪽 아래 `…발행` 시각과 관리 화면의 시각이 다르면 옛 종이.
+  PDF 받기는 조교도 하고, 새로 만들기는 강사·관리자만 (함수가 `is_staff` 를 다시 본다).
+  **PDF 는 서버가 받을 때마다 지금 토큰으로 새로 그린다** (저장해 두지 않는다 — 새로 만들면 옛 파일은 안 찍히므로). 파일 이름에 발행 시각이 들어간다
+  (`역전토익_출석QR포스터_2026-09-21_1823.pdf`). 그리는 코드는 `src/lib/attendance-poster-pdf.ts`(pdf-lib, **전부 벡터** — QR 은 순검정 네모),
+  문구는 `src/lib/attendance-poster.ts` 의 `POSTER_TEXT` 한곳, 글꼴·그림 읽기는 `attendance-poster-assets.ts`(sharp 로 인쇄 크기로 줄여 넣는다 — 강사 사진은 흰 바탕 JPEG).
+  - **글꼴은 `assets/poster-fonts/` 의 Pretendard 부분 파일**(포스터 글자만, 한 굵기 72KB)이다. **문구를 바꾸면 `node scripts/poster-fonts.mjs <Pretendard TTF 폴더>` 로 다시 만든다** —
+    안 만들면 새 글자가 빈칸으로 찍히고 `attendance-poster.test.ts` 가 깨진다 (문구가 칸을 넘쳐 글자를 줄여 그린 줄이 생겨도 깨진다).
+  - pdf-lib 의 `embedFont` 는 **`subset: true` 여야 한다** — 끄면 폭 표가 cmap 글자로만 만들어져 Pretendard 가 숫자 사이에 바꿔 끼우는 콜론(`colon.case`)이 폭 1000 으로 찍혔다 (`18:  23`).
+  - Vercel 함수에는 `public/` 이 실리지 않는다 — `next.config.ts` `outputFileTracingIncludes["/admin/attendance/poster/download"]` 에 읽는 파일을 적었다.
+    경로는 `/*turbopackIgnore: true*/` 로 추적을 끄고 적은 것만 싣는다 (안 끄면 `public/` 통째로 — 스플래시 영상까지 — 실렸다). 읽는 그림을 바꾸면 여기도 고친다.
+  - 그림(QR 을 찍는 휴대폰 · 출석 도장)은 힉스필드 `gpt_image_2_5` 로 만든 `public/posters/` 이고 **QR 과 글자는 코드로 그린다** — AI 가 그린 QR 은 안 찍히고 한글은 깨진다.
+  - QR 은 H(30% 복구) + 가운데 브랜드 심벌, 칸은 순검정(컬러 레이저 번짐), 중요한 것은 종이 가장자리 7mm 안쪽(프린터가 못 찍는 테두리), PDF 는 인쇄 배율 "실제 크기"(PrintScaling None)로 열린다.
+  - **포스터 문구에도 규칙 숫자(30분 전 · 7분 지각 · 입실 30분 뒤 퇴실 · 끝나고 30분)가 있다** — 규칙을 바꾸면 여기도 고친다.
+  - 관리자 라우트 핸들러도 가드가 있어야 한다 — `roles.test.ts` 가 `src/app/admin/**/route.ts` 도 본다.
+- **판정은 DB 함수 `public.attendance_scan` 한곳** — 인쇄용 토큰 · 로그인한 학생의 배정 · 서버 시각으로 정한다. 학생은 출석 표에 직접 못 쓴다(권한 없음).
+  맞지 않는 QR 을 10분에 10번 찍으면 잠시 잠긴다.
+- **규칙 (첫토익 값 그대로 — Alan 이 따로 정하지 않았다. 바꾸면 SQL 과 `src/lib/attendance.ts` 문구를 같이)**:
+  입실은 수업 시작 **30분 전 ~ 끝** · 시작 **7분 뒤**부터 지각 · 입실하고 **30분 안**에 다시 찍으면 "이미 입실" ·
+  그 뒤에 찍으면 **퇴실**(수업이 끝나고 30분까지). 퇴실까지 찍어야 `출석`, 입실만 하면 `입실만` 이다.
+- **대상은 현장 수강생이다** — 불라방(`mode = live`)은 교실에 오지 않고, 저녁 화목금 인강 날(`recorded`)은 녹화본을 본다.
+  예비등록생은 개강 전이라 대상이 아니다. 한 칸 = **(학생, 직접 배정된 반, 날짜)** — 120분 학생은 하루 한 칸, 속성반은 그 반 한 칸.
+  회차 id 는 편성을 고치면 바뀌어 쓰지 않는다 (수업 시작 알림과 같은 이유).
+- **강사·조교가 정한다**: `/admin/attendance` 날짜별 명단에서 `출석 인정` · `결석` · `되돌리기` (`public.attendance_set`) —
+  **사유를 꼭 적는다**(되돌리기 빼고). 정한 뒤에는 학생이 찍어도 바뀌지 않는다(자동 판정이 강사 판정을 덮지 못한다). 출석 인정은 지각 표시를 지운다.
+  명단은 `public.attendance_roster(날짜)` (crew 전용 함수 — 수업일 표는 조교에게 열려 있지 않아서 함수로 모았다).
+- **출석은 기수(월) 단위 — 강사가 정한 개강일~종강일** (2026-09-22 Alan — "출석기록은 항상 강사가 설정한 해당달 개강날과 종강날에 맞춰서.
+  다음달로 넘어가면 예전기록은 빠지고 항상 새롭게 시작", 마이그레이션 20260922113000).
+  - **찍기 · 명단 · 강사 처리 모두 그 반의 개강일~종강일 안 날짜만** (`attendance_sessions` · `attendance_roster` · `attendance_set` — 밖이면 `not_in_section`).
+    수업일이 기간 밖에 찍혀 있어도(달력은 ±1개월을 허용한다) 그 날은 출석이 없다.
+  - `/admin/attendance`(강사·조교)는 **지금 기수 하나만** 보여 준다 — 머리에 `N월 기수 · 개강 ~ 종강`, 날짜는 그 기간 안에서만 넘기고,
+    아래 **`N월 출석 현황`**(학생마다 출석 n/지난 수업 · 지각 · 입실만 · 결석 · 미출석, `public.attendance_term_summary(기수)` — crew 전용)이 있다.
+    지금 기수 = `pickCurrentTerm(…, { datedOnly: true })` (`src/lib/term-window.ts`) — 오늘이 든 기수(겹치면 먼저 끝나는 쪽) → 다음 기수 → 마지막 기수.
+    **종강일이 지나면 다음 기수로 넘어가 새로 시작한다** — 지난 기록은 DB 에 그대로 있고 화면에서만 빠진다.
+    단 **종강 뒤 7일 동안만** 머리에 `지난 N월 기수 정정하기` 링크(`?term=YYYY-MM`)가 뜬다 — 종강일 수업의 퇴실 누락을 다음 날 고칠 길 (2026-09-22 리뷰). 그 뒤로 지난 기수 보기 화면은 없다 (Alan 이 원하면 만든다).
+  - 학생 `/my/attendance` 도 **지금 기수의 기록만**, 같은 `pickCurrentTerm` 으로 고른다.
+  - **학생 출석률** (2026-09-22 Alan — "본인의 신청등급에 따라 출석률을 몇 퍼센트 채우고 있는지 마이페이지에서 확인하면 동기부여"):
+    `/my` 대시보드(시간표 아래)와 `/my/attendance` 의 `AttendanceRate` 카드. 숫자는 `public.my_attendance_summary()` — **지금 기수의 내가 직접 배정된 현장 반만**
+    (주3일은 그 트랙, 주5일은 두 트랙, 120분 반은 하루 한 칸, 인강 반·불라방은 빠진다). 큰 숫자 = **출석률**(끝난 수업 중 출석, `attendanceRate().rate` —
+    끝난 수업이 없으면 `–`, 0% 로 적지 않는다), 막대 = **이번 달 N회 중 몇 회 채웠나**(`fill`). "끝난 수업" = 퇴실 마감(끝나고 30분)이 지난 회차.
+    출석 = 퇴실까지 찍음 + 출석 인정. 현장 수업이 없으면(불라방만 · 기수 밖) 카드를 그리지 않는다. 끝난 수업이 없으면 숫자 대신 `시작 전`.
+  - 학생 출석률과 강사 기수 현황은 **반에 들어온 날(배정일, KST)부터** 센다 — 개강 뒤에 등록한 학생에게 등록 전 수업을 미출석으로 세지 않는다.
+    셈은 **끝난 수업만**(퇴실 마감이 지난 회차) — 퇴실 직후에 세면 출석률이 100% 를 넘었다. 수업 시간(time_block)을 못 읽는 반은 찍을 수 없어 셈에서도 뺀다.
+- 기록 `attendance_events`(입실·퇴실·강사 처리·틀린 코드)는 쌓기만 한다 — 나중에 "찍혔다가 사라졌다" 를 가릴 근거다 (첫토익 15).
+- 계정 통합(`private.merge_accounts`)이 출석도 옮긴다 (같은 반·같은 날이 겹치면 남길 계정 것을 둔다).
+- **없는 것**: 경고·교차수강·포인트·무단결석 자동 처리·NFC·비콘·학원 와이파이 확인·특강 출석. 필요하면 Alan 에게 묻고 만든다.
+
 ### 8. 관리자 알림 · 네이버 예약 (2026-09-15 Alan 요청)
 
 - **알림은 웹 푸시만 쓴다.** 이메일·문자·카카오톡 알림은 쓰지 않는다. 받는 사람은 스태프(강사·관리자)뿐이다.
@@ -1130,18 +1269,36 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
     아이폰은 **홈 화면에 추가한 앱에서만** 된다 (iOS 16.4+). 서비스 워커는 `public/sw.js` (fetch 는 가로채지 않음).
   - 종류별 켜기·끄기는 `notification_settings` (행이 없으면 모두 켜짐).
   - 바로 알림: 네이버 예약 · 등업신청 접수 · 불라방 교재주문 · 연락하기 문의 (서버 액션에서 `after()` 로 `notifyStaff()`).
+    **내 불라방 자동 연결**(`live_detected`)은 방송한 강사 본인에게만 간다 (`notifyUser`, 2026-09-21).
     하루 요약: 매일 21:00 KST Vercel Cron `/api/cron/daily-digest` — 최근 24시간 스터디 신청·숙제업로드·신규 가입 수 (0건이면 안 보냄).
   - 발송은 `src/lib/push.ts`. 404/410 구독은 자동 삭제. 키: `NEXT_PUBLIC_VAPID_PUBLIC_KEY`·`VAPID_PRIVATE_KEY`·`VAPID_SUBJECT`, 크론은 `CRON_SECRET`.
-- **네이버 예약**: 서면 YBM 네이버 예약(사업장 459658)은 센터 전체 예약이고, 그중 "역전토익 강사상담"이 우리 상품이다.
-  - 네이버는 개별 사업자용 예약 조회 API 가 없고, 파트너센터 자동 수집은 약관 위반이다. **긁어오지 않는다.**
-  - 대신 네이버가 보내는 예약 알림(문자·메일·앱 알림) **원문을 연결 주소로 전달받는다**:
-    `POST /api/naver-reservations` + `Authorization: Bearer <NAVER_WEBHOOK_SECRET>`, 본문 `{"text": "원문"}` (메일 form·html 도 받음).
-  - `src/lib/naver-reservation.ts` 가 원문에서 예약 날짜·시각·상품·예약자(가운데 글자 가림)·예약번호·상태를 뽑는다.
-    "이용일시·방문일시" 줄을 우선하고 "신청일시·접수일시" 줄은 피한다. 원문의 전화번호는 가려서 보관한다.
-    날짜를 못 읽어도 원문을 저장하고 알림은 원문 앞부분으로 보낸다 (정보를 버리지 않는다).
-  - 같은 예약번호가 다시 오면 상태·일시가 바뀐 경우만 갱신·알림 (중복 전달 무시).
-  - 대시보드 위젯: 다가오는 예약(오늘부터, 취소 제외) + 최근 받은 알림 5건.
-  - **미확정**: 실제로 어떤 경로(문자·메일·스마트플레이스 앱)로 알림을 받는지, 원문 형식 샘플. 샘플을 받으면 해석 규칙을 맞춘다.
+- **네이버 예약**: 서면 YBM 네이버 예약(사업장 459658)은 센터 전체 예약이고, 그중 "역전토익 강사상담"(상품 4139011)이 우리 상품이다.
+  **예약 페이지를 10분마다 확인한다 — 첫토익과 같은 방식** (2026-09-21 Alan — "네이버는 첫토익 설정과 똑같이해주면 좋겠어.
+  예약이 잡히면 강사에게 알림이 오고 동시에 대시보드에서 바로 보이도록", 마이그레이션 20260921100500 · 20260921101500).
+  - 본사가 관리하는 예약이라 강사에게 네이버 관리자 권한이 없다 — 네이버가 보내는 알림을 받을 길이 없다 (첫토익도 같은 이유였다).
+    그래서 **공개 예약 페이지가 쓰는 조회(`hourlySchedule`, 로그인·쿠키 없음)** 로 칸마다 예약 건수만 받는다.
+    이것은 네이버가 공개한 API 가 아니다 — **Alan 이 약관 위험을 알고 정했다.** 예전 규칙 "긁어오지 않는다" 는 **파트너센터**(관리자 화면)를 두고 한 말이고 지금도 그대로다.
+  - 길: pg_cron `naver-booking-sync`(10분마다) → `private.call_app` → **우리 API `/api/cron/naver-sync`** →
+    네이버 조회 한 번(60일치 범위) → `parseHourly`(`src/lib/naver-booking.ts`)가 응답 모양을 **엄격하게** 검사 →
+    `public.naver_apply_snapshot` 이 직전 기록과 비교·저장(한 트랜잭션, advisory lock) → 변동이 있으면 `notifyStaff("naver_reservation")`.
+    DB 크론이 우리 API 를 부르는 길은 기술 스택 "DB 크론 → 우리 API" 에 적었다.
+  - **예약자가 누구인지는 모른다** — 이 조회는 칸마다 건수·정원뿐이다. 알림·대시보드에는 날짜·시각·인원만 간다.
+    **예약 상세·방문자 조회를 로그인 세션으로 부르지 말 것** (첫토익 문서 6.5 — 개인정보). 정원은 칸마다 2명이다 (2026-09-21 실측, 20분 칸).
+  - **지킬 것 — 어기면 거짓 알림이 강사 전원에게 간다**
+    1. **응답을 기본값으로 메우지 않는다.** `bookingCount` 이름만 바뀌어도 `?? 0` 이면 예약된 칸이 전부 취소로 보인다. 모양이 이상하면 저장하지 않고 멈춘다 (`naver-booking.test.ts`).
+    2. **처음 본 칸은 기준선** 이다 (첫 실행 알림 폭탄 방지). 첫 실행 판정은 칸 표가 아니라 `naver_sync_status.last_success_at` 이 비었는가로 한다.
+       단 지난번에도 보던 범위 안에 새로 생긴 칸의 예약은 접수로 본다 (그 사이 연 칸에 바로 잡힌 예약).
+    3. **조회 범위(60일)는 예약을 여는 기간보다 길어야 한다** — 짧으면 먼 날짜의 예약이 범위에 들어올 때 기준선으로 묻힌다 (`NAVER_DAYS_AHEAD`).
+    4. **날짜는 시간대 표시 없이** 보낸다 (`2026-09-21T00:00:00`). `+09:00` 을 붙이면 HTTP 200 에 본문 오류가 온다.
+  - 보완 (첫토익 문서 6.4): 취소가 한꺼번에 3건 이상이면 **한 번 보류**하고 10분 뒤에도 같으면 반영한다 ·
+    범위 안인데 응답에서 사라진 칸은 지우고, 예약이 있던 칸(한 시간 넘게 남은 것)이면 `vanished` 로 남겨 **확인 필요** 알림 ·
+    403·429 를 받으면 **한 시간 쉰다**(`retry_after`, 우회하지 않는다) · 한 시간 연속 실패하면 한 번 알린다 ·
+    대시보드와 알림 설정 화면에 **마지막 확인 시각**을 보여 준다 (크론 '성공' 기록은 믿을 수 없다).
+  - 표: `naver_booking_slots`(칸 기록, 하루 지난 칸은 지운다) · `naver_booking_events`(변동: booked · cancelled · vanished, 쌓기만) ·
+    `naver_sync_status`(한 줄). 전부 스태프 조회, 쓰기는 서버(service_role)만.
+  - 대시보드 위젯(`NaverReservationsWidget`): 다가오는 예약(칸마다 `2/2명`) + 최근 변동 5건 + 마지막 확인. `오늘 현황` 카드는 다가오는 예약 인원 합계.
+  - **예전 방식(알림 원문 전달)은 쓰지 않는다** — `POST /api/naver-reservations` 와 `naver_reservations` 표·`src/lib/naver-reservation.ts` 는
+    지우지 않고 남겼지만 운영에서 한 건도 받지 못했고 대시보드·설정 화면이 더는 읽지 않는다. 되살릴 일이 없으면 나중에 정리 마이그레이션으로 지운다.
 
 ---
 
@@ -1658,7 +1815,66 @@ create table notification_settings (       -- 사람별 알림 종류 켜기·�
   verification bool, textbook_order bool, contact bool, naver_reservation bool, daily_digest bool
 );
 
-create table naver_reservations (          -- 네이버 예약 알림에서 뽑은 예약 (쓰기는 서버만, 조회는 스태프)
+-- ─── QR 출석 (마이그레이션 20260921130500 — 도메인 규칙 7-2) ───
+create table attendance_stamps (           -- 한 칸 = 학생 · 직접 배정된 반 · 날짜. 본인·crew 조회, 쓰기는 함수로만
+  id bigint primary key, student_id uuid references profiles, section_id bigint references class_sections, class_date date,
+  status text,                             -- in(입실만) | out(입실+퇴실 = 출석) | manual(출석 인정) | absent(결석)
+  check_in_at timestamptz, check_out_at timestamptz, late bool, method text,   -- qr | code | poster(인쇄용 QR, 20260921150500) | manual
+  decided_by uuid, decided_note text,      -- 강사·조교가 정한 것 (사유 필수)
+  unique (student_id, section_id, class_date)
+);
+create table attendance_events (           -- 쌓기만: enter · exit · manual · reject(틀린 코드 — 연타 잠금에 쓴다). crew 조회
+  id bigint primary key, student_id uuid, section_id bigint, class_date date, kind text, method text, result text, actor_id uuid, note text, created_at timestamptz
+);
+-- public.attendance_scan(토큰, 방법)(학생) — 인쇄용 토큰만 받는다 (20260922103000. 방법 인자는 예전 모양 유지용, 쓰지 않는다)
+-- public.attendance_set(학생, 반, 날짜, 상태, 사유)(crew) · public.attendance_roster(날짜)(crew)
+-- private.attendance_poster(한 줄: token 20자 · created_at · created_by) — 출석 QR 포스터 토큰 (20260921150500). 앱에서 못 읽는다
+--   → public.attendance_poster_token()(crew) · public.rotate_attendance_poster()(스태프 — 새로 만들기, 옛 종이 무효)
+-- (30초 화면 QR 의 private.attendance_token · public.attendance_display · Vault attendance_qr_secret 은 20260922103000 에서 지웠다.
+--  stamps.method 의 qr · code 는 지난 기록용으로 check 에 남아 있다)
+
+-- ─── 유튜브 불라방 자동 연결 (마이그레이션 20260921120500 — 도메인 규칙 1 "유튜브 방송을 감지해") ───
+create table youtube_channels (            -- 강사 채널 연결. 토큰 칸은 service_role 만 (authenticated 는 상태 칸만 칸 단위 grant)
+  user_id uuid primary key references profiles, channel_id text unique, channel_title text,
+  refresh_token text, access_token text, access_token_expires_at timestamptz,
+  linked_at, last_checked_at, last_live_at, last_error, last_error_at
+);
+-- session_live_links.source : manual(강사가 붙여 넣음) | youtube(감지해 저절로 넣음)
+-- notification_settings.live_detected : 내 방송이 잡혀 링크가 들어가면 강사 본인에게
+-- public.live_detect_candidates() · public.register_detected_live(ids, url) — service_role 전용 · private.notify_live_session(반, 날짜)
+
+-- ─── 불라방 교재주문 (마이그레이션 20260921110500 — 도메인 규칙 7-1) ───
+create table textbook_accounts (           -- 교재비 입금 계좌 (강사가 등록). crew + 불라방 배정 학생만 조회
+  id bigint primary key, bank_name text, account_no text, holder text, label text, active bool, sort_order int
+);
+create table textbook_items (              -- 교재 (강사가 등록). level null = 모든 레벨
+  id bigint primary key, name text, level int references lc_levels, price int,
+  account_id bigint references textbook_accounts,   -- null = 기본 계좌
+  note text, active bool, sort_order int
+);
+create table textbook_settings (           -- 한 줄: shipping_fee · default_account_id · notice
+  id boolean primary key, shipping_fee int, default_account_id bigint, notice text
+);
+-- textbook_orders 에 더한 칸: term_id · items(jsonb, 주문한 때 이름·가격) · items_total · shipping_fee · total_amount ·
+--   depositor_name · pay_to(jsonb, 계좌별 금액). unique (user_id, term_id) where status <> 'cancelled'.
+--   넣기는 public.create_textbook_order(...) 로만, 학생 취소는 public.cancel_textbook_order(id) 로만
+
+-- ─── 네이버 예약 자동 확인 (마이그레이션 20260921101500 — 도메인 규칙 8) ───
+create table naver_booking_slots (         -- 칸마다 예약 건수 (10분마다 갱신). 쓰기는 서버만, 조회는 스태프
+  slot_at timestamptz primary key, booking_count int, stock int, is_sale_day bool, updated_at timestamptz
+);
+create table naver_booking_events (        -- 변동 기록 (쌓기만). 알림은 이 행마다 한 번
+  id bigint primary key, slot_at timestamptz,
+  kind text,                               -- booked | cancelled | vanished(예약이 있던 칸이 사라짐 — 확인 필요)
+  prev_count int, new_count int, stock int, created_at timestamptz
+);
+create table naver_sync_status (           -- 한 줄. 마지막 성공·연속 실패·retry_after(차단 뒤 쉼)·held_signature(취소 여러 건 보류)
+  id boolean primary key, last_run_at, last_success_at, last_error, last_error_at, consecutive_failures, retry_after, held_signature, slots, range_to
+);
+-- private.app_config(key, value)          -- site_url = DB 크론이 부르는 우리 사이트 주소 (20260921100500)
+-- Vault app_cron_secret                   -- DB 크론 → 우리 API 호출 비밀 (DB 안에서 만든 값). public.app_cron_secret() 은 service_role 전용
+
+create table naver_reservations (          -- (쓰지 않음) 예전 알림 원문 전달 방식. 대시보드가 더는 읽지 않는다
   id             bigint primary key,
   dedupe_key     text unique not null,       -- 예약번호, 없으면 원문 해시
   status         text,                       -- requested | confirmed | cancelled | changed | unknown
@@ -1675,9 +1891,22 @@ create table naver_reservations (          -- 네이버 예약 알림에서 뽑�
 
 ## 상태 전이 (일 1회 배치)
 
-> 구현: `private.run_daily_status_transition()` 을 pg_cron 이 매일 00:05 KST 에 실행한다.
+> **개강일·종강일이 진실이고 상태는 날짜로 계산된다** (2026-09-22, 마이그레이션 20260922113000 — 그전에는 배치만 상태를 바꿔서,
+> 강사가 개강일을 뒤로 미루면 이미 수강 중인 학생이 새 개강일 전에도 열려 있었고, 종강일을 늘려도 끝난 등록이 되살아나지 않았다. 운영 DB 되돌리기 테스트로 확인).
+> - `enrollment_orders.status` 는 **저장할 때마다 BEFORE 트리거가 날짜로 계산**한다 (`private.order_status_for`: 개강 전 preliminary · 개강일~종강일 active · 종강 뒤 expired).
+>   손으로 `active` 를 써도 날짜가 이긴다.
+> - 등록 기간(`activates_on`~`access_until`) = **배정된 반의 개강일~종강일** — 반 배정이 바뀌면(enrollments 트리거) · 강사가 기수 날짜를 바꾸면(`sync_section_schedule`)
+>   `private.sync_order_window` 가 다시 맞춘다. **끝난 등록도 포함** — 종강일을 늘리면 바로 다시 열린다.
+> - 학생 등급은 등록 상태가 바뀔 때마다 AFTER 트리거가 바로 정한다 (`private.refresh_student_roles`): 수강 중 등록 있음 → student,
+>   없으면 끝난 등록이 있을 때 alumni · 개강 전 등록만 있으면 member(예비등록생). 강사·관리자·조교의 진짜 등급은 건드리지 않는다.
+> - 날짜가 넘어가는 것은 배치가 맞춘다: `private.run_daily_status_transition()` 을 pg_cron 이 **매일 00:00 KST**(`0 15 * * *` UTC)에 실행한다 (예전 00:05).
+> - 수강생 권한 함수(`has_term_access` · `has_section_access` · `has_recorded_replay_access` · `my_section_ids`)도 상태와 함께 **`today between 개강일 and 종강일`** 을 직접 본다.
+>   앱의 화면 판정(`getStudentAccess` · `getRosterSets` · `/my` 등록 배지 · 스터디 자격)도 상태 대신 날짜를 본다 (`src/lib/enrollment-window.ts` 의 `orderPhase`).
+> - 한 등록에는 **한 달(기수)의 종강 전 반만** 넣는다 — 승인 · 스태프 배정 · 오배정 정정이 `assignableError` 로 막는다.
+> - 관리자 화면의 "지금 기수" 기본값도 **달력의 월이 아니라 개강일~종강일**로 고른다 (`pickCurrentTerm`, `src/lib/term-window.ts`) —
+>   9월 기수가 10/3 까지면 10/1~10/3 은 9월 기수다. `pickTerm` 에 넘기는 기수 목록에는 개강일·종강일(`TERM_COLUMNS`)을 함께 읽어 올 것 (없으면 달력의 월로 대신한다).
 > 날짜 비교는 전부 한국 시간(`private.today_kst()`) 기준. 예전 2개월 등록용 둘째 달 자동 배정
-> (`private.resolve_pending_enrollments()`)도 이 배치와 트리거에 남아 있지만, 매달 등록이라 처리할 행이 없다.
+> (`private.resolve_pending_enrollments()`)도 이 배치와 트리거에 남아 있지만, 매달 등록이라 처리할 행이 없다. 아래 SQL 은 원래 설계(참고용)다.
 
 ```sql
 -- 개강일 도래 → 예비등록생을 수강생으로
@@ -1718,13 +1947,15 @@ where p.role='student'
 
 | 경로 | 내용 | 필요 등급 |
 |---|---|---|
-| `/my` | 대시보드. **이름 옆에 내 등록 현황**, 그 아래 **이번 달 내 시간표**(달력 + 고른 날짜), 등업신청 현황, 바로가기 | member |
+| `/my` | 대시보드. **이름 옆에 내 등록 현황**, 그 아래 **이번 달 내 시간표**(달력 + 고른 날짜), **이번 기수 출석률**(현장 수강생), 등업신청 현황, 바로가기 | member |
 | `/my/account` | 내 계정 — 이름·전화번호 확인, 같은 사람으로 보이는 계정과 **계정 합치기**(신청·확인·취소) | member |
 | `/my/verify` | 등업신청 — 맨 위 카드가 흐름을 따라간다 (수강증 → **이름·전화번호 확인** → 같은 사람 계정이 있으면 **계정 합치기**). **수강증만 올리기**(OCR 이 읽어 반이 딱 맞고 이름이 같으면 **바로 등업**, 우리 수강증·수강월이 아니면 이유를 적어 바로 거절, 애매하면 강사 검토) 와 **수동 등업신청**(수강증 + 수강월·레벨·요일·시간대, 하나라도 비면 제출 불가) | member |
 | `/my/class` | 내 시간표 — **달력에서 고른 날짜의 수업만** (처음엔 오늘) + 특강 신청 바로가기. `이 달 전체` 로 한 달을 펼친다 | student |
+| `/my/attendance` | **출석** — 들어오면 **카메라가 바로 켜져** 강의실 앞 포스터 QR 을 찍는다(찍히면 크게 **출석!**) + 이번 기수 출석률 + **이번 기수** 내 출석 기록 (현장 수강생). 휴대폰 기본 카메라로 찍으면 `/attend?t=…` 가 열린다 | member (대상 판정은 DB 함수) |
+| `/attend?t=…` | 강의실 QR 이 여는 주소 — 열리자마자 한 번 찍고 결과를 보여 준다 (로그인 뒤 돌아온다, 검색 제외) | member |
 | `/my/lecture` | **특강 신청** — 그 달 특강·모의고사 카드에서 신청·취소 (정원·신청 시작 카운트다운) | 그 달 수강생 |
 | `/my/live` | 불라방 입장 — 반마다 오늘 회차 → 다음 회차 → 상시 링크 중 하나. **수업이 시작되면 알림함으로 알려 준다**(불라방 수강생만) | student |
-| `/my/textbook` | 불라방 교재주문 (불라방 수강생만) | student |
+| `/my/textbook` | 불라방 교재주문 — 내 레벨 교재를 골라 합계·입금 계좌를 보고 입금자명을 적어 주문 (한 달 한 건), 내역·송장번호 | 불라방 수강생 (**예비등록생 포함**) |
 | `/my/replay` | 강의 다시보기. 종강일까지. 저녁 화목금 인강 학생은 오전 짝 반의 녹화본(`인강 · 오전 수업 녹화본` 배지) | student |
 | `/my/study` | 내 스터디: 신청한 스터디·시간대, 비대면 자료 받기(해당 날짜부터) + **날짜마다 인증하기**(풀이 사진) | 그 달 수강생 |
 | `/my/notifications` | **알림** — 선생님이 보낸 알림 + 불라방 수업 시작 알림(앱 안 알림함). 열면 읽음 처리 | member |
@@ -1742,12 +1973,16 @@ where p.role='student'
 | `/admin` | 대시보드: 학생명단 요약, 교재주문, 마케팅 분석 차트, 시간대별 인원수 위젯 | instructor |
 | `/admin/students` | 학생명단: 등록생 / 예비등록생 / 졸업생 / **테스터**(강사·관리자 계정) / **전체** 탭 + 이름 검색. **사람마다 카드 한 장** — 연락처 · 메일 · 로그인 방식 · 마지막 접속 · 가입일 · 스터디 신청 · 반 배정(현장/불라방 배지). 카드를 누르면 학생 관리로 | instructor · **조교** |
 | `/admin/students/[id]` | 학생 관리: 기본 정보, **등급 변경**(조교는 학생 등급끼리만), **반 배정 추가·해제**(기수별), **계정 합치기**(스태프만), 등록 이력 | instructor · **조교** |
+| `/admin/attendance` | **출석 명단** — **지금 기수(개강일~종강일)만**: 날짜별·반별 현장 수강생의 입실·퇴실·지각, 출석 인정·결석·되돌리기(사유 필수) + 기수 학생별 출석 현황 | instructor · **조교** |
+| `/admin/attendance/poster` | **출석 QR 포스터** — 발행 시각, **`포스터 PDF 받기`**(`/download`, A4 한 장에 A5 두 장), **`새로 만들기`**(강사·관리자만 — 누르면 옛 종이 무효, 바로 새 PDF 받기) | instructor · **조교** |
 | `/admin/sections` | 반 편성 달력(개강일·종강일·월수금·화목금·특강 → 항목별 저장 / 전체 저장, 이전/다음 달, 이미지 저장), 그 달 반 일괄 개설(강좌 × 시간대 × 트랙 표 → 고른 칸 한 번에) + 하나씩 만들기, **담당 강사 일괄 지정**, 스터디 시간 설정 | instructor |
 | `/admin/lectures` | 특강 신청: 기수별 특강마다 신청 받기·정원·신청 시작 설정 + 신청자 명단(스태프 취소) | instructor |
 | `/admin/sections/[id]` | 반 상세: 달력에서 파생된 수업일(읽기 전용) + **회차별 불라방 링크**·다시보기 여부, "끝나면 다시보기로" 스위치, 상시 불라방 링크, 정원·상태·강사 수정, 삭제 | instructor |
 | `/admin/replays` | 녹화본 등록·회차 연결. 맨 위 **레벨 버튼**(650·750·850)으로 가르고 드롭다운은 기수별. 줄마다 `LC/RC · 트랙 · 시간`. **오전 시간 단위 반만** 나온다 — 묶음·스파르타·저녁 줄은 뺀다 (10월 36개 → 12개) | instructor |
+| `/admin/live-channels` | **불라방 자동 연결** — 내 유튜브 채널 연결·끊기, 강사님 연결 상태, 오늘 회차마다 자동 연결 상태, 관리자 설정 안내 | instructor |
 | `/admin/verifications` | 등업신청 목록·상세: 수강증 이미지, OCR 로그, 반 골라 승인 · 거절 · 오배정 정정 | instructor · **조교** |
-| `/admin/textbook-orders` | 교재주문 처리 | instructor · **조교** |
+| `/admin/textbook-orders` | 교재주문 처리 — 교재·금액·입금자명을 보고 `입금 확인` → `발송`(송장번호) | instructor · **조교** |
+| `/admin/textbook-orders/setup` | **교재·입금 계좌 설정** — 입금 계좌 · 교재(레벨·가격·계좌) · 배송비·기본 계좌·안내 문구 | instructor |
 | `/admin/analytics` | 마케팅 분석 (대학·학과·성별) | instructor |
 | `/admin/study` | 스터디 신청자 명단 (월 · 유형 · 시간대별). 비대면은 **날짜별 인증 현황 + 미인증 학생에게 알림 보내기**. "시간대 설정" 버튼은 아래 전용 화면으로 | instructor · **조교** |
 | `/admin/study/plan` | **스터디 시간 설정** — 기수별 대면·단어 시간대 추가, 비대면 열기 (반 편성 아래에 있던 것을 따로 뗀 화면) | instructor |
@@ -1755,7 +1990,7 @@ where p.role='student'
 | `/admin/homework` | 숙제점검: **과목(= 강사, `RC · 이영수`) → 레벨 → 상태** 필터(강사는 자기 과목부터), 최근순 목록, 학생 질문·수업 날짜 표시. **사진을 누르면 팝업에서 `n / N` 으로 넘겨 본다**(회전·원본 보기). 코멘트를 적고 점검완료하면 학생 알림함으로 간다 | instructor |
 | `/admin/lc-audio` | 레벨 탭 → A반·B반 교재 2권의 표지·교재명·설명, 교재별 수업/숙제 음원 등록(강별, 한 강에 여러 개, 올리기 전 배치 확인) | instructor |
 | `/admin/contacts` | 문의 처리 | instructor |
-| `/admin/notifications` | 알림 설정: 이 기기에서 푸시 받기, 알림 종류 켜기·끄기, 네이버 예약 연결 주소·코드(관리자만) | instructor |
+| `/admin/notifications` | 알림 설정: 이 기기에서 푸시 받기, 알림 종류 켜기·끄기, 네이버 예약 자동 확인 상태(마지막 확인 · 실패) | instructor |
 
 ---
 
@@ -1868,7 +2103,7 @@ where p.role='student'
    자동으로 넣지 않고 스태프 검토로 보내되, 찾은 반은 승인 화면에 미리 골라 둔다. 학생에게 후보를 고르게 하는 안은 쓰지 않았다 —
    틀린 반을 고르면 남의 반 다시보기가 열린다.
    **권한 회수도 자동이다** (Alan: "강사가 설정한 종료일에 자동으로 권한 회수"): 종강일(`closes_at`)이 지나면 RLS
-   (`private.has_term_access`, `today_kst() <= closes_at`)가 그날부터 막고, 매일 00:05 KST 배치(pg_cron `daily-status-transition`,
+   (`private.has_term_access`, `today_kst() <= closes_at`)가 그날부터 막고, 매일 00:00 KST 배치(pg_cron `daily-status-transition`, 2026-09-22 전에는 00:05,
    `private.run_daily_status_transition`)가 등록을 `expired`, 등급을 `alumni` 로 바꾼다. 새로 만든 것이 아니라 원래 있던 규칙이다 (규칙 2·3).
    아래는 결정 전 기록이다.
    여기에 **수강료가 빠진 뒤의 기준선**도 함께 정한다 — 점수 만점이 70 으로 내려가 `top1 ≥ 70` 이 "전부 맞아야 확정" 이 되는 문제와,
@@ -2007,7 +2242,7 @@ where p.role='student'
      - 목록: 단계/레벨 필터 탭, "총 N개의 후기", YBM 공식 홈페이지로 나가는 배너(더 보기), 후기 카드 목록
      - 카드: 아바타(성씨) · **마스킹된 이름**(유\*빈) · 작성일 · 채널 배지(어학원) · 목표 점수 배지 · 단계 배지 · 제목 · 본문 일부 + 더 보기
      - 상세: 본문 전체 + 접기, 👍 평가 태그 (예: 커리큘럼이 탄탄해요 · 피드백이 상세해요 · 실전 대비가 잘돼요)
-   - **네이버 예약은 "들어왔는지 안 왔는지"만 알면 된다** (Alan 확인). 지금 구현(웹훅으로 원문 받기)이 이미 그 이상을 한다.
+   - **네이버 예약은 "들어왔는지 안 왔는지"만 알면 된다** (Alan 확인). → 2026-09-21 첫토익과 같은 방식(예약 페이지 10분 확인)으로 만들었다 (도메인 규칙 8).
      첫토익 화면은 달력에 예약 있는 날 표시 + 그 날 예약 시각 목록 + 대시보드에 건수·가장 이른 시각. 10분마다 수집.
    - **특강 신청 화면** (첫토익 참고): 종류 배지 · 상태 배지(곧 시작 / 신청 마감) · 날짜 · 강사 ·
      신청 현황 `N / 정원명` + 진행바 + 남은 자리 · **신청 오픈 카운트다운**(“신청 시작까지 hh:mm:ss”, 오픈 일시 표기) ·
@@ -2096,11 +2331,13 @@ where p.role='student'
         YBM 에 등록한 이름·번호를 따로 받는 것인지.
 
 ### 아직 논의되지 않음 (임의 구현 금지)
-출결, 채점·점수(숙제업로드는 점검완료 표시까지만), 성적·모의고사, 단어장, 오답노트, 일반 자료실, 학생 대상 알림 발송(문자·알림톡·학생 푸시 — **앱 안 알림함은 2026-09-18 도입**, 규칙 6-2. 수업 시작 알림도 알림함으로만 간다),
+출결의 경고·교차수강·포인트·NFC·비콘(QR 입실·퇴실만 2026-09-21 도입 — 규칙 7-2), 채점·점수(숙제업로드는 점검완료 표시까지만), 성적·모의고사, 단어장, 오답노트, 일반 자료실, 학생 대상 알림 발송(문자·알림톡·학생 푸시 — **앱 안 알림함은 2026-09-18 도입**, 규칙 6-2. 수업 시작 알림도 알림함으로만 간다),
 후기 작성 기능, **YBM 후기 수집**(미확정 8 — 사전 공유만 받았다), 특강 라이브 시청 링크·특강 자료 배포
 
 ### 확장 기능의 가정 (Alan 확인 전까지의 기본값)
-- **교재신청**: 불라방 수강생만, 본인 반 기준, 배송지 입력. 결제 없음(교재비는 YBM/현장 처리). 상태 requested → confirmed → shipped
+- ~~**교재신청**: 불라방 수강생만, 본인 반 기준, 배송지 입력. 결제 없음(교재비는 YBM/현장 처리)~~ →
+  **2026-09-21 Alan 확정: 강사가 교재와 입금 계좌를 직접 등록하고, 학생은 교재를 골라 입금하고 입금자명을 적어 주문한다** (도메인 규칙 7-1).
+  배송은 택배뿐이다 (데스크 직접수령은 정하지 않았다 — 만들지 말 것)
 - **스터디 신청 자격**: 그 달 반에 배정된 수강생만 (예비등록생 포함). 비회원·일반 회원은 안내만 본다
 - **스터디 신청 방식**: 신청 즉시 확정(스태프 승인 없음). 유형마다 시간대 1개. 본인 취소는 '신청 받는 중'일 때만, 그 뒤엔 스태프가 명단에서 취소
 - **대면·단어 시간대**: 그 달 내내 같은 시간대(요일·장소는 안내 문구에 적는다). 정원은 선택

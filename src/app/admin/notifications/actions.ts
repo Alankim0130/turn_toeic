@@ -79,6 +79,7 @@ export async function saveNotificationSettings(_prev: SettingsState, formData: F
         textbook_order: on("textbook_order"),
         contact: on("contact"),
         daily_digest: on("daily_digest"),
+        live_detected: on("live_detected"),
         updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id" },

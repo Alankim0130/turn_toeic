@@ -1,5 +1,6 @@
 import "server-only";
 import type { createAdminClient } from "./supabase/admin";
+import { assignableError, orderWindow } from "./enrollment-window";
 import type { Json, TablesInsert, TablesUpdate } from "./supabase/database.types";
 import { promoteToStudent } from "./student-role";
 import { todayKST } from "./utils";
@@ -26,19 +27,20 @@ export type ApproveResult = { ok: true; orderId: number; status: "active" | "pre
  * 어느 단계가 실패하면 만든 등록을 지워 되돌린다. 권한 검사는 호출한 쪽이 한다 (service_role 로 쓴다).
  *
  * **권한 회수는 여기서 하지 않는다** — 종강일이 지나면 RLS(`private.has_term_access`)가 그날부터 막고,
- * 매일 00:05 KST 배치(`private.run_daily_status_transition`)가 등록을 `expired`, 등급을 `alumni` 로 바꾼다.
+ * 매일 00:00 KST 배치(`private.run_daily_status_transition`)가 등록을 `expired`, 등급을 `alumni` 로 바꾼다.
+ * 기간·상태 규칙은 `enrollment-window.ts` 한곳 — 한 달의 반만, 종강 전 반만 (스태프 반 배정과 같다).
  */
 export async function approveVerificationWith(admin: Admin, input: ApproveInput): Promise<ApproveResult> {
   const sectionIds = [...new Set(input.sectionIds)];
   if (sectionIds.length === 0) return { ok: false, error: "배정할 반이 없습니다." };
 
-  const { data: sections } = await admin.from("class_sections").select("id, enrollment_opens_at, closes_at").in("id", sectionIds);
+  const { data: sections } = await admin.from("class_sections").select("id, term_id, enrollment_opens_at, closes_at").in("id", sectionIds);
   if (!sections || sections.length !== sectionIds.length) return { ok: false, error: "선택한 반을 찾을 수 없습니다." };
 
   const today = todayKST();
-  const activatesOn = sections.map((s) => s.enrollment_opens_at).sort()[0];
-  const accessUntil = sections.map((s) => s.closes_at).sort().at(-1)!;
-  const status = activatesOn <= today ? "active" : "preliminary";
+  const invalid = assignableError(sections, today);
+  if (invalid) return { ok: false, error: invalid };
+  const { activatesOn, accessUntil, status } = orderWindow(sections, today);
 
   const { data: order, error: orderErr } = await admin
     .from("enrollment_orders")

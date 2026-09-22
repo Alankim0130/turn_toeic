@@ -11,7 +11,7 @@ import { TableWrap, Th, Td } from "@/components/admin/Table";
 import { CancelSignupButton } from "@/components/admin/studies/CancelSignupButton";
 import { CheckinRoster } from "@/components/admin/studies/CheckinRoster";
 import { isSlotKind, slotTime, sortSlots, STUDY_KIND_LABEL, STUDY_STATUS_LABEL, termParam } from "@/lib/study";
-import { pickTerm, termLabel, sectionChip } from "../_lib/queries";
+import { pickTerm, termLabel, sectionChip, type TermLite } from "../_lib/queries";
 import { week5SectionIds, collapseWeek5 } from "@/lib/week5";
 import { requireCrew } from "@/lib/auth";
 
@@ -27,8 +27,8 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
   const today = todayKST();
 
   // 스터디가 있는 기수만 고른다
-  const { data: allStudies } = await supabase.from("studies").select("id, term_id, kind, term:terms(id, year, month)");
-  const termMap = new Map<number, { id: number; year: number; month: number }>();
+  const { data: allStudies } = await supabase.from("studies").select("id, term_id, kind, term:terms(id, year, month, enrollment_opens_at, closes_at)");
+  const termMap = new Map<number, TermLite>();
   for (const s of allStudies ?? []) if (s.term) termMap.set(s.term.id, s.term);
   const terms = [...termMap.values()].sort((a, b) => b.year * 12 + b.month - (a.year * 12 + a.month));
   const term = pickTerm(terms, sp.term, today);
@@ -194,7 +194,7 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
         <div className="space-y-6">
         <section>
           <h2 className="mb-2 text-base font-black text-ink">날짜별 인증 현황 <span className="text-sm font-semibold text-slate">— 자료를 풀고 인증하지 않은 학생에게 알림을 보낼 수 있어요</span></h2>
-          <CheckinRoster students={rosterStudents} materials={materialRows ?? []} checkins={rosterCheckins} />
+          <CheckinRoster students={rosterStudents} materials={materialRows ?? []} checkins={rosterCheckins} today={today} />
         </section>
         <section>
         <h2 className="mb-2 text-base font-black text-ink">신청자</h2>

@@ -155,6 +155,56 @@ export type Database = {
           },
         ]
       }
+      youtube_channels: {
+        Row: {
+          access_token: string | null
+          access_token_expires_at: string | null
+          channel_id: string
+          channel_title: string | null
+          last_checked_at: string | null
+          last_error: string | null
+          last_error_at: string | null
+          last_live_at: string | null
+          linked_at: string
+          refresh_token: string
+          user_id: string
+        }
+        Insert: {
+          access_token?: string | null
+          access_token_expires_at?: string | null
+          channel_id: string
+          channel_title?: string | null
+          last_checked_at?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
+          last_live_at?: string | null
+          linked_at?: string
+          refresh_token: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string | null
+          access_token_expires_at?: string | null
+          channel_id?: string
+          channel_title?: string | null
+          last_checked_at?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
+          last_live_at?: string | null
+          linked_at?: string
+          refresh_token?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "youtube_channels_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       account_merge_requests: {
         Row: {
           created_at: string
@@ -187,6 +237,108 @@ export type Database = {
           to_user?: string
         }
         Relationships: []
+      }
+      attendance_events: {
+        Row: {
+          actor_id: string | null
+          class_date: string | null
+          created_at: string
+          id: number
+          kind: string
+          method: string | null
+          note: string | null
+          result: string
+          section_id: number | null
+          student_id: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          class_date?: string | null
+          created_at?: string
+          id?: number
+          kind: string
+          method?: string | null
+          note?: string | null
+          result: string
+          section_id?: number | null
+          student_id?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          class_date?: string | null
+          created_at?: string
+          id?: number
+          kind?: string
+          method?: string | null
+          note?: string | null
+          result?: string
+          section_id?: number | null
+          student_id?: string | null
+        }
+        Relationships: []
+      }
+      attendance_stamps: {
+        Row: {
+          check_in_at: string | null
+          check_out_at: string | null
+          class_date: string
+          created_at: string
+          decided_by: string | null
+          decided_note: string | null
+          id: number
+          late: boolean
+          method: string | null
+          section_id: number
+          status: string
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          check_in_at?: string | null
+          check_out_at?: string | null
+          class_date: string
+          created_at?: string
+          decided_by?: string | null
+          decided_note?: string | null
+          id?: number
+          late?: boolean
+          method?: string | null
+          section_id: number
+          status: string
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          check_in_at?: string | null
+          check_out_at?: string | null
+          class_date?: string
+          created_at?: string
+          decided_by?: string | null
+          decided_note?: string | null
+          id?: number
+          late?: boolean
+          method?: string | null
+          section_id?: number
+          status?: string
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_stamps_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "class_sections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_stamps_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       class_sections: {
         Row: {
@@ -847,6 +999,60 @@ export type Database = {
         }
         Relationships: []
       }
+      naver_booking_events: {
+        Row: {
+          created_at: string
+          id: number
+          kind: string
+          new_count: number
+          prev_count: number
+          slot_at: string
+          stock: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          kind: string
+          new_count: number
+          prev_count: number
+          slot_at: string
+          stock?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          kind?: string
+          new_count?: number
+          prev_count?: number
+          slot_at?: string
+          stock?: number | null
+        }
+        Relationships: []
+      }
+      naver_booking_slots: {
+        Row: {
+          booking_count: number
+          is_sale_day: boolean
+          slot_at: string
+          stock: number
+          updated_at: string
+        }
+        Insert: {
+          booking_count?: number
+          is_sale_day?: boolean
+          slot_at: string
+          stock?: number
+          updated_at?: string
+        }
+        Update: {
+          booking_count?: number
+          is_sale_day?: boolean
+          slot_at?: string
+          stock?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       naver_reservations: {
         Row: {
           booking_number: string | null
@@ -895,10 +1101,50 @@ export type Database = {
         }
         Relationships: []
       }
+      naver_sync_status: {
+        Row: {
+          consecutive_failures: number
+          held_signature: string | null
+          id: boolean
+          last_error: string | null
+          last_error_at: string | null
+          last_run_at: string | null
+          last_success_at: string | null
+          range_to: string | null
+          retry_after: string | null
+          slots: number
+        }
+        Insert: {
+          consecutive_failures?: number
+          held_signature?: string | null
+          id?: boolean
+          last_error?: string | null
+          last_error_at?: string | null
+          last_run_at?: string | null
+          last_success_at?: string | null
+          range_to?: string | null
+          retry_after?: string | null
+          slots?: number
+        }
+        Update: {
+          consecutive_failures?: number
+          held_signature?: string | null
+          id?: boolean
+          last_error?: string | null
+          last_error_at?: string | null
+          last_run_at?: string | null
+          last_success_at?: string | null
+          range_to?: string | null
+          retry_after?: string | null
+          slots?: number
+        }
+        Relationships: []
+      }
       notification_settings: {
         Row: {
           contact: boolean
           daily_digest: boolean
+          live_detected: boolean
           naver_reservation: boolean
           textbook_order: boolean
           updated_at: string
@@ -908,6 +1154,7 @@ export type Database = {
         Insert: {
           contact?: boolean
           daily_digest?: boolean
+          live_detected?: boolean
           naver_reservation?: boolean
           textbook_order?: boolean
           updated_at?: string
@@ -917,6 +1164,7 @@ export type Database = {
         Update: {
           contact?: boolean
           daily_digest?: boolean
+          live_detected?: boolean
           naver_reservation?: boolean
           textbook_order?: boolean
           updated_at?: string
@@ -1051,18 +1299,21 @@ export type Database = {
           live_url: string
           promoted_at: string | null
           session_date_id: number
+          source: string
           updated_at: string
         }
         Insert: {
           live_url: string
           promoted_at?: string | null
           session_date_id: number
+          source?: string
           updated_at?: string
         }
         Update: {
           live_url?: string
           promoted_at?: string | null
           session_date_id?: number
+          source?: string
           updated_at?: string
         }
         Relationships: [
@@ -1436,51 +1687,162 @@ export type Database = {
         }
         Relationships: []
       }
-      textbook_orders: {
+      textbook_accounts: {
         Row: {
-          address: string
-          address_detail: string | null
+          account_no: string
+          active: boolean
+          bank_name: string
+          created_at: string
+          holder: string
+          id: number
+          label: string | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          account_no: string
+          active?: boolean
+          bank_name: string
+          created_at?: string
+          holder: string
+          id?: number
+          label?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          account_no?: string
+          active?: boolean
+          bank_name?: string
+          created_at?: string
+          holder?: string
+          id?: number
+          label?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      textbook_items: {
+        Row: {
+          account_id: number | null
+          active: boolean
           created_at: string
           id: number
+          level: number | null
+          name: string
+          note: string | null
+          price: number
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          account_id?: number | null
+          active?: boolean
+          created_at?: string
+          id?: number
+          level?: number | null
+          name: string
+          note?: string | null
+          price: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          account_id?: number | null
+          active?: boolean
+          created_at?: string
+          id?: number
+          level?: number | null
+          name?: string
+          note?: string | null
+          price?: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "textbook_items_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "textbook_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "textbook_items_level_fkey"
+            columns: ["level"]
+            isOneToOne: false
+            referencedRelation: "lc_levels"
+            referencedColumns: ["level"]
+          },
+        ]
+      }
+      textbook_orders: {
+        Row: {
+          address_detail: string | null
+          address: string
+          created_at: string
+          depositor_name: string | null
+          id: number
+          items_total: number
+          items: Json
           memo: string | null
+          pay_to: Json
           phone: string
           postal_code: string | null
           quantity: number
           recipient_name: string
           section_id: number
+          shipping_fee: number
           status: string
+          term_id: number | null
+          total_amount: number
           tracking_no: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
-          address: string
           address_detail?: string | null
+          address: string
           created_at?: string
+          depositor_name?: string | null
           id?: number
+          items_total?: number
+          items?: Json
           memo?: string | null
+          pay_to?: Json
           phone: string
           postal_code?: string | null
           quantity?: number
           recipient_name: string
           section_id: number
+          shipping_fee?: number
           status?: string
+          term_id?: number | null
+          total_amount?: number
           tracking_no?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
-          address?: string
           address_detail?: string | null
+          address?: string
           created_at?: string
+          depositor_name?: string | null
           id?: number
+          items_total?: number
+          items?: Json
           memo?: string | null
+          pay_to?: Json
           phone?: string
           postal_code?: string | null
           quantity?: number
           recipient_name?: string
           section_id?: number
+          shipping_fee?: number
           status?: string
+          term_id?: number | null
+          total_amount?: number
           tracking_no?: string | null
           updated_at?: string
           user_id?: string
@@ -1505,6 +1867,38 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      textbook_settings: {
+        Row: {
+          default_account_id: number | null
+          id: boolean
+          notice: string | null
+          shipping_fee: number
+          updated_at: string
+        }
+        Insert: {
+          default_account_id?: number | null
+          id?: boolean
+          notice?: string | null
+          shipping_fee?: number
+          updated_at?: string
+        }
+        Update: {
+          default_account_id?: number | null
+          id?: boolean
+          notice?: string | null
+          shipping_fee?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "textbook_settings_default_account_id_fkey"
+            columns: ["default_account_id"]
+            isOneToOne: false
+            referencedRelation: "textbook_accounts"
             referencedColumns: ["id"]
           },
         ]
@@ -1674,6 +2068,62 @@ export type Database = {
           recorded_id: number
           source_id: number
         }[]
+      }
+      app_cron_secret: {
+        Args: never
+        Returns: string
+      }
+      naver_apply_snapshot: {
+        Args: { p_from: string; p_slots: Json; p_to: string }
+        Returns: Json
+      }
+      naver_sync_failed: {
+        Args: { p_error: string; p_retry_after?: string }
+        Returns: number
+      }
+      create_textbook_order: {
+        Args: { p_address: string; p_address_detail: string; p_depositor: string; p_item_ids: number[]; p_memo: string; p_phone: string; p_postal_code: string; p_recipient: string; p_term_id: number }
+        Returns: number
+      }
+      cancel_textbook_order: {
+        Args: { p_id: number }
+        Returns: boolean
+      }
+      live_detect_candidates: {
+        Args: never
+        Returns: { instructor_id: string; label: string; section_id: number; session_date_id: number; starts_at: string }[]
+      }
+      register_detected_live: {
+        Args: { p_session_date_ids: number[]; p_url: string }
+        Returns: number[]
+      }
+      attendance_scan: {
+        Args: { p_method?: string; p_token: string }
+        Returns: Json
+      }
+      attendance_set: {
+        Args: { p_date: string; p_note: string; p_section: number; p_status: string; p_student: string }
+        Returns: boolean
+      }
+      attendance_roster: {
+        Args: { p_date: string }
+        Returns: { check_in_at: string | null; check_out_at: string | null; course_name: string; decided_by_name: string | null; decided_note: string | null; late: boolean; phone: string | null; section_id: number; status: string | null; student_id: string; student_name: string; target_score: number | null; tester: boolean; time_block: string | null; track: string }[]
+      }
+      my_attendance_summary: {
+        Args: never
+        Returns: { absent: number; closes: string; in_only: number; late: number; missing: number; month: number; opens: string; past: number; present: number; term_id: number; total: number; year: number }[]
+      }
+      attendance_term_summary: {
+        Args: { p_term_id: number }
+        Returns: { absent: number; classes: number; in_only: number; late: number; missing: number; phone: string | null; present: number; sections: string | null; student_id: string; student_name: string; tester: boolean }[]
+      }
+      attendance_poster_token: {
+        Args: never
+        Returns: Json
+      }
+      rotate_attendance_poster: {
+        Args: never
+        Returns: Json
       }
     }
     Enums: {
