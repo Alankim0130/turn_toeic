@@ -13,10 +13,13 @@ import { requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "숙제점검", robots: { index: false } };
 
+/**
+ * **`전체` 칸은 두지 않는다** (2026-09-22 Alan — "'전체' '모든레벨' 이 버튼은 없애줘").
+ * 상태는 둘뿐이라 `점검 대기` + `점검 완료` 가 이미 전부다 — 세 번째 칸은 자리만 먹었다.
+ */
 const STATUS_TABS = [
   { value: "submitted", label: "점검 대기" },
   { value: "checked", label: "점검 완료" },
-  { value: "all", label: "전체" },
 ];
 const LIMIT = 300;
 
@@ -29,7 +32,13 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
 
   const { data: levelRows } = await supabase.from("lc_levels").select("level").order("sort_order").order("level");
   const levels = (levelRows ?? []).map((l) => l.level);
-  const level = levels.includes(Number(sp.level)) ? Number(sp.level) : null;
+  /**
+   * **`모든 레벨` 칸을 없앴으므로 늘 한 레벨을 보고 있다** (2026-09-22 Alan). 그래서 **레벨 칸마다 건수를 적는다** —
+   * 650 을 보는 동안 750 에 숙제가 쌓여도 숫자가 보이면 놓치지 않는다. 숫자를 안 적으면 "점검할 숙제가 없어요" 가
+   * 이 레벨에만 해당하는 말인데 전부 끝난 것처럼 읽혀 **조용히 빠뜨린다.**
+   * 레벨 목록을 못 읽으면(levels 가 비면) 레벨로 거르지 않는다 — 줄도 그리지 않는다 (FilterTabs).
+   */
+  const level = levels.includes(Number(sp.level)) ? Number(sp.level) : (levels[0] ?? null);
   /**
    * **강사별로 가른다 = 과목으로 가른다** (2026-09-22 Alan 요청 "강사별로 나눌수 있게 해줘").
    * 역전토익은 강사가 둘이고 **과목이 고정**이라(`profiles.subject`: 이혜영 lc · 이영수 rc)
@@ -50,31 +59,33 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
     return r;
   };
   const count = (s: string) => scoped(supabase.from("homework_submissions").select("id", { count: "exact", head: true }).eq("status", s));
+  // 레벨 칸의 숫자 = **그 칸을 누르면 보일 건수** (지금 과목·상태 그대로, 레벨만 바꿔서)
+  const levelCount = (l: number) => {
+    const q = supabase.from("homework_submissions").select("id", { count: "exact", head: true }).eq("level", l).eq("status", status);
+    return subject ? q.eq("subject", subject) : q;
+  };
 
-  let listQuery = scoped(
+  const listQuery = scoped(
     supabase
       .from("homework_submissions")
       .select(
         "id, level, subject, class_date, question, feedback, status, created_at, checked_at, user:profiles!homework_submissions_user_id_fkey(name, phone), checker:profiles!homework_submissions_checked_by_fkey(name), homework_files(id, file_name, content_type, created_at)",
       ),
-  );
-  if (status !== "all") listQuery = listQuery.eq("status", status);
+  ).eq("status", status);
 
-  const [{ data: subs }, submitted, checked, { data: instructors }] = await Promise.all([
+  const [{ data: subs }, submitted, checked, { data: instructors }, levelCounts] = await Promise.all([
     listQuery.order("created_at", { ascending: false }).limit(LIMIT),
     count("submitted"),
     count("checked"),
     supabase.from("profiles").select("name, subject").in("subject", [...HOMEWORK_SUBJECTS]),
+    Promise.all(levels.map(async (l) => [l, (await levelCount(l)).count ?? 0] as const)),
   ]);
+  const byLevel = new Map(levelCounts);
   // 이 조회가 실패해도 탭은 그대로 뜬다 — 이름만 빠진다 (강사 가입 전에도 화면이 살아 있어야 한다)
   const nameOf = new Map((instructors ?? []).flatMap((i) => (i.subject && i.name ? [[i.subject, i.name] as const] : [])));
   const subjectTab = (s: HomeworkSubject) => (nameOf.get(s) ? `${SUBJECT_LABEL[s]} · ${nameOf.get(s)}` : SUBJECT_LABEL[s]);
   const list = subs ?? [];
-  const counts: Record<string, number> = {
-    submitted: submitted.count ?? 0,
-    checked: checked.count ?? 0,
-    all: (submitted.count ?? 0) + (checked.count ?? 0),
-  };
+  const counts: Record<string, number> = { submitted: submitted.count ?? 0, checked: checked.count ?? 0 };
   const keep = { level: level ? String(level) : undefined, subject: subject ?? undefined, status };
 
   return (
@@ -99,9 +110,9 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
       <FilterTabs
         basePath="/admin/homework"
         paramKey="level"
-        current={level ? String(level) : "all"}
+        current={level ? String(level) : ""}
         keep={{ subject: keep.subject, status }}
-        tabs={[{ value: "all", label: "모든 레벨" }, ...levels.map((l) => ({ value: String(l), label: `${l}` }))]}
+        tabs={levels.map((l) => ({ value: String(l), label: `${l}`, count: byLevel.get(l) ?? 0 }))}
       />
       <FilterTabs basePath="/admin/homework" paramKey="status" current={status} keep={{ level: keep.level, subject: keep.subject }} tabs={STATUS_TABS.map((t) => ({ ...t, count: counts[t.value] }))} />
 
