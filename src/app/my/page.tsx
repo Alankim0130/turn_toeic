@@ -140,7 +140,7 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
         {/* 내 등록 현황 — **왼쪽에 프로필 사진** (2026-09-22 Alan). 종강일은 등록마다 카드 안에 적는다 */}
         {orders.length > 0 && (
           <section aria-labelledby="orders-title" className="card flex gap-3 p-3.5 sm:gap-4 sm:p-4">
-            <ProfilePhoto src={photo} name={name} />
+            <ProfilePhoto src={photo} />
             <div className="min-w-0 flex-1">
               <h2 id="orders-title" className="text-sm font-black text-ink">내 등록 현황</h2>
 
