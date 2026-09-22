@@ -9,20 +9,37 @@ import { MAX_FEEDBACK } from "@/lib/homework";
 /**
  * 숙제 점검 — **코멘트(질문 답변)를 적고 점검완료**하면 학생 알림함으로 간다 (2026-09-19 Alan).
  * 코멘트는 선택이다. 점검을 취소하면 코멘트도 지우지만 **이미 보낸 알림은 그대로 둔다**.
+ *
+ * **여기가 점검완료를 누르는 유일한 자리다** — 상세 팝업(`HomeworkDetail`) 안에만 있다.
+ * `onChecked` 는 점검을 **보냈을 때만** 부른다 (팝업이 닫힌다). 점검 취소는 부르지 않는다 —
+ * 되돌린 결과를 그 자리에서 봐야 한다.
  */
-export function HomeworkCheckForm({ id, checked, question, feedback }: { id: number; checked: boolean; question: string | null; feedback: string | null }) {
+export function HomeworkCheckForm({
+  id,
+  checked,
+  question,
+  feedback,
+  onChecked,
+}: {
+  id: number;
+  checked: boolean;
+  question: string | null;
+  feedback: string | null;
+  onChecked?: () => void;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const run = (fn: () => Promise<{ ok: boolean; error?: string }>) =>
+  const run = (fn: () => Promise<{ ok: boolean; error?: string }>, done?: () => void) =>
     startTransition(async () => {
       setError(null);
       const res = await fn();
       if (res.ok) {
         setText("");
         router.refresh();
+        done?.();
       } else setError(res.error ?? "저장하지 못했어요.");
     });
 
@@ -65,7 +82,7 @@ export function HomeworkCheckForm({ id, checked, question, feedback }: { id: num
         <span className="text-[11px] text-mist tabular-nums">
           {text.length} / {MAX_FEEDBACK}
         </span>
-        <button type="button" onClick={() => run(() => checkHomework({ id, feedback: text }))} disabled={pending} className="btn-primary !px-4 !py-2 text-sm">
+        <button type="button" onClick={() => run(() => checkHomework({ id, feedback: text }), onChecked)} disabled={pending} className="btn-primary !px-4 !py-2 text-sm">
           <Icon name="success" size={18} className="brightness-0 invert" />
           {pending ? "보내는 중…" : "점검완료 · 알림 보내기"}
         </button>
