@@ -6,9 +6,12 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
 import { InstallApp } from "@/components/pwa/InstallApp";
 import { MonthSchedule } from "@/components/my/MonthSchedule";
+import { AttendanceRate } from "@/components/my/AttendanceRate";
+import { createClient } from "@/lib/supabase/server";
 import { effectiveRole, requireUser, ROLE_LABEL } from "@/lib/auth";
 import { cn, formatDate, formatTimeRange, MODE_LABEL, RECORDED_LABEL, TRACK_LABEL } from "@/lib/utils";
 import { initialMonth } from "@/lib/class-day";
+import { orderPhase } from "@/lib/enrollment-window";
 import { collapseWeek5, pairKey, studentTrackLabel, type Week5Section } from "@/lib/week5";
 import { getMySchedule } from "./_lib/schedule";
 import {
@@ -79,7 +82,7 @@ function recordedTracksOf(
 }
 
 export default async function MyPage({ searchParams }: { searchParams: Promise<{ welcome?: string; denied?: string }> }) {
-  const [{ profile, user }, sp, verifications, week5, schedule, mergeRequests, unread] = await Promise.all([
+  const [{ profile, user }, sp, verifications, week5, schedule, mergeRequests, unread, attendance] = await Promise.all([
     requireUser("/my"),
     searchParams,
     getMyVerifications(),
@@ -87,6 +90,8 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
     getMySchedule(),
     getMyMergeRequests(),
     getUnreadMessageCount(),
+    // 이번 기수 내 출석률 (2026-09-22 Alan — "마이페이지에서 확인하면 동기부여"). 현장 반이 없으면 빈 배열
+    createClient().then((s) => s.rpc("my_attendance_summary")).then((r) => r.data ?? []),
   ]);
 
   // 내가 신청하지 않은 통합 요청 = 이 계정에서 확인해야 합쳐진다 (2026-09-18 Alan)
@@ -104,11 +109,13 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
    * **지금 유효한 등록만** 줄로 펴고, 끝난 등록은 달 이름만 한 줄로 접는다 —
    * 매달 등록이라(도메인 규칙 4) 다 펴면 해가 갈수록 머리글이 길어진다.
    */
-  const live = orders.filter((o) => o.status !== "expired");
+  // 단계(개강 전 · 수강 중 · 끝남)는 **날짜로** 정한다 — 상태 열이 자정 배치 전이라도 종강 다음 날이면 끝난 등록이다
+  const phaseOf = (o: (typeof orders)[number]) => orderPhase(o, schedule.today);
+  const live = orders.filter((o) => phaseOf(o) !== "expired");
   const expiredTerms = [
     ...new Set(
       orders
-        .filter((o) => o.status === "expired")
+        .filter((o) => phaseOf(o) === "expired")
         .flatMap((o) => o.enrollments.map((e) => (e.section ? termLabel(e.section.term) : null)).filter(Boolean) as string[]),
     ),
   ];
@@ -144,17 +151,20 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
             ) : (
               <ul className="mt-2 space-y-3">
                 {live.map((o) => {
-                  const preliminary = o.status === "preliminary";
+                  const phase = phaseOf(o);
+                  const preliminary = phase === "preliminary";
+                  // "N월 예비등록생" 의 N 은 기수의 달 — 개강일의 달이 아니다 (10월 기수가 9/30 에 개강할 수 있다)
+                  const termMonth = o.enrollments.find((e) => e.section?.term)?.section?.term?.month ?? monthOf(o.activates_on);
                   return (
                     <li key={o.id}>
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span
                           className={cn(
                             "rounded-full px-2.5 py-0.5 text-xs font-black",
-                            o.status === "active" ? "bg-brand-500 text-white" : "bg-ink text-white",
+                            phase === "active" ? "bg-brand-500 text-white" : "bg-ink text-white",
                           )}
                         >
-                          {ORDER_STATUS_LABEL[o.status] ?? o.status}
+                          {ORDER_STATUS_LABEL[phase] ?? phase}
                         </span>
                         <span className="ml-auto text-xs text-mist">
                           {formatDate(o.access_until, { month: "numeric", day: "numeric" })} 종강까지 이용
@@ -192,7 +202,7 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
 
                       {preliminary && (
                         <p className="mt-1.5 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs text-brand-700">
-                          <span className="font-black">{monthOf(o.activates_on)}월 예비등록생</span> · 개강일{" "}
+                          <span className="font-black">{termMonth}월 예비등록생</span> · 개강일{" "}
                           {formatDate(o.activates_on, { month: "numeric", day: "numeric" })}부터 불라방·다시보기가 열려요.
                         </p>
                       )}
@@ -273,6 +283,13 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
               )}
             </section>
           </Reveal>
+
+          {/* 이번 기수 내 출석률 — 현장 수업이 있는 학생만 (불라방·인강만이면 그리지 않는다) */}
+          {attendance.length > 0 && (
+            <Reveal delay={60}>
+              <AttendanceRate rows={attendance} />
+            </Reveal>
+          )}
 
           {/* 등업신청 현황 */}
           <Reveal delay={90}>

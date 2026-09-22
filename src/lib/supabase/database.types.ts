@@ -2109,6 +2109,14 @@ export type Database = {
         Args: { p_date: string }
         Returns: { check_in_at: string | null; check_out_at: string | null; course_name: string; decided_by_name: string | null; decided_note: string | null; late: boolean; phone: string | null; section_id: number; status: string | null; student_id: string; student_name: string; target_score: number | null; tester: boolean; time_block: string | null; track: string }[]
       }
+      my_attendance_summary: {
+        Args: never
+        Returns: { absent: number; closes: string; in_only: number; late: number; missing: number; month: number; opens: string; past: number; present: number; term_id: number; total: number; year: number }[]
+      }
+      attendance_term_summary: {
+        Args: { p_term_id: number }
+        Returns: { absent: number; classes: number; in_only: number; late: number; missing: number; phone: string | null; present: number; sections: string | null; student_id: string; student_name: string; tester: boolean }[]
+      }
       attendance_poster_token: {
         Args: never
         Returns: Json

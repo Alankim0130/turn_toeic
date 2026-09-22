@@ -1,11 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database.types";
+import { pickCurrentTerm } from "@/lib/term-window";
 import { formatTime, TRACK_LABEL, MODE_LABEL } from "@/lib/utils";
 import { WEEK5_LABEL } from "@/lib/week5";
 
 export type DB = SupabaseClient<Database>;
 
-export type TermLite = { id: number; year: number; month: number };
+/** 기수. 개강일·종강일을 함께 읽어야 "지금 기수" 를 날짜로 고른다 (없으면 달력의 월로 대신한다 — `term-window.ts`) */
+export type TermLite = { id: number; year: number; month: number; enrollment_opens_at?: string | null; closes_at?: string | null };
+
+/** 기수를 읽을 때 쓰는 열 — 기본 기수 고르기에 개강일·종강일이 필요하다 */
+export const TERM_COLUMNS = "id, year, month, enrollment_opens_at, closes_at";
 
 export function termLabel(t?: { year: number; month: number } | null, short = false) {
   if (!t) return "미정";
@@ -69,19 +74,18 @@ export function sectionChip(
   return [term, level, when || null].filter(Boolean).join(" · ");
 }
 
-/** 이번 달 기수. 없으면 가장 가까운 다음 기수 */
+/**
+ * 지금 기수 — **개강일~종강일로** 고른다 (2026-09-22 — 그전에는 달력의 월로 골라서 9월 기수가 10/3 까지 이어지는데도
+ * 10/1 부터 10월 기수를 보여 줬다). 오늘이 든 기수 → 가장 가까운 다음 기수 → 가장 최근 기수 (`pickCurrentTerm`)
+ */
 export async function getCurrentOrUpcomingTerm(supabase: DB, today: string): Promise<TermLite | null> {
-  const [y, m] = today.split("-").map(Number);
-  const { data: cur } = await supabase.from("terms").select("id, year, month").eq("year", y).eq("month", m).maybeSingle();
-  if (cur) return cur;
-  const { data: all } = await supabase.from("terms").select("id, year, month").order("year").order("month");
-  const upcoming = (all ?? []).find((t) => t.year > y || (t.year === y && t.month > m));
-  return upcoming ?? null;
+  const { data: all } = await supabase.from("terms").select(TERM_COLUMNS);
+  return pickCurrentTerm(all ?? [], today);
 }
 
 /**
- * 목록 화면의 기수 선택: ?term=YYYY-MM 이 있으면 그 기수, 없으면 이번 달 → 가장 가까운 다음 달 → 가장 최근 순.
- * terms 는 후보 기수 목록 (예: 스터디가 있는 기수)
+ * 목록 화면의 기수 선택: ?term=YYYY-MM 이 있으면 그 기수, 없으면 지금 기수(개강일~종강일) → 가장 가까운 다음 기수 → 가장 최근 순.
+ * terms 는 후보 기수 목록 (예: 스터디가 있는 기수) — 개강일·종강일(`TERM_COLUMNS`)을 함께 읽어 와야 날짜로 고른다
  */
 export function pickTerm<T extends TermLite>(terms: T[], param: string | undefined, today: string): T | null {
   const match = param?.match(/^(\d{4})-(\d{2})$/);
@@ -89,11 +93,7 @@ export function pickTerm<T extends TermLite>(terms: T[], param: string | undefin
     const hit = terms.find((t) => t.year === Number(match[1]) && t.month === Number(match[2]));
     if (hit) return hit;
   }
-  const [y, m] = today.split("-").map(Number);
-  const now = y * 12 + m;
-  const idx = (t: TermLite) => t.year * 12 + t.month;
-  const sorted = [...terms].sort((a, b) => idx(a) - idx(b));
-  return sorted.find((t) => idx(t) === now) ?? sorted.find((t) => idx(t) > now) ?? sorted.at(-1) ?? null;
+  return pickCurrentTerm(terms, today);
 }
 
 export type RosterSets = {
@@ -103,12 +103,15 @@ export type RosterSets = {
   ordersByUser: Map<string, { status: string; activates_on: string; access_until: string }[]>;
 };
 
-/** 등록생 / 예비등록생 집합 (오늘 기준) */
+/**
+ * 등록생 / 예비등록생 집합 (오늘 기준). **날짜로 가른다** — 등록생 = 개강일 ≤ 오늘 ≤ 종강일, 예비등록생 = 오늘 < 개강일.
+ * (상태 열은 DB 트리거가 날짜로 맞추지만, 여기서도 날짜를 직접 보아 DB 권한 판정과 같은 기준을 쓴다)
+ */
 export async function getRosterSets(supabase: DB, today: string): Promise<RosterSets> {
   const { data } = await supabase
     .from("enrollment_orders")
     .select("user_id, status, activates_on, access_until, profile:profiles!enrollment_orders_user_id_fkey(role)")
-    .in("status", ["active", "preliminary"]);
+    .gte("access_until", today);
   const active = new Set<string>();
   const prelim = new Set<string>();
   const ordersByUser = new Map<string, { status: string; activates_on: string; access_until: string }[]>();
@@ -116,8 +119,8 @@ export async function getRosterSets(supabase: DB, today: string): Promise<Roster
     // 테스터(강사·관리자 계정)의 테스트용 반 배정은 등록생 · 예비등록생 수에 세지 않는다
     if (o.profile?.role === "instructor" || o.profile?.role === "admin") continue;
     ordersByUser.set(o.user_id, [...(ordersByUser.get(o.user_id) ?? []), o]);
-    if (o.status === "active" && o.activates_on <= today && today <= o.access_until) active.add(o.user_id);
-    if (o.status === "preliminary") prelim.add(o.user_id);
+    if (o.activates_on <= today && today <= o.access_until) active.add(o.user_id);
+    if (today < o.activates_on) prelim.add(o.user_id);
   }
   return { activeIds: [...active], preliminaryIds: [...prelim], ordersByUser };
 }

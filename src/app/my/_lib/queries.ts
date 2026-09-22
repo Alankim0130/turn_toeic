@@ -243,9 +243,9 @@ export type MyTextbookTerm = Awaited<ReturnType<typeof getMyTextbookTerms>>[numb
 export type MyTextbookOrder = Awaited<ReturnType<typeof getMyTextbookOrders>>[number];
 
 /**
- * 스터디 자격 (DB 의 private.is_term_enrollee / has_term_access 와 같은 규칙)
- *  - signupTerms: 그 달 반에 배정 + 주문이 예비등록·수강 중 + 종강 전 → 신청 가능
- *  - accessTerms: 그중 주문이 수강 중(active) → 비대면 자료·LC 음원 열람
+ * 스터디 자격 (DB 의 private.is_term_enrollee / has_term_access 와 같은 규칙 — **반의 개강일·종강일로** 가른다)
+ *  - signupTerms: 그 달 반에 배정 + 종강 전 → 신청 가능 (예비등록생 포함)
+ *  - accessTerms: 그중 개강일 ≤ 오늘 ≤ 종강일 → 비대면 자료·LC 음원 열람
  * 실제 권한은 RLS 가 판단하고, 이 값은 화면 안내용이다.
  */
 export async function getMyStudyEligibility(orders?: MyOrder[]) {
@@ -255,12 +255,11 @@ export async function getMyStudyEligibility(orders?: MyOrder[]) {
   const accessTerms = new Set<number>();
   const opensOn = new Map<number, string>(); // 예비등록생: 기수별 개강일
   for (const o of list) {
-    if (o.status !== "preliminary" && o.status !== "active") continue;
     for (const e of o.enrollments) {
       if (e.status !== "active" || !e.section || today > e.section.closes_at) continue;
       signupTerms.add(e.section.term_id);
-      if (o.status === "active") accessTerms.add(e.section.term_id);
-      else opensOn.set(e.section.term_id, o.activates_on);
+      if (e.section.enrollment_opens_at <= today) accessTerms.add(e.section.term_id);
+      else opensOn.set(e.section.term_id, e.section.enrollment_opens_at);
     }
   }
   return { signupTerms, accessTerms, opensOn };

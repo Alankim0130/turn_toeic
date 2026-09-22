@@ -29,7 +29,7 @@ export default async function StudyPlanPage({ searchParams }: { searchParams: Pr
   // 스터디는 기수에 붙는다 — 달력을 저장한 기수만 고를 수 있다 (최근 달부터)
   const { data: termRows } = await supabase
     .from("terms")
-    .select("id, year, month")
+    .select("id, year, month, enrollment_opens_at, closes_at")
     .not("enrollment_opens_at", "is", null)
     .order("year", { ascending: false })
     .order("month", { ascending: false });

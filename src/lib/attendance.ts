@@ -18,7 +18,8 @@ export type ScanResult = {
   opens?: string;
 };
 
-export type ScanView = { tone: "success" | "info" | "warning"; title: string; body: string };
+/** `headline` 이 있으면 결과 화면이 그 글자를 크게 띄운다 — 제대로 찍혔을 때의 "출석!" (2026-09-22 Alan) */
+export type ScanView = { tone: "success" | "info" | "warning"; title: string; body: string; headline?: string };
 
 /** `attendance_scan` 결과 → 학생 화면 문구 */
 export function scanView(r: ScanResult): ScanView {
@@ -26,10 +27,10 @@ export function scanView(r: ScanResult): ScanView {
   switch (r.action) {
     case "check_in":
       return r.late
-        ? { tone: "warning", title: "입실했어요 (지각)", body: `${cls}${r.at} 입실. 수업이 ${r.starts}에 시작했어요. 끝나고 나갈 때 한 번 더 찍으면 출석이 확정돼요.` }
-        : { tone: "success", title: "입실했어요", body: `${cls}${r.at} 입실. 수업 끝나고 나갈 때 한 번 더 찍으면 출석이 확정돼요.` };
+        ? { tone: "warning", headline: "출석!", title: "입실했어요 (지각)", body: `${cls}${r.at} 입실. 수업이 ${r.starts}에 시작했어요. 끝나고 나갈 때 한 번 더 찍으면 출석이 확정돼요.` }
+        : { tone: "success", headline: "출석!", title: "입실했어요", body: `${cls}${r.at} 입실. 수업 끝나고 나갈 때 한 번 더 찍으면 출석이 확정돼요.` };
     case "check_out":
-      return { tone: "success", title: "퇴실했어요 — 출석 확정", body: `${cls}${r.at} 퇴실 · ${r.stay}분 머물렀어요.` };
+      return { tone: "success", headline: "출석!", title: "퇴실했어요 — 오늘 출석 확정", body: `${cls}${r.at} 퇴실 · ${r.stay}분 머물렀어요.` };
     case "already_in":
       return { tone: "info", title: "이미 입실했어요", body: `${cls}${r.at}에 입실했어요. 퇴실은 입실하고 30분이 지나면 찍을 수 있어요.` };
     case "already_done":
@@ -61,9 +62,40 @@ export function scanView(r: ScanResult): ScanView {
   }
 }
 
+/**
+ * 찍은 QR 글자 → 출석 토큰. **우리 출석 주소(`…/attend?t=토큰`)일 때만** 돌려준다 — 다른 QR(교재 광고 등)을 찍으면 null.
+ * 주소의 도메인은 보지 않는다 (옛 도메인·로컬로 뽑은 포스터도 토큰은 같다). 토큰 확인은 DB 가 한다.
+ */
+export function tokenFromQr(text: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(text.trim());
+  } catch {
+    return null;
+  }
+  if (url.pathname.replace(/\/+$/, "") !== "/attend") return null;
+  const t = (url.searchParams.get("t") ?? "").replace(/[^0-9A-Za-z]/g, "");
+  return t.length >= 8 && t.length <= 40 ? t : null;
+}
+
 /** 포스터 QR 이 담는 주소 — 휴대폰 기본 카메라로 찍으면 이 주소가 열린다 */
 export function attendUrl(siteUrl: string, token: string) {
   return `${siteUrl.replace(/\/+$/, "")}/attend?t=${encodeURIComponent(token)}`;
+}
+
+/** 내 출석률 (DB `public.my_attendance_summary` 한 줄) */
+export type MyAttendanceSummary = { total: number; past: number; present: number; late: number; in_only: number; absent: number; missing: number };
+
+/**
+ * 출석률 두 가지 (2026-09-22 Alan — "본인의 신청등급에 따라 출석률을 몇 퍼센트 채우고 있는지"):
+ *  - `rate`  = 끝난 수업 중 출석한 비율 — 지금까지 잘 나오고 있나 (끝난 수업이 없으면 null)
+ *  - `fill`  = 이번 달 내 수업 전체(신청한 만큼 — 주3일 · 주5일) 중 채운 비율 — 한 달을 얼마나 채웠나
+ *  - `left`  = 남은 수업
+ */
+export function attendanceRate(s: MyAttendanceSummary) {
+  // DB 가 끝난 수업만 세지만, 어떤 경우에도 100% 를 넘겨 보이지 않게 막는다
+  const pct = (a: number, b: number) => (b > 0 ? Math.min(100, Math.round((a / b) * 100)) : null);
+  return { rate: pct(s.present, s.past), fill: pct(s.present, s.total) ?? 0, left: Math.max(0, s.total - s.past) };
 }
 
 /** 출석 상태 이름 (명단 · 내 출석) */

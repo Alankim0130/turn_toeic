@@ -58,7 +58,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
     ids.length
       ? supabase
           .from("enrollments")
-          .select("id, student_id, mode, status, section:class_sections!enrollments_section_id_fkey(id, term_id, course_id, track, start_time, time_block, closes_at, term:terms(year, month), course:courses(name, target_score, program))")
+          .select("id, student_id, mode, status, section:class_sections!enrollments_section_id_fkey(id, term_id, course_id, track, start_time, time_block, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(name, target_score, program))")
           .in("student_id", ids)
           .order("id")
       : Promise.resolve({ data: [] as never[] }),
@@ -129,9 +129,16 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
           <ul className="grid gap-3 lg:grid-cols-2">
             {rows.map((p) => {
               const orders = roster.ordersByUser.get(p.id) ?? [];
-              const prelimOrder = orders.filter((o) => o.status === "preliminary").sort((a, b) => a.activates_on.localeCompare(b.activates_on))[0];
-              const activeOrder = orders.filter((o) => o.status === "active").sort((a, b) => b.access_until.localeCompare(a.access_until))[0];
-              const myEnroll = enrollByUser.get(p.id) ?? [];
+              // 등록생 · 예비등록생은 **날짜로** 가른다 (개강일 ≤ 오늘 ≤ 종강일 / 오늘 < 개강일) — getRosterSets 와 같다
+              const prelimOrder = orders.filter((o) => today < o.activates_on).sort((a, b) => a.activates_on.localeCompare(b.activates_on))[0];
+              const activeOrder = orders.filter((o) => o.activates_on <= today && today <= o.access_until).sort((a, b) => b.access_until.localeCompare(a.access_until))[0];
+              // 등록생 · 예비등록생 탭에는 **아직 종강하지 않은 반**만 — 지난 달 반이 이번 달 반 옆에 쌓이지 않게 (2026-09-22)
+              const myEnroll = (enrollByUser.get(p.id) ?? []).filter((e) => (tab === "active" || tab === "preliminary" ? !!e.section && e.section.closes_at >= today : true));
+              // "N월 예비등록생" 의 N 은 **기수의 달** — 개강일의 달이 아니다 (10월 기수가 9/30 에 개강할 수 있다)
+              const prelimTerm = myEnroll
+                .map((e) => e.section)
+                .filter((s): s is NonNullable<typeof s> => !!s && today < s.enrollment_opens_at)
+                .sort((x, y) => x.enrollment_opens_at.localeCompare(y.enrollment_opens_at))[0]?.term;
               // 주5일이면 월수금·화목금 두 줄을 한 줄 `주5일` 로 합친다 (2026-09-19 Alan).
               // 짝은 **그 학생이 듣는 반 안에서만** 찾는다 — 전체 명단으로 찾으면 다른 학생의 반과 짝이 된다
               const mySections = myEnroll.map((e) => e.section).filter((x) => !!x);
@@ -178,7 +185,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
                   tester={p.role === "instructor" || p.role === "admin"}
                   testRoleLabel={p.test_role ? ROLE_LABEL[p.test_role] : null}
                   affiliation={[p.university, p.department].filter(Boolean).join(" · ")}
-                  chip={tab === "preliminary" && prelimOrder ? `${Number(prelimOrder.activates_on.slice(5, 7))}월 예비등록생` : undefined}
+                  chip={tab === "preliminary" && prelimOrder ? `${prelimTerm?.month ?? Number(prelimOrder.activates_on.slice(5, 7))}월 예비등록생` : undefined}
                   classes={myClasses.map((e) => {
                     const k = e.section && week5.has(e.section.id) ? pairKey(e.section) : null;
                     const modes = [...(k ? (pairModes.get(k) ?? new Set([e.mode])) : new Set([e.mode]))];

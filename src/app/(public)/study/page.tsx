@@ -8,6 +8,7 @@ import { Alert } from "@/components/ui/Alert";
 import { getSessionProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { cn, todayKST } from "@/lib/utils";
+import { termWindow } from "@/lib/term-window";
 import {
   isSlotFull,
   isSlotKind,
@@ -44,13 +45,11 @@ export default async function StudyPage() {
   const { user } = await getSessionProfile();
   const supabase = await createClient();
   const today = todayKST();
-  const [ty, tm] = today.split("-").map(Number);
-  const nowIndex = ty * 12 + tm;
 
   const [{ data: studyRows }, orders, signups] = await Promise.all([
     supabase
       .from("studies")
-      .select("id, kind, status, notice, term:terms(id, year, month), study_slots!study_slots_study_id_fkey(id, start_time, end_time, capacity, applied_count)")
+      .select("id, kind, status, notice, term:terms(id, year, month, enrollment_opens_at, closes_at), study_slots!study_slots_study_id_fkey(id, start_time, end_time, capacity, applied_count)")
       .neq("status", "draft"),
     user ? getMyOrders() : Promise.resolve([]),
     user ? getMyStudySignups() : Promise.resolve([]),
@@ -59,10 +58,11 @@ export default async function StudyPage() {
   const { signupTerms } = await getMyStudyEligibility(orders);
   const mySignup = new Map(signups.map((s) => [s.study_id, s]));
 
-  // 이번 달부터 가까운 두 달
+  // 아직 끝나지 않은 기수부터 가까운 두 달 — **종강일로** 가른다 (2026-09-22). 달력의 월로 가르면 9월 기수가 10/3 까지
+  // 이어지는데 10/1 부터 사라졌다 (그 사이에도 9월 수강생은 신청·변경·취소를 할 수 있다). 날짜가 없는 기수는 그 달 말일까지
   const groups = new Map<number, { term: { id: number; year: number; month: number }; studies: NonNullable<typeof studyRows> }>();
   for (const s of studyRows ?? []) {
-    if (!s.term || termIndex(s.term) < nowIndex) continue;
+    if (!s.term || termWindow(s.term).closes < today) continue;
     const g = groups.get(s.term.id) ?? { term: s.term, studies: [] };
     g.studies.push(s);
     groups.set(s.term.id, g);
@@ -135,7 +135,7 @@ export default async function StudyPage() {
             <section key={g.term.id} aria-labelledby={`term-${g.term.id}`} className="mt-10">
               <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
                 <h2 id={`term-${g.term.id}`} className="text-2xl font-black tracking-tight text-ink">
-                  {g.term.year !== ty && `${g.term.year}년 `}
+                  {g.term.year !== Number(today.slice(0, 4)) && `${g.term.year}년 `}
                   {g.term.month}월 스터디
                 </h2>
                 {user && (

@@ -128,10 +128,10 @@ export type StudentAccess = {
 /**
  * 화면 표시용 접근 판정 (잠금 표시·안내). 실제 데이터 보호는 RLS 가 한다.
  *
- * 종강일까지 쓸 수 있다 — 그래서 역할(role)만 보지 않고 등록의 날짜까지 함께 본다.
- * role 은 하루 1회 배치(private.run_daily_status_transition)로 바뀌지만 RLS 는
- * `today <= closes_at` 을 그때그때 확인하므로, 강사가 종강일을 앞당기면 화면과 RLS 가
- * 어긋난다. 여기서 같은 날짜 조건을 함께 보아 둘을 맞춘다.
+ * **개강일부터 종강일까지** 쓸 수 있다 — 그래서 역할(role)만 보지 않고 등록의 날짜까지 함께 본다.
+ * RLS(`private.has_term_access` 등)는 `today between 개강일 and 종강일` 을 그때그때 확인한다 (20260922113000).
+ * 등록 상태·등급은 DB 트리거가 날짜로 바로 맞추고 매일 00:00 KST 배치가 날짜가 넘어갈 때 맞추지만,
+ * 여기서도 상태 대신 **날짜를 직접** 보아 화면과 RLS 가 같은 기준을 쓰게 한다.
  */
 export const getStudentAccess = cache(async (): Promise<StudentAccess> => {
   const { user, profile } = await getSessionProfile();
@@ -143,21 +143,22 @@ export const getStudentAccess = cache(async (): Promise<StudentAccess> => {
   if (isCrew(role)) return { signedIn: true, role, active: true, enrollee: true, opensOn: null, until: null };
 
   const supabase = await createClient();
+  const today = todayKST();
   const { data } = await supabase
     .from("enrollment_orders")
     .select("status, activates_on, access_until")
     .eq("user_id", user.id)
-    .in("status", ["preliminary", "active"]);
+    .gte("access_until", today);
 
-  const today = todayKST();
-  const live = (data ?? []).filter((o) => o.access_until >= today);
-  // RLS(private.has_term_access) 와 같은 조건: role 이 student 이고 수강 중인 등록이 살아 있을 것
-  const active = role === "student" && live.some((o) => o.status === "active");
-  const opensOn = live
-    .filter((o) => o.status === "preliminary")
-    .map((o) => o.activates_on)
-    .sort()[0] ?? null;
-  const until = live.map((o) => o.access_until).sort().at(-1) ?? null;
+  const live = data ?? [];
+  // 지금 수강 중 = 개강일 ≤ 오늘 ≤ 종강일 · 예비등록 = 오늘 < 개강일
+  const current = live.filter((o) => o.activates_on <= today);
+  const upcoming = live.filter((o) => today < o.activates_on);
+  // RLS(private.has_term_access) 와 같은 조건: role 이 student 이고 지금 기간 안의 등록이 있을 것
+  const active = role === "student" && current.length > 0;
+  const opensOn = upcoming.map((o) => o.activates_on).sort()[0] ?? null;
+  // 종강일은 지금 수강 중인 등록의 것 — 다음 달 예비등록의 종강일을 앞당겨 보여 주지 않는다
+  const until = (current.length ? current : upcoming).map((o) => o.access_until).sort().at(-1) ?? null;
 
   return { signedIn: true, role, active, enrollee: active || opensOn !== null, opensOn, until };
 });

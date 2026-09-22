@@ -67,7 +67,7 @@
 - API 라우트(네이버 웹훅·크론, 그리고 DB 크론이 부르는 `/api/cron/naver-sync` 등)는 비밀이 없거나 못 읽으면 **거절(fail-closed)**, 비교는 `timingSafeEqual`, 웹훅 본문은 64KB 상한.
 - 로그인 뒤 이동 주소(`safeNext`)는 `/` 로 시작하고 `//` 가 아닌 것만 — 외부로 튕기는 오픈 리다이렉트 없음.
 - 서버 액션은 Next 가 Origin 을 확인한다(CSRF). `dangerouslySetInnerHTML` 두 곳은 상수·JSON 이고 JSON-LD 는 `<` 를 이스케이프한다.
-- 응답 헤더(`next.config.ts`): `X-Frame-Options: DENY` · `nosniff` · `Referrer-Policy` · `Permissions-Policy`(카메라·마이크·위치 끔) · HSTS.
+- 응답 헤더(`next.config.ts`): `X-Frame-Options: DENY` · `nosniff` · `Referrer-Policy` · `Permissions-Policy`(마이크·위치·결제 끔, 카메라는 우리 사이트만 — 2026-09-22 앱 안 출석 카메라) · HSTS.
 - 문의(비회원 유일한 쓰기 경로): 안 보이는 `website` 칸(허니팟)이 채워지면 조용히 버리고, 이름 40·이메일 120·본문 2,000자 서버 상한.
 - OCR 입력 이미지는 4,000만 픽셀 상한(`limitInputPixels`) — 작은 파일이 거대한 픽셀로 풀리는 폭탄을 막는다.
 - 계정 통합은 두 계정 모두 로그인해야 한다(도메인 규칙 3-1). 등급·이름·과목·test_role 은 본인이 못 바꾼다(등급 체계).
@@ -678,6 +678,9 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   **시스템이 유예 기간을 임의로 더하지 않는다.**
 - 반 편성 달력에서 **기수(월) 단위로** 정한다 (`terms.enrollment_opens_at` / `closes_at`). 그 달 모든 반의 같은 컬럼과
   배정된 등록(`enrollment_orders.activates_on` / `access_until`)이 저장할 때 함께 맞춰진다. 반을 개설하려면 먼저 이 둘이 있어야 한다.
+- **이 두 날짜가 모든 것의 기준이다** (2026-09-22 Alan — "다른 것들도 항상 강사가 설정한 개강날, 종강날 개념이 제대로 잘 적용되어 있는지 두 번, 세 번").
+  수강생 권한 · 등록 상태 · 학생 등급 · 출석 · 출석률 · 관리자 화면의 "지금 기수" 가 전부 이 날짜로 정해지고, **강사가 날짜를 바꾸면 그 즉시** 따라간다
+  (끝난 등록도 되살아난다). 자세한 것은 "상태 전이" 절. 달력의 월(1일~말일)로 판정하는 코드를 새로 만들지 말 것.
 
 ### 3. 학생 등급 — 권한 × 반 배정 2축
 
@@ -803,7 +806,7 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   올리는 일은 `src/lib/student-role.ts` 의 `promoteToStudent()` 한곳이고 반 배정(`assignSections`)과
   수강증 승인(`approveVerificationWith`)이 함께 쓴다. 개강일에 올리는 몫은 배치
   (`private.run_daily_status_transition`, 마이그레이션 20260919120000)가 같은 규칙으로 한다.
-  **내리지는 않는다** — 반 배정 없이 `수강생` 으로 테스트 중인 스태프가 다음 날 00:05 에 조용히 `졸업생` 이 되면 안 된다.
+  **내리지는 않는다** — 반 배정 없이 `수강생` 으로 테스트 중인 스태프가 다음 날 00:00 배치에 조용히 `졸업생` 이 되면 안 된다 (2026-09-22 의 `refresh_student_roles` 도 test_role 은 올리기만 한다).
 - test_role 은 authenticated 에 쓰기 권한이 없다. `src/app/admin/students/tester-actions.ts` 가 진짜 등급을 확인하고 서비스 롤로 바꾼다
   (내 계정은 강사·관리자 누구나, 다른 테스터 계정은 관리자만).
 - 테스트 중에는 모든 화면 맨 위에 **테스트 띠**(`TestModeBanner`: 지금 등급 · 등급 바꾸기 · 테스트 끝내기)가 뜬다.
@@ -1174,9 +1177,14 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   우리가 새로 만들고 싶을 때 새로 만들기 버튼을 누르면 인쇄까지 할 수 있도록 다운로드가 있으면 좋겠어", 마이그레이션 20260922103000).
   그전(2026-09-21)에는 교실 화면(`/admin/attendance/qr`)의 **30초마다 바뀌는 QR + 6자리 코드 입력**(`/my/attendance`)이 따로 있었는데
   화면·코드 입력·DB 함수(`attendance_display`·`private.attendance_token`)·금고 비밀(`attendance_qr_secret`)까지 모두 없앴다 — **다시 만들지 말 것** (두 길이 섞이면 "어느 QR 을 찍나" 가 흐려진다).
-  QR 은 주소(`https://winnertoeic.com/attend?t=토큰`)라 **휴대폰 기본 카메라로 찍으면 출석 화면이 열린다** — 앱 안 스캐너가 없다
-  (사이트는 응답 헤더로 카메라를 꺼 두었다. 스캐너를 넣으려면 그 헤더부터 바꿔야 한다).
-  **아이폰은 홈 화면 앱과 사파리의 로그인이 따로**라 카메라가 연 사파리에서 처음 한 번 로그인해야 할 수 있다 — `/my/attendance` 의 "찍는 법" 이 그렇게 안내한다.
+- **학생 `출석` 화면은 들어오자마자 카메라가 켜진다** (2026-09-22 Alan — "출석을 누르면 카메라를 바로 실행해서 촬영할 수 있는 기능이 나오면 좋겠어!").
+  `AttendanceCamera`(`/my/attendance`): 뒷면 카메라 → QR 읽기(브라우저 `BarcodeDetector`, 없으면 — 아이폰 사파리 — `jsqr` 을 그때 불러온다) →
+  우리 출석 주소면(`tokenFromQr` — `/attend?t=…` 만, 다른 QR 은 "출석 QR 이 아니에요") 카메라를 끄고 그 자리에서 `scanAttendance`.
+  로그인한 앱 안에서 찍으므로 **아이폰에서 사파리 로그인을 따로 할 일이 없다.** 다른 탭으로 가면 카메라를 끄고, 권한을 거절하면 이유와 "카메라 켜기" 를 보여 준다.
+  카메라는 응답 헤더 `Permissions-Policy: camera=(self)` 로 **우리 사이트에만** 열려 있다 (그전에는 `camera=()` 로 꺼 두었다 — 켜는 곳은 이 화면 하나다).
+  휴대폰 기본 카메라로 포스터를 찍어 `/attend?t=토큰` 이 열리는 길도 그대로 된다 (아이폰은 거기서 사파리 로그인이 한 번 필요할 수 있다).
+- **제대로 찍히면 "출석!" 을 크게** 띄운다 (2026-09-22 Alan — "인식이 제대로 된다면, 출석! 이라는 문구가 나오면 좋겠어"). 입실 · 지각 입실 · 퇴실 모두 "출석!" 이고
+  아래 한 줄이 입실/퇴실을 가른다 (`scanView().headline`, `AttendanceResult` — 앱 안 카메라와 `/attend` 가 함께 쓴다). 그 밖의 결과(이미 입실 · 수업 없음 · 맞지 않는 QR)는 안내 카드다.
 - **포스터** (2026-09-21 Alan — "QR을 A5 크기로 2개 해서 A4로 인쇄할 수 있도록 디자인해서 만들어줘. 힉스필드로 제작부탁해!", 마이그레이션 20260921150500).
   `/admin/attendance/poster` → **`포스터 PDF 받기`**(`/admin/attendance/poster/download`): **A4 가로 한 장에 A5 세로 포스터 두 장** PDF —
   선생님마다 한 장(이혜영 가리키기 · 이영수 엄지척 컷)이고 QR 은 같다. 가운데 점선을 잘라 강의실마다 붙인다.
@@ -1208,6 +1216,20 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 - **강사·조교가 정한다**: `/admin/attendance` 날짜별 명단에서 `출석 인정` · `결석` · `되돌리기` (`public.attendance_set`) —
   **사유를 꼭 적는다**(되돌리기 빼고). 정한 뒤에는 학생이 찍어도 바뀌지 않는다(자동 판정이 강사 판정을 덮지 못한다). 출석 인정은 지각 표시를 지운다.
   명단은 `public.attendance_roster(날짜)` (crew 전용 함수 — 수업일 표는 조교에게 열려 있지 않아서 함수로 모았다).
+- **출석은 기수(월) 단위 — 강사가 정한 개강일~종강일** (2026-09-22 Alan — "출석기록은 항상 강사가 설정한 해당달 개강날과 종강날에 맞춰서.
+  다음달로 넘어가면 예전기록은 빠지고 항상 새롭게 시작", 마이그레이션 20260922113000).
+  - **찍기 · 명단 · 강사 처리 모두 그 반의 개강일~종강일 안 날짜만** (`attendance_sessions` · `attendance_roster` · `attendance_set` — 밖이면 `not_in_section`).
+    수업일이 기간 밖에 찍혀 있어도(달력은 ±1개월을 허용한다) 그 날은 출석이 없다.
+  - `/admin/attendance`(강사·조교)는 **지금 기수 하나만** 보여 준다 — 머리에 `N월 기수 · 개강 ~ 종강`, 날짜는 그 기간 안에서만 넘기고,
+    아래 **`N월 출석 현황`**(학생마다 출석 n/지난 수업 · 지각 · 입실만 · 결석 · 미출석, `public.attendance_term_summary(기수)` — crew 전용)이 있다.
+    지금 기수 = `pickCurrentTerm(…, { datedOnly: true })` (`src/lib/term-window.ts`) — 오늘이 든 기수(겹치면 먼저 끝나는 쪽) → 다음 기수 → 마지막 기수.
+    **종강일이 지나면 다음 기수로 넘어가 새로 시작한다** — 지난 기록은 DB 에 그대로 있고 화면에서만 빠진다. 지난 기수 보기 화면은 없다 (Alan 이 원하면 만든다).
+  - 학생 `/my/attendance` 도 **지금 기수의 기록만**, 같은 `pickCurrentTerm` 으로 고른다.
+  - **학생 출석률** (2026-09-22 Alan — "본인의 신청등급에 따라 출석률을 몇 퍼센트 채우고 있는지 마이페이지에서 확인하면 동기부여"):
+    `/my` 대시보드(시간표 아래)와 `/my/attendance` 의 `AttendanceRate` 카드. 숫자는 `public.my_attendance_summary()` — **지금 기수의 내가 직접 배정된 현장 반만**
+    (주3일은 그 트랙, 주5일은 두 트랙, 120분 반은 하루 한 칸, 인강 반·불라방은 빠진다). 큰 숫자 = **출석률**(끝난 수업 중 출석, `attendanceRate().rate` —
+    끝난 수업이 없으면 `–`, 0% 로 적지 않는다), 막대 = **이번 달 N회 중 몇 회 채웠나**(`fill`). "끝난 수업" = 퇴실 마감(끝나고 30분)이 지난 회차.
+    출석 = 퇴실까지 찍음 + 출석 인정. 현장 수업이 없으면(불라방만 · 기수 밖) 카드를 그리지 않는다.
 - 기록 `attendance_events`(입실·퇴실·강사 처리·틀린 코드)는 쌓기만 한다 — 나중에 "찍혔다가 사라졌다" 를 가릴 근거다 (첫토익 15).
 - 계정 통합(`private.merge_accounts`)이 출석도 옮긴다 (같은 반·같은 날이 겹치면 남길 계정 것을 둔다).
 - **없는 것**: 경고·교차수강·포인트·무단결석 자동 처리·NFC·비콘·학원 와이파이 확인·특강 출석. 필요하면 Alan 에게 묻고 만든다.
@@ -1841,9 +1863,22 @@ create table naver_reservations (          -- (쓰지 않음) 예전 알림 원�
 
 ## 상태 전이 (일 1회 배치)
 
-> 구현: `private.run_daily_status_transition()` 을 pg_cron 이 매일 00:05 KST 에 실행한다.
+> **개강일·종강일이 진실이고 상태는 날짜로 계산된다** (2026-09-22, 마이그레이션 20260922113000 — 그전에는 배치만 상태를 바꿔서,
+> 강사가 개강일을 뒤로 미루면 이미 수강 중인 학생이 새 개강일 전에도 열려 있었고, 종강일을 늘려도 끝난 등록이 되살아나지 않았다. 운영 DB 되돌리기 테스트로 확인).
+> - `enrollment_orders.status` 는 **저장할 때마다 BEFORE 트리거가 날짜로 계산**한다 (`private.order_status_for`: 개강 전 preliminary · 개강일~종강일 active · 종강 뒤 expired).
+>   손으로 `active` 를 써도 날짜가 이긴다.
+> - 등록 기간(`activates_on`~`access_until`) = **배정된 반의 개강일~종강일** — 반 배정이 바뀌면(enrollments 트리거) · 강사가 기수 날짜를 바꾸면(`sync_section_schedule`)
+>   `private.sync_order_window` 가 다시 맞춘다. **끝난 등록도 포함** — 종강일을 늘리면 바로 다시 열린다.
+> - 학생 등급은 등록 상태가 바뀔 때마다 AFTER 트리거가 바로 정한다 (`private.refresh_student_roles`): 수강 중 등록 있음 → student,
+>   없으면 끝난 등록이 있을 때 alumni · 개강 전 등록만 있으면 member(예비등록생). 강사·관리자·조교의 진짜 등급은 건드리지 않는다.
+> - 날짜가 넘어가는 것은 배치가 맞춘다: `private.run_daily_status_transition()` 을 pg_cron 이 **매일 00:00 KST**(`0 15 * * *` UTC)에 실행한다 (예전 00:05).
+> - 수강생 권한 함수(`has_term_access` · `has_section_access` · `has_recorded_replay_access` · `my_section_ids`)도 상태와 함께 **`today between 개강일 and 종강일`** 을 직접 본다.
+>   앱의 화면 판정(`getStudentAccess` · `getRosterSets` · `/my` 등록 배지 · 스터디 자격)도 상태 대신 날짜를 본다 (`src/lib/enrollment-window.ts` 의 `orderPhase`).
+> - 한 등록에는 **한 달(기수)의 종강 전 반만** 넣는다 — 승인 · 스태프 배정 · 오배정 정정이 `assignableError` 로 막는다.
+> - 관리자 화면의 "지금 기수" 기본값도 **달력의 월이 아니라 개강일~종강일**로 고른다 (`pickCurrentTerm`, `src/lib/term-window.ts`) —
+>   9월 기수가 10/3 까지면 10/1~10/3 은 9월 기수다. `pickTerm` 에 넘기는 기수 목록에는 개강일·종강일(`TERM_COLUMNS`)을 함께 읽어 올 것 (없으면 달력의 월로 대신한다).
 > 날짜 비교는 전부 한국 시간(`private.today_kst()`) 기준. 예전 2개월 등록용 둘째 달 자동 배정
-> (`private.resolve_pending_enrollments()`)도 이 배치와 트리거에 남아 있지만, 매달 등록이라 처리할 행이 없다.
+> (`private.resolve_pending_enrollments()`)도 이 배치와 트리거에 남아 있지만, 매달 등록이라 처리할 행이 없다. 아래 SQL 은 원래 설계(참고용)다.
 
 ```sql
 -- 개강일 도래 → 예비등록생을 수강생으로
@@ -1884,11 +1919,11 @@ where p.role='student'
 
 | 경로 | 내용 | 필요 등급 |
 |---|---|---|
-| `/my` | 대시보드. **이름 옆에 내 등록 현황**, 그 아래 **이번 달 내 시간표**(달력 + 고른 날짜), 등업신청 현황, 바로가기 | member |
+| `/my` | 대시보드. **이름 옆에 내 등록 현황**, 그 아래 **이번 달 내 시간표**(달력 + 고른 날짜), **이번 기수 출석률**(현장 수강생), 등업신청 현황, 바로가기 | member |
 | `/my/account` | 내 계정 — 이름·전화번호 확인, 같은 사람으로 보이는 계정과 **계정 합치기**(신청·확인·취소) | member |
 | `/my/verify` | 등업신청 — 맨 위 카드가 흐름을 따라간다 (수강증 → **이름·전화번호 확인** → 같은 사람 계정이 있으면 **계정 합치기**). **수강증만 올리기**(OCR 이 읽어 반이 딱 맞고 이름이 같으면 **바로 등업**, 우리 수강증·수강월이 아니면 이유를 적어 바로 거절, 애매하면 강사 검토) 와 **수동 등업신청**(수강증 + 수강월·레벨·요일·시간대, 하나라도 비면 제출 불가) | member |
 | `/my/class` | 내 시간표 — **달력에서 고른 날짜의 수업만** (처음엔 오늘) + 특강 신청 바로가기. `이 달 전체` 로 한 달을 펼친다 | student |
-| `/my/attendance` | **출석** — 찍는 법(강의실 앞 포스터 QR 을 기본 카메라로 · 아이폰은 사파리에서 처음 한 번 로그인) + 내 출석 기록 (현장 수강생). 찍으면 `/attend?t=…` 가 열린다 | member (대상 판정은 DB 함수) |
+| `/my/attendance` | **출석** — 들어오면 **카메라가 바로 켜져** 강의실 앞 포스터 QR 을 찍는다(찍히면 크게 **출석!**) + 이번 기수 출석률 + **이번 기수** 내 출석 기록 (현장 수강생). 휴대폰 기본 카메라로 찍으면 `/attend?t=…` 가 열린다 | member (대상 판정은 DB 함수) |
 | `/attend?t=…` | 강의실 QR 이 여는 주소 — 열리자마자 한 번 찍고 결과를 보여 준다 (로그인 뒤 돌아온다, 검색 제외) | member |
 | `/my/lecture` | **특강 신청** — 그 달 특강·모의고사 카드에서 신청·취소 (정원·신청 시작 카운트다운) | 그 달 수강생 |
 | `/my/live` | 불라방 입장 — 반마다 오늘 회차 → 다음 회차 → 상시 링크 중 하나. **수업이 시작되면 알림함으로 알려 준다**(불라방 수강생만) | student |
@@ -1910,7 +1945,7 @@ where p.role='student'
 | `/admin` | 대시보드: 학생명단 요약, 교재주문, 마케팅 분석 차트, 시간대별 인원수 위젯 | instructor |
 | `/admin/students` | 학생명단: 등록생 / 예비등록생 / 졸업생 / **테스터**(강사·관리자 계정) / **전체** 탭 + 이름 검색. **사람마다 카드 한 장** — 연락처 · 메일 · 로그인 방식 · 마지막 접속 · 가입일 · 스터디 신청 · 반 배정(현장/불라방 배지). 카드를 누르면 학생 관리로 | instructor · **조교** |
 | `/admin/students/[id]` | 학생 관리: 기본 정보, **등급 변경**(조교는 학생 등급끼리만), **반 배정 추가·해제**(기수별), **계정 합치기**(스태프만), 등록 이력 | instructor · **조교** |
-| `/admin/attendance` | **출석 명단** — 날짜별·반별 현장 수강생의 입실·퇴실·지각, 출석 인정·결석·되돌리기(사유 필수) | instructor · **조교** |
+| `/admin/attendance` | **출석 명단** — **지금 기수(개강일~종강일)만**: 날짜별·반별 현장 수강생의 입실·퇴실·지각, 출석 인정·결석·되돌리기(사유 필수) + 기수 학생별 출석 현황 | instructor · **조교** |
 | `/admin/attendance/poster` | **출석 QR 포스터** — 발행 시각, **`포스터 PDF 받기`**(`/download`, A4 한 장에 A5 두 장), **`새로 만들기`**(강사·관리자만 — 누르면 옛 종이 무효, 바로 새 PDF 받기) | instructor · **조교** |
 | `/admin/sections` | 반 편성 달력(개강일·종강일·월수금·화목금·특강 → 항목별 저장 / 전체 저장, 이전/다음 달, 이미지 저장), 그 달 반 일괄 개설(강좌 × 시간대 × 트랙 표 → 고른 칸 한 번에) + 하나씩 만들기, **담당 강사 일괄 지정**, 스터디 시간 설정 | instructor |
 | `/admin/lectures` | 특강 신청: 기수별 특강마다 신청 받기·정원·신청 시작 설정 + 신청자 명단(스태프 취소) | instructor |
@@ -2040,7 +2075,7 @@ where p.role='student'
    자동으로 넣지 않고 스태프 검토로 보내되, 찾은 반은 승인 화면에 미리 골라 둔다. 학생에게 후보를 고르게 하는 안은 쓰지 않았다 —
    틀린 반을 고르면 남의 반 다시보기가 열린다.
    **권한 회수도 자동이다** (Alan: "강사가 설정한 종료일에 자동으로 권한 회수"): 종강일(`closes_at`)이 지나면 RLS
-   (`private.has_term_access`, `today_kst() <= closes_at`)가 그날부터 막고, 매일 00:05 KST 배치(pg_cron `daily-status-transition`,
+   (`private.has_term_access`, `today_kst() <= closes_at`)가 그날부터 막고, 매일 00:00 KST 배치(pg_cron `daily-status-transition`, 2026-09-22 전에는 00:05,
    `private.run_daily_status_transition`)가 등록을 `expired`, 등급을 `alumni` 로 바꾼다. 새로 만든 것이 아니라 원래 있던 규칙이다 (규칙 2·3).
    아래는 결정 전 기록이다.
    여기에 **수강료가 빠진 뒤의 기준선**도 함께 정한다 — 점수 만점이 70 으로 내려가 `top1 ≥ 70` 이 "전부 맞아야 확정" 이 되는 문제와,
