@@ -34,7 +34,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
   if (!section || !section.term) notFound();
 
   const [{ data: sessions }, { data: sibling }, { data: live }, { count: enrolled }, { data: instructors }, { data: sameCourse }] = await Promise.all([
-    supabase.from("session_dates").select("id, seq, date, replays(id, video_url), session_live_links(live_url, promoted_at)").eq("section_id", id).order("date"),
+    supabase.from("session_dates").select("id, seq, date, replays(id, video_url), session_live_links(live_url, promoted_at, source)").eq("section_id", id).order("date"),
     // 주5일 짝 = 같은 기수 · 강좌 · 시간대의 반대 트랙 반 (시간대가 없는 반은 하나씩 만들기의 bundle_id 로)
     section.time_block
       ? supabase
@@ -240,6 +240,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
                           promoted={!!link?.promoted_at}
                           autoReplay={section.live_to_replay}
                           readOnly={!canManage}
+                          detected={link?.source === "youtube"}
                         />
                       </td>
                       <td className="px-3 py-2.5">

@@ -8,7 +8,7 @@ import { TermChips } from "@/components/admin/TermChips";
 import { CreateStudyCard } from "@/components/admin/studies/StudyKindCard";
 import { AddMaterialForm, MaterialRow } from "@/components/admin/studies/MaterialRow";
 import { STUDY_STATUS_LABEL, termParam } from "@/lib/study";
-import { pickTerm, termLabel } from "../_lib/queries";
+import { pickTerm, termLabel, TERM_COLUMNS } from "../_lib/queries";
 import { requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "비대면 자료", robots: { index: false } };
@@ -20,7 +20,7 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
   const supabase = await createClient();
   const today = todayKST();
 
-  const { data: terms } = await supabase.from("terms").select("id, year, month").order("year", { ascending: false }).order("month", { ascending: false }).limit(24);
+  const { data: terms } = await supabase.from("terms").select(TERM_COLUMNS).order("year", { ascending: false }).order("month", { ascending: false }).limit(24);
   const term = pickTerm(terms ?? [], sp.term, today);
 
   const header = (

@@ -23,6 +23,7 @@ export function SessionLiveLinkForm({
   promoted,
   autoReplay,
   readOnly,
+  detected = false,
 }: {
   sessionDateId: number;
   sectionId: number;
@@ -33,6 +34,8 @@ export function SessionLiveLinkForm({
   /** 반의 live_to_replay — 수업이 끝나면 자동 연결 */
   autoReplay: boolean;
   readOnly: boolean;
+  /** 유튜브 방송을 감지해 저절로 들어간 링크 (session_live_links.source = 'youtube', 2026-09-21) */
+  detected?: boolean;
 }) {
   const [state, action] = useActionState<ActionState, FormData>(upsertSessionLiveLink, {});
   const [editing, setEditing] = useState(false);
@@ -61,6 +64,11 @@ export function SessionLiveLinkForm({
           <Icon name="live" size={14} />
           {shorten(current)}
         </a>
+        {detected && (
+          <span className="rounded-full bg-ink px-1.5 py-0.5 text-[10px] font-black text-white" title="강사님 유튜브 채널에서 방송을 감지해 저절로 넣은 링크예요">
+            자동
+          </span>
+        )}
         <span
           className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-black", promoted ? "bg-brand-500 text-white" : autoReplay ? "bg-brand-50 text-brand-700" : "bg-line text-slate")}
           title={promoted ? "이 링크가 이 회차 다시보기로 연결됐어요" : autoReplay ? "수업이 끝나면 이 회차 다시보기로 자동 연결돼요" : "이 반의 불라방은 다시보기와 연결하지 않아요"}

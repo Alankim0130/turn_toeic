@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { requireCrew } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { approveVerificationWith } from "@/lib/approve-verification";
+import { assignableError } from "@/lib/enrollment-window";
+import { todayKST } from "@/lib/utils";
 
 export type ActionState = { error?: string };
 
@@ -76,16 +78,26 @@ export async function updateEnrollment(_prev: ActionState, formData: FormData): 
   const { data: enr } = await admin.from("enrollments").select("id, order_id, student_id").eq("id", enrollmentId).single();
   if (!enr) return { error: "배정 기록을 찾을 수 없습니다." };
 
+  // 승인과 같은 규칙 — 옮긴 뒤에도 한 등록 안의 반은 한 달(기수)이고, 종강 전이어야 한다 (`enrollment-window.ts`)
+  const [{ data: target }, { data: sibs }] = await Promise.all([
+    admin.from("class_sections").select("id, term_id, enrollment_opens_at, closes_at").eq("id", sectionId).maybeSingle(),
+    admin
+      .from("enrollments")
+      .select("id, section:class_sections!enrollments_section_id_fkey(id, term_id, enrollment_opens_at, closes_at)")
+      .eq("order_id", enr.order_id)
+      .neq("id", enrollmentId),
+  ]);
+  if (!target) return { error: "고른 반을 찾을 수 없습니다." };
+  const invalid = assignableError([target, ...(sibs ?? []).flatMap((s) => (s.section ? [s.section] : []))], todayKST());
+  if (invalid) return { error: invalid };
+
   const { error } = await admin
     .from("enrollments")
     .update({ section_id: sectionId, mode, status: "active" })
     .eq("id", enrollmentId);
   if (error) return { error: error.code === "23505" ? "이미 같은 반에 배정되어 있습니다." : `저장에 실패했습니다. ${error.message}` };
-
-  // 주문의 시청 만료일을 배정된 반들의 최대 종강일로 맞춘다
-  const { data: sibs } = await admin.from("enrollments").select("section:class_sections!enrollments_section_id_fkey(closes_at)").eq("order_id", enr.order_id);
-  const maxCloses = (sibs ?? []).map((s) => s.section?.closes_at).filter((d): d is string => !!d).sort().at(-1);
-  if (maxCloses) await admin.from("enrollment_orders").update({ access_until: maxCloses }).eq("id", enr.order_id);
+  // 등록 기간(개강일~종강일)·상태·학생 등급은 DB 트리거가 옮긴 반의 날짜로 다시 맞춘다 (private.sync_order_window, 20260922113000).
+  // 그전에는 여기서 만료일만 고쳐 개강일·상태가 옛 반 그대로 남았다
 
   revalidateAll(verificationId);
   redirect(`/admin/verifications/${verificationId}?done=updated`);

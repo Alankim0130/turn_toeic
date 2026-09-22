@@ -226,9 +226,10 @@ export const STUDENT_FEATURES: StudentFeature[] = [
     label: "불라방교재주문",
     icon: "textbook",
     summary: "교재 집으로 받기",
-    desc: "불라방으로 듣는 수강생은 교재를 집으로 받아볼 수 있어요.",
-    points: ["배송지만 남기면 신청 끝", "처리 상태와 송장번호 확인"],
-    access: "active",
+    desc: "불라방으로 듣는 수강생은 교재를 집으로 받아볼 수 있어요. 개강 전에도 주문할 수 있어요.",
+    points: ["내 레벨 교재를 골라 입금하고 주문", "입금 확인 · 발송 · 송장번호 확인"],
+    // 예비등록생도 쓴다 (2026-09-21) — 개강 전에 등업한 불라방 학생이 개강 전에 교재를 받아야 한다
+    access: "enrollee",
   },
   {
     key: "lc-audio",
@@ -302,11 +303,15 @@ export const NAV_BOTTOM: NavItem[] = [
 export const NAV_ADMIN: NavItem[] = [
   { href: "/admin", label: "대시보드", icon: "analytics" },
   { href: "/admin/students", label: "학생명단", icon: "students", crew: true },
+  // QR 출석 명단 · 교실 QR (2026-09-21 Alan "조교에게도 명단을 열어줘"). 학생명단 뒤에 둔다 — 조교의 첫 화면(adminHomeFor)이 바뀌지 않게
+  { href: "/admin/attendance", label: "출석", icon: "location", crew: true },
   { href: "/admin/sections", label: "반 편성", icon: "calendar" },
   { href: "/admin/lectures", label: "특강 신청", icon: "bolt" },
   { href: "/admin/verifications", label: "등업 로그", icon: "verify", crew: true },
   { href: "/admin/textbook-orders", label: "교재주문", icon: "orders", crew: true },
   { href: "/admin/replays", label: "다시보기", icon: "replay" },
+  // 강사 유튜브 채널 연결 · 오늘 회차 자동 연결 상태 (2026-09-21) — 강사·관리자만
+  { href: "/admin/live-channels", label: "불라방 자동 연결", icon: "live" },
   { href: "/admin/analytics", label: "마케팅 분석", icon: "analytics" },
   { href: "/admin/study", label: "스터디 신청자", icon: "study", crew: true },
   { href: "/admin/study-materials", label: "비대면 자료", icon: "online" },
@@ -319,6 +324,18 @@ export const NAV_ADMIN: NavItem[] = [
 /** 그 등급이 쓸 수 있는 관리자 메뉴. 조교는 crew 항목만 */
 export function navAdminFor(role?: string | null): NavItem[] {
   return role === "assistant" ? NAV_ADMIN.filter((n) => n.crew) : NAV_ADMIN;
+}
+
+/**
+ * 요청 가로채기(`src/lib/supabase/proxy.ts`)가 `/admin` 아래로 들여보낼지 (2026-09-21).
+ * 강사·관리자는 전부, **조교는 자기에게 열린 화면(메뉴의 crew 항목)과 그 아래만.** 판정은 진짜 등급(`profiles.role`)으로 한다.
+ * 그 전에는 강사·관리자만 통과시켜서 **조교가 관리자 화면에 하나도 못 들어갔다** — 조교에게 연 화면이 전부 `/my?denied=admin` 으로 튕겼다.
+ * 여기를 통과해도 화면마다 `requireStaff()`/`requireCrew()` 가 한 번 더 본다 (예: 교재주문 아래 교재·계좌 설정은 스태프만).
+ */
+export function canEnterAdminPath(role: string | null | undefined, pathname: string): boolean {
+  if (role === "instructor" || role === "admin") return true;
+  if (role !== "assistant") return false;
+  return navAdminFor(role).some((n) => pathname === n.href || pathname.startsWith(`${n.href}/`));
 }
 
 /**
@@ -369,6 +386,8 @@ export const NAV_DRAWER: NavSection[] = [
     label: "수업",
     items: [
       { href: "/my/class", label: "내 시간표", icon: "calendar" },
+      // 현장 수강생의 내 출석 기록 — 찍는 것은 강의실 앞 출석 QR 포스터를 휴대폰 카메라로 (2026-09-21 · 2026-09-22 포스터 하나로)
+      { href: "/my/attendance", label: "출석", icon: "location" },
       featureNav("live"),
       featureNav("replay"),
       featureNav("lecture"),

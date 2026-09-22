@@ -48,9 +48,9 @@
 |---|---|---|---|
 | 1 | **Vercel — 도메인** `winnertoeic.com` | 주소 그 자체 | **갱신이 안 되면 사이트·로그인·메일이 통째로 죽는다.** 가장 치명적 |
 | 2 | **Vercel — 프로젝트** | 배포, 환경변수 11개, 크론 2개 | 배포가 멈추고 ★크론(수강증 삭제·하루 요약)이 조용히 선다 |
-| 3 | **Supabase — 프로젝트** | 학생 데이터 전부, 로그인, 파일 6개 버킷, pg_cron 3개 | 결제가 끊기면 **DB 가 정지**하고 사이트 전체가 선다 |
+| 3 | **Supabase — 프로젝트** | 학생 데이터 전부, 로그인, 파일 6개 버킷, pg_cron 6개(등급 전이 · 불라방 시작 알림 · 다시보기 전환 · 네이버 예약 확인 · 유튜브 감지 · 크론 기록 정리), Vault 비밀 2개 | 결제가 끊기면 **DB 가 정지**하고 사이트 전체가 선다 |
 | 4 | **GitHub — 저장소** | 코드, 마이그레이션 49개 | ★옮긴 뒤 연동을 다시 안 붙이면 **DB 마이그레이션이 조용히 안 돈다** |
-| 5 | **Google Cloud — OAuth** | 구글 로그인 | Alan 계정이 지워지면 **학생 구글 로그인이 전원 불가** |
+| 5 | **Google Cloud — OAuth** | 구글 로그인 · 유튜브 불라방 자동 연결(켰다면) | Alan 계정이 지워지면 **학생 구글 로그인이 전원 불가**, 불라방 링크가 저절로 안 들어간다 |
 | 6 | **Kakao Developers** | 카카오 로그인 | 위와 같음 (켜 두었을 경우) |
 | 7 | **구글 서치 콘솔** | 검색 노출·색인 현황 | 검색 문제를 볼 눈이 사라진다 (사이트는 멀쩡) |
 | 8 | **네이버 서치어드바이저** | 네이버 검색 노출 | 위와 같음 |
@@ -153,6 +153,10 @@ Supabase 대시보드 → `Integrations → GitHub` 에서 새 저장소로 다�
 - 옮긴 뒤 **자동 갱신이 켜져 있고 새 주인 카드가 걸려 있는지 반드시 확인한다**
 - `winnertoeic.com` 은 사이트 주소일 뿐 아니라 **로그인 콜백·가입 확인 메일·검색 등록**이 전부 매달려 있다.
   이것 하나가 만료되면 나머지 여덟 개를 아무리 잘 넘겨도 소용이 없다
+- **★ 도메인이 바뀌면 DB 안의 주소도 한 줄 고친다.** 네이버 예약 확인(10분마다)은 DB 크론이 우리 사이트를 불러서 돈다.
+  그 주소가 DB 에 따로 적혀 있어서, 도메인만 바꾸면 **아무 오류 없이 네이버 예약 알림이 멈춘다.**
+  Supabase SQL 편집기에서: `update private.app_config set value = 'https://새주소' where key = 'site_url';`
+  (주소 끝에 `/` 를 붙이지 말 것. 이 크론이 쓰는 비밀은 DB 안에서 만든 값이라 넘길 것이 없다 — 프로젝트를 옮기면 같이 간다)
 
 **⑥ Google Cloud · Kakao**
 새 주인을 소유자로 올렸다면 프로젝트 자체는 그대로 두고 **Alan 만 빼면 된다** (OAuth 클라이언트 ID·시크릿이 그대로라 아무것도 안 깨진다).
@@ -174,12 +178,14 @@ Supabase 의 Google 설정에 갈아 끼우고, 승인된 리디렉션 URI 에
 | `NAVER_WEBHOOK_SECRET` | 아무 긴 임의 문자열 | 네이버 예약 알림을 전달하는 쪽 설정도 같이 고쳐야 한다 |
 | Google Client Secret | Google Cloud Console | 바꾸는 순간부터 Supabase 에 새 값을 넣을 때까지 **구글 로그인이 끊긴다** — 연달아 할 것 |
 | Kakao Client Secret | Kakao Developers → 보안 | 위와 같음 |
+| `YOUTUBE_CLIENT_ID` · `YOUTUBE_CLIENT_SECRET` (켰다면) | Google Cloud Console → 유튜브용 OAuth 클라이언트 | 클라이언트를 새로 만들면 **강사님들이 `/admin/live-channels` 에서 채널을 다시 연결**해야 한다. 그 전까지는 반 상세에서 링크를 손으로 넣는다 |
 
 **환경변수 11개 목록** (전체는 `.env.example`):
 `NEXT_PUBLIC_SUPABASE_URL` · `NEXT_PUBLIC_SUPABASE_ANON_KEY` · `SUPABASE_SERVICE_ROLE_KEY` ·
 `NEXT_PUBLIC_SITE_URL` · `GOOGLE_SITE_VERIFICATION` · `NAVER_SITE_VERIFICATION` ·
 `NEXT_PUBLIC_VAPID_PUBLIC_KEY` · `VAPID_PRIVATE_KEY` · `VAPID_SUBJECT` ·
 `NAVER_WEBHOOK_SECRET` · `CRON_SECRET`
+(유튜브 불라방 자동 연결을 켰다면 `YOUTUBE_CLIENT_ID` · `YOUTUBE_CLIENT_SECRET` 두 개가 더 있다)
 (`SUPABASE_PROJECT_REF`·`SUPABASE_DB_PASSWORD`·`SUPABASE_ACCESS_TOKEN` 은 개발용이라 Vercel 에는 없어도 된다)
 
 ### 9단계 · 떠난 뒤 (Alan 이 지킬 것)
@@ -208,6 +214,7 @@ Supabase 의 Google 설정에 갈아 끼우고, 승인된 리디렉션 URI 에
 - [ ] 코드를 한 줄 고쳐 `main` 에 머지 → **배포가 돌고** Supabase `Database → Migrations` 에도 반영된다
 - [ ] 도메인 **자동 갱신이 켜져 있고** 결제 수단이 새 주인 것이다
 - [ ] Vercel `Settings → Cron Jobs` 에 **크론 2개**가 보인다
+- [ ] 관리자 대시보드의 네이버 예약 칸이 `마지막 확인` 을 10분 안쪽으로 보여 준다 (DB 크론 → 사이트 호출이 살아 있다)
 
 **Alan 이 확인 — 안 되는지 (이게 이관됐다는 증거다)**
 - [ ] Vercel 에 로그인했을 때 그 프로젝트와 **도메인이 안 보인다**
@@ -225,8 +232,9 @@ Supabase 의 Google 설정에 갈아 끼우고, 승인된 리디렉션 URI 에
   **확인 메일이 조용히 실패하고 학생은 이유도 모른 채 가입을 못 끝낸다.** Resend 같은 외부 SMTP 를 붙이는 것이
   **출시 전 남은 유일한 필수 작업**이다 (`CLAUDE.md` 보안 점검 2번).
   **Alan 이 떠나기 전에 붙여 두면 새 주인이 훨씬 수월하다** — 안 하고 넘기면 새 주인이 첫 방학에 이 문제를 처음 만난다.
-- **네이버 예약 알림 전달** — 네이버가 보내는 알림 원문을 우리 주소로 전달하는 설정이 Alan 쪽 어딘가(문자 전달·메일 규칙)에 있다면
-  그것도 새 주인 쪽으로 옮겨야 한다. **Alan 만 아는 설정이므로 떠나기 전에 반드시 알려 줄 것.**
+- **네이버 예약 알림** — 2026-09-21 부터는 사이트가 10분마다 네이버 예약 페이지를 직접 확인한다. **옮길 설정이 없다**
+  (예전의 "알림 원문 전달" 방식은 쓰지 않는다). 확인은 대시보드의 네이버 예약 칸 `마지막 확인 N분 전` 이 10분 안쪽인지로 한다
+  (도메인을 바꿨다면 위 ⑤의 DB 주소부터).
 - **Higgsfield** (아이콘·일러스트 제작 도구) — 만들어 둔 그림은 이미 저장소 안에 있으므로 **계정은 안 넘겨도 된다.**
   새 그림을 만들 일이 있을 때만 새 주인이 자기 계정을 쓰면 된다.
 - **YBM 관련 계정** — 결제·수강신청은 YBM 공식 사이트에서만 일어나므로 이 사이트와 무관하다. 넘길 것이 없다.

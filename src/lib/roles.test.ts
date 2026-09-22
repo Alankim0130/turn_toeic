@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { canAssignRole, isAdmin, isAssistant, isCrew, isStaff, isStudentGrade, isStudentPlus, ROLE_LABEL, STUDENT_GRADES, TEST_ROLES, type UserRole } from "./auth";
-import { NAV_ADMIN } from "./site";
+import { canEnterAdminPath, NAV_ADMIN } from "./site";
 
 /**
  * 등급 체계를 지키는 테스트 (2026-09-17 Alan 요청 — "다른 워크트리에서도 항상 고려할 수 있도록").
@@ -117,6 +117,24 @@ describe("관리자 화면은 화면마다 가드가 있다", () => {
   });
 });
 
+describe("관리자 라우트 핸들러도 함수마다 가드가 있다", () => {
+  // 라우트 핸들러는 레이아웃도 화면도 타지 않는다 — 가드를 빠뜨리면 로그인한 누구에게나 열린다 (출석 포스터 인쇄, 2026-09-21)
+  const routes = walk(ADMIN_DIR, (f) => f === "route.ts");
+
+  it("찾은 파일이 있다 (경로가 바뀌면 이 테스트가 헛돈다)", () => {
+    expect(routes.length).toBeGreaterThan(0);
+  });
+
+  it.each(routes)("%s 의 모든 요청 처리 함수가 권한을 본다", (p) => {
+    const unguarded = readFileSync(p, "utf8")
+      .split(/export async function /)
+      .slice(1)
+      .filter((chunk) => !GUARDS.some((g) => chunk.includes(`${g}(`)))
+      .map((chunk) => chunk.slice(0, chunk.indexOf("(")));
+    expect(unguarded, `가드 없는 처리 함수: ${unguarded.join(", ")}`).toEqual([]);
+  });
+});
+
 describe("관리자 서버 액션은 함수마다 가드가 있다", () => {
   const files = walk(ADMIN_DIR, (f) => /actions.*\.ts$/.test(f));
 
@@ -158,6 +176,29 @@ describe("관리자 메뉴와 화면 가드가 같은 말을 한다", () => {
     const body = src(href);
     expect(body).toContain("requireStaff(");
     expect(body).not.toContain("requireCrew(");
+  });
+});
+
+/**
+ * 요청 가로채기(proxy)가 `/admin` 을 누구에게 여나 (2026-09-21 — 그 전에는 조교가 관리자 화면에 하나도 못 들어갔다).
+ * 조교 메뉴가 있는데 proxy 가 막으면 눌러도 `/my?denied=admin` 으로 튕긴다. 화면 가드와 같은 집합이어야 한다.
+ */
+describe("관리자 화면 입구 (canEnterAdminPath) — 메뉴·화면 가드와 같은 말을 한다", () => {
+  it("강사·관리자는 어디든", () => {
+    for (const r of ["instructor", "admin"]) for (const n of NAV_ADMIN) expect(canEnterAdminPath(r, n.href), `${r} ${n.href}`).toBe(true);
+  });
+  it.each(NAV_ADMIN.filter((n) => n.crew).map((n) => n.href))("조교는 조교 메뉴 %s 와 그 아래로 들어간다", (href) => {
+    expect(canEnterAdminPath("assistant", href)).toBe(true);
+    expect(canEnterAdminPath("assistant", `${href}/123`)).toBe(true);
+  });
+  it.each(NAV_ADMIN.filter((n) => !n.crew).map((n) => n.href))("조교는 %s 에 못 들어간다", (href) => {
+    expect(canEnterAdminPath("assistant", href)).toBe(false);
+  });
+  it("비슷한 이름의 주소로 새지 않는다 (/admin/students-x)", () => {
+    expect(canEnterAdminPath("assistant", "/admin/studentsx")).toBe(false);
+  });
+  it("학생·회원·졸업생·비회원·등급 없음은 막는다", () => {
+    for (const r of ["student", "member", "alumni", "guest", null, undefined]) expect(canEnterAdminPath(r, "/admin/students"), String(r)).toBe(false);
   });
 });
 

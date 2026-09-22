@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
-import { formatDate, formatTime, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
+import { formatDate, formatTime, formatTimeRange, todayKST, TRACK_LABEL } from "@/lib/utils";
 import { SectionSelect } from "@/components/admin/replays/SectionSelect";
 import { ReplayRow } from "@/components/admin/replays/ReplayRow";
 import { sectionPackages } from "@/lib/time-blocks";
@@ -26,7 +26,7 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
     supabase
       .from("class_sections")
       .select(
-        "id, term_id, course_id, track, start_time, end_time, time_block, status, closes_at, instructor_id, book_set, recorded, course:courses(name, program, target_score, includes_levels), term:terms(year, month)",
+        "id, term_id, course_id, track, start_time, end_time, time_block, status, enrollment_opens_at, closes_at, instructor_id, book_set, recorded, course:courses(name, program, target_score, includes_levels), term:terms(year, month)",
       )
       .order("id", { ascending: false })
       .limit(200),
@@ -58,8 +58,13 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
     : (requestedSection && replayTargets.levelOf(requestedSection)) || levelTabs[0] || null;
   const inLevel = (s: (typeof list)[number]) => currentLevel == null || replayTargets.levelOf(s) === currentLevel;
 
+  // 기본으로 여는 반은 **지금 개강일~종강일 안인 반** 먼저 — 다음 달 반을 미리 열어 두면 id 가 더 커서
+  // 아직 시작도 안 한 다음 달 반이 먼저 열렸다 (2026-09-22 점검)
+  const today = todayKST();
+  const running = (s: (typeof list)[number]) => s.enrollment_opens_at <= today && today <= s.closes_at;
   const selected =
     requestedSection ||
+    listable.find((s) => running(s) && s.status === "open" && canUpload(s) && inLevel(s)) ||
     listable.find((s) => s.status === "open" && canUpload(s) && inLevel(s)) ||
     listable.find((s) => inLevel(s)) ||
     list.find((s) => inLevel(s)) ||

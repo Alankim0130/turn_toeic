@@ -12,7 +12,7 @@ import { RoleSelect, type RoleOption } from "@/components/admin/students/RoleSel
 import { AssignSections, RemoveEnrollment } from "@/components/admin/students/EnrollmentEditor";
 import { MergeAccounts, type StaffMergeCandidate } from "@/components/admin/students/MergeAccounts";
 import type { PickerSection } from "@/components/admin/SectionPicker";
-import { GENDER_LABEL, pickTerm, sectionSummary, termLabel } from "../../_lib/queries";
+import { GENDER_LABEL, pickTerm, sectionSummary, termLabel, TERM_COLUMNS } from "../../_lib/queries";
 import { termParam } from "@/lib/study";
 
 export const metadata: Metadata = { title: "학생 관리", robots: { index: false } };
@@ -53,7 +53,7 @@ export default async function StudentDetailPage({
       .eq("student_id", id)
       .order("id"),
     supabase.from("enrollment_orders").select("id, status, activates_on, access_until, verification_id").eq("user_id", id).order("activates_on", { ascending: false }),
-    supabase.from("terms").select("id, year, month").order("year").order("month"),
+    supabase.from("terms").select(TERM_COLUMNS).order("year").order("month"),
   ]);
 
   // 같은 사람으로 보이는 다른 계정 (이름 또는 전화번호가 같음). 판정·권한은 DB 함수가 본다.

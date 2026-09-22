@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { canAssignRole, isAssistant, requireCrew, requireStaff, ROLE_LABEL, type UserRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { assignableError, orderWindow } from "@/lib/enrollment-window";
 import { promoteToStudent } from "@/lib/student-role";
 import { todayKST } from "@/lib/utils";
 import type { TablesInsert } from "@/lib/supabase/database.types";
@@ -110,13 +111,14 @@ export async function assignSections(_prev: StudentActionState, formData: FormDa
   const { data: target } = await admin.from("profiles").select("id, name, role").eq("id", id).maybeSingle();
   if (!target) return { error: "학생을 찾을 수 없어요." };
 
-  const { data: sections } = await admin.from("class_sections").select("id, enrollment_opens_at, closes_at").in("id", sectionIds);
+  const { data: sections } = await admin.from("class_sections").select("id, term_id, enrollment_opens_at, closes_at").in("id", sectionIds);
   if (!sections || sections.length !== sectionIds.length) return { error: "고른 반을 찾을 수 없어요." };
 
+  // 수강증 승인과 같은 규칙 (`enrollment-window.ts`) — 한 달의 반만, 종강 전 반만, 기간 = 반의 개강일~종강일
   const today = todayKST();
-  const activatesOn = sections.map((s) => s.enrollment_opens_at).sort()[0];
-  const accessUntil = sections.map((s) => s.closes_at).sort().at(-1)!;
-  const status = activatesOn <= today ? "active" : "preliminary";
+  const invalid = assignableError(sections, today);
+  if (invalid) return { error: invalid };
+  const { activatesOn, accessUntil, status } = orderWindow(sections, today);
 
   const { data: order, error: orderErr } = await admin
     .from("enrollment_orders")

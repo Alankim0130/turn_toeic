@@ -42,9 +42,22 @@ function ClassLines({ classes, small }: { classes: string[]; small?: boolean }) 
   );
 }
 
-export function CheckinRoster({ students, materials, checkins }: { students: RosterStudent[]; materials: RosterMaterial[]; checkins: RosterCheckin[] }) {
+export function CheckinRoster({
+  students,
+  materials,
+  checkins,
+  today,
+}: {
+  students: RosterStudent[];
+  materials: RosterMaterial[];
+  checkins: RosterCheckin[];
+  /** 오늘 (KST, 서버가 넘긴다). 자료는 **그 날짜부터** 학생에게 열리므로 앞날 자료는 미인증으로 세지 않는다 (2026-09-22 점검) */
+  today: string;
+}) {
   const router = useRouter();
-  const [openId, setOpenId] = useState<number | null>(materials[0]?.id ?? null);
+  const isOpen = (m: RosterMaterial) => m.date <= today;
+  // 처음 펼칠 날짜: 이미 열린 자료 중 가장 최근 — 앞날 자료를 펼치면 전원이 미인증으로 보인다
+  const [openId, setOpenId] = useState<number | null>(materials.find(isOpen)?.id ?? null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [compose, setCompose] = useState<{ materialId: number; title: string; body: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -76,7 +89,8 @@ export function CheckinRoster({ students, materials, checkins }: { students: Ros
   }
 
   // 한눈에 보기: 미인증이 많은 학생을 위로 (2026-09-19 Alan — "인증을 했는지 안했는지 강사모드에서 한번에 쭈욱 확인")
-  const missedOf = (id: string) => materials.filter((m) => !byMaterial.get(m.id)?.has(id)).length;
+  const opened = materials.filter(isOpen);
+  const missedOf = (id: string) => opened.filter((m) => !byMaterial.get(m.id)?.has(id)).length;
   const ranked = [...students].sort((a, b) => missedOf(b.id) - missedOf(a.id) || (a.name || "").localeCompare(b.name || ""));
 
   return (
@@ -124,7 +138,14 @@ export function CheckinRoster({ students, materials, checkins }: { students: Ros
                         const c = byMaterial.get(m.id)?.get(st.id);
                         return (
                           <td key={m.id} className="px-1.5 py-1.5 text-center">
-                            {c ? (
+                            {!c && !isOpen(m) ? (
+                              <span
+                                role="img"
+                                aria-label={`${formatDate(m.date)} 공개 전`}
+                                className="inline-block h-5 w-5 rounded-full border border-dashed border-line align-middle"
+                                title={`${formatDate(m.date)} 공개 전`}
+                              />
+                            ) : c ? (
                               <span
                                 role="img"
                                 aria-label={`${formatDate(m.date)} 인증함`}
@@ -151,7 +172,7 @@ export function CheckinRoster({ students, materials, checkins }: { students: Ros
                       })}
                       <td className="px-3 py-1.5 text-right text-xs font-black tabular-nums">
                         <span className={cn(missed > 0 ? "text-amber-800" : "text-brand-700")}>
-                          {materials.length - missed} / {materials.length}
+                          {opened.length - missed} / {opened.length}
                         </span>
                       </td>
                     </tr>
@@ -166,17 +187,22 @@ export function CheckinRoster({ students, materials, checkins }: { students: Ros
         const done = byMaterial.get(m.id) ?? new Map<string, RosterCheckin>();
         const missing = students.filter((s) => !done.has(s.id));
         const open = openId === m.id;
+        const released = isOpen(m);
         return (
           <section key={m.id} className="card overflow-hidden">
             <button type="button" onClick={() => setOpenId(open ? null : m.id)} className="flex w-full flex-wrap items-center justify-between gap-2 px-5 py-3 text-left hover:bg-brand-50/40" aria-expanded={open}>
               <span className="font-black text-ink">
                 {formatDate(m.date)} {m.title && <span className="ml-1 text-sm font-semibold text-slate">· {m.title}</span>}
               </span>
-              <span className="flex items-center gap-2 text-sm font-bold tabular-nums">
-                <span className="rounded-full bg-brand-500 px-2.5 py-0.5 text-white">인증 {done.size}</span>
-                <span className={cn("rounded-full px-2.5 py-0.5", missing.length ? "bg-amber-100 text-amber-800" : "bg-line text-slate")}>미인증 {missing.length}</span>
-                <span className="text-slate">/ 신청 {students.length}</span>
-              </span>
+              {released ? (
+                <span className="flex items-center gap-2 text-sm font-bold tabular-nums">
+                  <span className="rounded-full bg-brand-500 px-2.5 py-0.5 text-white">인증 {done.size}</span>
+                  <span className={cn("rounded-full px-2.5 py-0.5", missing.length ? "bg-amber-100 text-amber-800" : "bg-line text-slate")}>미인증 {missing.length}</span>
+                  <span className="text-slate">/ 신청 {students.length}</span>
+                </span>
+              ) : (
+                <span className="rounded-full bg-line px-2.5 py-0.5 text-sm font-bold text-slate">공개 전 — 이 날짜부터 학생에게 열려요</span>
+              )}
             </button>
 
             {open && (
@@ -246,6 +272,8 @@ export function CheckinRoster({ students, materials, checkins }: { students: Ros
                         <span className="text-xs text-mist">학생의 알림함(마이페이지 → 알림)에 들어가요. 문자·카톡은 가지 않아요.</span>
                       </div>
                     </div>
+                  ) : !released ? (
+                    <p className="text-sm text-slate">아직 공개 전이라 알림을 보낼 수 없어요.</p>
                   ) : missing.length > 0 ? (
                     <button type="button" onClick={() => startCompose(m, missing)} className="btn-secondary !px-4 !py-2 text-sm">
                       <Icon name="bell" size={18} />
