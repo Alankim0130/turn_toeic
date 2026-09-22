@@ -4,7 +4,8 @@
  * 무엇을 보고 판정하는지는 CLAUDE.md "수강증 OCR 자동 등업 › 수강증 표기 규칙" (2026-09-16 Alan 확정)이 진실의 원천이다.
  *  - 수강 방식: 강의실이 `온라인 강의` 면 불라방(live), 아니면 현장(onsite) (2026-09-18 Alan). `라이브방송` 이 붙어서 읽히면 보조 신호.
  *    `인강` 은 불라방이 아니다 (화목금 인강 = 오전 녹화본).
- *  - 주3일/주5일 · 트랙: `주5일` 을 먼저 본다 — 주5일 표기 안에도 `월수금`·`화목금` 글자가 있어서 트랙부터 보면 주3일로 오독한다.
+ *  - 주3일/주5일 · 트랙: 회차 `월18회`(주5일) · `월9회`(주3일)를 먼저, 그다음 `주5일` 을 본다 — 주5일 표기 안에도 `월수금`·`화목금`
+ *    글자가 있어서 트랙부터 보면 주3일로 오독한다. `주5일` 은 숫자 5 가 꼭 있어야 한다 (`25일`·`일주일` 은 주5일이 아니다).
  *  - 레벨: 650 · 750 · 850 숫자. `프리미어반`·`스파르타`·`중급속성`·`실전속성` 중 하나라도 있으면 스파르타(program = sparta).
  *    `중급속성` = 650, `실전속성` = 750 — 숫자를 못 읽으면 이걸로 레벨을 정하고, 숫자와 다르면 경고를 남긴다.
  *  - 수업 시간: `HH:MM~HH:MM` 을 **그대로** 돌려준다. 60/120분으로 가르지 않는다 — 실제 길이가 70·130·140·190·260분 등 다양해서
@@ -37,27 +38,44 @@ export type ParsedReceipt = {
   /** 게이트 G1 · G2 (텍스트로 판정 가능한 것만. G3 는 receiptHasName, G4 는 DB) */
   gates: { academy: boolean; brand: boolean };
   mode: EnrollMode;
+  /**
+   * 수강 방식을 **무엇을 보고** 정했나 (2026-09-22). `online` = 강의실 `온라인 강의` · `room` = 강의실 호실(`701호`) ·
+   * `live` = `라이브방송` 만 읽힘 · `null` = 아무것도 못 읽어 기본값(현장)으로 둠.
+   * **null 이면 자동 승인하지 않는다** — 불라방 학생이 강의실 줄을 못 읽어 현장으로 들어가면 교재주문·수업 알림이 막힌다.
+   */
+  modeEvidence: "online" | "room" | "live" | null;
   /** 5 = 주5일, 3 = 주3일, null = 못 읽음 */
   weekly: 5 | 3 | null;
   tracks: Track[];
   /** 수강증에 적힌 레벨 숫자들 (보통 하나) */
   levels: number[];
   level: number | null;
+  /** 과정명이 말하는 레벨 (`중급속성` = 650 · `실전속성` = 750). 없으면 null. 숫자와 다르면 자동 승인하지 않는다 */
+  courseLevel: number | null;
   program: Program;
   times: ReceiptTime[];
   /** 첫 시간 범위 */
   time: ReceiptTime | null;
   /**
-   * 수강증에 적힌 날짜들의 (연·월) — **수강 기간뿐 아니라 결제일·발행일도 함께 걸린다.**
-   * 어느 줄이 수강 기간인지는 실물 샘플을 봐야 알 수 있어서(미확정 5) 가려내지 않고 모은다.
+   * 수강증에 적힌 날짜들의 (연·월) — 수강 기간·결제일·발행일이 있으면 함께 걸린다.
    * 판정은 "이 중 하나라도 열린 기수면 통과" 로 쓴다 — 8월에 결제한 9월 강좌를 거절하지 않게.
+   *
+   * **캡처 시각(`현재시간 …`)은 뺀다** (2026-09-22). 캡처한 날은 수강월이 아니다 — 9월 25일에 10월 강좌를 등록하고 캡처하면
+   * 날짜는 9월이다. 이걸 수강 날짜로 세면 배지를 못 읽었을 때 **10월 수강생을 9월 반에 자동 배정**하거나,
+   * 8월 말에 캡처한 9월 수강증을 9월에 올렸을 때 **"날짜가 달라요" 로 거절**한다 (둘 다 재현했다).
+   * 실물 수강증에는 캡처 시각 말고 연도가 붙은 날짜가 없어서 보통 빈 배열이다 — 수강월은 `courseMonth`·`startMonth` 가 정한다.
    */
   months: { year: number; month: number }[];
   /**
    * 수강증 맨 위 배지 `09월 과정` 의 달 (1~12). 연도는 없다.
-   * **수강월을 가리키는 가장 직접적인 신호**다 — `months` 는 캡처 시각·결제일도 섞여 있다.
+   * **수강월을 가리키는 가장 직접적인 신호**다.
    */
   courseMonth: number | null;
+  /**
+   * 수강요일 줄 `[4주-09/04]` 의 개강일 달 (1~12). 배지를 못 읽었을 때 수강월로 쓴다 (2026-09-22).
+   * 개강일은 그 달 안에 잡힌다 (9월 9.3·9.4, 10월 10.6·10.7 — CLAUDE.md 미확정 1).
+   */
+  startMonth: number | null;
   /**
    * 수강증 맨 위 `현재시간 2026-08-07 16:19:02` 의 날짜 (YYYY-MM-DD). 캡처한 시각이다.
    * 너무 오래된 캡처(지난달 것을 다시 올리기)를 자동 승인에서 빼는 데 쓴다 — 위조 판별은 아니다.
@@ -141,10 +159,13 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
  *  - 전각 → 반각 (NFKC: ０→0, （→(, ：→:)
  *  - 시각 구분자 `. ; ：` → `:`  (숫자 사이에서만 — 금액 콤마·날짜는 건드리지 않는다)
  *  - 범위 구분자 `- – — ～` → `~` (시각 사이에서만 — 전화번호·날짜의 하이픈은 그대로)
+ *
+ * 시각의 앞자리는 **더 긴 숫자나 날짜의 일부가 아니어야** 한다 (`(?<![\d.])`) — 없으면 `2026.09.16` 의 `26.09` 를
+ * 시각으로 보고 `2026:09.16` 으로 망가뜨려 날짜를 통째로 못 읽었다 (2026-09-22 재현).
  */
 export function normalizeReceiptText(raw: string): { text: string; compact: string } {
   let t = (raw ?? "").normalize("NFKC").replace(/\r\n?/g, "\n");
-  t = t.replace(/(\d{1,2})\s*[.;:]\s*(\d{2})(?!\d)/g, "$1:$2");
+  t = t.replace(/(?<![\d.])(\d{1,2})\s*[.;:]\s*(\d{2})(?!\d)/g, "$1:$2");
   t = t.replace(/(\d{1,2}:\d{2})\s*[-–—~～]\s*(\d{1,2}:\d{2})/g, "$1~$2");
   return { text: t, compact: t.replace(/\s+/g, "") };
 }
@@ -170,11 +191,41 @@ export function passesBrandGate(compact: string): boolean {
   return fuzzyIncludes(compact, RECEIPT_KEYWORDS.brand, 1) || RECEIPT_KEYWORDS.instructors.some((n) => compact.includes(n));
 }
 
-/** 게이트 G3: 가입 실명이 수강증에 있는가 (공백 무시, 정확 일치 — 두세 글자 이름에 편집거리를 허용하면 동명이인이 섞인다) */
+/** 이름 비교용: 글자만 남긴다. 한글 이름이면 한글만 — OCR 이 줄 끝에 붙이는 `_` `|` `l` 같은 찌꺼기를 떼어 낸다 */
+function nameLetters(s: string, hangulOnly: boolean): string {
+  const t = (s ?? "").normalize("NFKC");
+  return hangulOnly ? t.replace(/[^가-힣]/g, "") : t.replace(/[^\p{L}]/gu, "").toLowerCase();
+}
+
+/** 수강증 칸 라벨의 첫머리. 수강생 값이 다음 줄로 내려갔을 때 그 줄이 라벨이면 값이 아니고, 값 뒤에 붙어 읽힌 다음 라벨은 떼어 낸다 */
+const RECEIPT_LABEL_LINE = /^(수강|강사|레벨|강의실)/;
+
+/**
+ * 게이트 G3: 가입 실명이 수강증의 **`수강생` 칸 값**과 같은가 (공백 무시, 정확 일치 — 두세 글자 이름에 편집거리를 허용하면 동명이인이 섞인다).
+ *
+ * **원문 어딘가에 들어 있는지로 보지 않는다** (2026-09-22). 그렇게 보면 수강증의 다른 줄이 이름을 대신 채운다:
+ *  - 강사 줄 `이영수 .이혜영` — 학생 이름이 **이혜영·이영수**(흔한 이름이다)거나 그 안에 든 `이영`·`이혜` 면 **남의 수강증으로도 늘 통과**한다.
+ *  - 화면의 고정 글자 `이용약관` · `최근 본 강의` · `수강신청` — 이름이 `이용`·`최근`·`신청` 이면 늘 통과한다.
+ * 실물 화면을 OCR 로 읽으면 `수강생 _ 김민수` 처럼 라벨과 값이 한 줄로 나온다 (폭 700 · 원본 크기 둘 다 확인).
+ * 값이 다음 줄로 내려간 경우만 다음 줄을 본다. 라벨을 못 읽었으면 **통과시키지 않는다** — 자동 승인만 안 될 뿐 거절은 아니다.
+ */
 export function receiptHasName(text: string, name: string | null | undefined): boolean {
-  const n = (name ?? "").normalize("NFKC").replace(/\s+/g, "");
-  if (n.length < 2) return false;
-  return text.normalize("NFKC").replace(/\s+/g, "").includes(n);
+  const raw = (name ?? "").normalize("NFKC").replace(/\s+/g, "");
+  const hangulOnly = /^[가-힣]+$/.test(raw);
+  const want = nameLetters(raw, hangulOnly);
+  if (want.length < 2) return false;
+
+  const lines = (text ?? "").normalize("NFKC").split("\n").map((l) => l.replace(/\s+/g, ""));
+  for (let i = 0; i < lines.length; i++) {
+    const at = lines[i].indexOf("수강생");
+    if (at < 0) continue;
+    let value = nameLetters(lines[i].slice(at + "수강생".length), hangulOnly);
+    if (!value && i + 1 < lines.length && !RECEIPT_LABEL_LINE.test(lines[i + 1])) value = nameLetters(lines[i + 1], hangulOnly);
+    // 값 뒤에 다음 칸 라벨이 한 줄로 붙어 읽혔으면(`김민수수강센터부산…`) 이름까지만 본다 — 이름 뒤가 라벨로 시작할 때만.
+    // `김민` 학생이 `김민수` 의 수강증을 내면 뒤가 `수수강센터…` 라 라벨이 아니어서 통과하지 않는다
+    if (value === want || (value.startsWith(want) && RECEIPT_LABEL_LINE.test(value.slice(want.length)))) return true;
+  }
+  return false;
 }
 
 function parseTimes(compact: string): ReceiptTime[] {
@@ -196,11 +247,21 @@ function parseTimes(compact: string): ReceiptTime[] {
 }
 
 function parseLevels(compact: string): number[] {
-  // 앞뒤에 숫자·콜론이 붙으면 레벨이 아니다 — "16:50" 의 6:50, "1650원" 의 650 을 걸러낸다
+  // 앞뒤에 숫자·콜론이 붙으면 레벨이 아니다 — "16:50" 의 6:50, "1650원" 의 650 을 걸러낸다.
+  // **금액의 세 자리 묶음도 레벨이 아니다** (2026-09-22) — `650,000원` · `1,850,000원` 의 650·850 을 레벨로 읽어
+  // 750 수강증이 [650, 750] 이 되고 앞의 650 반에 자동 배정될 뻔했다 (재현). 그래서 앞뒤의 `,` 와 뒤의 `원` 도 막는다.
+  // `.` 은 막지 않는다 — OCR 이 글자 앞에 잡점을 찍는다(`강사 _ 이영수 .이혜영`). `레벨 .650+` 를 놓치면 안 된다
   const found = new Set<number>();
-  for (const m of compact.matchAll(/(?<![\d:])(650|750|850)(?![\d:])/g)) found.add(Number(m[1]));
+  for (const m of compact.matchAll(/(?<![\d:,])(650|750|850)(?![\d:,원])/g)) found.add(Number(m[1]));
   return LEVELS.filter((l) => found.has(l));
 }
+
+/**
+ * 주5일 표기 `주5일` — 한 글자 오인식(`주5알` · `추5일`)은 봐주되 **숫자 5 는 반드시 있어야** 한다 (2026-09-22).
+ * 편집거리 1 로 찾으면 세 글자 중 두 글자만 맞아도 되어서 `5일`(날짜 `9월 25일`) · `주일`(`일주일`) · `주3일` 이
+ * 전부 주5일로 읽혔다 — 휴대폰 화면 전체 캡처에는 알림 배너 같은 남의 글자가 섞인다. 날짜(`25일` · `9월 5일` · `D-5일`)는 뺀다.
+ */
+const WEEKLY5 = /주5(?!\d)|(?<![\d월\-~])5일/;
 
 /**
  * 수강증에 적힌 날짜의 (연·월)을 전부 모은다.
@@ -236,28 +297,59 @@ export function parseCourseMonth(text: string): number | null {
   return month >= 1 && month <= 12 ? month : null;
 }
 
-/** `현재시간 2026-08-07 16:19:02` → "2026-08-07". 라벨이 안 읽혔으면 맨 처음 나오는 YYYY-MM-DD 로 본다 */
-export function parseCapturedOn(text: string): string | null {
-  const labeled = text.match(/현재\s*시간[^\d]{0,6}(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
-  const m = labeled ?? text.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
-  if (!m) return null;
-  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+/**
+ * `현재시간` 라벨. **`현재` 만 맞으면 라벨로 본다** (2026-09-22) — 실물 수강증을 폭 700 으로 읽으면 `현재산 2026-08-07 16:19:02` 처럼
+ * `시간` 이 한 글자로 뭉개진다. 운영은 그 변형 하나로 판정 키가 다 나오면 멈추므로(`receiptComplete`) 라벨을 `현재시간` 으로만 찾으면
+ * **캡처 시각(초)이 늘 비어 "같은 초 캡처" 위조 신호가 꺼져 있었다** (재현). `허재시간` 처럼 `현재` 가 깨지면 여전히 라벨로 보지 않는다.
+ */
+const NOW_LABEL = String.raw`현재[^\d\n]{0,6}`;
+const YMD = String.raw`(\d{4})[-./](\d{1,2})[-./](\d{1,2})`;
+const CAPTURED_ON = new RegExp(`${NOW_LABEL}${YMD}`);
+const CAPTURED_AT = new RegExp(`${NOW_LABEL}${YMD}[^\\d]{0,4}(\\d{1,2})[:.](\\d{2})[:.](\\d{2})`);
+/** 캡처 시각 자리 — 라벨이 붙은 날짜, 또는 초까지 붙은 날짜·시각. `months` 에서 뺀다 (캡처한 날은 수강월이 아니다) */
+const CAPTURE_STAMP = new RegExp(`${NOW_LABEL}\\d{4}[-./]\\d{1,2}[-./]\\d{1,2}|\\d{4}[-./]\\d{1,2}[-./]\\d{1,2}[^\\d\\n]{0,3}\\d{1,2}[:.]\\d{2}[:.]\\d{2}`, "g");
+
+function ymd(y: number, mo: number, d: number): string | null {
   if (y < 2020 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
   return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
+/** `현재시간 2026-08-07 16:19:02` → "2026-08-07". 라벨이 안 읽혔으면 맨 처음 나오는 YYYY-MM-DD 로 본다 */
+export function parseCapturedOn(text: string): string | null {
+  const m = text.match(CAPTURED_ON) ?? text.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+  return m ? ymd(Number(m[1]), Number(m[2]), Number(m[3])) : null;
+}
+
 /**
- * `현재시간 2026-08-07 16:19:02` → "2026-08-07T16:19:02". 시·분·초가 다 있어야 돌려준다.
- * 날짜는 `parseCapturedOn` 과 같은 것을 쓰고, **초가 없으면 null** 이다 — 분까지만으로는 남과 겹칠 수 있다.
+ * `현재시간 2026-08-07 16:19:02` → "2026-08-07T16:19:02". 라벨이 붙은 줄에서 날짜·시·분·초를 **한 번에** 읽는다.
+ * **초가 없으면 null** 이다 — 분까지만으로는 남과 겹칠 수 있다. 라벨을 못 읽었으면 엉뚱한 숫자를 시각으로 보지 않게 null.
  */
 export function parseCapturedAt(text: string): string | null {
-  const day = parseCapturedOn(text);
-  if (!day) return null;
-  const m = text.match(/현재\s*시간[^\d]{0,6}\d{4}[-./]\d{1,2}[-./]\d{1,2}[^\d]{0,4}(\d{1,2}):(\d{2}):(\d{2})/);
+  const m = text.match(CAPTURED_AT);
   if (!m) return null;
-  const [h, mi, se] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  if (h > 23 || mi > 59 || se > 59) return null;
+  const day = ymd(Number(m[1]), Number(m[2]), Number(m[3]));
+  const [h, mi, se] = [Number(m[4]), Number(m[5]), Number(m[6])];
+  if (!day || h > 23 || mi > 59 || se > 59) return null;
   return `${day}T${[h, mi, se].map((v) => String(v).padStart(2, "0")).join(":")}`;
+}
+
+/**
+ * 수강증이 말하는 수강월 (1~12) — 배지 `NN월 과정` → 수강요일 줄의 개강일 달. **캡처 시각은 쓰지 않는다** (2026-09-22).
+ * 달 거절(`decideVerification`)과 반 대조(`matchSections`)가 같은 값을 본다 — 둘이 다른 달을 보면 거절은 안 됐는데 엉뚱한 달 반에 붙는다.
+ */
+export function receiptCourseMonth(p: Pick<ParsedReceipt, "courseMonth" | "startMonth">): number | null {
+  return p.courseMonth ?? p.startMonth ?? null;
+}
+
+/**
+ * 수강요일 줄 `[4주-09/04] 월수금 (월9회)` 의 개강일 달 → 9. 배지 `NN월 과정` 을 못 읽었을 때의 수강월이다 (2026-09-22).
+ * `N주-` 가 앞에 있어야 한다 — 그냥 `MM/DD` 는 다른 숫자일 수 있다. OCR 이 `/` 를 `.` 로 읽어 시각처럼 `09:04` 가 돼도 읽는다.
+ */
+export function parseStartMonth(compact: string): number | null {
+  const m = compact.match(/\d주[-~](\d{1,2})[/.:](\d{1,2})(?!\d)/);
+  if (!m) return null;
+  const [month, day] = [Number(m[1]), Number(m[2])];
+  return month >= 1 && month <= 12 && day >= 1 && day <= 31 ? month : null;
 }
 
 function parseTuition(compact: string): number | null {
@@ -282,13 +374,24 @@ export function parseReceipt(raw: string): ParsedReceipt {
   // 수강 방식 — **강의실이 `온라인 강의` 면 불라방** (2026-09-18 Alan: "온라인 강의로 판단하면 되겠네").
   // 수강요일 줄의 `라이브방송` 은 화면 폭 때문에 `라이` / `브방송` 으로 갈려 자주 안 읽히므로 붙어서 읽힌 경우에만 보조로 본다.
   // 조각을 맞추는 짓은 하지 않는다 (헷갈린다 — Alan). `인강` 은 신호가 아니다 (화목금 인강 = 오전 녹화본, 현장)
-  const mode: EnrollMode =
-    fuzzyIncludes(compact, RECEIPT_KEYWORDS.online, 1) || fuzzyIncludes(compact, RECEIPT_KEYWORDS.live, 1) ? "live" : "onsite";
+  const online = fuzzyIncludes(compact, RECEIPT_KEYWORDS.online, 1);
+  const live = fuzzyIncludes(compact, RECEIPT_KEYWORDS.live, 1);
+  // 현장이라는 **읽은 근거** — 강의실 칸의 호실 (`본관 701호`). 없으면 현장은 그냥 기본값이다 (2026-09-22)
+  const room = /강의실.{0,8}?\d{3,4}호/.test(compact);
+  const mode: EnrollMode = online || live ? "live" : "onsite";
+  const modeEvidence: ParsedReceipt["modeEvidence"] = online ? "online" : live ? "live" : room ? "room" : null;
+  if (!modeEvidence) warnings.push("강의실(온라인 강의/호실)을 못 읽어 수강 방식을 현장으로 두었어요");
 
-  // 주5일 먼저, 그다음 트랙 글자
+  // 주5일 먼저, 그다음 트랙 글자.
+  // **회차 표기가 1순위다** (2026-09-22): 주5일은 늘 `월18회`, 주3일은 늘 `월9회` 가 붙는다 — 숫자라 또렷하게 읽힌다.
+  // `주5일` 글자는 회차를 못 읽었을 때만 보고, `월9회` 가 있으면 화면 어딘가의 `5일` 이 주3일을 주5일로 바꾸지 못한다
   let weekly: 5 | 3 | null = null;
   let tracks: Track[] = [];
-  if (fuzzyIncludes(compact, RECEIPT_KEYWORDS.weekly5, 1) || compact.includes(RECEIPT_KEYWORDS.sessions18)) {
+  const has18 = compact.includes(RECEIPT_KEYWORDS.sessions18);
+  const has9 = compact.includes(RECEIPT_KEYWORDS.sessions9);
+  if (has18 && has9) {
+    warnings.push("월18회(주5일)와 월9회(주3일)가 함께 읽혔어요");
+  } else if (has18 || (!has9 && WEEKLY5.test(compact))) {
     weekly = 5;
     tracks = ["mwf", "ttf"];
   } else {
@@ -332,20 +435,33 @@ export function parseReceipt(raw: string): ParsedReceipt {
     compact,
     gates,
     mode,
+    modeEvidence,
     weekly,
     tracks,
     levels,
     level,
+    courseLevel,
     program,
     times,
     time: times[0] ?? null,
-    months: parseReceiptMonths(text),
+    // 캡처 시각은 수강 날짜가 아니다 — 지우고 센다 (ParsedReceipt.months 참고)
+    months: parseReceiptMonths(text.replace(CAPTURE_STAMP, " ")),
     courseMonth: parseCourseMonth(text),
+    startMonth: parseStartMonth(compact),
     capturedOn: parseCapturedOn(text),
     capturedAt: parseCapturedAt(text),
     tuition: parseTuition(compact),
     warnings,
   };
+}
+
+/**
+ * 운영의 "여기서 읽기를 멈춰도 되나" — 판정 키(`receiptComplete`)에 더해 **학생 이름**까지 읽혔는가 (2026-09-22).
+ * 이름은 자동 승인 조건(G3)인데 멈추는 기준에 없어서, 첫 변형이 이름만 잘못 읽으면 더 또렷한 변형을 읽지 않고 검토로 보냈다.
+ * 이름이 수강증에 없으면(남의 수강증) 변형을 다 읽는다 — 느려질 뿐 결과는 같다.
+ */
+export function readEnoughFor(studentName: string | null | undefined): (text: string) => boolean {
+  return (text) => receiptComplete(text) && (!studentName || receiptHasName(text, studentName));
 }
 
 /* ─── OCR 엔진 자리 ──────────────────────────────────────────────────────── */
@@ -365,7 +481,11 @@ export interface OcrEngine {
 /**
  * 판정에 쓰는 키가 전부 읽혔는가 — OCR 이 값싼 변형부터 읽다가 여기서 true 가 나오면 나머지를 건너뛴다 (2026-09-18).
  * 실측(전체 화면 캡쳐 1242×2688): 폭 700 변형 하나(0.7초)로 전부 읽히고, 원본 크기 변형(1.4초)은 덤이었다 — 운영 CPU 는 더 느리다.
- * 방식을 정하는 `강의실` 줄까지 읽혔는지 본다 — 그 줄을 못 읽으면 기본값 현장으로 잘못 정해진다.
+ * 방식을 정하는 `강의실` 줄은 **라벨이 아니라 값**(`온라인 강의` · `701호`)까지 읽혔는지 본다 — 못 읽으면 기본값 현장으로 잘못 정해진다.
+ *
+ * **캡처 시각(초)도 본다** (2026-09-22). 여기서 멈추면 뒤 변형은 읽지 않으므로, 멈추는 기준에 없는 값은 운영에서 조용히 비었다 —
+ * 실물 수강증은 폭 700 변형 하나로 이 함수가 true 가 됐는데 그 변형에서는 캡처 시각을 못 읽어 "같은 초 캡처" 검사가 꺼져 있었다.
+ * 학생 이름은 여기서 모른다 — 부르는 쪽(`submitVerification`)이 이름까지 읽혔는지 함께 본다.
  */
 export function receiptComplete(text: string): boolean {
   const p = parseReceipt(text);
@@ -376,6 +496,7 @@ export function receiptComplete(text: string): boolean {
     p.weekly != null &&
     p.time != null &&
     p.courseMonth != null &&
-    p.compact.includes("강의실")
+    p.capturedAt != null &&
+    (p.modeEvidence === "online" || p.modeEvidence === "room")
   );
 }

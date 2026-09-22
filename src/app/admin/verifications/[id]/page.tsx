@@ -104,8 +104,8 @@ export default async function VerificationDetailPage({
   const requestedManual = (v.requested_section_ids ?? []).filter((n): n is number => typeof n === "number");
   // OCR 이 반을 찾았는데 자동 승인 조건(이름 일치 등)에 못 미친 건 — 찾은 반을 미리 골라 둔다 (2026-09-18)
   const matchLog = v.candidates as {
-    result?: { kind?: string; sectionIds?: number[] };
-    flags?: { duplicateImage?: boolean; staleCapture?: boolean; sameCapture?: boolean; paletteOff?: boolean; paletteNote?: string };
+    result?: { kind?: string; sectionIds?: number[] } | null;
+    flags?: { duplicateImage?: boolean; staleCapture?: boolean; sameCapture?: boolean; paletteOff?: boolean; paletteNote?: string; alreadyEnrolled?: number[] };
     correctionOf?: number;
   } | null;
   // 자동 승인 뒤 학생이 "반이 달라요" 로 낸 정정 요청 — 새로 승인하면 등록이 두 건 생기니 기존 승인의 배정 수정으로 보낸다 (2026-09-18)
@@ -124,17 +124,40 @@ export default async function VerificationDetailPage({
   const suggested = matchLog?.result?.kind === "match" ? (matchLog.result.sectionIds ?? []).filter((n) => typeof n === "number") : [];
   const requested = requestedManual.length > 0 ? requestedManual : suggested;
   const requestedLabels = requested.map((id) => candidates.find((c) => c.id === id)?.label ?? `반 #${id}`);
+  // 승인 칸에 **실제로 미리 골라 둔다** (2026-09-22 — 예전에는 "미리 골라 뒀습니다" 라고 적어 놓고 값을 넘기지 않아 늘 빈 칸이었다).
+  // 지금 열려 있어 목록에 보이는 반만 — 안 보이는 반이 숨은 칸으로 함께 승인되면 안 된다
+  const preselected = requested.filter((id) => pickerSections.some((s) => s.id === id));
+  // 이미 그 달 반에 배정돼 있다 — 새로 승인하면 등록이 두 건 생긴다 (2026-09-22). 정정 요청은 아래 안내가 따로 있다
+  const alreadyEnrolled = correctionOf ? [] : (matchLog?.flags?.alreadyEnrolled ?? []).filter((n) => typeof n === "number");
 
   const isImage = /\.(png|jpe?g|webp|gif)$/i.test(v.file_path);
   const parsed = v.parsed as Record<string, unknown> | null;
   // OCR 이 실패했으면 사유가 ocr_raw.error 에 있다 (2026-09-18 — 조용히 비어 있으면 원인을 알 수 없다)
   const ocrErrorRaw = (v.ocr_raw as { error?: unknown } | null)?.error;
   const ocrError = typeof ocrErrorRaw === "string" ? ocrErrorRaw : null;
-  const ocrMode = parsed?.mode === "live" || parsed?.mode === "onsite" ? parsed.mode : null;
+  // 강의실 줄을 못 읽어 기본값(현장)으로 둔 것은 판독이 아니다 (2026-09-22 `modeEvidence`) — 스태프가 수강증에서 고르게 비워 둔다.
+  // 그 칸이 없는 예전 기록은 그대로 읽는다
+  const modeEvidence = parsed && "modeEvidence" in parsed ? parsed.modeEvidence : undefined;
+  const ocrMode = modeEvidence === null ? null : parsed?.mode === "live" || parsed?.mode === "onsite" ? parsed.mode : null;
+  const MODE_EVIDENCE_LABEL: Record<string, string> = { online: "강의실 온라인 강의", room: "강의실 호실", live: "라이브방송" };
   // 스태프가 한눈에 보는 줄 — 자세한 값은 아래 JSON 에 그대로 있다
   const ocrFacts: [string, string][] = parsed
     ? [
-        ["수강 방식", ocrMode === "live" ? "불라방 (라이브방송)" : ocrMode === "onsite" ? "현장" : "-"],
+        [
+          "수강 방식",
+          modeEvidence === null
+            ? "강의실 줄을 못 읽음 — 수강증에서 확인"
+            : `${ocrMode === "live" ? "불라방" : ocrMode === "onsite" ? "현장" : "-"}${typeof modeEvidence === "string" && MODE_EVIDENCE_LABEL[modeEvidence] ? ` (${MODE_EVIDENCE_LABEL[modeEvidence]})` : ""}`,
+        ],
+        // 반 대조가 쓴 수강월 — 배지 `NN월 과정` → 수강요일 줄의 개강일. 캡처한 날은 수강월이 아니다 (2026-09-22)
+        [
+          "수강월",
+          typeof parsed.courseMonth === "number"
+            ? `${parsed.courseMonth}월 (배지)`
+            : typeof parsed.startMonth === "number"
+              ? `${parsed.startMonth}월 (개강일)`
+              : "-",
+        ],
         ["레벨 · 과정", [parsed.level ?? "-", parsed.program === "sparta" ? "프리미어(스파르타)" : "점수보장반"].join(" · ")],
         ["주 · 트랙", [parsed.weekly ? `주${parsed.weekly}일` : "-", (parsed.tracks as string[] | undefined)?.map((t) => (t === "mwf" ? "월수금" : "화목금")).join("+") || "-"].join(" · ")],
         ["수강 시간", (parsed.time as { timeBlock?: string } | null)?.timeBlock ?? "-"],
@@ -188,7 +211,12 @@ export default async function VerificationDetailPage({
                     {requestedLabels.map((l) => <li key={l}>{l}</li>)}
                   </ul>
                 )}
-                <p className="mt-2 text-xs text-mist">아래 승인 칸에 미리 골라 뒀습니다. <b>수강증과 맞는지 확인한 뒤</b> 승인해 주세요.</p>
+                <p className="mt-2 text-xs text-mist">
+                  {preselected.length === requested.length
+                    ? "아래 승인 칸에 미리 골라 뒀습니다."
+                    : "고른 반 중 지금 열려 있지 않은 반은 미리 고르지 못했어요 — 아래에서 다시 골라 주세요."}{" "}
+                  <b>수강증과 맞는지 확인한 뒤</b> 승인해 주세요.
+                </p>
               </div>
             )}
 
@@ -202,6 +230,13 @@ export default async function VerificationDetailPage({
           </section>
 
           <section className="card p-5">
+            {alreadyEnrolled.length > 0 && v.result === null && (
+              <Alert kind="warning" className="mb-3">
+                이 학생은 이 달 반에 <b>이미 배정</b>돼 있어요 ({alreadyEnrolled.map((id) => candidates.find((c) => c.id === id)?.label ?? `반 #${id}`).join(" / ")}).
+                그래서 자동 등업하지 않았습니다. 여기서 승인하면 <b>등록이 하나 더</b> 생겨요 — 반을 바꾸는 것이면{" "}
+                <Link href={`/admin/students/${v.user_id}`} className="font-bold underline">학생 관리</Link>에서 기존 배정을 고치고 이 건은 반려로 닫아 주세요.
+              </Alert>
+            )}
             {correctionOf && (
               <Alert kind="warning" className="mb-3">
                 이 학생은 이 달 반에 <b>이미 자동 배정</b>돼 있고, 「반이 달라요」로 정정을 요청했어요. 여기서 새로 승인하지 말고{" "}
@@ -260,7 +295,15 @@ export default async function VerificationDetailPage({
               </dl>
             </section>
           )}
-          <DecisionForms verificationId={v.id} result={v.result} candidates={candidates} pickerSections={pickerSections} order={orderInfo} ocrMode={ocrMode} />
+          <DecisionForms
+            verificationId={v.id}
+            result={v.result}
+            candidates={candidates}
+            pickerSections={pickerSections}
+            order={orderInfo}
+            requested={preselected}
+            ocrMode={ocrMode}
+          />
         </div>
       </div>
     </>

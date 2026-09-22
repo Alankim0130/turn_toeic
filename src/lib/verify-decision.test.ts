@@ -132,9 +132,18 @@ describe("수강월 — 배지 `NN월 과정` 이 1순위 (2026-09-18 실물 수
     expect((d as { reason: string }).reason).toContain("2026년 9월");
   });
 
-  it("배지가 없으면 예전처럼 날짜로 본다", () => {
-    const d = decideVerification(parseReceipt(card("", "2026-08-07 16:19:02")), SEP);
+  it("배지가 없으면 수강요일 줄의 개강일 달(`[4주-MM/DD]`)로 본다", () => {
+    // 이 카드의 수강요일은 [4주-09/04] — 8월에 캡처했어도 9월 과정이다
+    expect(decideVerification(parseReceipt(card("", "2026-08-07 16:19:02")), SEP)).toEqual({ kind: "review" });
+    const aug = card("", "2026-08-07 16:19:02").replace("[4주-09/04]", "[4주-08/04]");
+    const d = decideVerification(parseReceipt(aug), SEP);
     expect(d).toMatchObject({ kind: "reject", code: "month" });
+    expect((d as { reason: string }).reason).toContain("8월 과정");
+  });
+
+  it("배지도 개강일도 못 읽었으면 캡처 날짜만으로 거절하지 않는다 (2026-09-22) — 8월 말에 캡처한 9월 수강증이 튕기지 않게", () => {
+    const noMonth = card("", "2026-08-28 16:19:02").replace("[4주-09/04] ", "");
+    expect(decideVerification(parseReceipt(noMonth), SEP)).toEqual({ kind: "review" });
   });
 });
 
