@@ -7,10 +7,12 @@ import { Reveal } from "@/components/ui/Reveal";
 import { InstallApp } from "@/components/pwa/InstallApp";
 import { MonthSchedule } from "@/components/my/MonthSchedule";
 import { AttendanceRate } from "@/components/my/AttendanceRate";
+import { ProfilePhoto } from "@/components/layout/ProfilePhoto";
 import { createClient } from "@/lib/supabase/server";
-import { effectiveRole, requireUser, ROLE_LABEL } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { cn, formatDate, formatTimeRange, MODE_LABEL, RECORDED_LABEL, TRACK_LABEL } from "@/lib/utils";
 import { initialMonth } from "@/lib/class-day";
+import { profilePhotoUrl } from "@/lib/avatar";
 import { orderPhase } from "@/lib/enrollment-window";
 import { collapseWeek5, pairKey, studentTrackLabel, type Week5Section } from "@/lib/week5";
 import { getMySchedule } from "./_lib/schedule";
@@ -99,8 +101,8 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
 
   const orders = schedule.orders;
   const name = profile?.name || user.email || "회원";
-  // 테스터가 테스트 등급을 켜 두었으면 그 등급으로 보여 준다
-  const role = effectiveRole(profile) ?? "member";
+  // 카카오·구글로 들어온 계정은 그쪽 프로필 사진이 저절로 들어온다 (없으면 이름 첫 글자 동그라미)
+  const photo = profilePhotoUrl(user.user_metadata);
   const latestVerification = verifications[0];
   const empty = orders.length === 0 && verifications.length === 0;
 
@@ -126,96 +128,93 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate">반갑습니다</p>
-          <h1 className="text-2xl font-black tracking-tight text-ink sm:text-3xl">
-            {name}
-            <span className="text-slate"> 님</span>
-          </h1>
-          {/* 종강일은 등록 현황 카드 안(등록마다)에 적는다 — 여기 칩으로도 두면 같은 날짜가 나란히 두 번 나오고,
-              왼쪽 칸이 넓어져 카드가 이름 옆에 서지 못한다 */}
-          <span className="chip mt-2">
-            <Icon name="profile" size={16} />
-            {ROLE_LABEL[role]}
-          </span>
-        </div>
+      <header className="space-y-3">
+        {/* **인사는 맨 위 한 줄, 카드는 그 아래부터** (2026-09-22 Alan). 등급 칩은 없앴다 —
+            학생에게 제 등급을 되풀이해 알려 줄 일이 없고, 한 줄이 두 줄로 늘어난다 */}
+        <h1 className="text-xl font-black tracking-tight text-ink sm:text-2xl">
+          <span className="font-semibold text-slate">반갑습니다 </span>
+          {name}
+          <span className="text-slate"> 님</span>
+        </h1>
 
-        {/* 내 등록 현황 — 이름 오른쪽 (2026-09-17 Alan 요청) */}
+        {/* 내 등록 현황 — **왼쪽에 프로필 사진** (2026-09-22 Alan). 종강일은 등록마다 카드 안에 적는다 */}
         {orders.length > 0 && (
-          <section aria-labelledby="orders-title" className="card min-w-[14rem] flex-1 p-3.5 sm:p-4 lg:max-w-sm">
-            <h2 id="orders-title" className="text-sm font-black text-ink">내 등록 현황</h2>
+          <section aria-labelledby="orders-title" className="card flex gap-3 p-3.5 sm:gap-4 sm:p-4">
+            <ProfilePhoto src={photo} name={name} />
+            <div className="min-w-0 flex-1">
+              <h2 id="orders-title" className="text-sm font-black text-ink">내 등록 현황</h2>
 
-            {live.length === 0 ? (
-              <p className="mt-2 text-sm text-slate">지금 유효한 등록이 없어요.</p>
-            ) : (
-              <ul className="mt-2 space-y-3">
-                {live.map((o) => {
-                  const phase = phaseOf(o);
-                  const preliminary = phase === "preliminary";
-                  // "N월 예비등록생" 의 N 은 기수의 달 — 개강일의 달이 아니다 (10월 기수가 9/30 에 개강할 수 있다)
-                  const termMonth = o.enrollments.find((e) => e.section?.term)?.section?.term?.month ?? monthOf(o.activates_on);
-                  return (
-                    <li key={o.id}>
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span
-                          className={cn(
-                            "rounded-full px-2.5 py-0.5 text-xs font-black",
-                            phase === "active" ? "bg-brand-500 text-white" : "bg-ink text-white",
-                          )}
-                        >
-                          {ORDER_STATUS_LABEL[phase] ?? phase}
-                        </span>
-                        <span className="ml-auto text-xs text-mist">
-                          {formatDate(o.access_until, { month: "numeric", day: "numeric" })} 종강까지 이용
-                        </span>
-                      </div>
+              {live.length === 0 ? (
+                <p className="mt-2 text-sm text-slate">지금 유효한 등록이 없어요.</p>
+              ) : (
+                <ul className="mt-2 space-y-3">
+                  {live.map((o) => {
+                    const phase = phaseOf(o);
+                    const preliminary = phase === "preliminary";
+                    // "N월 예비등록생" 의 N 은 기수의 달 — 개강일의 달이 아니다 (10월 기수가 9/30 에 개강할 수 있다)
+                    const termMonth = o.enrollments.find((e) => e.section?.term)?.section?.term?.month ?? monthOf(o.activates_on);
+                    return (
+                      <li key={o.id}>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span
+                            className={cn(
+                              "rounded-full px-2.5 py-0.5 text-xs font-black",
+                              phase === "active" ? "bg-brand-500 text-white" : "bg-ink text-white",
+                            )}
+                          >
+                            {ORDER_STATUS_LABEL[phase] ?? phase}
+                          </span>
+                          <span className="ml-auto text-xs text-mist">
+                            {formatDate(o.access_until, { month: "numeric", day: "numeric" })} 종강까지 이용
+                          </span>
+                        </div>
 
-                      <ul className="mt-1.5 space-y-1">
-                        {/* 주5일은 월수금·화목금 두 줄이 아니라 한 줄로 (2026-09-16 Alan) */}
-                        {collapseWeek5(o.enrollments, (e) => e.section, week5).map((e) =>
-                          e.section ? (
-                            <li key={e.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                              <span className="font-black text-ink">{termLabel(e.section.term)}</span>
-                              <span className="font-semibold text-ink">{e.section.course?.name ?? "강좌"}</span>
-                              <span className="rounded-full bg-ink px-2 py-0.5 text-xs font-bold text-white">
-                                {studentTrackLabel(e.section, week5, TRACK_LABEL)}
-                              </span>
-                              {e.section.start_time && e.section.end_time ? (
-                                <span className="tabular-nums text-slate">{formatTimeRange(e.section.start_time, e.section.end_time)}</span>
-                              ) : (
-                                e.section.time_block && <span className="tabular-nums text-slate">{e.section.time_block}</span>
-                              )}
-                              <span className={cn("text-xs font-bold", e.mode === "live" ? "text-brand-600" : "text-slate")}>
-                                {modeLabelOf(o.enrollments, e.mode, e.section, week5)}
-                              </span>
-                              {/* 저녁반 화목금은 인강 — 주5일이라 한 줄로 합쳐졌어도 그 트랙만 인강이다 */}
-                              {recordedTracksOf(o.enrollments, e.section, week5).map((t) => (
-                                <span key={t} className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-black text-violet-800">
-                                  {t} {RECORDED_LABEL}
+                        <ul className="mt-1.5 space-y-1">
+                          {/* 주5일은 월수금·화목금 두 줄이 아니라 한 줄로 (2026-09-16 Alan) */}
+                          {collapseWeek5(o.enrollments, (e) => e.section, week5).map((e) =>
+                            e.section ? (
+                              <li key={e.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                                <span className="font-black text-ink">{termLabel(e.section.term)}</span>
+                                <span className="font-semibold text-ink">{e.section.course?.name ?? "강좌"}</span>
+                                <span className="rounded-full bg-ink px-2 py-0.5 text-xs font-bold text-white">
+                                  {studentTrackLabel(e.section, week5, TRACK_LABEL)}
                                 </span>
-                              ))}
-                            </li>
-                          ) : null,
+                                {e.section.start_time && e.section.end_time ? (
+                                  <span className="tabular-nums text-slate">{formatTimeRange(e.section.start_time, e.section.end_time)}</span>
+                                ) : (
+                                  e.section.time_block && <span className="tabular-nums text-slate">{e.section.time_block}</span>
+                                )}
+                                <span className={cn("text-xs font-bold", e.mode === "live" ? "text-brand-600" : "text-slate")}>
+                                  {modeLabelOf(o.enrollments, e.mode, e.section, week5)}
+                                </span>
+                                {/* 저녁반 화목금은 인강 — 주5일이라 한 줄로 합쳐졌어도 그 트랙만 인강이다 */}
+                                {recordedTracksOf(o.enrollments, e.section, week5).map((t) => (
+                                  <span key={t} className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-black text-violet-800">
+                                    {t} {RECORDED_LABEL}
+                                  </span>
+                                ))}
+                              </li>
+                            ) : null,
+                          )}
+                        </ul>
+
+                        {preliminary && (
+                          <p className="mt-1.5 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs text-brand-700">
+                            <span className="font-black">{termMonth}월 예비등록생</span> · 개강일{" "}
+                            {formatDate(o.activates_on, { month: "numeric", day: "numeric" })}부터 불라방·다시보기가 열려요.
+                          </p>
                         )}
-                      </ul>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
 
-                      {preliminary && (
-                        <p className="mt-1.5 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs text-brand-700">
-                          <span className="font-black">{termMonth}월 예비등록생</span> · 개강일{" "}
-                          {formatDate(o.activates_on, { month: "numeric", day: "numeric" })}부터 불라방·다시보기가 열려요.
-                        </p>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-
-            {/* 끝난 등록은 접어 둔다 — 기록이 사라지지는 않게 달 이름만 남긴다 */}
-            {expiredTerms.length > 0 && (
-              <p className="mt-3 border-t border-line pt-2 text-xs text-mist">지난 등록 · {expiredTerms.join(" · ")}</p>
-            )}
+              {/* 끝난 등록은 접어 둔다 — 기록이 사라지지는 않게 달 이름만 남긴다 */}
+              {expiredTerms.length > 0 && (
+                <p className="mt-3 border-t border-line pt-2 text-xs text-mist">지난 등록 · {expiredTerms.join(" · ")}</p>
+              )}
+            </div>
           </section>
         )}
       </header>
