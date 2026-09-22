@@ -2097,10 +2097,6 @@ export type Database = {
         Args: { p_session_date_ids: number[]; p_url: string }
         Returns: number[]
       }
-      attendance_display: {
-        Args: never
-        Returns: Json
-      }
       attendance_scan: {
         Args: { p_method?: string; p_token: string }
         Returns: Json

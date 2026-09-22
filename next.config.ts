@@ -38,6 +38,17 @@ const nextConfig: NextConfig = {
       "./node_modules/tesseract.js-core/tesseract-core-relaxedsimd-lstm.js",
       "./node_modules/tesseract.js-core/tesseract-core*.wasm",
     ],
+    /**
+     * 출석 QR 포스터 PDF (2026-09-22) — 글꼴과 `public/` 의 그림을 서버에서 읽어 PDF 에 넣는다 (`attendance-poster-assets.ts`).
+     * `public/` 은 정적 파일로만 나가고 함수에는 실리지 않으므로 읽는 파일을 여기 적는다. 읽는 파일을 바꾸면 여기도 고친다.
+     */
+    "/admin/attendance/poster/download": [
+      "./assets/poster-fonts/*.ttf",
+      "./public/brand/logo.png",
+      "./public/brand/symbol.png",
+      "./public/posters/attendance-*.webp",
+      "./public/instructors/casual/*.png",
+    ],
   },
 
   /**

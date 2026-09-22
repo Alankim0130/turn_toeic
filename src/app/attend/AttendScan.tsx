@@ -17,7 +17,7 @@ export function AttendScan({ token }: { token: string }) {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    scanAttendance(token, "qr")
+    scanAttendance(token)
       .then(setResult)
       .catch(() => setResult({ action: "error" }));
   }, [token]);

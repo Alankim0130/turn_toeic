@@ -1,8 +1,9 @@
 /**
  * QR 출석 (2026-09-21 Alan — "출석을 범위에 넣어줘. 입실과 퇴실 다 받자! 조교에게도 명단을 열어줘").
  *
- * **판정은 DB 함수 `public.attendance_scan` 한곳이다** (마이그레이션 20260921130500) — 토큰(2분)·배정·시각을 서버가 본다.
- * 이 파일은 그 결과를 학생이 읽는 말로 바꾸고, 교실 화면의 QR 주소를 만드는 일만 한다 (순수 함수 — `attendance.test.ts`).
+ * **판정은 DB 함수 `public.attendance_scan` 한곳이다** (마이그레이션 20260921130500 · 20260922103000) — 토큰·배정·시각을 서버가 본다.
+ * QR 은 강의실 앞에 붙이는 **인쇄용 포스터 하나**다 (2026-09-22 Alan — 30초마다 바뀌던 화면 QR 과 6자리 코드는 없앴다).
+ * 이 파일은 그 결과를 학생이 읽는 말로 바꾸고, 포스터 QR 에 담을 주소를 만드는 일만 한다 (순수 함수 — `attendance.test.ts`).
  * 규칙 숫자(30분 전·7분 지각·30분 체류)는 SQL 에 있다. 안내 문구에 같은 숫자를 적었으니 바꾸면 여기도 고친다.
  */
 
@@ -48,11 +49,11 @@ export function scanView(r: ScanResult): ScanView {
     case "bad_token":
       return {
         tone: "warning",
-        title: "코드가 맞지 않아요",
-        body: "강의실 QR 을 다시 찍어 주세요. 화면 QR 이면 6자리 코드를 입력해도 돼요 (30초마다 바뀌어요). 붙어 있는 종이 QR 이 안 찍히면 선생님께 말씀해 주세요.",
+        title: "출석 QR 이 맞지 않아요",
+        body: "강의실 앞에 붙은 출석 QR 을 다시 찍어 주세요. 그래도 안 되면 QR 이 새로 바뀌기 전의 옛 종이일 수 있어요 — 선생님께 말씀해 주세요.",
       };
     case "too_many":
-      return { tone: "warning", title: "잠시 뒤 다시 해 주세요", body: "틀린 코드를 여러 번 넣어 10분 동안 잠겼어요. 강의실 화면을 보고 다시 찍어 주세요." };
+      return { tone: "warning", title: "잠시 뒤 다시 해 주세요", body: "맞지 않는 QR 을 여러 번 찍어 10분 동안 잠겼어요. 잠시 뒤 강의실 앞 출석 QR 을 찍어 주세요." };
     case "login_required":
       return { tone: "warning", title: "로그인이 필요해요", body: "로그인한 뒤 다시 찍어 주세요." };
     default:
@@ -60,7 +61,7 @@ export function scanView(r: ScanResult): ScanView {
   }
 }
 
-/** 교실 화면의 QR 이 담는 주소 — 휴대폰 기본 카메라로 찍으면 이 주소가 열린다 */
+/** 포스터 QR 이 담는 주소 — 휴대폰 기본 카메라로 찍으면 이 주소가 열린다 */
 export function attendUrl(siteUrl: string, token: string) {
   return `${siteUrl.replace(/\/+$/, "")}/attend?t=${encodeURIComponent(token)}`;
 }

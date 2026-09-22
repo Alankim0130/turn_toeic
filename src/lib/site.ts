@@ -386,7 +386,7 @@ export const NAV_DRAWER: NavSection[] = [
     label: "수업",
     items: [
       { href: "/my/class", label: "내 시간표", icon: "calendar" },
-      // 현장 수강생의 QR 출석 — 강의실 화면의 6자리 코드를 치는 곳이자 내 출석 기록 (2026-09-21)
+      // 현장 수강생의 내 출석 기록 — 찍는 것은 강의실 앞 출석 QR 포스터를 휴대폰 카메라로 (2026-09-21 · 2026-09-22 포스터 하나로)
       { href: "/my/attendance", label: "출석", icon: "location" },
       featureNav("live"),
       featureNav("replay"),

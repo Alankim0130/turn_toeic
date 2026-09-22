@@ -62,17 +62,11 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
 
   return (
     <>
-      <PageHeader icon="location" title="출석" description="강의실 QR 로 찍은 입실·퇴실이에요. 퇴실까지 찍어야 출석이고, 기기 문제 등은 사유를 적어 출석 인정으로 바꿔 주세요.">
-        <div className="flex flex-wrap gap-2">
-          <Link href="/admin/attendance/poster" className="btn-primary">
-            <Icon name="camera" size={18} />
-            QR 포스터 인쇄
-          </Link>
-          <Link href="/admin/attendance/qr" className="btn-secondary">
-            <Icon name="location" size={18} />
-            교실에 QR 띄우기
-          </Link>
-        </div>
+      <PageHeader icon="location" title="출석" description="강의실 앞 포스터 QR 로 찍은 입실·퇴실이에요. 퇴실까지 찍어야 출석이고, 기기 문제 등은 사유를 적어 출석 인정으로 바꿔 주세요.">
+        <Link href="/admin/attendance/poster" className="btn-primary">
+          <Icon name="camera" size={18} />
+          출석 QR 포스터
+        </Link>
       </PageHeader>
 
       {ok && <Alert kind="success" className="mb-4">저장했어요.</Alert>}
