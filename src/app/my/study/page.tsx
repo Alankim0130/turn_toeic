@@ -122,6 +122,7 @@ export default async function MyStudyPage() {
                     <li key={m.id} className={cn("flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center", isToday && "bg-brand-50/50")}>
                       <div className="min-w-0 flex-1">
                         <p className="font-bold text-ink">
+                          {m.seq ? `${m.seq}회차 · ` : ""}
                           {formatDate(m.date)}
                           {isToday && <span className="ml-2 rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-black text-white">오늘</span>}
                         </p>

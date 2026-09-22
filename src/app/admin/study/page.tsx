@@ -72,7 +72,7 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
   const online = kind === "online";
   const signupIds = rows.filter((r) => r.user).map((r) => r.user!.id);
   const [{ data: materialRows }, { data: checkinRows }, { data: enrollRows }] = await Promise.all([
-    online ? supabase.from("study_materials").select("id, date, title").eq("study_id", study.id).order("date", { ascending: false }) : Promise.resolve({ data: null }),
+    online ? supabase.from("study_materials").select("id, seq, date, title").eq("study_id", study.id).order("date", { ascending: false }) : Promise.resolve({ data: null }),
     online ? supabase.from("study_checkins").select("material_id, user_id, created_at, study_checkin_files(count)") : Promise.resolve({ data: null }),
     online && signupIds.length
       ? supabase

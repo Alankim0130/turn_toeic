@@ -1022,7 +1022,7 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 | 유형 (`studies.kind`) | 신청 | 운영 |
 |---|---|---|
 | 대면스터디 `offline` | 시간대(`study_slots`)를 골라 신청 | 강사가 그 달 편성 때 시간대를 정한다. 하루 2타임·3타임 등 개수 자유 |
-| 비대면스터디 `online` | 시간대 없이 신청 | 수업일마다 하루 하나씩 자료(`study_materials`). 학생은 해당 날짜부터 받아 풀고 **그 날짜에 인증**(풀이 사진, 규칙 6-2)한다 |
+| 비대면스터디 `online` | 시간대 없이 신청 | 수업일마다 하루 하나씩 자료 — **N회차 = 그 달 N번째 수업일** (아래 "비대면 자료 회차"). 학생은 그 날짜부터 받아 풀고 **그 날짜에 인증**(풀이 사진, 규칙 6-2)한다 |
 | 단어스터디 `vocab` | 대면처럼 시간대를 골라 신청 | 정해진 시간에 단어 점검 |
 
 - 스터디는 **기수(월) × 유형**당 하나. 시간대는 매달 달라지므로 코드에 두지 않고
@@ -1034,6 +1034,17 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 - 한 스터디에 신청은 1건. 시간대 변경은 같은 행의 `slot_id` 만 바꾼다. 정원(`capacity`, 선택)은
   트리거가 `applied_count` 를 조건부로 올려서 동시에 신청해도 넘지 않는다.
 - 신청자가 있는 시간대·스터디, 제출물이 있는 자료는 DB 가 삭제를 막는다 (학생 기록 보호).
+- **비대면 자료 회차** (2026-09-22 Alan — "비대면 자료올리기는 1회차, 2회차... 이렇게 설정하고 매달 강사들이 설정한 일정표에 따라 적용되면 좋겠어",
+  Alan 이 고른 것: **한 번 올리고 매달 재사용** · 회차 날짜는 **그 달 수업일 전체 순서**, 마이그레이션 20260922124700).
+  - 자료는 **회차마다 한 번** `study_material_items`(1~60회차, 스태프만 본다)에 올린다 — `/admin/study-materials`. 달마다 새로 올리지 않는다.
+  - **N회차 = 그 달(기수) N번째 수업일** — 반 편성 달력의 월수금 + 화목금 수업일을 합쳐 날짜순, 개강일~종강일 안만 (`private.term_class_days`, 앱은 `src/lib/study-rounds.ts`).
+    그 달 수업일이 18일이면 1~18회차만 쓰고 19회차 이후는 그 달엔 쉰다 (자료는 남는다).
+  - `study_materials` 는 이제 **그 달에 적용된 회차**(`seq` · `item_id`, 파일 정보를 복사)다. 강사가 직접 쓰지 않고 DB 가 채운다 —
+    자료실을 바꿀 때 · 반 편성 달력(수업일 · 개강일 · 종강일)을 바꿀 때 · 그 달 비대면스터디를 열 때 `private.sync_online_materials` 가 다시 맞춘다.
+    **끝난 달(종강일 지남)은 건드리지 않는다.** 그래서 학생 쪽 공개 규칙(날짜 도래 · 신청 · 수강 중 — RLS)·인증·강사 인증 현황은 그대로다.
+  - **학생 인증이 붙은 회차 행은 지우지 않는다** — `study_checkins` 가 on delete cascade 라 행이 지워지면 인증도 사라진다. 수업일이 줄어도 그 행은 남긴다.
+    옛 파일은 적용된 회차가 더는 가리키지 않을 때만 저장소에서 지운다 (`removeIfUnused`).
+  - 학생 화면·강사 인증 현황에는 `N회차 · 날짜` 로 보인다.
 
 ### 6-1. 특강 신청 (2026-09-16 Alan 요청)
 
@@ -1807,13 +1818,19 @@ create table study_signups (               -- 스터디 신청. 한 스터디에
   unique(study_id, user_id)
 );
 
-create table study_materials (             -- 비대면 자료. 하루 하나
+create table study_material_items (        -- 비대면 자료 회차별 공통 자료실 (20260922124700). 한 번 올리면 매달 쓴다. 스태프만 조회
+  id bigint primary key, seq int unique,     -- 1~60회차
+  title text, file_path text unique, file_name text, file_size bigint, content_type text
+);
+
+create table study_materials (             -- 그 달에 적용된 비대면 자료 회차 (DB 가 채운다 — private.sync_online_materials)
   id        bigint primary key,
   study_id  bigint references studies,
-  date      date not null,                 -- 이 날짜(KST)부터 신청자에게 공개
+  seq       int,                           -- 회차. unique(study_id, seq)
+  item_id   bigint references study_material_items on delete set null,
+  date      date not null,                 -- 그 달 seq 번째 수업일. 이 날짜(KST)부터 신청자에게 공개
   title     text,
-  file_path text unique, file_name text, file_size bigint, content_type text,
-  unique(study_id, date)
+  file_path text, file_name text, file_size bigint, content_type text   -- 자료실에서 복사 (여러 달이 같은 파일을 쓴다)
 );
 
 create table homework_submissions (        -- **정규 수업** 숙제 제출 (20260916223000 · 20260919140000)
@@ -2055,7 +2072,7 @@ where p.role='student'
 | `/admin/analytics` | 마케팅 분석 (대학·학과·성별) | instructor |
 | `/admin/study` | 스터디 신청자 명단 (월 · 유형 · 시간대별). 비대면은 **날짜별 인증 현황 + 미인증 학생에게 알림 보내기**. "시간대 설정" 버튼은 아래 전용 화면으로 | instructor · **조교** |
 | `/admin/study/plan` | **스터디 시간 설정** — 기수별 대면·단어 시간대 추가, 비대면 열기 (반 편성 아래에 있던 것을 따로 뗀 화면) | instructor |
-| `/admin/study-materials` | 비대면 자료 날짜별 등록·교체·삭제 (수업일 기준) | instructor |
+| `/admin/study-materials` | 비대면 자료 **회차별 공통 자료실** (1회차 · 2회차 … 한 번 올리면 매달 재사용) — 달 칩으로 그 달엔 몇 회차가 며칠에 열리는지 미리 본다 · 올리기·교체·삭제 | instructor |
 | `/admin/homework` | 숙제점검: **과목(= 강사, `RC · 이영수`) → 레벨** 두 줄(칸마다 미점검 건수, `전체` 칸은 없다) + `점검완료 포함` 체크박스. 강사는 자기 과목부터 본다. 목록은 **한 건이 한 줄**이고 **누르면 상세 팝업** — 사진을 `n / N` 으로 넘겨 보고(회전·원본 보기) 질문에 답하고 점검완료하면 학생 알림함으로 간다 | instructor |
 | `/admin/lc-audio` | 레벨 탭 → A반·B반 교재 2권의 표지·교재명·설명, 교재별 수업/숙제 음원 등록(강별, 한 강에 여러 개, 올리기 전 배치 확인) | instructor |
 | `/admin/contacts` | 문의 처리 | instructor |
@@ -2410,7 +2427,7 @@ where p.role='student'
 - **스터디 신청 자격**: 그 달 반에 배정된 수강생만 (예비등록생 포함). 비회원·일반 회원은 안내만 본다
 - **스터디 신청 방식**: 신청 즉시 확정(스태프 승인 없음). 유형마다 시간대 1개. 본인 취소는 '신청 받는 중'일 때만, 그 뒤엔 스태프가 명단에서 취소
 - **대면·단어 시간대**: 그 달 내내 같은 시간대(요일·장소는 안내 문구에 적는다). 정원은 선택
-- **비대면 자료**: 해당 날짜 00:00(KST)부터 공개, 날짜마다 파일 1개. 목록은 그 달 반들의 수업일(session_dates) 합집합 + 직접 고른 날짜
+- **비대면 자료**: 해당 날짜 00:00(KST)부터 공개, 회차마다 파일 1개. 회차는 한 번 올리고 매달 그 달 수업일 순서로 열린다 (규칙 6 "비대면 자료 회차", 2026-09-22 Alan 확정)
 - **숙제업로드**: **수업 날짜** × 레벨 × RC/LC 단위, 사진 최대 10장 + 질문(선택). 점검 전 / 점검완료 2단계이고 점검완료에 강사 코멘트가 붙는다 (2026-09-19 Alan).
   **비대면 스터디 인증과 섞지 않는다** — 자료·인증과는 표도 화면도 따로다
 - **LC 음원**: 지금 수강 중인 수강생은 모든 레벨·반의 교재 음원을 들을 수 있다(기본 선택만 내 레벨·이번 달 반). 페이지에서 재생, 별도 다운로드 버튼 없음.

@@ -17,7 +17,8 @@ import { missingCheckinMessage } from "@/lib/study-checkin";
  * `classes` 는 주5일을 한 줄로 합친 반 이름이고 달(`9월`)은 뺀다 — 화면 전체가 한 기수다.
  */
 export type RosterStudent = { id: string; name: string; classes: string[] };
-export type RosterMaterial = { id: number; date: string; title: string | null };
+/** 그 달에 적용된 비대면 자료 한 회차 (seq = 회차, 2026-09-22 — 자료는 회차로 한 번 올리고 매달 수업일 순서로 열린다) */
+export type RosterMaterial = { id: number; seq?: number | null; date: string; title: string | null };
 export type RosterCheckin = { material_id: number; user_id: string; created_at: string; files: number };
 
 /**
@@ -85,7 +86,7 @@ export function CheckinRoster({
   }
 
   if (materials.length === 0) {
-    return <p className="card p-6 text-center text-sm text-slate">아직 올린 자료가 없어요. 비대면 자료를 날짜별로 올리면 그 날짜의 인증 현황이 여기 나옵니다.</p>;
+    return <p className="card p-6 text-center text-sm text-slate">이 달에 들어간 자료가 없어요. 비대면 자료를 회차로 올리면 이 달 수업일마다 인증 현황이 여기 나옵니다.</p>;
   }
 
   // 한눈에 보기: 미인증이 많은 학생을 위로 (2026-09-19 Alan — "인증을 했는지 안했는지 강사모드에서 한번에 쭈욱 확인")
@@ -114,7 +115,8 @@ export function CheckinRoster({
                 <tr>
                   <th className="sticky left-0 z-10 bg-surface px-4 py-2 text-left font-bold">이름</th>
                   {materials.map((m) => (
-                    <th key={m.id} className="px-1.5 py-2 text-center font-bold tabular-nums" title={formatDate(m.date)}>
+                    <th key={m.id} className="px-1.5 py-2 text-center font-bold tabular-nums" title={`${m.seq ? `${m.seq}회차 · ` : ""}${formatDate(m.date)}`}>
+                      {m.seq && <span className="block text-[10px] font-black text-brand-600">{m.seq}회</span>}
                       {Number(m.date.slice(5, 7))}/{Number(m.date.slice(8, 10))}
                     </th>
                   ))}
@@ -192,6 +194,7 @@ export function CheckinRoster({
           <section key={m.id} className="card overflow-hidden">
             <button type="button" onClick={() => setOpenId(open ? null : m.id)} className="flex w-full flex-wrap items-center justify-between gap-2 px-5 py-3 text-left hover:bg-brand-50/40" aria-expanded={open}>
               <span className="font-black text-ink">
+                {m.seq ? `${m.seq}회차 · ` : ""}
                 {formatDate(m.date)} {m.title && <span className="ml-1 text-sm font-semibold text-slate">· {m.title}</span>}
               </span>
               {released ? (
