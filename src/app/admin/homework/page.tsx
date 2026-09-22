@@ -5,8 +5,9 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { FilterTabs } from "@/components/admin/FilterTabs";
-import { HomeworkCheckForm } from "@/components/admin/studies/HomeworkCheckForm";
-import { classDayLabel, HOMEWORK_SUBJECTS, homeworkLabel, isSubject, SUBJECT_LABEL } from "@/lib/homework";
+import { HomeworkCheckForm } from "@/components/admin/homework/HomeworkCheckForm";
+import { HomeworkPhotos } from "@/components/admin/homework/HomeworkPhotos";
+import { classDayLabel, HOMEWORK_SUBJECTS, type HomeworkSubject, homeworkLabel, isSubject, SUBJECT_LABEL } from "@/lib/homework";
 import { isImageType } from "@/lib/upload";
 import { requireStaff } from "@/lib/auth";
 
@@ -21,7 +22,7 @@ const LIMIT = 300;
 
 export default async function HomeworkAdminPage({ searchParams }: { searchParams: Promise<{ level?: string; subject?: string; status?: string }> }) {
   // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
-  await requireStaff();
+  const me = await requireStaff();
   const sp = await searchParams;
   const supabase = await createClient();
   const status = STATUS_TABS.some((t) => t.value === sp.status) ? (sp.status as string) : "submitted";
@@ -29,7 +30,17 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
   const { data: levelRows } = await supabase.from("lc_levels").select("level").order("sort_order").order("level");
   const levels = (levelRows ?? []).map((l) => l.level);
   const level = levels.includes(Number(sp.level)) ? Number(sp.level) : null;
-  const subject = sp.subject && isSubject(sp.subject) ? sp.subject : null;
+  /**
+   * **강사별로 가른다 = 과목으로 가른다** (2026-09-22 Alan 요청 "강사별로 나눌수 있게 해줘").
+   * 역전토익은 강사가 둘이고 **과목이 고정**이라(`profiles.subject`: 이혜영 lc · 이영수 rc)
+   * "강사" 축과 "과목" 축이 같은 집합이다 — 줄을 하나 더 만들면 같은 목록이 두 군데 생기므로
+   * 과목 탭에 **강사 이름을 붙이고**(`RC · 이영수`), 강사가 처음 들어오면 **자기 과목부터** 보여 준다.
+   * 이름은 DB 에서 읽는다 (작업 원칙 4 — 코드에 강사 이름을 적지 않는다). 관리자(알런)는 과목이 없어 전체부터 본다.
+   */
+  const mySubject = me.profile.subject && isSubject(me.profile.subject) ? me.profile.subject : null;
+  // 칸이 아예 없을 때만 기본값을 쓴다 — `RC · LC 전체`(?subject=all) 를 누른 것은 그대로 존중한다
+  const subject = sp.subject ? (isSubject(sp.subject) ? sp.subject : null) : mySubject;
+  const defaulted = !sp.subject && !!mySubject;
 
   // 레벨·과목 필터를 공통으로 걸고, 상태별 건수는 따로 센다 (탭 숫자용)
   const scoped = <T extends { eq: (col: string, v: string | number) => T }>(q: T) => {
@@ -49,7 +60,15 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
   );
   if (status !== "all") listQuery = listQuery.eq("status", status);
 
-  const [{ data: subs }, submitted, checked] = await Promise.all([listQuery.order("created_at", { ascending: false }).limit(LIMIT), count("submitted"), count("checked")]);
+  const [{ data: subs }, submitted, checked, { data: instructors }] = await Promise.all([
+    listQuery.order("created_at", { ascending: false }).limit(LIMIT),
+    count("submitted"),
+    count("checked"),
+    supabase.from("profiles").select("name, subject").in("subject", [...HOMEWORK_SUBJECTS]),
+  ]);
+  // 이 조회가 실패해도 탭은 그대로 뜬다 — 이름만 빠진다 (강사 가입 전에도 화면이 살아 있어야 한다)
+  const nameOf = new Map((instructors ?? []).flatMap((i) => (i.subject && i.name ? [[i.subject, i.name] as const] : [])));
+  const subjectTab = (s: HomeworkSubject) => (nameOf.get(s) ? `${SUBJECT_LABEL[s]} · ${nameOf.get(s)}` : SUBJECT_LABEL[s]);
   const list = subs ?? [];
   const counts: Record<string, number> = {
     submitted: submitted.count ?? 0,
@@ -60,7 +79,7 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
 
   return (
     <>
-      <PageHeader icon="homework" title="숙제점검" description="정규 수업 숙제입니다 (비대면 스터디 인증은 스터디 신청자 화면에 있어요). 과목 → 레벨로 훑어보고, 질문에 답하거나 코멘트를 적어 점검완료를 누르면 학생 알림함으로 갑니다." />
+      <PageHeader icon="homework" title="숙제점검" description="정규 수업 숙제입니다 (비대면 스터디 인증은 스터디 신청자 화면에 있어요). 강사(과목) → 레벨로 훑어보고, 사진을 눌러 넘겨 보면서 질문에 답하거나 코멘트를 적어 점검완료를 누르면 학생 알림함으로 갑니다." />
 
       {/* **과목이 먼저, 그 안에서 레벨** (2026-09-19 Alan — "RC와 LC가 구분되어 있고 과목안에서도 레벨까지만 구분이 되면 좋겠어").
           날짜로는 나누지 않는다 — 강사는 과목 × 레벨로 훑는다 */}
@@ -69,8 +88,14 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
         paramKey="subject"
         current={subject ?? "all"}
         keep={{ level: keep.level, status }}
-        tabs={[{ value: "all", label: "RC · LC 전체" }, ...HOMEWORK_SUBJECTS.map((s) => ({ value: s, label: SUBJECT_LABEL[s] }))]}
+        tabs={[{ value: "all", label: "RC · LC 전체" }, ...HOMEWORK_SUBJECTS.map((s) => ({ value: s, label: subjectTab(s) }))]}
       />
+      {/* 기본값으로 걸린 필터는 **말해 준다** — 안 그러면 반대 과목 숙제가 사라진 것처럼 보인다 */}
+      {defaulted && subject && (
+        <p className="-mt-3 mb-5 text-xs text-mist">
+          {subjectTab(subject)} 숙제부터 보여 주고 있어요. <b className="text-ink-soft">RC · LC 전체</b> 를 누르면 다 보입니다.
+        </p>
+      )}
       <FilterTabs
         basePath="/admin/homework"
         paramKey="level"
@@ -122,19 +147,13 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
                     </div>
                   )}
 
-                  {images.length > 0 && (
-                    <ul className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
-                      {images.map((f, i) => (
-                        <li key={f.id}>
-                          <a href={`/files/homework/${f.id}`} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl border border-line bg-surface" title={`${f.file_name} 크게 보기`}>
-                            {/* 비공개 서명 URL 로 리다이렉트되는 썸네일이라 next/image 최적화를 쓰지 않는다 */}
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={`/files/homework/${f.id}?w=400`} alt={`${s.user?.name ?? "수강생"} 숙제 사진 ${i + 1}`} loading="lazy" className="aspect-square w-full object-cover" />
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  {/* 사진은 **팝업에서 넘겨 본다** — 그전에는 링크라 새 화면이 떠서 한 장마다 뒤로 가야 했다 (2026-09-22 Alan) */}
+                  <HomeworkPhotos
+                    photos={images.map((f) => ({ id: f.id, name: f.file_name }))}
+                    student={s.user?.name || "수강생"}
+                    label={s.level != null && s.subject ? homeworkLabel(s.level, s.subject) : null}
+                    checkedNote={isChecked ? `점검완료${s.checker?.name ? ` · ${s.checker.name}` : ""}${s.checked_at ? ` · ${formatDate(s.checked_at, { month: "numeric", day: "numeric" })}` : ""} · 학생에게 알림 발송됨` : null}
+                  />
                   {others.length > 0 && (
                     <ul className="mt-3 space-y-1.5">
                       {others.map((f) => (
