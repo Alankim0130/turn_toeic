@@ -33,7 +33,13 @@ export const MAX_QUESTION = 500;
 /** 강사 코멘트 글자 수 — DB check 제약과 같다 */
 export const MAX_FEEDBACK = 1000;
 
-export const HOMEWORK_STATUS_LABEL: Record<string, string> = { submitted: "점검 대기", checked: "점검완료" };
+/**
+ * **학생 화면**의 제출 상태 한 줄 (2026-09-22 Alan — "길쭉한 카드모양에 제출함 이렇게 간단하게 나오고,
+ * 강사가 확인했다면 **강사 점검 완료! 수고하셨습니다!** 이렇게 글자가 남아있으면 좋겠어").
+ * 학생에게는 `점검 대기` 가 아니라 **`제출함`** 이다 — 낸 사람이 볼 말은 "내가 냈다" 이지 강사의 할 일이 아니다.
+ * 관리자 숙제점검의 탭 이름(`점검 대기` · `점검 완료`)은 이것과 별개다 (보는 사람이 다르다).
+ */
+export const HOMEWORK_STATUS_LABEL: Record<string, string> = { submitted: "제출함", checked: "강사 점검 완료! 수고하셨습니다!" };
 
 /**
  * 그 날 수업의 레벨들 — 달력에서 날짜를 누르면 나오는 제출 칸.
