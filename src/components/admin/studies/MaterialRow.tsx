@@ -105,9 +105,8 @@ export function MaterialRow({
             {isToday && <span className="ml-1.5 rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-black text-white">오늘</span>}
           </p>
           {date ? (
-            <p className="text-xs text-slate">
-              {monthLabel} {labelKo(date)}
-            </p>
+            // labelKo 가 이미 "9월 3일 (목)" 처럼 달을 적는다 — 앞에 달을 또 붙이지 않는다
+            <p className="text-xs text-slate">{labelKo(date)}</p>
           ) : (
             <p className="text-xs font-semibold text-mist">{monthLabel}엔 쓰지 않아요</p>
           )}
