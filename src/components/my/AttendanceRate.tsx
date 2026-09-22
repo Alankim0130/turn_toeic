@@ -36,10 +36,15 @@ export function AttendanceRate({ rows, link = true }: { rows: Row[]; link?: bool
               </span>
             </div>
             <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-1">
-              <p className="text-5xl font-black tracking-tight text-brand-600 tabular-nums">
-                {rate ?? "–"}
-                <span className="ml-0.5 text-2xl">%</span>
-              </p>
+              {rate === null ? (
+                // 끝난 수업이 없으면 숫자를 적지 않는다 — 0% 도 "–%" 도 아니다
+                <p className="text-3xl font-black tracking-tight text-mist">시작 전</p>
+              ) : (
+                <p className="text-5xl font-black tracking-tight text-brand-600 tabular-nums">
+                  {rate}
+                  <span className="ml-0.5 text-2xl">%</span>
+                </p>
+              )}
               <p className="pb-1.5 text-sm text-slate">{r.past > 0 ? `끝난 수업 ${r.past}회 중 ${r.present}회 출석` : "아직 끝난 수업이 없어요"}</p>
             </div>
 
