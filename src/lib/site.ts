@@ -309,6 +309,8 @@ export const NAV_ADMIN: NavItem[] = [
   // QR 출석 명단 · 교실 QR (2026-09-21 Alan "조교에게도 명단을 열어줘"). 학생명단 뒤에 둔다 — 조교의 첫 화면(adminHomeFor)이 바뀌지 않게
   { href: "/admin/attendance", label: "출석", icon: "location", crew: true },
   { href: "/admin/sections", label: "반 편성", icon: "calendar" },
+  // 평달·방학달 시간표 두 벌 — 반 일괄 개설 표와 랜딩이 읽는다 (2026-09-23 Alan "관리자모드에서 직접 설정"). 강사·관리자만
+  { href: "/admin/timetable", label: "시간표", icon: "timeslot" },
   { href: "/admin/lectures", label: "특강 신청", icon: "bolt" },
   { href: "/admin/verifications", label: "등업 로그", icon: "verify", crew: true },
   { href: "/admin/textbook-orders", label: "교재주문", icon: "orders", crew: true },
