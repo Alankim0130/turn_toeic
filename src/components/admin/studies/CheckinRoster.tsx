@@ -13,7 +13,7 @@ import { missingCheckinMessage } from "@/lib/study-checkin";
  *
  * 등급을 적지 않는 이유: 스터디는 **그 달 반에 배정된 수강생만** 신청할 수 있어서
  * (`private.is_term_enrollee`, 예비등록생 포함) 여기 선 사람은 전원 같은 등급이다 — 자리만 먹는다.
- * 연락처도 적지 않는다 — 바로 아래 신청자 표에 이미 있다.
+ * 연락처도 적지 않는다 — 스터디 신청자 화면 어디에도 전화번호를 두지 않는다 (2026-09-23 Alan "이 번호가 필요없다").
  * `classes` 는 주5일을 한 줄로 합친 반 이름이고 달(`9월`)은 뺀다 — 화면 전체가 한 기수다.
  */
 export type RosterStudent = { id: string; name: string; classes: string[] };
