@@ -545,13 +545,6 @@ describe("firsttoeic 사고에서 배운 것", () => {
     expect(parseReceipt(card()).brandExact).toBe(true);
   });
 
-  it("사고 4 — 다시보기권 표시: `다시보기` · 라벨이 끼어 `다시수강요일보기` · `00:00~23:59`", () => {
-    expect(parseReceipt(card(["역전토익 다시보기권"])).replayPass).toBe(true);
-    expect(parseReceipt(card(["다시", "수강요일", "보기"])).replayPass).toBe(true);
-    expect(parseReceipt(card().replace("10:00~11:00", "00:00~23:59")).replayPass).toBe(true);
-    expect(parseReceipt(card()).replayPass).toBe(false);
-  });
-
   it("라벨 뒤 잡점이 붙은 시각(`수강시간.10.00~12.10`)도 시각으로 고친다 — 날짜(`2026.09.16`)는 그대로", () => {
     expect(normalizeReceiptText("수강시간.10.00~12.10").compact).toBe("수강시간.10:00~12:10");
     expect(normalizeReceiptText("2026.09.16").compact).toBe("2026.09.16");

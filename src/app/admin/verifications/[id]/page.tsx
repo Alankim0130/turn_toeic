@@ -11,6 +11,8 @@ import { sectionSummary, termLabel } from "../../_lib/queries";
 import { DecisionForms, type Candidate, type OrderInfo } from "./DecisionForms";
 import { requireCrew } from "@/lib/auth";
 import { RETENTION_LABEL } from "@/lib/receipt-retention";
+import { BLOCKER_LABEL, type AutoApproveBlocker } from "@/lib/auto-approve";
+import { heldMonth as heldMonthOf } from "@/lib/verify-decision";
 
 export const metadata: Metadata = { title: "등업 검토", robots: { index: false } };
 
@@ -115,6 +117,14 @@ export default async function VerificationDetailPage({
       decidedBefore?: "approved" | "rejected" | null;
     };
     correctionOf?: number;
+    /** 다음 달 수강증을 받아 뒀다 — 그 달 반이 열리면 다시 맞춘다 (2026-09-22). 다시 맞춘 뒤에는 heldFor */
+    hold?: number;
+    heldFor?: number;
+    /** 긴급 스위치가 꺼져 있을 때(또는 읽지 못했을 때) 올라왔다. 켜져 있었다면 거절했을 사유는 wouldReject */
+    autoOff?: "off" | "unreadable";
+    wouldReject?: { code?: string; reason?: string };
+    /** 자동 승인을 막은 까닭 (`autoApproveBlockers`, 2026-09-22) */
+    blockers?: string[];
   } | null;
   // 자동 승인 뒤 학생이 "반이 달라요" 로 낸 정정 요청 — 새로 승인하면 등록이 두 건 생기니 기존 승인의 배정 수정으로 보낸다 (2026-09-18)
   const correctionOf = typeof matchLog?.correctionOf === "number" ? matchLog.correctionOf : null;
@@ -146,12 +156,27 @@ export default async function VerificationDetailPage({
     decidedBefore === "rejected" && v.result === null ? "강사가 전에 반려한 수강증(같은 캡처)을 다시 올렸어요 — 지난 반려 사유를 확인해 주세요." : null,
   ].filter((s): s is string => !!s);
 
+  // 기계가 왜 판정하지 않았나 — 스위치 · 받아 둔 다음 달 수강증 · 자동 승인을 막은 까닭 (2026-09-22). 위조 신호와 달리 경고가 아니라 안내다
+  const heldMonthNow = heldMonthOf(matchLog?.hold);
+  const blockerLabels = (matchLog?.blockers ?? []).flatMap((b) => (b in BLOCKER_LABEL ? [BLOCKER_LABEL[b as AutoApproveBlocker]] : []));
+  const systemNotes = [
+    matchLog?.autoOff
+      ? `자동 판정이 ${matchLog.autoOff === "off" ? "멈춰" : "읽히지 않아 멈춰"} 있어 기계가 승인도 거절도 하지 않았어요.${
+          matchLog.wouldReject?.reason ? ` 켜져 있었다면 이 사유로 자동 거절했을 거예요: “${matchLog.wouldReject.reason}”` : ""
+        }`
+      : null,
+    // 왜 자동 등업이 안 됐나 — 받아 둔 동안은 반이 없어 늘 "반 없음" 이라 적지 않는다
+    v.result === null && heldMonthOf(matchLog?.hold) == null && blockerLabels.length > 0 ? `자동 등업하지 않은 까닭: ${blockerLabels.join(" · ")}` : null,
+    heldMonthNow != null && v.result === null
+      ? `${heldMonthNow}월 수강증이라 받아 뒀어요 — 강사님이 ${heldMonthNow}월 반을 열면 저절로 다시 맞춰 예비등록생으로 배정해요. 지금은 승인할 ${heldMonthNow}월 반이 없어요.`
+      : null,
+    typeof matchLog?.heldFor === "number" && heldMonthNow == null && v.result === null
+      ? `${matchLog.heldFor}월 반이 열려 다시 맞춰 봤지만 자동으로 배정하지 못했어요 — 아래 까닭을 보고 직접 처리해 주세요.`
+      : null,
+  ].filter((s): s is string => !!s);
+
   const isImage = /\.(png|jpe?g|webp|gif)$/i.test(v.file_path);
   const parsed = v.parsed as Record<string, unknown> | null;
-  // 다시보기권처럼 등업이 아닌 상품의 표시 (2026-09-22, firsttoeic 사고 4) — 자동 승인하지 않았다
-  if (parsed?.replayPass === true) {
-    humanNotes.push("다시보기권처럼 보이는 표시(다시보기 · 00:00~23:59)가 있어요 — 등업이 아닌 상품일 수 있어요. 정규반 수강증이 맞는지 확인해 주세요.");
-  }
   // OCR 이 실패했으면 사유가 ocr_raw.error 에 있다 (2026-09-18 — 조용히 비어 있으면 원인을 알 수 없다)
   const ocrErrorRaw = (v.ocr_raw as { error?: unknown } | null)?.error;
   const ocrError = typeof ocrErrorRaw === "string" ? ocrErrorRaw : null;
@@ -265,6 +290,9 @@ export default async function VerificationDetailPage({
               </Alert>
             )}
             <h2 className="mb-3 font-black text-ink">OCR 판독 결과</h2>
+            {systemNotes.map((s) => (
+              <Alert key={s} kind="info" className="mb-3">{s}</Alert>
+            ))}
             {[...humanNotes, ...suspicious].map((s) => (
               <Alert key={s} kind="warning" className="mb-3">{s}</Alert>
             ))}

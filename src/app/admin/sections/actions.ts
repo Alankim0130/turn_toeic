@@ -2,7 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { rematchHeldVerifications } from "@/lib/rematch-held";
 import { requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import { isYmd, labelKo } from "@/components/admin/sections/dates";
@@ -290,6 +293,8 @@ export async function createSection(_prev: ActionState, formData: FormData): Pro
 
   const { error } = await supabase.from("class_sections").insert(rows);
   if (error) return { error: rlsMessage(error.code, "반을 개설하지 못했어요."), values };
+  // 모집 중인 반이 새로 열렸다 — 받아 둔 다음 달 수강증을 다시 맞춘다 (2026-09-22, `rematchHeldVerifications`)
+  if (parsed.fields.status === "open") after(() => rematchHeldVerifications(createAdminClient(), { notify: true }));
 
   revalidatePath("/admin/sections");
   revalidatePath("/admin");
@@ -313,6 +318,8 @@ export async function updateSection(_prev: ActionState, formData: FormData): Pro
   const { data, error } = await supabase.from("class_sections").update(patch).eq("id", id).select("id");
   if (error) return { error: rlsMessage(error.code), values };
   if (!data || data.length === 0) return { error: "수정 권한이 없거나 반을 찾을 수 없어요.", values };
+  // '준비 중' 이던 반을 '모집 중' 으로 열었을 수 있다 — 받아 둔 다음 달 수강증을 다시 맞춘다 (기다리는 것이 없으면 조회 한 번으로 끝난다)
+  if (patch.status === "open") after(() => rematchHeldVerifications(createAdminClient(), { notify: true }));
 
   revalidatePath(`/admin/sections/${id}`);
   revalidatePath("/admin/sections");

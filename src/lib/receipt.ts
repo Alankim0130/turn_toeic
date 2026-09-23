@@ -56,11 +56,6 @@ export type ParsedReceipt = {
    * 같은 강사가 맡은 다른 과정이나 `실전토익` 같은 비슷한 이름의 과정이 시간대만 맞아 자동으로 붙지 않게.
    */
   brandExact: boolean;
-  /**
-   * 다시보기권처럼 **등업이 아닌 상품**의 표시가 보이나 — `다시보기`(라벨이 사이에 끼어 `다시수강요일보기` 로 읽힌 것 포함) · `00:00~23:59`
-   * (2026-09-22, firsttoeic 사고 4 "다시보기권이 정규반으로 등업됐다"). 자동 승인하지 않고 승인 화면에 적는다.
-   */
-  replayPass: boolean;
   /** 5 = 주5일, 3 = 주3일, null = 못 읽음 */
   weekly: 5 | 3 | null;
   tracks: Track[];
@@ -389,15 +384,6 @@ function roomValueIsOnline(compact: string): boolean {
 }
 
 /**
- * 다시보기권 표시 (firsttoeic 사고 4 에서 배운 것). 2단 배치를 OCR 이 읽으면 라벨이 값 사이에 끼어 `다시수강요일보기` 가 되므로
- * 칸 라벨을 지운 뒤에도 한 번 더 본다. 하루 종일(`00:00~23:59`) 시간도 같은 표시다.
- */
-const CARD_FIELD_LABELS = /수강요일|수강시간|수강료|수강생|수강센터|강의실/g;
-function isReplayPass(compact: string): boolean {
-  return compact.includes("다시보기") || compact.replace(CARD_FIELD_LABELS, "").includes("다시보기") || compact.includes("00:00~23:59");
-}
-
-/**
  * OCR 원문 → 판정 키. 못 읽은 항목은 null/빈 배열로 두고 warnings 에 이유를 남긴다.
  * 후보 대조(어느 반인가)는 여기서 하지 않는다 — 반 스키마(60분/120분 반·묶음 권한)가 정해진 뒤 별도 함수로 붙인다.
  */
@@ -427,8 +413,8 @@ export function parseReceipt(raw: string): ParsedReceipt {
   const card = CARD_LABELS.every((label) => compact.includes(label));
   if (!card) warnings.push(`수강증 카드의 칸(${CARD_LABELS.join("·")})이 다 보이지 않아요`);
   const brandExact = compact.includes(RECEIPT_KEYWORDS.brand);
-  const replayPass = isReplayPass(compact);
-  if (replayPass) warnings.push("다시보기권처럼 보이는 표시(다시보기 · 00:00~23:59)가 있어요");
+  // 다시보기권 같은 "등업이 아닌 상품" 은 따로 보지 않는다 (2026-09-22 Alan "역전토익은 다시보기권 없어") —
+  // firsttoeic 사고 4 의 차단을 옮겨 왔다가 뺐다. 없는 상품을 찾으면 앱 화면의 `다시보기` 메뉴 글자가 멀쩡한 수강증의 자동 승인을 막을 뿐이다
 
   // 주5일 먼저, 그다음 트랙 글자.
   // **회차 표기가 1순위다** (2026-09-22): 주5일은 늘 `월18회`, 주3일은 늘 `월9회` 가 붙는다 — 숫자라 또렷하게 읽힌다.
@@ -491,7 +477,6 @@ export function parseReceipt(raw: string): ParsedReceipt {
     modeEvidence,
     card,
     brandExact,
-    replayPass,
     weekly,
     tracks,
     levels,

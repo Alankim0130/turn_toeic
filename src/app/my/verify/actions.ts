@@ -6,25 +6,28 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyStaff } from "@/lib/push";
 import { createHash } from "node:crypto";
-import { decideVerification, isCaptureFresh, type VerifyTerm } from "@/lib/verify-decision";
+import { decideVerification, type VerifyTerm } from "@/lib/verify-decision";
 import { todayKST } from "@/lib/utils";
 import { resolveEnrollChoice, type EnrollSection } from "@/lib/enroll-options";
 import { getOpenEnrollSections } from "../_lib/queries";
 import { parseReceipt, readEnoughFor, receiptHasName, type ParsedReceipt } from "@/lib/receipt";
 import { readReceiptText, tesseractOcr } from "@/lib/ocr";
 import { measurePalette } from "@/lib/ocr-image";
-import { paletteVerdict, type PaletteShares } from "@/lib/receipt-forensics";
+import type { PaletteShares } from "@/lib/receipt-forensics";
 import { matchSections } from "@/lib/match-sections";
 import { assignedLabels } from "@/lib/assigned-label";
 import { approveVerificationWith } from "@/lib/approve-verification";
-import type { Json } from "@/lib/supabase/database.types";
+import { receiptFlags, type FlagInput } from "@/lib/verify-flags";
+import { autoApproveBlockers } from "@/lib/auto-approve";
+import { readAutoVerify } from "@/lib/auto-verify";
 
 export type SubmitVerificationResult =
   /**
    * approved = OCR 이 반을 찾아 바로 등업했다. preliminary = 개강 전이라 예비등록생. ocrNote = 수강증을 못 읽어 강사 검토로 간 이유(학생에게 보인다).
    * assigned = 배정된 반 한 줄들 — 팝업에 "이 반으로 승인됐어요, 맞나요?" (2026-09-18 Alan)
+   * held = 다음 달 수강증이라 받아 뒀다 — 그 달 반이 열리면 다시 맞춰 배정한다 (2026-09-22 Alan). note 는 학생에게 그대로 보인다
    */
-  | { ok: true; approved?: boolean; preliminary?: boolean; ocrNote?: string; assigned?: string[] }
+  | { ok: true; approved?: boolean; preliminary?: boolean; ocrNote?: string; assigned?: string[]; held?: { month: number; note: string } }
   | { ok: false; error: string }
   | { ok: false; rejected: true; reason: string };
 
@@ -173,124 +176,20 @@ async function readReceipt(admin: Admin, filePath: string, studentName: string |
 
 /** 스태프 화면에 보여 줄 판독 결과. 원문은 ocr_raw 에 있으니 여기서는 뺀다 */
 function parsedSummary({ parsed, nameMatches }: ReadOk) {
-  const { gates, mode, modeEvidence, card, brandExact, replayPass, weekly, tracks, levels, level, courseLevel, program, times, time, months, tuition, warnings } = parsed;
+  const { gates, mode, modeEvidence, card, brandExact, weekly, tracks, levels, level, courseLevel, program, times, time, months, tuition, warnings } = parsed;
   // capturedAt 은 **중복 검사가 다시 읽는 값**이라 반드시 남긴다 (`parsed->>capturedAt`).
   // 수강월(배지 · 개강일 달)은 반 대조가 쓴 값이라 스태프가 "왜 이 달 반인가" 를 볼 수 있게 남긴다 (2026-09-22 — 예전에는 빠져 있었다)
   const { capturedOn, capturedAt, courseMonth, startMonth } = parsed;
   return {
-    gates, mode, modeEvidence, card, brandExact, replayPass, weekly, tracks, levels, level, courseLevel, program, times, time, months, courseMonth, startMonth,
+    gates, mode, modeEvidence, card, brandExact, weekly, tracks, levels, level, courseLevel, program, times, time, months, courseMonth, startMonth,
     tuition, warnings, nameMatches, capturedOn, capturedAt,
   };
 }
 
-/**
- * 자동 승인을 막는 신호들 — 승인 화면에 까닭으로 적는다. **거절하지 않는다** (진짜 학생일 수 있다).
- * 수강증만 올리기와 수동 등업신청이 **같은 검사**를 한다 (2026-09-22 — 예전에는 수동 신청에 아무 검사가 없어 그 길로 다 비껴갔다).
- */
-type VerifyFlags = {
-  duplicateImage: boolean;
-  staleCapture: boolean;
-  sameCapture: boolean;
-  paletteOff: boolean;
-  paletteNote: string;
-  palette: PaletteShares | null;
-  /** 이미 그 달(기수) 반에 배정돼 있다 — 새로 승인하면 등록이 두 건 생긴다 (2026-09-22). 배정된 반 id */
-  alreadyEnrolled: number[];
-  /**
-   * 이 학생이 **같은 캡처**(같은 파일 · 같은 초)를 전에 냈고 사람이 판정했다 (2026-09-22, firsttoeic 사고 5 "회수한 학생이 되살아났다").
-   * `approved` = 승인됐던 캡처 — 배정이 풀렸다면(환불·회수) 같은 그림으로 다시 자동 등업하면 안 된다.
-   * `rejected` = 강사가 반려한 캡처 — 사람이 안 된다고 한 그림을 기계가 다시 승인하면 안 된다.
-   * 자동 거절(`candidates.rule = "auto-reject"`)은 세지 않는다 — "다음 달 반이 열리면 다시 올려 주세요" 로 안내한 것이다.
-   */
-  decidedBefore: "approved" | "rejected" | null;
-};
-
-async function receiptFlags(admin: Admin, userId: string, read: ReadReceipt, sectionIds: readonly number[]): Promise<VerifyFlags> {
-  // 1. 같은 파일(SHA-256)을 다른 계정이 올렸다 — 돌려쓰기
-  let duplicateImage = false;
-  if (read.hash) {
-    const { count } = await admin.from("enrollment_verifications").select("id", { count: "exact", head: true }).eq("file_hash", read.hash).neq("user_id", userId);
-    duplicateImage = (count ?? 0) > 0;
-  }
+/** 올라온 수강증 한 장 → 위조 신호 검사 입력 (`receiptFlags`, 한곳에서 잰다 — `src/lib/verify-flags.ts`) */
+function flagInput(userId: string, read: ReadReceipt, sectionIds: readonly number[]): FlagInput {
   const parsed = read.ok ? read.parsed : null;
-  // 2. 캡처가 45일 넘게 오래됐다
-  const staleCapture = !!parsed && !isCaptureFresh(parsed.capturedOn, todayKST());
-
-  // 3. **같은 초에 캡처된 수강증이 다른 계정에도 있다** (2026-09-19). 수강증 맨 위 `현재시간` 은 초까지 찍히므로
-  // 두 사람이 같은 초에 각자 캡처할 수는 없다 — 한쪽이 상대의 그림을 받아 쓴 것이다.
-  // **파일 해시와 달리 글자를 고쳐도 살아남는다** (친구 수강증에 자기 이름만 얹은 경우).
-  // 지금은 훑어 세지만(수강증이 수천 건 수준) 느려지면 `parsed->>'capturedAt'` 에 인덱스를 건다.
-  // **조회가 실패하면 통과시킨다** — 근거 없이 막지 않는다. 다만 조용히 넘어가지 않게 로그는 남긴다
-  let sameCapture = false;
-  if (parsed?.capturedAt) {
-    const { count, error: dupError } = await admin
-      .from("enrollment_verifications")
-      .select("id", { count: "exact", head: true })
-      .eq("parsed->>capturedAt", parsed.capturedAt)
-      .neq("user_id", userId);
-    if (dupError) console.error(`[verify] 캡처 시각 중복을 확인하지 못했어요: ${dupError.message}`);
-    sameCapture = (count ?? 0) > 0;
-  }
-
-  // 4. **색 팔레트** — YBM 수강증 화면의 색(파란 티켓 카드 · 노란 과정 배지)이 큰 면적을 차지하는가. 못 쟀으면 판단하지 않는다.
-  // 실측: 진짜 37.8~40.0%(카톡 JPEG q70 · 1080px 축소 포함) vs 생성물·다른 사진 0.00~0.05% (`src/lib/receipt-forensics.ts`)
-  const palette = paletteVerdict(read.palette);
-
-  return {
-    duplicateImage,
-    staleCapture,
-    sameCapture,
-    paletteOff: !palette.ok,
-    paletteNote: palette.note,
-    palette: read.palette,
-    alreadyEnrolled: await enrolledInSameTerm(admin, userId, sectionIds),
-    decidedBefore: await decidedBefore(admin, userId, read.hash, parsed?.capturedAt ?? null),
-  };
-}
-
-/** 자동 거절로 남긴 기록인가 — 자동 거절은 `candidates.rule = "auto-reject"`. 예전 기록(candidates 없음)도 자동으로 본다 (막지 않는 쪽) */
-function isAutoRejected(candidates: Json | null): boolean {
-  if (!candidates || typeof candidates !== "object" || Array.isArray(candidates)) return true;
-  return (candidates as { rule?: unknown }).rule === "auto-reject";
-}
-
-/** `VerifyFlags.decidedBefore` — 같은 학생의 같은 파일 · 같은 초 캡처 중 사람이 판정한 것. 조회가 실패하면 null (막지 않는다) */
-async function decidedBefore(admin: Admin, userId: string, hash: string | null, capturedAt: string | null): Promise<VerifyFlags["decidedBefore"]> {
-  const rows: { result: string | null; candidates: Json | null }[] = [];
-  if (hash) {
-    const { data } = await admin.from("enrollment_verifications").select("result, candidates").eq("user_id", userId).eq("file_hash", hash).not("result", "is", null);
-    rows.push(...(data ?? []));
-  }
-  if (capturedAt) {
-    const { data } = await admin
-      .from("enrollment_verifications")
-      .select("result, candidates")
-      .eq("user_id", userId)
-      .eq("parsed->>capturedAt", capturedAt)
-      .not("result", "is", null);
-    rows.push(...(data ?? []));
-  }
-  if (rows.some((r) => r.result === "approved")) return "approved";
-  if (rows.some((r) => r.result === "rejected" && !isAutoRejected(r.candidates))) return "rejected";
-  return null;
-}
-
-/**
- * 이 반들과 **같은 달(기수)** 에 이미 배정된 반 (2026-09-22).
- * 자동 승인은 등록을 새로 만든다 — 이미 그 달 반에 있는 학생(같은 수강증을 다시 올림 · YBM 에서 반을 바꿈)을 자동으로 넣으면
- * 같은 반이면 승인이 실패해 까닭 없는 검토 대기가 되고, 다른 반이면 **옛 반과 새 반을 둘 다** 듣게 된다. 그래서 스태프에게 넘긴다.
- * 조회가 실패하면 빈 배열이다 (막지 않는다) — 같은 반이면 승인 단계의 중복 검사(23505)가 한 번 더 막는다.
- */
-async function enrolledInSameTerm(admin: Admin, userId: string, sectionIds: readonly number[]): Promise<number[]> {
-  if (sectionIds.length === 0) return [];
-  const { data: target } = await admin.from("class_sections").select("term_id").in("id", [...sectionIds]);
-  const termIds = new Set((target ?? []).map((s) => s.term_id));
-  if (termIds.size === 0) return [];
-  const { data: mine } = await admin
-    .from("enrollments")
-    .select("section_id, section:class_sections!enrollments_section_id_fkey(term_id)")
-    .eq("student_id", userId);
-  return (mine ?? []).flatMap((e) => (e.section_id != null && e.section && termIds.has(e.section.term_id) ? [e.section_id] : []));
+  return { userId, hash: read.hash, capturedOn: parsed?.capturedOn ?? null, capturedAt: parsed?.capturedAt ?? null, palette: read.palette, sectionIds };
 }
 
 /**
@@ -305,7 +204,7 @@ async function enrolledInSameTerm(admin: Admin, userId: string, sectionIds: read
  * **자동 승인** (2026-09-18 Alan: "반을 찾아서 자동승인까지"): 다음이 **전부** 맞을 때만 바로 등업한다 —
  *   ① 게이트 통과(우리 센터 · 역전토익) ② 수강증 `수강생` 칸 = 가입 실명 ③ 열린 반 중 레벨·과정·시간대·수강월·트랙이
  *   **딱 맞는 반이 정확히 그 수만큼**(주3일 1 · 주5일 2) 있음 (`matchSections`) ④ 수강 방식을 강의실 칸에서 **읽어서** 정함
- *   ⑤ 그 달 반에 아직 배정돼 있지 않음 ⑥ `역전토익` 글자 · 수강증 카드 칸 라벨이 보이고 다시보기권 표시가 없음
+ *   ⑤ 그 달 반에 아직 배정돼 있지 않음 ⑥ `역전토익` 글자 · 수강증 카드 칸 라벨이 보임
  *   ⑦ 같은 캡처를 전에 사람이 판정한 적 없음 (2026-09-22 ④~⑦ 추가 — ⑥⑦ 은 firsttoeic 운영 사고에서 배운 것). 하나라도 어긋나면 스태프 검토로 간다 —
  *   애매한데 넣으면 오배정이고, 오배정은 남의 반 다시보기를 열어 준다.
  * 이미지가 아니거나(PDF) OCR 이 실패하면 읽은 것이 없으니 그대로 검토 대기로 간다.
@@ -321,6 +220,12 @@ async function enrolledInSameTerm(admin: Admin, userId: string, sectionIds: read
  *
  * **학생에게는 "위조 의심" 을 말하지 않는다** — 진짜 학생에게 실례고, 위조하는 쪽에는 무엇을 고쳐야 하는지 알려 주는 꼴이다.
  * 학생 화면에는 늘 "강사가 직접 확인해 드려요" 만 나가고, 까닭은 승인 화면에만 적는다.
+ *
+ * **다음 달 수강증은 받아 둔다** (2026-09-22 Alan) — 그 달 반이 아직 없으면 거절하지 않고 `candidates.hold` 에 달을 적어 둔다.
+ * 강사가 그 달 반을 열면 `rematchHeldVerifications` 가 같은 조건으로 다시 맞춰 예비등록생으로 배정한다. 지난달 수강증은 그대로 거절한다.
+ *
+ * **긴급 스위치**(`feature_flags.verification_auto`, 2026-09-22 Alan "자동 승인 긴급 스위치")가 꺼져 있으면 자동 거절·자동 승인 둘 다 하지 않는다 —
+ * 전부 검토 대기로 가고, 켜져 있었다면 거절했을 건은 그 사유(`wouldReject`)를 승인 화면에 보여 준다. 읽지 못해도 꺼진 것으로 본다.
  */
 export async function submitVerification(input: { filePath: string }): Promise<SubmitVerificationResult> {
   const guarded = await guardUpload(String(input?.filePath ?? ""));
@@ -328,15 +233,19 @@ export async function submitVerification(input: { filePath: string }): Promise<S
   const { user, admin } = guarded;
   const filePath = String(input.filePath);
 
-  const [sections, { data: profile }] = await Promise.all([
+  const [sections, { data: profile }, auto] = await Promise.all([
     getOpenEnrollSections(),
     admin.from("profiles").select("name").eq("id", user.id).maybeSingle(),
+    // 긴급 스위치 (2026-09-22) — 꺼져 있으면(읽지 못해도) 기계가 판정하지 않는다: 자동 거절도 자동 승인도 없이 전부 검토 대기
+    readAutoVerify(admin),
   ]);
 
   const outcome = await readReceipt(admin, filePath, profile?.name ?? null);
   const read = outcome.ok ? outcome : null;
-  const decision = decideVerification(read?.parsed ?? null, openTermsOf(sections));
-  const rejected = decision.kind === "reject";
+  const decision = decideVerification(read?.parsed ?? null, openTermsOf(sections), todayKST());
+  const rejected = decision.kind === "reject" && auto.on;
+  // 다음 달 수강증인데 그 달 반이 아직 없다 — 거절하지 않고 받아 둔다. 반이 열리면 `rematchHeldVerifications` 가 다시 맞춘다
+  const held = decision.kind === "upcoming" ? decision.month : null;
 
   // 반 대조 — 거절되지 않은 것만. 기록은 자동 승인이 안 되더라도 스태프가 본다
   const match = !rejected && read ? matchSections(read.parsed, sections) : null;
@@ -344,27 +253,11 @@ export async function submitVerification(input: { filePath: string }): Promise<S
 
   // 위조·돌려쓰기 의심 신호 + 이미 그 달 반에 있는가 (2026-09-18 · 2026-09-22). 이미지만으로 위조를 가려낼 수는 없다 —
   // 근본 대책은 YBM 등록 명단 대조(CLAUDE.md 미확정 11). 여기서는 **자동 승인만 막고** 스태프에게 이유를 보여 준다.
-  const flags = rejected ? null : await receiptFlags(admin, user.id, outcome, matched?.sectionIds ?? []);
-
-  const autoApprove =
-    !!read &&
-    !!matched &&
-    !!flags &&
-    read.parsed.gates.academy &&
-    read.parsed.gates.brand &&
-    // `역전토익` 글자 그대로 · 수강증 카드의 칸 라벨 · 다시보기권 아님 (2026-09-22, firsttoeic 사고 2·3·4)
-    read.parsed.brandExact &&
-    read.parsed.card &&
-    !read.parsed.replayPass &&
-    read.nameMatches === true &&
-    // 수강 방식을 강의실 칸에서 **읽어서** 정했을 때만 — 못 읽어 기본값으로 둔 것·칸 밖 글자로 정한 것은 짐작이다 (2026-09-22)
-    (read.parsed.modeEvidence === "online" || read.parsed.modeEvidence === "room") &&
-    !flags.duplicateImage &&
-    !flags.staleCapture &&
-    !flags.sameCapture &&
-    !flags.paletteOff &&
-    flags.alreadyEnrolled.length === 0 &&
-    flags.decidedBefore === null;
+  const flags = rejected ? null : await receiptFlags(admin, flagInput(user.id, outcome, matched?.sectionIds ?? []));
+  // 자동 승인 조건은 한곳(`auto-approve.ts`) — 받아 둔 예비 접수를 다시 맞출 때도 같은 조건을 본다
+  const blockers = read && flags ? autoApproveBlockers({ parsed: read.parsed, nameMatches: read.nameMatches, flags, matched: !!matched }) : null;
+  // 받아 두는 수강증은 지금 배정하지 않는다 — 날짜로만 달을 읽은 수강증은 대조가 다른 달 반을 고를 수 있다
+  const autoApprove = auto.on && held == null && !!matched && blockers?.length === 0;
 
   const { data: inserted, error } = await admin
     .from("enrollment_verifications")
@@ -373,24 +266,35 @@ export async function submitVerification(input: { filePath: string }): Promise<S
       file_path: filePath,
       source: "auto",
       result: rejected ? "rejected" : null,
-      reject_reason: rejected ? decision.reason : null,
+      reject_reason: rejected && decision.kind === "reject" ? decision.reason : null,
       ocr_raw: outcome.ocr,
       parsed: read ? parsedSummary(read) : null,
       // OCR 이 실패해도 파일을 받았으면 남긴다 — 다음에 누가 같은 파일을 올리면 잡힌다
       file_hash: outcome.hash,
       // OCR 을 못 해 대조가 없어도 위조 신호(같은 파일 · 색)는 스태프에게 보인다.
       // 자동 거절은 표시를 남긴다 — 같은 캡처를 다시 낼 때 "강사가 반려한 것" 과 가르려고 (`decidedBefore`)
-      candidates: flags
-        ? { rule: "key-match", result: match?.result ?? null, log: match?.log ?? [], nameMatches: read?.nameMatches ?? null, flags }
-        : rejected
-          ? { rule: "auto-reject", code: decision.code }
-          : null,
+      candidates:
+        flags
+          ? {
+              rule: "key-match",
+              result: match?.result ?? null,
+              log: match?.log ?? [],
+              nameMatches: read?.nameMatches ?? null,
+              flags,
+              ...(blockers ? { blockers } : {}),
+              ...(held != null ? { hold: held } : {}),
+              // 스위치가 꺼져 있을 때 올라온 것 — 켜져 있었다면 거절했을 건은 그 사유를 스태프에게 보여 준다
+              ...(auto.on ? {} : { autoOff: auto.reason, ...(decision.kind === "reject" ? { wouldReject: { code: decision.code, reason: decision.reason } } : {}) }),
+            }
+          : decision.kind === "reject"
+            ? { rule: "auto-reject", code: decision.code }
+            : null,
     })
     .select("id")
     .single();
   if (error || !inserted) return { ok: false, error: "접수 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요." };
 
-  if (rejected) {
+  if (rejected && decision.kind === "reject") {
     done();
     return { ok: false, rejected: true, reason: decision.reason };
   }
@@ -414,6 +318,12 @@ export async function submitVerification(input: { filePath: string }): Promise<S
       };
     }
     // 승인 단계에서 막히면(이미 같은 반에 배정 등) 검토 대기로 남긴다 — 접수는 됐다
+  }
+
+  // 받아 둔 예비 접수 — 스태프에게 지금 알리지 않는다 (배정할 반이 아직 없다). 반이 열려 다시 맞출 때 한 번에 알린다
+  if (held != null && decision.kind === "upcoming") {
+    done();
+    return { ok: true, held: { month: held, note: decision.note } };
   }
 
   notifyNew(admin, user.id, false);
@@ -477,7 +387,7 @@ export async function submitManualVerification(input: {
   // 읽은 레벨·시간·이름도 함께 남아 스태프가 학생이 고른 반과 수강증을 맞대 볼 수 있다
   const outcome = await readReceipt(admin, filePath, profile?.name ?? null);
   const read = outcome.ok ? outcome : null;
-  const flags = await receiptFlags(admin, user.id, outcome, resolved.sectionIds);
+  const flags = await receiptFlags(admin, flagInput(user.id, outcome, resolved.sectionIds));
 
   const { error } = await admin.from("enrollment_verifications").insert({
     user_id: user.id,

@@ -143,4 +143,17 @@ describe("반 자동 대조", () => {
     expect(result).toEqual({ kind: "match", sectionIds: [find(SEP, "mwf", 2, "18:30~20:40"), find(SEP, "ttf", 2, "18:30~20:40")], term: "2026-09" });
     expect(parsed.mode).toBe("live");
   });
+
+  it("불라방 수강증도 수강시간으로 반을 고른다 — 시간을 못 읽으면 아무 시간 반에나 붙이지 않는다 (2026-09-22 Alan)", () => {
+    // Alan: "불라방도 시간 적용을 해야해" — 불라방은 별도 반이 아니라 같은 반의 수강 방식이라, 시간대마다 반(= 방송·강사)이 다르다
+    const live = (time: string | null) =>
+      parseReceipt(
+        ["09월 과정", "역전토익 [단과반]", "650 목표", "수강생 김민수", "수강센터 부산 서면센터", "강사 이혜영", "강의실 온라인 강의", "수강요일 [4주-09/04] 월수금 (월9회 라이브방송)", time ? `수강시간 ${time}` : ""].join("\n"),
+      );
+    const at1110 = live("11:10~12:10");
+    expect(at1110.mode).toBe("live");
+    expect(matchSections(at1110, SECTIONS).result).toEqual({ kind: "match", sectionIds: [find(SEP, "mwf", 1, "11:10~12:10")], term: "2026-09" });
+    expect(matchSections(live("18:30~19:30"), SECTIONS).result).toEqual({ kind: "match", sectionIds: [find(SEP, "mwf", 1, "18:30~19:30")], term: "2026-09" });
+    expect(matchSections(live(null), SECTIONS).result.kind).toBe("none");
+  });
 });

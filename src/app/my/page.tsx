@@ -14,6 +14,7 @@ import { cn, formatDate, formatTimeRange, MODE_LABEL, RECORDED_LABEL, TRACK_LABE
 import { initialMonth } from "@/lib/class-day";
 import { profilePhotoUrl } from "@/lib/avatar";
 import { orderPhase } from "@/lib/enrollment-window";
+import { heldMonth } from "@/lib/verify-decision";
 import { collapseWeek5, pairKey, studentTrackLabel, type Week5Section } from "@/lib/week5";
 import { getMySchedule } from "./_lib/schedule";
 import {
@@ -307,7 +308,13 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
                   <div className="text-sm">
                     <p className="font-black text-ink">{VERIFICATION_STATUS_LABEL(latestVerification.result)}</p>
                     <p className="text-slate">{formatDate(latestVerification.created_at, { year: "numeric", month: "long", day: "numeric" })} 접수</p>
-                    {latestVerification.result === null && <p className="mt-1 text-slate">확인 후 자동으로 등업됩니다. 보통 1일 이내 처리돼요.</p>}
+                    {latestVerification.result === null && (
+                      <p className="mt-1 text-slate">
+                        {heldMonth(latestVerification.hold) != null
+                          ? `${heldMonth(latestVerification.hold)}월 수강증으로 받아 뒀어요. ${heldMonth(latestVerification.hold)}월 반이 열리면 배정되고, 개강일에 수강생으로 자동 전환돼요.`
+                          : "확인 후 자동으로 등업됩니다. 보통 1일 이내 처리돼요."}
+                      </p>
+                    )}
                     {latestVerification.result === "rejected" && latestVerification.reject_reason && (
                       <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-amber-800">사유: {latestVerification.reject_reason}</p>
                     )}

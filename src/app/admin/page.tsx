@@ -39,7 +39,8 @@ export default async function AdminDashboardPage() {
       .limit(5),
     supabase.from("textbook_orders").select("id", { count: "exact", head: true }).eq("status", "requested"),
     supabase.from("profiles").select("gender, university"),
-    supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null),
+    // 받아 둔 다음 달 수강증(반 개설 대기)은 뺀다 — 그 달 반이 열려야 할 일이 생긴다 (2026-09-22)
+    supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).is("candidates->hold", null),
     supabase.from("homework_submissions").select("id", { count: "exact", head: true }).eq("status", "submitted"),
     supabase.from("contact_messages").select("id", { count: "exact", head: true }).eq("status", "new"),
     // 네이버 예약은 10분마다 예약 페이지를 확인한 칸 기록에서 읽는다 (2026-09-21 — 첫토익과 같은 방식)
