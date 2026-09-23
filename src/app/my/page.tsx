@@ -40,8 +40,9 @@ const QUICK: { href: string; label: string; desc: string; icon: IconName }[] = [
   { href: "/my/live", label: "불라방", desc: "실시간 입장", icon: "live" },
   { href: "/my/textbook", label: "교재주문", desc: "불라방 교재 배송", icon: "textbook" },
   { href: "/my/replay", label: "다시보기", desc: "종강일까지 시청", icon: "replay" },
-  { href: "/my/study", label: "내 스터디", desc: "신청 · 비대면 자료", icon: "study" },
-  { href: "/my/homework", label: "숙제업로드", desc: "풀이 사진 올리기", icon: "homework" },
+  // 두 칸은 서로 다른 일이다 — 비대면 인증은 내 스터디, 정규 수업 숙제는 숙제업로드 (2026-09-23 Alan)
+  { href: "/my/study", label: "내 스터디", desc: "신청 · 자료 · 인증", icon: "study" },
+  { href: "/my/homework", label: "숙제업로드", desc: "수업 숙제 사진", icon: "homework" },
   { href: "/my/lc-audio", label: "LC음원듣기", desc: "레벨별 음원", icon: "headphones" },
   { href: "/my/notifications", label: "알림", desc: "선생님 안내 · 수업 시작", icon: "bell" },
 ];

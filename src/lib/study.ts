@@ -20,7 +20,8 @@ export const STUDY_KIND_ICON: Record<string, IconName> = {
 
 export const STUDY_KIND_DESC: Record<string, string> = {
   offline: "강사가 정한 시간대 중 하나를 골라 학원에서 함께 공부해요.",
-  online: "수업이 있는 날마다 그날의 스터디 자료를 받아요. 풀이는 숙제업로드에 사진으로 올려 점검을 받아요.",
+  // 풀이는 내 스터디에서 인증한다 — 숙제업로드(정규 수업 숙제)와 섞지 않는다 (2026-09-23 Alan)
+  online: "수업이 있는 날마다 그날의 스터디 자료를 받아요. 풀고 나면 내 스터디에서 풀이 사진으로 인증해요.",
   vocab: "정해진 시간에 강사에게 단어 점검을 받아요. 시간대를 골라 신청하세요.",
 };
 
@@ -76,7 +77,7 @@ export function parseTermParam(term?: string | null): { y: number; m: number } |
 /** 기수 비교용 정수 (연*12 + 월) */
 export const termIndex = (t: { year: number; month: number }) => t.year * 12 + t.month;
 
-/** 스터디·자료·숙제 DB 에러 → 안내 문구 (트리거 메시지 study_slot_full / study_slot_rule 포함) */
+/** 스터디·자료·LC 음원 DB 에러 → 안내 문구 (트리거 메시지 study_slot_full / study_slot_rule 포함). 숙제업로드는 쓰지 않는다 */
 export function studyErrorMessage(error: { code?: string; message?: string } | null | undefined, fallback = "저장하지 못했어요. 잠시 후 다시 시도해 주세요.") {
   if (!error) return fallback;
   if (error.message?.includes("study_slot_full")) return "이 시간대는 정원이 찼어요. 다른 시간대를 골라 주세요.";

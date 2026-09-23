@@ -9,7 +9,6 @@ export type SignupState = { ok?: boolean; error?: string };
 function revalidateSignups() {
   revalidatePath("/study");
   revalidatePath("/my/study");
-  revalidatePath("/my/homework");
   revalidatePath("/admin/study");
   revalidatePath("/admin/sections");
 }

@@ -114,7 +114,7 @@ export default async function StudyPage() {
           </Alert>
         ) : signups.length > 0 ? (
           <Alert kind="success" title="신청한 스터디는 내 스터디에서 확인할 수 있어요">
-            비대면스터디 자료 받기도 그곳에서 이어져요. 풀이는 숙제업로드에 사진으로 올립니다.{" "}
+            비대면스터디 자료 받기와 풀이 인증도 그곳에서 해요.{" "}
             <Link href="/my/study" className="font-bold text-brand-600 hover:underline">내 스터디 →</Link>
           </Alert>
         ) : null}
@@ -212,13 +212,10 @@ export default async function StudyPage() {
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <span className="rounded-full bg-brand-500 px-2.5 py-0.5 text-xs font-black text-white">신청 완료</span>
                               <span className="flex flex-wrap gap-1">
+                                {/* 비대면 풀이는 내 스터디에서 인증한다 — 숙제업로드(정규 수업 숙제)로 보내지 않는다 (2026-09-23 Alan) */}
                                 <Link href="/my/study" className="btn-secondary !px-3 !py-1.5 text-xs">
                                   <Icon name="download" size={14} />
-                                  자료 받기
-                                </Link>
-                                <Link href="/my/homework" className="btn-secondary !px-3 !py-1.5 text-xs">
-                                  <Icon name="homework" size={14} />
-                                  숙제업로드
+                                  자료 받기 · 인증
                                 </Link>
                               </span>
                               {canAct && (
