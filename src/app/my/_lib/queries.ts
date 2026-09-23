@@ -7,7 +7,7 @@ import { fetchOpenEnrollSections } from "@/lib/open-sections";
 /** 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다. */
 
 const SECTION_COLS = `
-  id, course_id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status, book_set, recorded, live_to_replay,
+  id, course_id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status, book_set, subject, recorded, live_to_replay,
   course:courses(name, course_type, target_score, program, includes_levels),
   term:terms(year, month)
 ` as const;

@@ -25,7 +25,9 @@ export type BulkRow = {
   track: string;
   capacity: number | null;
   status: string;
-  /** LC 교재 세트 (A|B). 시간대마다 정해지고 달마다 뒤바뀐다 */
+  /** 과목 (lc|rc). 시간 단위 반마다, 트랙마다 다르고 달이 바뀌어도 그대로 (2026-09-23) */
+  subject?: string | null;
+  /** 과정 A|B. (강좌·시간대) 단위로 두 트랙이 같고 달마다 뒤바뀐다. LC 시간에는 곧 LC 교재 */
   bookSet?: string | null;
 };
 export type BulkResult = { ok: boolean; error?: string; created?: number; skipped?: number };
@@ -59,9 +61,9 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
   const sessionsOf = (t: string) => (classDates ?? []).filter((d) => d.track === t).length || 1;
   /**
    * 담당 강사는 DB 가 저절로 정한다 (2026-09-18 Alan "앞으로도 반편성과 달에 따라서 자동으로 매칭").
-   * 반이 들어가면 `class_sections` 트리거가 LC 교재(book_set)로 과목을 읽어 LC 이혜영 · RC 이영수를 넣고
-   * 묶음·스파르타 반은 비운다 (마이그레이션 20260918120000, 규칙은 lib/instructor-subject.ts 와 같다).
-   * 여기서는 **관리자가 일부러 고른 사람**만 넣는다 — 과목을 못 읽는 반(LC 교재 미지정)에만 남는다.
+   * 반이 들어가면 `class_sections` 트리거가 과목 칸(subject)으로 LC 이혜영 · RC 이영수를 넣고
+   * 묶음·스파르타 반은 비운다 (마이그레이션 20260918120000 · 20260923160000, 규칙은 lib/instructor-subject.ts 와 같다).
+   * 여기서는 **관리자가 일부러 고른 사람**만 넣는다 — 과목을 안 정한 반에만 남는다.
    * 만든 사람을 기본값으로 넣지 않는다: 2026-09-18 까지 9월 반 36개가 그래서 전부 알런이었다.
    */
   const pickedInstructor = isAdmin(profile.role) && input.instructorId ? input.instructorId : null;
@@ -87,7 +89,10 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
       (slots ?? []).some(
         (o) => o.id !== slot.id && o.level === slot.level && o.program === slot.program && o.season === slot.season && blockContains(timeBlockOf(slot.start_time, slot.end_time), timeBlockOf(o.start_time, o.end_time)),
       );
-    const bookSet = course.program !== "sparta" && !isPackage && (r.bookSet === "A" || r.bookSet === "B") ? r.bookSet : null;
+    const leafScore = course.program !== "sparta" && !isPackage;
+    const bookSet = leafScore && (r.bookSet === "A" || r.bookSet === "B") ? r.bookSet : null;
+    // 과목도 시간 단위 반에만 — 묶음·스파르타는 두 과목을 이어 듣는다. 비어 있으면 담당 강사를 정하지 않는다 (짐작하지 않는다)
+    const subject = leafScore && (r.subject === "lc" || r.subject === "rc") ? r.subject : null;
     // 점수보장반 시간대로 스파르타 반을 만들거나 그 반대가 되면 반의 시간·권한 판정이 틀어진다
     if (slot && (slot.program !== course.program || slot.level !== course.target_score)) {
       return { ok: false, error: "강좌와 맞지 않는 시간대예요. 새로고침한 뒤 다시 시도해 주세요." };
@@ -116,6 +121,7 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
       capacity,
       status: r.status,
       book_set: bookSet,
+      subject,
       // 저녁반 화목금은 인강 — 시간표가 정한다 (2026-09-17 Alan). 월수금은 그대로 현장
       recorded: !!slot?.ttf_recorded && r.track === "ttf",
       // 저녁 줄(화목금 인강이 켜진 시간대)의 불라방은 라이브만 — 오전반만 수업 뒤 다시보기로 연결한다 (2026-09-18 Alan)

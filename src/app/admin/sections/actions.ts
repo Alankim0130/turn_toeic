@@ -223,25 +223,28 @@ export async function createCourse(_prev: ActionState, formData: FormData): Prom
   return { ok: true, message: `강좌 "${values.name}" 을(를) 추가했어요.` };
 }
 
-/* ─── 반 개설 · 수정 공통 필드 (정원 · 교재 · 상태) ────────────────────────
-   수강료는 받지 않는다 (2026-09-18 Alan "수강료 부분은 다 삭제"). 컬럼(tuition · live_tuition)은 남아 있지만 화면 어디서도 채우지 않는다 */
-type SectionFields = { capacity: number | null; status: string; book_set: string | null };
+/* ─── 반 개설 · 수정 공통 필드 (정원 · 과목 · 과정 · 상태) ────────────────────
+   수강료는 받지 않는다 (2026-09-18 Alan "수강료 부분은 다 삭제"). 컬럼(tuition · live_tuition)은 남아 있지만 화면 어디서도 채우지 않는다.
+   과목(subject)·과정(book_set)은 시간 단위 반의 것이다 (2026-09-23) — 둘 다 비워 둘 수 있고, 비어 있으면 담당 강사·교재를 짐작하지 않는다 */
+type SectionFields = { capacity: number | null; status: string; book_set: string | null; subject: string | null };
 
 function parseSectionFields(formData: FormData, allowedStatus: string[]): { fields?: SectionFields; error?: string; values: Record<string, string> } {
   const values = {
     capacity: str(formData, "capacity"),
     status: str(formData, "status") || "draft",
     book_set: str(formData, "book_set"),
+    subject: str(formData, "subject"),
   };
   const capacity = toInt(values.capacity);
   if (capacity !== null && capacity < 1) return { error: "정원은 1명 이상이어야 해요.", values };
   if (!allowedStatus.includes(values.status)) return { error: "상태 값이 올바르지 않아요.", values };
 
-  // LC 교재 세트는 비워 둘 수 있다 (미지정이면 화면이 달 홀짝으로 짐작한다)
   const bookSet = values.book_set === "A" || values.book_set === "B" ? values.book_set : null;
-  if (values.book_set && !bookSet) return { error: "교재 세트는 A 또는 B 만 고를 수 있어요.", values };
+  if (values.book_set && !bookSet) return { error: "과정은 A 또는 B 만 고를 수 있어요.", values };
+  const subject = values.subject === "lc" || values.subject === "rc" ? values.subject : null;
+  if (values.subject && !subject) return { error: "과목은 LC 또는 RC 만 고를 수 있어요.", values };
 
-  return { values, fields: { capacity, status: values.status, book_set: bookSet } };
+  return { values, fields: { capacity, status: values.status, book_set: bookSet, subject } };
 }
 
 /* ─── 반 개설: 개강일·종강일·수업일은 그 달 달력에서 가져온다 ───────────── */

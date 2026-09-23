@@ -7,6 +7,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { cn, COURSE_TYPE_LABEL, TRACK_LABEL } from "@/lib/utils";
 import { blockMinutes, buildBlockTree, dashLabel, flattenBlockTree, minutesLabel, TRACKS, type BlockNode } from "@/lib/time-blocks";
+import { slotKey, type SlotDefault } from "@/lib/course-set";
 import { sectionKeyOf } from "./bulk";
 
 export type BulkSlot = { id: number; level: number; program: string; label: string };
@@ -24,8 +25,12 @@ type Row = { slot: BulkSlot | null; node: BlockNode | null; depth: number; leaf:
  * 수강료 칸은 없다 (2026-09-18 Alan "수강료 부분은 다 삭제") — 불라방은 별도 반이 아니라 같은 반의 수강 방식이다.
  *
  * 60분 반과 120분 반 (2026-09-16 Alan): 시간 단위(60분 · 70분)가 진짜 수업이고 120분 · 140분은 그 시간들을 품는 묶음 반이다.
- * 묶음 반 학생은 안에 든 시간 단위 반의 수업일·다시보기·LC 교재를 그대로 받으므로 LC 교재는 시간 단위 반에만 고른다.
+ * 묶음 반 학생은 안에 든 시간 단위 반의 수업일·다시보기·LC 교재를 그대로 받으므로 과목·과정은 시간 단위 반에만 고른다.
  * 주5일 = 같은 시간대의 월수금 + 화목금. 주5일 칸을 누르면 두 트랙이 함께 골라진다.
+ *
+ * **과목(LC/RC)과 과정(A/B)** (2026-09-23 Alan "RC도 A과정 B과정에 따라서 움직이잖아"): 시간 단위 반마다 둘 다 고른다.
+ * 과정은 (강좌·시간대) 단위라 두 트랙이 같고 달마다 뒤바뀌며, 과목은 트랙마다 다르고 달이 바뀌어도 그대로다.
+ * 지난달 편성이 있으면 `defaults` 로 미리 채워져 온다 (과목 그대로 · 과정 뒤집기, `lib/course-set.ts`) — 강사는 확인만 하고 다르면 고친다.
  */
 export function BulkCreateSections({
   termId,
@@ -35,6 +40,8 @@ export function BulkCreateSections({
   existingKeys,
   instructors,
   isAdmin,
+  defaults,
+  carryNote,
 }: {
   termId: number;
   termLabel: string;
@@ -43,11 +50,30 @@ export function BulkCreateSections({
   existingKeys: string[];
   instructors: Instructor[] | null;
   isAdmin: boolean;
+  /** 지난달 같은 자리(강좌·트랙·시간대)에서 이어받은 과목·과정 — `slotKey` 로 찾는다 */
+  defaults: Record<string, SlotDefault>;
+  /** 이어받았는지 · 왜 안 받았는지(방학달) 한 줄 */
+  carryNote: string | null;
 }) {
   const router = useRouter();
   const [common, setCommon] = useState({ capacity: "", status: "open" });
-  // LC 교재 세트는 시간 단위 · 트랙마다 정해진다 (2026-09-16 편성표) — 9월 650 은 10:00 화목금이 LC(A), 11:10 월수금이 LC(B)
-  const [bookSets, setBookSets] = useState<Record<string, string>>({});
+  // 과목·과정은 시간 단위 · 트랙마다 정해진다 — 지난달 값으로 시작한다
+  const [subjects, setSubjects] = useState<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    for (const c of courses) for (const s of slots) for (const t of TRACKS) {
+      const d = defaults[slotKey(c.id, t, s.label)];
+      if (d?.subject) out[cellKey(c.id, s.id, t)] = d.subject;
+    }
+    return out;
+  });
+  const [sets, setSets] = useState<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    for (const c of courses) for (const s of slots) for (const t of TRACKS) {
+      const d = defaults[slotKey(c.id, t, s.label)];
+      if (d?.set) out[cellKey(c.id, s.id, t)] = d.set;
+    }
+    return out;
+  });
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [instructorId, setInstructorId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -64,7 +90,6 @@ export function BulkCreateSections({
     const tree = buildBlockTree(list.map((s) => s.label), { nest: c.program === "score" });
     return flattenBlockTree(tree).map(({ node, depth }) => ({ slot: byLabel.get(node.label) ?? null, node, depth, leaf: node.parts.length === 0 }));
   };
-  const bookKey = (courseId: number, slotId: number | null, track: string) => `${courseId}:${slotId ?? 0}:${track}`;
   const isTaken = (c: BulkCourse, slot: BulkSlot | null, track: string) => existing.has(sectionKeyOf(c.id, track, slot ? slot.label : null));
 
   const toggle = (keys: string[], on: boolean) =>
@@ -94,15 +119,18 @@ export function BulkCreateSections({
     for (const c of courses) {
       for (const r of rowsOf(c)) {
         for (const t of TRACKS) {
-          if (!checked.has(cellKey(c.id, r.slot?.id ?? null, t))) continue;
+          const key = cellKey(c.id, r.slot?.id ?? null, t);
+          if (!checked.has(key)) continue;
+          // 과목·과정은 시간 단위 반에만. 묶음 반은 안에 든 반의 것을 쓰고, 스파르타 반은 함께 듣는 점수보장반의 것을 쓴다
+          const leafScore = c.program !== "sparta" && r.leaf;
           rows.push({
             courseId: c.id,
             slotId: r.slot?.id ?? null,
             track: t,
             capacity: digits(common.capacity) ? Number(digits(common.capacity)) : null,
             status: common.status,
-            // 교재는 시간 단위 반에만. 묶음 반은 안에 든 반의 교재를 쓰고, 스파르타 반은 함께 듣는 점수보장반의 교재를 쓴다
-            bookSet: c.program === "sparta" || !r.leaf ? null : bookSets[bookKey(c.id, r.slot?.id ?? null, t)] || null,
+            subject: leafScore ? subjects[key] || null : null,
+            bookSet: leafScore ? sets[key] || null : null,
           });
         }
       }
@@ -164,8 +192,8 @@ export function BulkCreateSections({
           <div className="sm:col-span-2">
             <label htmlFor="bulk-instructor" className="label !mb-1 text-xs">담당 강사 <span className="font-normal text-mist">(고른 반 전체)</span></label>
             <select id="bulk-instructor" value={instructorId} onChange={(e) => setInstructorId(e.target.value)} className="input !py-2 text-sm">
-              {/* 담당은 LC 교재로 DB 가 저절로 정한다 (2026-09-18). 고르면 과목을 못 읽는 반(교재 미지정)에만 들어간다 */}
-              <option value="">자동 — 편성표대로 (LC 교재로 과목 강사에게)</option>
+              {/* 담당은 과목으로 DB 가 저절로 정한다 (2026-09-18). 고르면 과목을 안 정한 반에만 들어간다 */}
+              <option value="">자동 — 편성표대로 (과목 강사에게)</option>
               {instructors.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.name} ({i.role === "admin" ? "관리자" : "강사"})
@@ -175,6 +203,8 @@ export function BulkCreateSections({
           </div>
         )}
       </div>
+
+      {carryNote && <Alert kind="info">{carryNote}</Alert>}
 
       <div className="space-y-4">
         {courses.map((c) => {
@@ -212,14 +242,14 @@ export function BulkCreateSections({
               </div>
 
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full min-w-[26rem] text-sm">
+                <table className="w-full min-w-[30rem] text-sm">
                   <thead>
                     <tr className="text-left text-xs text-mist">
                       <th className="py-1 font-semibold">시간대</th>
                       {TRACKS.map((t) => (
                         <th key={t} className="py-1 text-center font-semibold">
                           {TRACK_LABEL[t]}
-                          {c.program !== "sparta" && <span className="block text-[10px] font-normal">개설 · LC 교재</span>}
+                          {c.program !== "sparta" && <span className="block text-[10px] font-normal">개설 · 과목 · 과정</span>}
                         </th>
                       ))}
                       <th className="py-1 text-center font-semibold">
@@ -252,10 +282,10 @@ export function BulkCreateSections({
                           {TRACKS.map((t) => {
                             const taken = takenTracks.includes(t);
                             const key = cellKey(c.id, s?.id ?? null, t);
-                            const bKey = bookKey(c.id, s?.id ?? null, t);
+                            const name = `${c.name} ${s ? s.label : ""} ${TRACK_LABEL[t]}`;
                             return (
                               <td key={t} className="py-2 text-center">
-                                <span className="inline-flex items-center justify-center gap-2">
+                                <span className="inline-flex items-center justify-center gap-1.5">
                                   {taken ? (
                                     <span className="rounded-full bg-line px-2 py-0.5 text-[11px] font-bold text-slate">있음</span>
                                   ) : (
@@ -265,24 +295,33 @@ export function BulkCreateSections({
                                         checked={checked.has(key)}
                                         onChange={(e) => toggle([key], e.target.checked)}
                                         className="h-5 w-5 accent-brand-500"
-                                        aria-label={`${c.name} ${s ? s.label : ""} ${TRACK_LABEL[t]} 반 개설`}
+                                        aria-label={`${name} 반 개설`}
                                       />
                                     </label>
                                   )}
                                   {!taken && c.program !== "sparta" && r.leaf && (
                                     <>
-                                      <label className="sr-only" htmlFor={`book-${bKey}`}>
-                                        {c.name} {s ? s.label : ""} {TRACK_LABEL[t]} LC 교재 세트
-                                      </label>
+                                      <label className="sr-only" htmlFor={`subject-${key}`}>{name} 과목</label>
                                       <select
-                                        id={`book-${bKey}`}
-                                        value={bookSets[bKey] ?? ""}
-                                        onChange={(e) => setBookSets({ ...bookSets, [bKey]: e.target.value })}
-                                        className="input !w-[4.5rem] !px-2 !py-1 text-xs"
+                                        id={`subject-${key}`}
+                                        value={subjects[key] ?? ""}
+                                        onChange={(e) => setSubjects({ ...subjects, [key]: e.target.value })}
+                                        className="input !w-[3.9rem] !px-1.5 !py-1 text-xs"
                                       >
-                                        <option value="">교재</option>
-                                        <option value="A">A반</option>
-                                        <option value="B">B반</option>
+                                        <option value="">과목</option>
+                                        <option value="lc">LC</option>
+                                        <option value="rc">RC</option>
+                                      </select>
+                                      <label className="sr-only" htmlFor={`set-${key}`}>{name} 과정</label>
+                                      <select
+                                        id={`set-${key}`}
+                                        value={sets[key] ?? ""}
+                                        onChange={(e) => setSets({ ...sets, [key]: e.target.value })}
+                                        className="input !w-[3.9rem] !px-1.5 !py-1 text-xs"
+                                      >
+                                        <option value="">과정</option>
+                                        <option value="A">A</option>
+                                        <option value="B">B</option>
                                       </select>
                                     </>
                                   )}

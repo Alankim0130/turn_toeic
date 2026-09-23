@@ -10,7 +10,6 @@ import { SectionSelect } from "@/components/admin/replays/SectionSelect";
 import { ReplayRow } from "@/components/admin/replays/ReplayRow";
 import { sectionPackages } from "@/lib/time-blocks";
 import { SUBJECT_LABEL, subjectOf } from "@/lib/instructor-subject";
-import { groupHasBookSet, groupKeyOf } from "@/lib/section-type";
 import { replayTargets } from "@/lib/replay-targets";
 import { timeBlockOf } from "@/components/admin/sections/bulk";
 import { FilterTabs } from "@/components/admin/FilterTabs";
@@ -26,7 +25,7 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
     supabase
       .from("class_sections")
       .select(
-        "id, term_id, course_id, track, start_time, end_time, time_block, status, enrollment_opens_at, closes_at, instructor_id, book_set, recorded, course:courses(name, program, target_score, includes_levels), term:terms(year, month)",
+        "id, term_id, course_id, track, start_time, end_time, time_block, status, enrollment_opens_at, closes_at, instructor_id, book_set, subject, recorded, course:courses(name, program, target_score, includes_levels), term:terms(year, month)",
       )
       .order("id", { ascending: false })
       .limit(200),
@@ -99,14 +98,13 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
    * 그동안 화면은 묶음 반만 고른 뒤에 경고했고 스파르타 반은 아무 처리가 없어 36개가 통째로 쏟아졌다.
    * 단 **이미 녹화본이 붙은 반은 남긴다** — 목록에서 빼면 그 기록을 고치거나 지울 길이 없어진다.
    */
-  const groupHasBook = groupHasBookSet(list);
   // 고른 반은 레벨이 달라도 늘 목록에 둔다 — 안 그러면 드롭다운이 빈 값을 가리킨다
   const shown = list.filter((s) => s.id === selected?.id || (inLevel(s) && (canUpload(s) || hasReplay.has(s.id)))).sort(replayTargets.compare);
 
   const options = shown.map((s) => {
     const pkg = replayTargets.isPackage(s, packages);
-    // 과목은 반의 LC 교재가 말해 준다 (도메인 규칙 1 "담당 강사는 과목으로 저절로 정해진다")
-    const subject = subjectOf({ bookSet: s.book_set, isPackage: pkg || replayTargets.isSparta(s), groupHasBook: groupHasBook.has(groupKeyOf(s)) });
+    // 과목은 반의 과목 칸이 말해 준다 (도메인 규칙 1 "담당 강사는 과목으로 저절로 정해진다", 2026-09-23)
+    const subject = subjectOf({ subject: s.subject, isPackage: pkg || replayTargets.isSparta(s) });
     return {
       id: s.id,
       label: [

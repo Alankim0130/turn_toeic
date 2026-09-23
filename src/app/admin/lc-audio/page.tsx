@@ -29,7 +29,7 @@ export default async function LcAudioAdminPage({ searchParams }: { searchParams:
   const { data: termSections } = term
     ? await supabase
         .from("class_sections")
-        .select("track, time_block, book_set, course:courses(target_score, program)")
+        .select("track, time_block, book_set, subject, course:courses(target_score, program)")
         .eq("term_id", term.id)
         .not("book_set", "is", null)
     : { data: null };
