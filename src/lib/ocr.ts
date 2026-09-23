@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { createWorker, type Worker } from "tesseract.js";
 import type { OcrEngine, OcrResult } from "./receipt";
-import { receiptVariants } from "./ocr-image";
+import { receiptVariants, type OcrVariant } from "./ocr-image";
+import { createSerialQueue } from "./serial-queue";
 
 /**
  * 수강증 OCR 엔진 — tesseract.js (한국어, 무료 · 자체 실행).
@@ -27,13 +28,28 @@ import { receiptVariants } from "./ocr-image";
  *   기본값(현재 디렉터리)으로 두면 읽기 전용 파일 시스템이라 실패한다.
  * - 워커는 모듈 수준에서 한 번 만들어 재사용한다 (Fluid Compute 가 인스턴스를 재사용하므로 두 번째 요청부터 빠르다).
  * - `next.config.ts` 의 `serverExternalPackages` 에 넣어 번들되지 않게 한다 — 워커 스크립트를 파일 경로로 찾기 때문이다.
+ *
+ * ## 동시에 여러 장이 오면 — 줄을 세운다 (2026-09-22)
+ * 한 인스턴스가 요청 여러 개를 함께 돌리는데 워커는 한 번에 한 장만 읽는다. 예전에는 줄 선 시간까지 30초에 들어가
+ * **교실에서 여럿이 한꺼번에 올리면 뒤 사람이 시간 초과**가 났고, 시간 초과가 난 요청이 공유 워커를 죽이면
+ * **같이 기다리던 요청은 영영 끝나지 않았다**(tesseract.js 는 죽은 워커의 작업을 끝내 주지 않는다 — 실측) — 그 요청들이 30초 뒤
+ * 저마다 또 워커를 죽여 **새로 만든 워커까지 연쇄로** 죽었다. 지금은 `ocrQueue` 로 한 장씩 읽고, 30초는 **자기 차례부터** 센다.
+ * 워커를 죽이고 새로 만드는 것은 **차례를 쥔 작업 안에서만** 한다.
  */
 
 const LANG = "kor";
-/** 이미지 한 장에 이보다 오래 걸리면 포기하고 스태프 검토로 보낸다 */
+/** 이미지 한 장을 읽는 데 이보다 오래 걸리면 포기하고 스태프 검토로 보낸다. **자기 차례가 온 뒤부터** 센다 */
 const TIMEOUT_MS = 30_000;
+/**
+ * 앞 사람 수강증을 읽는 동안 이만큼까지 기다린다 (넘으면 `ocr_busy` 로 스태프 검토).
+ * 기다림 20초 + 읽기 30초 = 50초 — 페이지 함수 제한 60초(`src/app/my/verify/page.tsx` 의 maxDuration) 안에 답을 돌려준다.
+ */
+const QUEUE_WAIT_MS = 20_000;
 
-let workerPromise: Promise<Worker> | null = null;
+const ocrQueue = createSerialQueue();
+
+/** 지금 쓰는 워커. `ready` = 준비(언어 데이터·초기화)까지 끝났나 — 준비 중에 버린 워커는 스레드가 남는다 */
+let slot: { promise: Promise<Worker>; ready: boolean } | null = null;
 
 /**
  * 언어 데이터(`kor.traineddata`, 2.2MB)를 둘 곳.
@@ -62,8 +78,10 @@ let failedAt = 0;
  * 메인 스레드에 그냥 던져(uncaught exception) 함수 전체가 죽는다.
  */
 function getWorker(): Promise<Worker> {
-  if (!workerPromise && Date.now() - failedAt < RETRY_AFTER_MS) return Promise.reject(new Error("ocr_cooldown"));
-  workerPromise ??= new Promise<Worker>((resolve, reject) => {
+  if (slot) return slot.promise;
+  if (Date.now() - failedAt < RETRY_AFTER_MS) return Promise.reject(new Error("ocr_cooldown"));
+  const current = { ready: false } as { promise: Promise<Worker>; ready: boolean };
+  current.promise = new Promise<Worker>((resolve, reject) => {
     let settled = false;
     const fail = (err: unknown) => {
       if (settled) return;
@@ -81,22 +99,26 @@ function getWorker(): Promise<Worker> {
     }).then((worker) => {
       if (settled) return void worker.terminate();
       settled = true;
+      current.ready = true;
       resolve(worker);
     }, fail);
   });
-  return workerPromise;
+  slot = current;
+  return current.promise;
 }
 
-/** 실패한 워커를 붙들고 있으면 다음 요청도 같이 죽는다 — 버리고 다음에 새로 만든다 */
-async function resetWorker() {
-  const pending = workerPromise;
-  workerPromise = null;
-  try {
-    const worker = await pending;
-    await worker?.terminate();
-  } catch {
-    /* 이미 망가진 워커다 */
-  }
+/**
+ * 실패한 워커를 붙들고 있으면 다음 요청도 같이 죽는다 — 버리고 다음에 새로 만든다.
+ * **`ocrQueue` 차례를 쥔 작업 안에서만 부른다** — 그래야 이 워커를 쓰는 다른 요청이 없다.
+ * 워커가 끝나기를 **기다리지 않는다**: 만들다 멈춘 워커는 영영 끝나지 않을 수 있어서, 기다리면 줄 전체가 멈춘다.
+ */
+function resetWorker() {
+  const old = slot;
+  slot = null;
+  if (!old) return;
+  // 준비도 못 끝낸 워커는 스레드를 손에 쥐지 못해 남는다 — 잠시 새로 만들지 않는다 (요청마다 스레드가 쌓이지 않게)
+  if (!old.ready) failedAt = Date.now();
+  old.promise.then((w) => w.terminate(), () => {}).catch(() => {});
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -114,32 +136,43 @@ export function ocrSupports(mimeType: string | null | undefined, filePath?: stri
   return /\.(jpe?g|png|webp|bmp)$/i.test(filePath ?? "");
 }
 
+/** 흑백 변형 여러 장을 읽어 원문을 이어 붙인다 (`receiptVariants` 참고 — 컬러 원본은 파란 카드를 통째로 놓친다) */
+async function recognizeVariants(variants: OcrVariant[], enough?: (text: string) => boolean): Promise<OcrResult> {
+  const worker = await getWorker();
+  const texts: string[] = [];
+  const used: string[] = [];
+  let confidence = 0;
+  for (const v of variants) {
+    const { data } = await worker.recognize(v.bytes);
+    texts.push(data.text);
+    used.push(v.name);
+    confidence = Math.max(confidence, data.confidence);
+    // 판정 키가 다 나왔으면 남은(더 느린) 변형은 건너뛴다 — 변형 순서는 receiptVariants 가 싼 것부터 둔다
+    if (enough?.(texts.join("\n"))) break;
+  }
+  return { text: texts.join("\n"), engine: `tesseract.js/${LANG}`, raw: { confidence, variants: used } };
+}
+
 export const tesseractOcr: OcrEngine = {
   name: `tesseract.js/${LANG}`,
-  /**
-   * 흑백 변형 여러 장을 읽어 원문을 이어 붙인다 (`receiptVariants` 참고 — 컬러 원본은 파란 카드를 통째로 놓친다).
-   * 전처리가 실패하면(깨진 파일 등) 원본 한 장으로 돈다.
-   */
   async recognize({ bytes, enough }): Promise<OcrResult> {
-    const worker = await getWorker();
-    let variants: { name: string; bytes: Buffer }[];
+    // 전처리는 줄 밖에서 한다 (워커를 쓰지 않는다). **실패하면 원본을 그대로 읽지 않는다** (2026-09-22) —
+    // 픽셀 상한(4,000만)을 넘는 그림도 여기서 실패하는데, 예전처럼 원본을 워커에 넘기면 상한이 무력해진다
+    // (작은 파일이 거대한 픽셀로 풀리는 폭탄이 워커 메모리를 태운다). sharp 가 못 여는 그림은 tesseract 도 못 읽는다
+    let variants: OcrVariant[];
     try {
       variants = await receiptVariants(bytes);
-    } catch {
-      variants = [{ name: "original", bytes: Buffer.from(bytes) }];
+    } catch (err) {
+      throw new Error(`image_unreadable: ${err instanceof Error ? err.message : String(err)}`);
     }
-    const texts: string[] = [];
-    const used: string[] = [];
-    let confidence = 0;
-    for (const v of variants) {
-      const { data } = await worker.recognize(v.bytes);
-      texts.push(data.text);
-      used.push(v.name);
-      confidence = Math.max(confidence, data.confidence);
-      // 판정 키가 다 나왔으면 남은(더 느린) 변형은 건너뛴다 — 변형 순서는 receiptVariants 가 싼 것부터 둔다
-      if (enough?.(texts.join("\n"))) break;
-    }
-    return { text: texts.join("\n"), engine: `tesseract.js/${LANG}`, raw: { confidence, variants: used } };
+    return ocrQueue(async () => {
+      try {
+        return await withTimeout(recognizeVariants(variants, enough), TIMEOUT_MS);
+      } catch (err) {
+        resetWorker(); // 차례를 쥐고 있다 — 이 워커를 쓰는 다른 요청은 없다
+        throw err;
+      }
+    }, QUEUE_WAIT_MS);
   },
 };
 
@@ -161,14 +194,26 @@ export async function readReceiptText(input: {
   if (!ocrSupports(input.mimeType, input.filePath)) return { ok: false, reason: "not_image" };
   const started = Date.now();
   try {
-    const result = await withTimeout(tesseractOcr.recognize({ bytes: input.bytes, mimeType: input.mimeType ?? "", enough: input.enough }), TIMEOUT_MS);
+    const result = await tesseractOcr.recognize({ bytes: input.bytes, mimeType: input.mimeType ?? "", enough: input.enough });
     const used = (result.raw as { variants?: string[] } | undefined)?.variants?.join("+") ?? "?";
     console.log(`[ocr] ${result.text.replace(/\s+/g, "").length}자 읽음, ${Date.now() - started}ms (${used})`);
     return { ok: true, result };
   } catch (err) {
+    // 워커는 여기서 버리지 않는다 — 버릴 워커는 차례를 쥔 작업이 이미 버렸다. `ocr_busy`(줄이 길다)·`image_unreadable` 은 워커 잘못이 아니다
     const reason = err instanceof Error ? err.message : String(err);
     console.error(`[ocr] 수강증을 읽지 못했어요 (${Date.now() - started}ms): ${reason}`);
-    await resetWorker();
     return { ok: false, reason: reason.slice(0, 200) };
   }
+}
+
+/**
+ * 워커를 끝낸다 — 테스트가 끝날 때 쓴다 (워커 스레드가 남아 프로세스가 끝나지 않는 일을 막는다).
+ * 줄을 거쳐 **도는 작업이 끝난 뒤에** 끝낸다.
+ */
+export async function closeOcrWorker(): Promise<void> {
+  await ocrQueue(async () => {
+    const old = slot;
+    slot = null;
+    if (old) await withTimeout(old.promise.then((w) => w.terminate()), 5_000).catch(() => {});
+  }, 120_000).catch(() => {});
 }

@@ -279,10 +279,12 @@ describe("실물 수강증 OCR 특성 (2026-09-18 역전토익 8월 수강증)",
     const p = parseReceipt(screen(["역저토익 [종합반]", "650 목표", "수강센터 부산 서면센터", "강사 이영수 .이혜영", "수강요일 주5일 (월18회)", "수강시간 10:00~12:10"].join("\n")));
     expect(p.gates.brand).toBe(true);
   });
-  it("현재시간 줄의 공백이 빠져도(2026-08-0716:19:02) 달을 읽는다", () => {
+  it("현재시간 줄의 공백이 빠져도(2026-08-0716:19:02) 캡처 날짜와 배지 달을 읽는다", () => {
     const p = parseReceipt("현재시간 2026-08-0716:19:02\n08월 과정\n역전토익 [종합반]\n650 목표\n수강센터 부산 서면센터");
-    expect(p.months).toEqual([{ year: 2026, month: 8 }]);
+    expect(p.capturedOn).toBe("2026-08-07");
     expect(p.courseMonth).toBe(8);
+    // 캡처 시각은 수강 날짜(months)에 넣지 않는다 (2026-09-22) — 캡처한 날은 수강월이 아니다
+    expect(p.months).toEqual([]);
   });
 });
 
@@ -339,5 +341,212 @@ describe("캡처 시각 (현재시간 줄)", () => {
   it("현재시간 라벨을 못 읽으면 날짜는 살아도 시각은 안 쓴다 — 엉뚱한 숫자를 시각으로 읽지 않는다", () => {
     expect(parseReceipt("허재시간 2026-09-02 19:27:43").capturedOn).toBe("2026-09-02");
     expect(parseReceipt("허재시간 2026-09-02 19:27:43").capturedAt).toBeNull();
+  });
+});
+
+/**
+ * 2026-09-22 오류 점검에서 재현한 것들 — 전부 **자동 승인이 엉뚱한 반을 고르거나, 위조 신호가 조용히 꺼지는** 경우다.
+ * 아래 `real` 은 실물 8월 수강증을 **폭 700 변형 하나로** 읽은 원문 그대로다 (이름 칸은 가려져 있다).
+ * 운영은 이 변형 하나로 판정 키가 다 나오면 나머지 변형을 읽지 않는다 (`receiptComplete`).
+ */
+describe("오류 점검 (2026-09-22)", () => {
+  const real = [
+    "419                      1 에 33",
+    "매  와이비엠",
+    "ㄴ          수강증",
+    "현재산 2026-08-07 16:19:02",
+    "08월 과정",
+    "역전토익 [종합반]",
+    "650 목표",
+    "수강생",
+    "수강센터 부산 서면센터",
+    "강사 _ 이영수 .이혜영",
+    "레벨   650+",
+    "강의실 _ 온라인 강의",
+    "이 나주-98704]주5일 (월18회 라이",
+    "、 . 、 브방송)",
+    "수강시간 10:00~12:10",
+    "수강료  264,000원",
+    "전체뉴 _ 08출석 _ 수강신청 _ 마이페이지 ㆍ 최근본강의",
+  ].join("\n");
+
+  it("폭 700 판독에서 `현재시간` 이 `현재산` 으로 뭉개져도 캡처 시각을 초까지 읽는다 — 같은 초 캡처 검사가 여기에 달렸다", () => {
+    const p = parseReceipt(real);
+    expect(p.capturedAt).toBe("2026-08-07T16:19:02");
+    expect(p.capturedOn).toBe("2026-08-07");
+  });
+
+  it("그 변형 하나로 멈춰도(receiptComplete) 캡처 시각·수강 방식 근거가 이미 들어 있다", () => {
+    expect(receiptComplete(real)).toBe(true);
+    const p = parseReceipt(real);
+    expect(p.modeEvidence).toBe("online");
+    expect(p.mode).toBe("live");
+  });
+
+  it("캡처 시각을 못 읽었으면 멈추지 않는다 — 뒤 변형이 읽을 기회를 준다", () => {
+    expect(receiptComplete(real.replace("현재산 2026-08-07 16:19:02", "현재산 2026-08-07"))).toBe(false);
+  });
+
+  it("금액의 세 자리 묶음은 레벨이 아니다 — 750 수강증이 `650,000원` 때문에 650 반에 붙을 뻔했다", () => {
+    const p = parseReceipt(real.replace("650 목표", "750 목표").replace("650+", "750+").replace("264,000원", "650,000원"));
+    expect(p.levels).toEqual([750]);
+    expect(p.level).toBe(750);
+    expect(parseReceipt("850 목표\n수강료 1,850,000원").levels).toEqual([850]);
+    expect(parseReceipt("750 목표\n교재 650원").levels).toEqual([750]);
+    expect(parseReceipt("레벨 .650+").levels).toEqual([650]); // OCR 잡점은 막지 않는다
+  });
+
+  describe("주5일 — 회차(월18회/월9회)가 먼저, `주5일` 은 숫자 5 가 있어야", () => {
+    const 주3일 = screen(["역전토익 [종합반]", "650 목표", "수강센터 부산 서면센터", "강의실 본관 701호", "수강요일 [4주-09/04] 월수금 (월9회)", "수강시간 10:00~11:00"].join("\n"));
+    it("화면에 섞인 날짜 `25일` · `9월 5일` · `D-5일` 이나 `일주일` 이 주3일을 주5일로 바꾸지 않는다", () => {
+      for (const noise of ["카톡 9월 25일 모임", "9월 5일", "시험 D-5일", "일주일 남음"]) {
+        const p = parseReceipt(`${주3일}\n${noise}`);
+        expect(p.weekly, noise).toBe(3);
+        expect(p.tracks, noise).toEqual(["mwf"]);
+      }
+    });
+    it("회차를 못 읽었을 때도 `5일` 만으로는 주5일이 아니다 — `주5` 가 있어야 한다", () => {
+      const noCount = 주3일.replace(" (월9회)", "");
+      expect(parseReceipt(`${noCount}\n9월 25일`).weekly).toBe(3);
+      expect(parseReceipt(noCount.replace("월수금", "주5일")).weekly).toBe(5);
+      expect(parseReceipt(noCount.replace("월수금", "주3일")).weekly).toBeNull();
+    });
+    it("월18회와 월9회가 함께 읽히면 정하지 않는다 (자동 승인 안 함)", () => {
+      const p = parseReceipt(주3일.replace("(월9회)", "(월9회) 주5일 (월18회)"));
+      expect(p.weekly).toBeNull();
+      expect(p.warnings.some((w) => w.includes("함께"))).toBe(true);
+    });
+  });
+
+  describe("G3 이름 — `수강생` 칸의 값만 본다", () => {
+    const named = (name: string) => real.replace("수강생", `수강생 _ ${name}`);
+    it("실물 판독 모양(`수강생 _ 김민수`)을 읽는다 — 줄 끝 찌꺼기는 떼고", () => {
+      expect(receiptHasName(named("김민수"), "김민수")).toBe(true);
+      expect(receiptHasName(named("김민수 |"), "김민수")).toBe(true);
+      expect(receiptHasName(named("김민수"), "김 민수")).toBe(true);
+      expect(receiptHasName(named("김민수"), "김민주")).toBe(false);
+    });
+    it("강사 줄의 `이영수 .이혜영` 은 학생 이름이 아니다 — 이혜영·이영수·이영 학생이 남의 수강증으로 통과하지 않는다", () => {
+      expect(receiptHasName(named("김민수"), "이혜영")).toBe(false);
+      expect(receiptHasName(named("김민수"), "이영수")).toBe(false);
+      expect(receiptHasName(named("김민수"), "이영")).toBe(false);
+      expect(receiptHasName(named("이혜영"), "이혜영")).toBe(true); // 진짜 이혜영 학생은 통과
+    });
+    it("화면 고정 글자(`최근본강의` · `수강신청`)도 이름이 아니다", () => {
+      expect(receiptHasName(named("김민수"), "최근")).toBe(false);
+      expect(receiptHasName(named("김민수"), "신청")).toBe(false);
+      expect(receiptHasName(named("최근"), "최근")).toBe(true);
+    });
+    it("값이 다음 줄로 내려가도 읽고, 다음 줄이 다른 라벨이면 값이 아니다", () => {
+      expect(receiptHasName("수강생\n김민수\n수강센터 부산 서면센터", "김민수")).toBe(true);
+      expect(receiptHasName("수강생\n수강센터 부산 서면센터", "부산서면센터")).toBe(false);
+      expect(receiptHasName("김민수\n수강센터 부산 서면센터", "김민수")).toBe(false); // 라벨이 없으면 통과시키지 않는다
+    });
+    it("값 뒤에 다음 칸 라벨이 한 줄로 붙어 읽혀도 이름까지만 본다 — 앞부분만 같은 남의 이름은 통과하지 않는다", () => {
+      expect(receiptHasName("수강생 김민수 수강센터 부산 서면센터", "김민수")).toBe(true);
+      expect(receiptHasName("수강생 김민수 수강센터 부산 서면센터", "김민")).toBe(false);
+    });
+    it("영문 이름은 대소문자·공백을 무시한다", () => {
+      expect(receiptHasName("수강생 John Smith", "john smith")).toBe(true);
+    });
+  });
+
+  it("점 날짜(2026.09.16)를 시각으로 오인해 망가뜨리지 않는다", () => {
+    expect(normalizeReceiptText("수강기간 2026.09.16").text).toBe("수강기간 2026.09.16");
+    const p = parseReceipt("현재시간 2026.09.16 19:27:43\n수강기간 2026.10.07");
+    expect(p.capturedOn).toBe("2026-09-16");
+    expect(p.capturedAt).toBe("2026-09-16T19:27:43");
+    expect(p.months).toEqual([{ year: 2026, month: 10 }]); // 캡처 시각은 빼고
+    expect(normalizeReceiptText("10.00 - 12.10").compact).toBe("10:00~12:10"); // 시각은 여전히 고친다
+  });
+
+  it("수강요일 줄 `[4주-09/04]` 의 개강일 달 — 배지를 못 읽었을 때 쓴다", () => {
+    expect(parseReceipt("수강요일 [4주-09/04] 월수금 (월9회)").startMonth).toBe(9);
+    expect(parseReceipt("수강요일 [4주-10.07] 주5일").startMonth).toBe(10);
+    expect(parseReceipt(real).startMonth).toBeNull(); // 폭 700 판독은 `나주-98704]` 로 깨졌다 — 엉뚱한 달을 만들지 않는다
+    expect(parseReceipt("12/25 모임").startMonth).toBeNull();
+  });
+
+  it("수강 방식의 근거 — 온라인 강의 · 호실 · 라이브방송 · 없음", () => {
+    const base = ["역전토익 [종합반]", "650 목표", "수강센터 부산 서면센터", "수강요일 [4주-09/04] 월수금 (월9회)"];
+    expect(parseReceipt([...base, "강의실 온라인 강의"].join("\n")).modeEvidence).toBe("online");
+    expect(parseReceipt([...base, "강의실 본관 701호"].join("\n")).modeEvidence).toBe("room");
+    expect(parseReceipt([...base.slice(0, 3), "수강요일 월수금 (월9회 라이브방송)"].join("\n")).modeEvidence).toBe("live");
+    const none = parseReceipt(base.join("\n"));
+    expect(none.modeEvidence).toBeNull();
+    expect(none.mode).toBe("onsite");
+  });
+
+  it("과정명 레벨(중급속성 = 650)을 따로 돌려준다 — 숫자와 다르면 대조가 멈춘다", () => {
+    const p = parseReceipt(screen(["역전토익 [프리미어반]", "750 목표 중급속성", "수강센터 부산 서면센터", "수강요일 주5일 (월18회) 프리미어반", "수강시간 10:00~13:40"].join("\n")));
+    expect(p.level).toBe(750);
+    expect(p.courseLevel).toBe(650);
+  });
+});
+
+/**
+ * firsttoeic 운영에서 겪은 사고를 처음부터 막는다 (2026-09-22 Alan 이 운영 명세를 공유).
+ * 같은 YBM 앱 수강증이라 글자(과정명·강사·시간표)만 다르고 사고의 모양은 같다.
+ */
+describe("firsttoeic 사고에서 배운 것", () => {
+  const card = (extra: string[] = []) =>
+    screen(
+      [
+        ...extra,
+        "역전토익 [종합반]",
+        "650 목표",
+        "수강생 김민수",
+        "수강센터 부산 서면센터",
+        "강사 이혜영",
+        "강의실 본관 701호",
+        "수강요일 [4주-09/04] 월수금 (월9회)",
+        "수강시간 10:00~11:00",
+        "수강료 298,300원",
+      ].join("\n"),
+    );
+
+  it("사고 2 — 카드 밖 글자(배너)의 시간이 먼저 나와도 수강시간 칸의 값을 쓴다", () => {
+    const p = parseReceipt(card(["[광고] 저녁반 모집 18:30~20:40"]));
+    expect(p.time?.timeBlock).toBe("10:00~11:00");
+  });
+
+  it("사고 2 — 수강시간 칸을 못 읽었는데 시간이 여럿이면 고르지 않는다 (자동 승인 안 됨)", () => {
+    const p = parseReceipt(card(["[광고] 저녁반 모집 18:30~20:40"]).replace("수강시간 10:00~11:00", "10:00~11:00"));
+    expect(p.time).toBeNull();
+    expect(p.warnings.some((w) => w.includes("여러 개"))).toBe(true);
+    // 시간이 하나뿐이면 라벨이 없어도 그것이다
+    expect(parseReceipt(card().replace("수강시간 10:00~11:00", "10:00~11:00")).time?.timeBlock).toBe("10:00~11:00");
+  });
+
+  it("사고 2 — 배너의 `온라인 강의` 글자가 현장 학생(강의실 호실)을 불라방으로 바꾸지 못한다", () => {
+    const p = parseReceipt(card(["온라인 강의 무료체험 · 라이브방송 오픈"]));
+    expect(p.mode).toBe("onsite");
+    expect(p.modeEvidence).toBe("room");
+  });
+
+  it("사고 2 — 강의실 칸을 못 읽었으면 칸 밖 글자로 정하되 근거는 `live`(자동 승인 안 됨)", () => {
+    const p = parseReceipt(card(["온라인 강의 무료체험"]).replace("강의실 본관 701호\n", ""));
+    expect(p.mode).toBe("live");
+    expect(p.modeEvidence).toBe("live");
+    expect(receiptComplete(p.text)).toBe(false);
+  });
+
+  it("사고 2 — 카드 칸 라벨(수강생·수강센터·수강시간)이 다 있어야 카드다", () => {
+    expect(parseReceipt(card()).card).toBe(true);
+    expect(parseReceipt(card().replace("수강시간 ", "")).card).toBe(false);
+    expect(parseReceipt("역전토익 650+ 주5일 월18회 10:00~12:10 부산 서면센터").card).toBe(false); // 배너만 찍은 화면
+  });
+
+  it("사고 3 — `역전토익` 글자를 그대로 읽어야 자동 승인 후보다 (강사명·한 글자 다른 과정명은 게이트만 통과)", () => {
+    const near = parseReceipt(card().replace("역전토익", "실전토익"));
+    expect(near.gates.brand).toBe(true); // 거절하지는 않는다 (덜 거절하는 쪽)
+    expect(near.brandExact).toBe(false);
+    expect(receiptComplete(card().replace("역전토익", "력전토익"))).toBe(false);
+    expect(parseReceipt(card()).brandExact).toBe(true);
+  });
+
+  it("라벨 뒤 잡점이 붙은 시각(`수강시간.10.00~12.10`)도 시각으로 고친다 — 날짜(`2026.09.16`)는 그대로", () => {
+    expect(normalizeReceiptText("수강시간.10.00~12.10").compact).toBe("수강시간.10:00~12:10");
+    expect(normalizeReceiptText("2026.09.16").compact).toBe("2026.09.16");
   });
 });

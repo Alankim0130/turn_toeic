@@ -25,7 +25,6 @@ type Row = {
   time_block: string | null;
   student_id: string;
   student_name: string;
-  phone: string | null;
   tester: boolean;
   status: string | null;
   check_in_at: string | null;
@@ -49,6 +48,7 @@ const ERRORS: Record<string, string> = {
  * **끝난 기수는 종강 뒤 7일 동안만** `?term=YYYY-MM` 링크로 열 수 있다 — 종강일 수업의 퇴실 누락 같은 정정을 다음 날 할 수 있게 (리뷰 2026-09-22).
  * 기본 화면은 늘 지금 기수다.
  * 출석 인정·결석은 사유를 꼭 적는다 — 자동 판정이 덮지 못한다.
+ * **연락처는 적지 않는다** (2026-09-23 Alan — "연락처는 없애줘. 이건 안보여줘도 괜찮아"). 연락이 필요하면 이름을 눌러 학생 관리에서 본다.
  */
 const GRACE_DAYS = 7;
 
@@ -193,7 +193,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
                         <p className="mt-0.5 text-xs text-slate">
                           {[kstTime(r.check_in_at) && `입실 ${kstTime(r.check_in_at)}`, kstTime(r.check_out_at) && `퇴실 ${kstTime(r.check_out_at)}`, r.decided_note && `${r.decided_by_name ?? "선생님"}: ${r.decided_note}`]
                             .filter(Boolean)
-                            .join(" · ") || (r.phone ? `연락처 ${r.phone}` : "아직 안 찍었어요")}
+                            .join(" · ") || "아직 안 찍었어요"}
                         </p>
                       </div>
                       <form action={setAttendance} className="flex flex-wrap items-center gap-1.5">

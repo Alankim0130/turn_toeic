@@ -125,6 +125,32 @@ export async function getRosterSets(supabase: DB, today: string): Promise<Roster
   return { activeIds: [...active], preliminaryIds: [...prelim], ordersByUser };
 }
 
+/**
+ * 지금 수강 중인(개강일~종강일) 등록의 반 배정 — 대시보드 등록생 위젯이 강좌마다 사람 수를 센다 (`courseHeadcounts`).
+ * 등록 기간은 `getRosterSets` 의 등록생과 같은 판정이다. 방학에는 600명 × 주5일 두 반이라 한 번에 1,000줄(PostgREST 상한)을 넘는다 —
+ * **나눠 읽지 않으면 넘친 줄이 조용히 빠져 숫자가 적게 나온다.** 읽지 못하면 null (위젯이 "불러오지 못했어요" 를 띄운다)
+ */
+export async function getActiveCourseRows(supabase: DB, today: string): Promise<{ student_id: string; role: string | null; course_id: number | null }[] | null> {
+  const PAGE = 1000;
+  const out: { student_id: string; role: string | null; course_id: number | null }[] = [];
+  for (let from = 0; from < PAGE * 50; from += PAGE) {
+    const { data, error } = await supabase
+      .from("enrollments")
+      .select(
+        "id, student_id, order:enrollment_orders!inner(activates_on, access_until), student:profiles!enrollments_student_id_fkey(role), section:class_sections!enrollments_section_id_fkey(course_id)",
+      )
+      .eq("status", "active")
+      .lte("order.activates_on", today)
+      .gte("order.access_until", today)
+      .order("id")
+      .range(from, from + PAGE - 1);
+    if (error) return null;
+    for (const r of data ?? []) out.push({ student_id: r.student_id, role: r.student?.role ?? null, course_id: r.section?.course_id ?? null });
+    if ((data ?? []).length < PAGE) break;
+  }
+  return out;
+}
+
 export const GENDER_LABEL: Record<string, string> = {
   male: "남성",
   female: "여성",

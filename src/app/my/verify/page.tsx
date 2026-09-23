@@ -4,6 +4,7 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
 import { formatDate, cn } from "@/lib/utils";
 import { getMyVerifications, getOpenEnrollSections, VERIFICATION_STATUS_LABEL } from "../_lib/queries";
+import { heldMonth } from "@/lib/verify-decision";
 import { VerifyForm } from "./VerifyForm";
 import { NoReceiptCard } from "./NoReceiptCard";
 import { getSessionProfile } from "@/lib/auth";
@@ -160,7 +161,11 @@ export default async function VerifyPage() {
                     {VERIFICATION_STATUS_LABEL(v.result)}
                   </span>
                   {v.result === "rejected" && v.reject_reason && <span className="text-amber-800">사유: {v.reject_reason}</span>}
-                  {v.result === null && <span className="text-mist">보통 1일 이내 처리</span>}
+                  {v.result === null && (
+                    <span className="text-mist">
+                      {heldMonth(v.hold) != null ? `${heldMonth(v.hold)}월 반이 열리면 배정돼요` : "보통 1일 이내 처리"}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>

@@ -48,7 +48,7 @@ const isPackage = (s: ReplaySection, packages: PackageMap) => (packages.get(s.id
  * **저녁 줄인가** (2026-09-20 Alan — "650 A 라이브방송을 하고 나면 이 영상링크가 다시보기로 자동으로 연결되면 되잖아.
  * 그러면 굳이 저녁시간을 나타낼 필요가 없잖아").
  *
- * 저녁 반은 오전 반이 한 라이브방송의 녹화본을 본다 — 화목금은 인강이라 `private.recorded_source_section` 이
+ * 저녁 반은 오전 반이 한 라이브방송의 녹화본을 본다 — 화목금 인강도 월수금 현장도(2026-09-23 Alan) `private.recorded_source_section` 이
  * 오전 짝을 열어 주고, 오전 반은 `live_to_replay` 가 켜져 있어 회차 링크가 저절로 다시보기가 된다.
  * 그래서 **올릴 자리는 오전 반뿐**이고 저녁 줄은 목록에 있을 이유가 없다.
  *

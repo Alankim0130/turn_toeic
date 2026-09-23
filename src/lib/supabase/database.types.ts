@@ -705,6 +705,38 @@ export type Database = {
           },
         ]
       }
+      feature_flags: {
+        Row: {
+          enabled: boolean
+          key: string
+          note: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          enabled: boolean
+          key: string
+          note?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          enabled?: boolean
+          key?: string
+          note?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feature_flags_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       homework_files: {
         Row: {
           content_type: string | null
@@ -1493,6 +1525,45 @@ export type Database = {
           },
         ]
       }
+      study_material_items: {
+        Row: {
+          content_type: string | null
+          created_at: string
+          file_name: string
+          file_path: string
+          file_size: number | null
+          id: number
+          seq: number
+          title: string | null
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          content_type?: string | null
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          id?: number
+          seq: number
+          title?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          content_type?: string | null
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          id?: number
+          seq?: number
+          title?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: []
+      }
       study_materials: {
         Row: {
           content_type: string | null
@@ -1502,6 +1573,8 @@ export type Database = {
           file_path: string
           file_size: number | null
           id: number
+          item_id: number | null
+          seq: number | null
           study_id: number
           title: string | null
           updated_at: string
@@ -1515,6 +1588,8 @@ export type Database = {
           file_path: string
           file_size?: number | null
           id?: number
+          item_id?: number | null
+          seq?: number | null
           study_id: number
           title?: string | null
           updated_at?: string
@@ -1528,6 +1603,8 @@ export type Database = {
           file_path?: string
           file_size?: number | null
           id?: number
+          item_id?: number | null
+          seq?: number | null
           study_id?: number
           title?: string | null
           updated_at?: string

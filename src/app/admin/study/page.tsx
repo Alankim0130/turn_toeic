@@ -60,7 +60,8 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
 
   const { data: signups } = await supabase
     .from("study_signups")
-    .select("id, slot_id, created_at, user:profiles!study_signups_user_id_fkey(id, name, phone)")
+    // 연락처는 읽지 않는다 (2026-09-23 Alan — 스터디 신청자 화면에는 전화번호가 필요 없다)
+    .select("id, slot_id, created_at, user:profiles!study_signups_user_id_fkey(id, name)")
     .eq("study_id", study.id)
     .order("created_at");
 
@@ -72,7 +73,7 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
   const online = kind === "online";
   const signupIds = rows.filter((r) => r.user).map((r) => r.user!.id);
   const [{ data: materialRows }, { data: checkinRows }, { data: enrollRows }] = await Promise.all([
-    online ? supabase.from("study_materials").select("id, date, title").eq("study_id", study.id).order("date", { ascending: false }) : Promise.resolve({ data: null }),
+    online ? supabase.from("study_materials").select("id, seq, date, title").eq("study_id", study.id).order("date", { ascending: false }) : Promise.resolve({ data: null }),
     online ? supabase.from("study_checkins").select("material_id, user_id, created_at, study_checkin_files(count)") : Promise.resolve({ data: null }),
     online && signupIds.length
       ? supabase
@@ -164,7 +165,6 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
                           <tr>
                             <Th className="w-12">#</Th>
                             <Th>이름</Th>
-                            <Th>연락처</Th>
                             <Th>신청일</Th>
                             <Th className="text-right">관리</Th>
                           </tr>
@@ -174,7 +174,6 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
                             <tr key={r.id} className="hover:bg-brand-50/40">
                               <Td className="text-xs text-mist">{n + 1}</Td>
                               <Td className="font-bold">{r.user?.name || "-"}</Td>
-                              <Td>{r.user?.phone ? <a href={`tel:${r.user.phone}`} className="text-brand-600 hover:underline">{r.user.phone}</a> : "-"}</Td>
                               <Td className="whitespace-nowrap text-xs text-slate">{formatDate(r.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
                               <Td className="text-right"><CancelSignupButton id={r.id} name={r.user?.name ?? "수강생"} /></Td>
                             </tr>
@@ -203,7 +202,6 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
             <tr>
               <Th className="w-12">#</Th>
               <Th>이름</Th>
-              <Th>연락처</Th>
               <Th>신청일</Th>
               <Th className="text-right">관리</Th>
             </tr>
@@ -214,7 +212,6 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
                 <tr key={r.id} className="hover:bg-brand-50/40">
                   <Td className="text-xs text-mist">{n + 1}</Td>
                   <Td className="font-bold">{r.user?.name || "-"}</Td>
-                  <Td>{r.user?.phone ? <a href={`tel:${r.user.phone}`} className="text-brand-600 hover:underline">{r.user.phone}</a> : "-"}</Td>
                   <Td className="whitespace-nowrap text-xs text-slate">{formatDate(r.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
                   <Td className="text-right"><CancelSignupButton id={r.id} name={r.user?.name ?? "수강생"} /></Td>
                 </tr>

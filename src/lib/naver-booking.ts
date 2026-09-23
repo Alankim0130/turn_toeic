@@ -99,6 +99,53 @@ export function slotLabel(iso: string): string {
   return `${date}(${weekday}) ${ampm} ${h12}:${String(m).padStart(2, "0")}`;
 }
 
+/**
+ * 네이버 예약 화면 (2026-09-23 Alan — 대시보드 카드를 누르면 아래로 내려가던 것을 따로 뗀 화면).
+ * 대시보드 위젯 · 강사에게 가는 푸시가 모두 여기로 온다 — 주소를 한곳에 둔다
+ */
+export const NAVER_PAGE = "/admin/naver-reservations";
+
+/** 칸 시작 시각 → 한국 날짜 "YYYY-MM-DD" */
+export function slotDay(iso: string): string {
+  return new Date(iso).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+}
+
+/** 칸 시작 시각 → "오후 3:20" (날짜 없이) */
+export function slotTime(iso: string): string {
+  return slotLabel(iso).replace(/^.*\) /, "");
+}
+
+/**
+ * 예약이 있는 칸을 한국 날짜별로 묶는다 — 대시보드 "오늘 · 내일" 위젯과 네이버 예약 화면이 함께 쓴다.
+ * 날짜도 칸도 시각 순서다. 예약이 0 인 칸은 뺀다 (`total` 은 그 날 예약 인원 합계).
+ */
+export function bookingsByDay<T extends { slot_at: string; booking_count: number }>(slots: T[]): { day: string; total: number; slots: T[] }[] {
+  const days = new Map<string, { day: string; total: number; slots: T[] }>();
+  const sorted = slots.filter((s) => s.booking_count > 0).sort((a, b) => new Date(a.slot_at).getTime() - new Date(b.slot_at).getTime());
+  for (const s of sorted) {
+    const day = slotDay(s.slot_at);
+    const g = days.get(day) ?? { day, total: 0, slots: [] };
+    g.total += s.booking_count;
+    g.slots.push(s);
+    days.set(day, g);
+  }
+  return [...days.values()];
+}
+
+/** 그 칸이 이미 지났나 — 오늘 예약 중 지난 시각은 흐리게 적는다 */
+export function slotPassed(iso: string, now = Date.now()): boolean {
+  return new Date(iso).getTime() < now;
+}
+
+/** 마지막 확인이 언제였나: "방금" · "3분 전" · "2시간 전" · 하루가 넘으면 "9월 21일(월) 오후 3:20" */
+export function checkedAgo(iso: string, now = Date.now()): string {
+  const min = Math.round((now - new Date(iso).getTime()) / 60_000);
+  if (min < 1) return "방금";
+  if (min < 60) return `${min}분 전`;
+  if (min < 24 * 60) return `${Math.floor(min / 60)}시간 전`;
+  return slotLabel(iso);
+}
+
 /** 강사에게 가는 푸시 문구. 예약자 정보는 없다 — 날짜·시각과 그 칸의 인원만 */
 export function bookingEventMessage(e: BookingEvent): { title: string; body: string } {
   const when = slotLabel(e.slot_at);
