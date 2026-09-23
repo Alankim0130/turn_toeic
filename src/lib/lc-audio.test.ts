@@ -9,19 +9,28 @@ const TRACK = { mwf: "월수금", ttf: "화목금" };
  * **달 홀짝(9월=홀수달=A)으로는 절대 설명되지 않는 배치다** — 같은 달 같은 레벨인데 A 와 B 가 함께 나온다.
  */
 const c650 = { target_score: 650, program: "score" };
-const mwf1000 = { track: "mwf", time_block: "10:00~11:00", book_set: null, course: c650 }; // RC
-const ttf1000 = { track: "ttf", time_block: "10:00~11:00", book_set: "A", course: c650 };
-const mwf1110 = { track: "mwf", time_block: "11:10~12:10", book_set: "B", course: c650 };
-const ttf1110 = { track: "ttf", time_block: "11:10~12:10", book_set: null, course: c650 }; // RC
-/** 주5일 120분 학생이 접근하는 묶음 반 — 그릇이라 교재가 없다 */
-const bundle = { track: "mwf", time_block: "10:00~12:10", book_set: null, course: c650 };
+// 과정 A/B 는 시간대 단위라 RC 시간에도 글자가 있다 (2026-09-23) — 교재인지는 과목 칸이 가른다
+const mwf1000 = { track: "mwf", time_block: "10:00~11:00", book_set: "A", subject: "rc", course: c650 }; // RC — A 과정이지만 교재는 아니다
+const ttf1000 = { track: "ttf", time_block: "10:00~11:00", book_set: "A", subject: "lc", course: c650 };
+const mwf1110 = { track: "mwf", time_block: "11:10~12:10", book_set: "B", subject: "lc", course: c650 };
+const ttf1110 = { track: "ttf", time_block: "11:10~12:10", book_set: "B", subject: "rc", course: c650 }; // RC
+/** 주5일 120분 학생이 접근하는 묶음 반 — 그릇이라 과정도 교재도 없다 */
+const bundle = { track: "mwf", time_block: "10:00~12:10", book_set: null, subject: null, course: c650 };
 
-describe("explicitBookSet — 반에 지정된 교재만 믿는다", () => {
-  it("A·B 만 값이고 나머지는 null", () => {
+describe("explicitBookSet — LC 시간의 과정 글자만 교재다", () => {
+  it("LC 시간은 A·B, RC 시간은 과정 글자가 있어도 null", () => {
     expect(explicitBookSet(ttf1000)).toBe("A");
     expect(explicitBookSet(mwf1110)).toBe("B");
     expect(explicitBookSet(mwf1000)).toBeNull();
+    expect(explicitBookSet(ttf1110)).toBeNull();
+  });
+  it("과목 칸이 없는 통짜 반(방학달 120분)은 글자가 곧 교재다 — 예전 데이터도 그대로 읽힌다", () => {
+    expect(explicitBookSet({ book_set: "A" })).toBe("A");
+    expect(explicitBookSet({ book_set: "B", subject: null })).toBe("B");
+  });
+  it("A·B 가 아니면 null", () => {
     expect(explicitBookSet({ book_set: "C" })).toBeNull();
+    expect(explicitBookSet(bundle)).toBeNull();
     expect(explicitBookSet(null)).toBeNull();
   });
 });
@@ -45,14 +54,14 @@ describe("bookSectionsByLevel — 레벨 × 교재 반", () => {
   });
 
   it("레벨을 섞지 않는다 — 650 은 B, 850 은 A 일 수 있다", () => {
-    const s850 = { track: "ttf", time_block: "12:30~13:40", book_set: "A", course: { target_score: 850, program: "score" } };
+    const s850 = { track: "ttf", time_block: "12:30~13:40", book_set: "A", subject: "lc", course: { target_score: 850, program: "score" } };
     const byLevel = bookSectionsByLevel([mwf1110, s850]);
     expect([...byLevel.get(650)!.keys()]).toEqual(["B"]);
     expect([...byLevel.get(850)!.keys()]).toEqual(["A"]);
   });
 
   it("스파르타 반 자체는 교재가 없다 — 함께 듣는 시간 단위 반에 지정돼 있다", () => {
-    const sparta = { track: "mwf", time_block: "10:00~13:40", book_set: "A", course: { target_score: 650, program: "sparta" } };
+    const sparta = { track: "mwf", time_block: "10:00~13:40", book_set: "A", subject: "lc", course: { target_score: 650, program: "sparta" } };
     expect(bookSectionsByLevel([sparta]).size).toBe(0);
   });
 });

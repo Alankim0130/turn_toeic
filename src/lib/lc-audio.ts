@@ -18,14 +18,20 @@ export type BookSet = (typeof BOOK_SETS)[number];
 
 export const BOOK_SET_LABEL: Record<string, string> = { A: "A반", B: "B반" };
 
-/** 반에 지정된 교재 반. 없으면 null — LC 를 듣지 않는 시간(RC 시간 · 묶음 반 · 스파르타 반)은 비어 있다 */
-export const explicitBookSet = (s?: { book_set?: string | null } | null): BookSet | null => (s?.book_set === "A" || s?.book_set === "B" ? s.book_set : null);
+/**
+ * 이 반이 쓰는 LC 교재. `book_set` 은 **과정 A/B** 라 RC 시간에도 글자가 있다 (2026-09-23 Alan "RC도 A과정 B과정에 따라서 움직이잖아") —
+ * 그래서 과목 칸이 RC 면 교재가 아니다. LC 시간(과목 lc)과 과목 칸이 없는 통짜 반(방학달 120분)만 그 글자가 곧 LC 교재다.
+ * 묶음 반·스파르타 반은 과정도 없어 비어 있다.
+ */
+export const explicitBookSet = (s?: { book_set?: string | null; subject?: string | null } | null): BookSet | null =>
+  s?.subject === "rc" ? null : s?.book_set === "A" || s?.book_set === "B" ? s.book_set : null;
 
 /** 교재를 가릴 때 보는 반의 칸들 */
 export type BookSection = {
   track?: string | null;
   time_block?: string | null;
   book_set?: string | null;
+  subject?: string | null;
   course?: { target_score?: number | null; program?: string | null } | null;
 };
 

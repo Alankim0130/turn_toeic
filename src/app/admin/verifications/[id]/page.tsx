@@ -13,11 +13,12 @@ import { requireCrew } from "@/lib/auth";
 import { RETENTION_LABEL } from "@/lib/receipt-retention";
 import { BLOCKER_LABEL, type AutoApproveBlocker } from "@/lib/auto-approve";
 import { heldMonth as heldMonthOf } from "@/lib/verify-decision";
+import { preselectForApproval } from "@/lib/final-assignment";
 
 export const metadata: Metadata = { title: "등업 검토", robots: { index: false } };
 
 const DONE_MSG: Record<string, string> = {
-  approved: "승인 처리되었습니다. 반 배정과 등록이 생성되었습니다.",
+  approved: "승인 처리되었습니다. 체크한 반이 그 달의 최종 배정으로 저장됐어요.",
   rejected: "반려 처리되었습니다.",
   updated: "배정이 수정되었습니다.",
 };
@@ -46,14 +47,14 @@ export default async function VerificationDetailPage({
     .maybeSingle();
   if (!v) notFound();
 
-  const [{ data: signed }, { data: sections }, { data: order }] = await Promise.all([
+  const [{ data: signed }, { data: sections }, { data: order }, { data: myEnrollments }] = await Promise.all([
     // 보관 기간이 지나 지운 파일은 서명 URL 을 만들 이유가 없다 (2026-09-20)
     v.file_deleted_at
       ? Promise.resolve({ data: null as { signedUrl: string } | null })
       : supabase.storage.from("receipts").createSignedUrl(v.file_path, 600),
     supabase
       .from("class_sections")
-      .select("id, track, start_time, end_time, time_block, tuition, live_tuition, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(id, name, program, target_score)")
+      .select("id, term_id, track, start_time, end_time, time_block, tuition, live_tuition, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(id, name, program, target_score)")
       .eq("status", "open")
       .gte("closes_at", today)
       .order("enrollment_opens_at")
@@ -63,6 +64,11 @@ export default async function VerificationDetailPage({
       .select("id, status, activates_on, access_until, enrollments(id, mode, status, section_id, section:class_sections!enrollments_section_id_fkey(track, start_time, time_block, term:terms(year, month), course:courses(name)))")
       .eq("verification_id", id)
       .maybeSingle(),
+    // 이 학생의 지금 배정 — 승인은 체크한 반이 그 달의 최종 배정이 되므로(2026-09-23) 같은 달 배정을 미리 체크해 두고 보여 준다
+    supabase
+      .from("enrollments")
+      .select("id, mode, section:class_sections!enrollments_section_id_fkey(id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(name))")
+      .eq("student_id", v.user_id),
   ]);
 
   const candidates: Candidate[] = (sections ?? []).map((s) => ({
@@ -143,8 +149,20 @@ export default async function VerificationDetailPage({
   const requested = requestedManual.length > 0 ? requestedManual : suggested;
   const requestedLabels = requested.map((id) => candidates.find((c) => c.id === id)?.label ?? `반 #${id}`);
   // 승인 칸에 **실제로 미리 골라 둔다** (2026-09-22 — 예전에는 "미리 골라 뒀습니다" 라고 적어 놓고 값을 넘기지 않아 늘 빈 칸이었다).
-  // 지금 열려 있어 목록에 보이는 반만 — 안 보이는 반이 숨은 칸으로 함께 승인되면 안 된다
-  const preselected = requested.filter((id) => pickerSections.some((s) => s.id === id));
+  // 지금 열려 있어 목록에 보이는 반만 — 안 보이는 반이 숨은 칸으로 함께 승인되면 안 된다.
+  // **같은 달 기존 배정도 함께 체크한다** (2026-09-23) — 승인은 체크한 반이 그 달의 최종 배정이라, 안 체크해 두면 그대로 눌렀을 때 빠진다
+  const mine = (myEnrollments ?? []).flatMap((e) =>
+    e.section
+      ? [{ section_id: e.section.id, term_id: e.section.term_id, opens_at: e.section.enrollment_opens_at, closes_at: e.section.closes_at, label: sectionSummary(e.section, e.mode) }]
+      : [],
+  );
+  const preselected = preselectForApproval({
+    suggested: requested,
+    existing: mine,
+    selectable: (sections ?? []).map((s) => ({ id: s.id, term_id: s.term_id })),
+    today,
+  });
+  const currentLabels = mine.filter((e) => e.closes_at >= today).map((e) => e.label);
   // 이미 그 달 반에 배정돼 있다 — 새로 승인하면 등록이 두 건 생긴다 (2026-09-22). 정정 요청은 아래 안내가 따로 있다
   const alreadyEnrolled = correctionOf ? [] : (matchLog?.flags?.alreadyEnrolled ?? []).filter((n) => typeof n === "number");
   // 같은 캡처를 전에 사람이 판정했다 (2026-09-22, firsttoeic 사고 5). 승인됐던 캡처인데 지금 배정이 없으면 환불·회수일 수 있다
@@ -278,15 +296,15 @@ export default async function VerificationDetailPage({
             {alreadyEnrolled.length > 0 && v.result === null && (
               <Alert kind="warning" className="mb-3">
                 이 학생은 이 달 반에 <b>이미 배정</b>돼 있어요 ({alreadyEnrolled.map((id) => candidates.find((c) => c.id === id)?.label ?? `반 #${id}`).join(" / ")}).
-                그래서 자동 등업하지 않았습니다. 여기서 승인하면 <b>등록이 하나 더</b> 생겨요 — 반을 바꾸는 것이면{" "}
-                <Link href={`/admin/students/${v.user_id}`} className="font-bold underline">학생 관리</Link>에서 기존 배정을 고치고 이 건은 반려로 닫아 주세요.
+                그래서 자동 등업하지 않았습니다. 아래에서 승인하면 <b>체크한 반이 이 달의 최종 배정</b>이 돼요 — 지금 배정은 미리 체크해 두었으니,
+                반을 바꾸는 것이면 옛 반의 체크를 풀고 새 반을 고르세요.
               </Alert>
             )}
             {correctionOf && (
               <Alert kind="warning" className="mb-3">
-                이 학생은 이 달 반에 <b>이미 자동 배정</b>돼 있고, 「반이 달라요」로 정정을 요청했어요. 여기서 새로 승인하지 말고{" "}
-                <Link href={`/admin/verifications/${correctionOf}`} className="font-bold underline">기존 승인 #{correctionOf}</Link>의 <b>배정 수정</b>에서 반을 바꾼 뒤,
-                이 건은 반려(사유: 「기존 배정을 수정했어요」)로 닫아 주세요.
+                이 학생은 이 달 반에 <b>이미 자동 배정</b>돼 있고, 「반이 달라요」로 정정을 요청했어요. 아래에서 맞는 반을 체크하고 승인하면
+                <b> 그 반이 이 달의 최종 배정</b>이 돼요 — 기존 자동 배정도 미리 체크해 두었으니 틀린 반은 체크를 풀어 주세요.
+                (<Link href={`/admin/verifications/${correctionOf}`} className="font-bold underline">기존 승인 #{correctionOf}</Link>의 배정 수정에서 고쳐도 돼요.)
               </Alert>
             )}
             <h2 className="mb-3 font-black text-ink">OCR 판독 결과</h2>
@@ -350,6 +368,7 @@ export default async function VerificationDetailPage({
             pickerSections={pickerSections}
             order={orderInfo}
             requested={preselected}
+            current={currentLabels}
             ocrMode={ocrMode}
           />
         </div>

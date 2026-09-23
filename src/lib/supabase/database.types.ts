@@ -343,6 +343,7 @@ export type Database = {
       class_sections: {
         Row: {
           book_set: string | null
+          subject: string | null
           recorded: boolean
           live_to_replay: boolean
           bundle_id: string | null
@@ -365,6 +366,7 @@ export type Database = {
         }
         Insert: {
           book_set?: string | null
+          subject?: string | null
           recorded?: boolean
           live_to_replay?: boolean
           bundle_id?: string | null
@@ -387,6 +389,7 @@ export type Database = {
         }
         Update: {
           book_set?: string | null
+          subject?: string | null
           recorded?: boolean
           live_to_replay?: boolean
           bundle_id?: string | null

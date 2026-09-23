@@ -54,7 +54,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
     isAdmin(profile.role)
       ? supabase.from("profiles").select("id, name, role").in("role", ["instructor", "admin"]).order("name")
       : Promise.resolve({ data: null }),
-    supabase.from("class_sections").select("id, track, time_block, book_set").eq("term_id", section.term_id).eq("course_id", section.course_id).neq("id", id),
+    supabase.from("class_sections").select("id, track, time_block, book_set, subject").eq("term_id", section.term_id).eq("course_id", section.course_id).neq("id", id),
   ]);
 
   // 이 반 학생에게 함께 열리는 반 (DB 의 private.section_includes 와 같은 판정):
@@ -63,22 +63,21 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
   const { data: includeRows } = await supabase.rpc("term_section_includes", { p_term_id: section.term.id });
   const includedIds = (includeRows ?? []).filter((r) => r.section_id === id).map((r) => r.included_id);
   const { data: includedSections } = includedIds.length
-    ? await supabase.from("class_sections").select("id, track, time_block, book_set, course:courses(name)").in("id", includedIds).order("time_block")
-    : { data: [] as { id: number; track: string; time_block: string | null; book_set: string | null; course: { name: string } | null }[] };
+    ? await supabase.from("class_sections").select("id, track, time_block, book_set, subject, course:courses(name)").in("id", includedIds).order("time_block")
+    : { data: [] as { id: number; track: string; time_block: string | null; book_set: string | null; subject: string | null; course: { name: string } | null }[] };
   const isPackage = !isSparta && includedIds.length > 0;
   // 이 반을 안에 품는 묶음 반 (60분 반이면 120분 반) — 그 반 학생도 이 반을 함께 듣는다
   const parents = !isSparta ? (sameCourse ?? []).filter((s) => s.track === section.track && blockContains(s.time_block, section.time_block)) : [];
-  // 종합/단과 (2026-09-18 Alan): 시간 단위 반은 담당 한 명의 단과(LC·RC), 묶음·스파르타만 종합
-  const groupHasBook = [section, ...(sameCourse ?? [])].some((s) => s.time_block === section.time_block && !!s.book_set);
-  const typeLabel = sectionTypeLabel(section, { isPackage, groupHasBook });
+  // 종합/단과 (2026-09-18 Alan): 시간 단위 반은 담당 한 명의 단과(LC·RC), 묶음·스파르타만 종합. 과목은 반의 과목 칸으로 (2026-09-23)
+  const typeLabel = sectionTypeLabel(section, { isPackage });
   const sessionLink = (s: NonNullable<typeof sessions>[number]) => {
     const l = s.session_live_links;
     return (Array.isArray(l) ? l[0] : l) ?? null;
   };
   const bookSetNote = isSparta
-    ? "스파르타 반은 교재를 두지 않아요. 함께 듣는 점수보장반의 교재를 씁니다."
+    ? "스파르타 반은 과목·과정을 두지 않아요. 두 과목을 이어 듣고, 함께 듣는 점수보장반의 과정·교재를 씁니다."
     : isPackage
-      ? "묶음 반은 교재를 두지 않아요. 안에 든 시간 단위 반(LC 시간)에 지정하면 이 반 학생도 그 교재를 봅니다."
+      ? "묶음 반은 과목·과정을 두지 않아요. 안에 든 시간 단위 반에 정하면 이 반 학생도 그 과목·교재를 봅니다."
       : undefined;
 
   const canManage = isAdmin(profile.role) || section.instructor_id === user.id;
@@ -182,7 +181,11 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
                       {TRACK_LABEL[inc.track] ?? inc.track}
                     </span>
                     {inc.time_block && <span className="font-bold tabular-nums text-ink-soft">{inc.time_block}</span>}
-                    {inc.book_set && <span className="text-xs font-bold text-slate">LC 교재 {inc.book_set}반</span>}
+                    {inc.book_set && (
+                      <span className="text-xs font-bold text-slate">
+                        {inc.book_set} 과정{inc.subject === "lc" || inc.subject === "rc" ? ` · ${inc.subject.toUpperCase()}` : ""}
+                      </span>
+                    )}
                     <span className="ml-auto text-xs font-bold text-brand-600">반 보기 →</span>
                   </Link>
                 </li>
@@ -308,6 +311,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
               capacity: section.capacity != null ? String(section.capacity) : "",
               status: section.status,
               book_set: section.book_set ?? "",
+              subject: section.subject ?? "",
               instructor_id: section.instructor_id ?? "",
             }}
             instructors={instructors ?? null}

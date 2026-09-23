@@ -38,7 +38,8 @@ export function SectionPicker({
     const terms = new Map<string, { label: string | null; byCourse: Map<number, { course: NonNullable<PickerSection["course"]>; list: PickerSection[] }> }>();
     for (const s of sections) {
       if (!s.course) continue;
-      const tk = s.term ? `${s.term.year}-${s.term.month}` : "";
+      // 달을 두 자리로 — 안 그러면 "2026-10" 이 "2026-9" 보다 앞에 정렬돼 10월 반이 9월 반 위에 뜬다 (2026-09-23)
+      const tk = s.term ? `${s.term.year}-${String(s.term.month).padStart(2, "0")}` : "";
       const tg = terms.get(tk) ?? { label: s.term ? `${s.term.year}년 ${s.term.month}월` : null, byCourse: new Map() };
       terms.set(tk, tg);
       const cg = tg.byCourse.get(s.course.id) ?? { course: s.course, list: [] };

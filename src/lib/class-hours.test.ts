@@ -2,21 +2,22 @@ import { describe, expect, it } from "vitest";
 import { classHours, toClassHours, type HourSection } from "./class-hours";
 
 /** 2026년 9월 화목금 — 650 주5일 120분 학생이 등록한 반은 묶음 10:00~12:10 하나다 */
-const sec = (id: number, course: number, block: string, book: string | null, name: string): HourSection => ({
+const sec = (id: number, course: number, block: string, subject: string | null, name: string): HourSection => ({
   id,
   course_id: course,
   time_block: block,
-  book_set: book,
+  subject,
   course: { name },
 });
 
+// 과목은 반의 과목 칸이 말해 준다 (2026-09-23) — 묶음 반은 두 과목을 이어 들어 비어 있다
 const 내묶음 = sec(1, 1, "10:00~12:10", null, "650+ 왕기초반");
-const 내10시 = sec(2, 1, "10:00~11:00", "A", "650+ 왕기초반");
-const 내11시 = sec(3, 1, "11:10~12:10", null, "650+ 왕기초반");
+const 내10시 = sec(2, 1, "10:00~11:00", "lc", "650+ 왕기초반");
+const 내11시 = sec(3, 1, "11:10~12:10", "rc", "650+ 왕기초반");
 // 같은 날 열리지만 내 등록과 무관한 반들 (스태프는 RLS 로 이런 게 다 내려온다)
-const 남750 = sec(4, 2, "10:00~11:00", null, "750+ 유형마스터");
-const 남850 = sec(5, 3, "12:30~13:40", "A", "850+ 문제마스터");
-const 남저녁 = sec(6, 1, "18:30~19:30", "A", "650+ 왕기초반");
+const 남750 = sec(4, 2, "10:00~11:00", "rc", "750+ 유형마스터");
+const 남850 = sec(5, 3, "12:30~13:40", "lc", "850+ 문제마스터");
+const 남저녁 = sec(6, 1, "18:30~19:30", "lc", "650+ 왕기초반");
 
 const 그날 = [내묶음, 내10시, 내11시, 남750, 남850, 남저녁];
 // DB 가 준 포함 관계: 묶음 1 → 시간 단위 2·3 만
@@ -59,7 +60,7 @@ describe("classHours — 내 반이 여는 시간만", () => {
 });
 
 describe("toClassHours — 화면 줄", () => {
-  it("LC 교재가 있는 시간이 LC, 반대쪽이 RC", () => {
+  it("과목 칸 그대로 — 10:00 LC · 11:10 RC", () => {
     const rows = toClassHours(classHours(1, 그날, includes));
     expect(rows).toEqual([
       { block: "10:00–11:00", subject: "lc", course: "650+ 왕기초반" },
@@ -67,7 +68,7 @@ describe("toClassHours — 화면 줄", () => {
     ]);
   });
 
-  it("교재가 하나도 없으면 과목을 말하지 않는다", () => {
+  it("과목 칸이 비어 있으면 과목을 말하지 않는다", () => {
     const rows = toClassHours([sec(2, 1, "10:00~11:00", null, "650+ 왕기초반")]);
     expect(rows[0].subject).toBeNull();
   });

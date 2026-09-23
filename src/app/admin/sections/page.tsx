@@ -6,7 +6,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { formatDate, TRACK_LABEL, todayKST, cn } from "@/lib/utils";
-import { groupHasBookSet, groupKeyOf, sectionTypeLabel } from "@/lib/section-type";
+import { sectionTypeLabel } from "@/lib/section-type";
+import { carryOverNote, nextMonthDefaults } from "@/lib/course-set";
 import { CreateSectionForm } from "@/components/admin/sections/CreateSectionForm";
 import { BulkCreateSections, type BulkSlot } from "@/components/admin/sections/BulkCreateSections";
 import { AssignInstructor } from "@/components/admin/sections/AssignInstructor";
@@ -72,7 +73,7 @@ export default async function AdminSectionsPage({
         supabase
           .from("class_sections")
           .select(
-            "id, bundle_id, track, time_block, book_set, recorded, live_to_replay, course_id, capacity, status, instructor_id, course:courses(name, course_type, target_score, program), instructor:profiles(name, subject), session_dates(count), section_live_links(section_id)",
+            "id, bundle_id, track, time_block, book_set, subject, recorded, live_to_replay, course_id, capacity, status, instructor_id, course:courses(name, course_type, target_score, program), instructor:profiles(name, subject), session_dates(count), section_live_links(section_id)",
           )
           .eq("term_id", term.id)
           .order("course_id")
@@ -92,6 +93,15 @@ export default async function AdminSectionsPage({
   // 월(기수) 구분: 달력에 함께 보이는 앞뒤 달 날짜를 다른 기수가 이미 쓰고 있는지
   const prev = shiftMonth(y, m, -1);
   const next = shiftMonth(y, m, 1);
+
+  // 일괄 개설 표의 기본값: 지난달 같은 자리의 과목은 그대로, 과정 A/B 는 뒤집어서 (2026-09-23 Alan "12월 달까지는 자동채움으로").
+  // 계절이 바뀌는 달(방학달 ↔ 평달)은 시간표가 달라 채우지 않는다 — `lib/course-set.ts`
+  const { data: prevTerm } = await supabase.from("terms").select("id").eq("year", prev.y).eq("month", prev.m).maybeSingle();
+  const { data: prevSections } = prevTerm
+    ? await supabase.from("class_sections").select("course_id, track, time_block, subject, book_set").eq("term_id", prevTerm.id)
+    : { data: [] as { course_id: number; track: string; time_block: string | null; subject: string | null; book_set: string | null }[] };
+  const bulkDefaults = nextMonthDefaults(prevSections ?? [], { prevMonth: prev.m, month: m });
+  const carryNote = carryOverNote({ prevMonth: prev.m, month: m }, (prevSections?.length ?? 0) > 0, bulkDefaults.size);
   const { data: neighbourDates } = await supabase
     .from("term_class_dates")
     .select("date, track, term:terms!inner(id, year, month)")
@@ -131,10 +141,8 @@ export default async function AdminSectionsPage({
   }
   // 묶음 반(120분·140분) ↔ 시간 단위 반(60분·70분): 같은 강좌·트랙에서 시간이 안에 들어오는 반 (2026-09-16 Alan)
   const packages = sectionPackages(sections ?? []);
-  // 종합/단과는 반마다 다르다 (2026-09-18 Alan) — 시간 단위 반은 강사 한 명의 단과(LC·RC), 묶음·스파르타만 종합
-  const hasBook = groupHasBookSet(sections ?? []);
-  const typeLabelOf = (s: NonNullable<typeof sections>[number]) =>
-    sectionTypeLabel(s, { isPackage: (packages.get(s.id)?.parts.length ?? 0) > 0, groupHasBook: hasBook.has(groupKeyOf(s)) });
+  // 종합/단과는 반마다 다르다 (2026-09-18 Alan) — 시간 단위 반은 강사 한 명의 단과(LC·RC), 묶음·스파르타만 종합. 과목은 반의 과목 칸으로 (2026-09-23)
+  const typeLabelOf = (s: NonNullable<typeof sections>[number]) => sectionTypeLabel(s, { isPackage: (packages.get(s.id)?.parts.length ?? 0) > 0 });
   // 묶음 반(120분·140분)·스파르타 반은 담당이 한 명이 아니라 DB 에는 비어 있다 (도메인 규칙 1 "담당 강사").
   // **화면에는 두 강사 이름을 다 적는다** (2026-09-18 Alan "종합에는 LC·RC 둘 다 수업을 하니 두 쌤 이름을 다") —
   // 안에 든 시간 단위 반의 담당을 모으고, 아직 아무도 없으면 과목 강사(이혜영 LC · 이영수 RC) 둘을 적는다
@@ -295,7 +303,7 @@ export default async function AdminSectionsPage({
                 course: s.course?.name ?? "강좌",
                 track: s.track,
                 timeBlock: s.time_block,
-                bookSet: s.book_set,
+                subject: s.subject,
                 instructor: instructorLabel(s),
                 // 묶음 반(안에 시간 단위 반이 든 반)·스파르타 반은 한 시간씩 강사가 갈린다
                 package: (packages.get(s.id)?.parts.length ?? 0) > 0 || s.course?.program === "sparta",
@@ -371,7 +379,7 @@ export default async function AdminSectionsPage({
                                   <span className={cn("ml-2 font-black", count > 0 ? "text-brand-600" : "text-amber-600")}>
                                     수업일 {count}회{count === 0 && " — 달력에 이 트랙 날짜가 없어요"}
                                   </span>
-                                  {s.book_set && <span className="ml-2 text-xs font-bold text-slate">LC 교재 {s.book_set}반</span>}
+                                  {s.book_set && <span className="ml-2 text-xs font-bold text-slate">{s.book_set} 과정</span>}
                                 </p>
                                 {pk && pk.parts.length > 0 && (
                                   <p className="mt-2 text-xs text-slate">
@@ -453,7 +461,8 @@ export default async function AdminSectionsPage({
                   </p>
                   <p className="mt-1 text-sm text-slate">
                     <strong className="text-ink">주5일</strong> 칸을 누르면 월수금·화목금이 함께 골라져요. 120분·140분은 <strong className="text-ink">묶음 반</strong>이고 그 아래 ↳ 줄이
-                    실제 수업인 60분·70분 반이라, 묶음 반 학생은 안에 든 반을 자동으로 함께 들어요. LC 교재는 LC 를 듣는 시간 단위 반에만 고릅니다.
+                    실제 수업인 60분·70분 반이라, 묶음 반 학생은 안에 든 반을 자동으로 함께 들어요. <strong className="text-ink">과목(LC/RC)과 과정(A/B)</strong>은 시간 단위 반마다 고르고,
+                    지난달 편성이 있으면 과목은 그대로 · 과정은 뒤집어 미리 채워져요.
                   </p>
                   {seasonHasNoSlots && (
                     <div className="mt-3">
@@ -473,6 +482,8 @@ export default async function AdminSectionsPage({
                       existingKeys={existingKeys}
                       instructors={instructors ?? null}
                       isAdmin={isAdmin(profile.role)}
+                      defaults={Object.fromEntries(bulkDefaults)}
+                      carryNote={carryNote}
                     />
                   </div>
                   <h3 className="mt-8 border-t border-line pt-6 text-base font-black text-ink">하나씩 만들기</h3>

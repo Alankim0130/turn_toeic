@@ -18,7 +18,8 @@ export type HourSection = {
   id: number;
   course_id: number | null;
   time_block: string | null;
-  book_set: string | null;
+  /** 과목 칸 (2026-09-23). 비어 있으면 과목 배지를 붙이지 않는다 */
+  subject?: string | null;
   course?: { name?: string | null } | null;
 };
 
@@ -45,7 +46,7 @@ export function classHours(ownId: number, sameDay: HourSection[], includes: Map<
     });
 }
 
-/** 위 결과를 화면 줄로. 과목은 그 묶음의 LC 교재가 말해 준다 (`subjectsWithin`) */
+/** 위 결과를 화면 줄로. 과목은 반의 과목 칸이 말해 준다 (`subjectsWithin`) */
 export function toClassHours(sections: HourSection[]): ClassHour[] {
   const subject = subjectsWithin(sections);
   return sections.map((s) => ({

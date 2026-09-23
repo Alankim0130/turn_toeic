@@ -17,7 +17,7 @@ import { fetchOpenEnrollSections } from "@/lib/open-sections";
  */
 
 const SECTION_COLS = `
-  id, course_id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status, book_set, recorded, live_to_replay,
+  id, course_id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status, book_set, subject, recorded, live_to_replay,
   course:courses(name, course_type, target_score, program, includes_levels),
   term:terms(year, month)
 ` as const;
