@@ -144,7 +144,9 @@ export default async function AdminDashboardPage() {
       {/* 처리 대기 — 손이 가야 하는 것부터 */}
       <section aria-labelledby="todo-title" className="mb-8">
         <h2 id="todo-title" className="mb-3 text-sm font-black text-slate">처리 대기</h2>
-        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {/* 휴대폰에서도 한 줄에 두 칸 (2026-09-23 Alan — 네 줄로 쌓이던 것을 두 줄로). 반 칸은 320px 에서 138px 뿐이라
+            아이콘 · 이름 · 숫자를 한 줄에 못 둔다 — 휴대폰에서는 위에 아이콘과 숫자, 아래에 이름. sm 부터는 예전처럼 한 줄 */}
+        <ul className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           {todo.map((t) => {
             const on = t.value > 0;
             return (
@@ -152,15 +154,15 @@ export default async function AdminDashboardPage() {
                 <Link
                   href={t.href}
                   className={cn(
-                    "card flex h-full items-center gap-3 p-4 transition hover:-translate-y-0.5 hover:shadow-pink",
+                    "card flex h-full flex-wrap items-center gap-x-2 gap-y-2 p-3.5 transition hover:-translate-y-0.5 hover:shadow-pink sm:flex-nowrap sm:gap-3 sm:p-4",
                     on && "border-brand-200 bg-gradient-to-br from-brand-50 via-paper to-paper",
                   )}
                 >
-                  <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl2", on ? "bg-brand-500 shadow-pink" : "bg-surface")}>
+                  <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl2 sm:h-11 sm:w-11", on ? "bg-brand-500 shadow-pink" : "bg-surface")}>
                     <Icon name={t.icon} size={24} className={cn(on && "brightness-0 invert")} />
                   </span>
-                  <span className="min-w-0 flex-1 text-sm font-black text-ink">{t.label}</span>
-                  <span className="flex shrink-0 items-baseline gap-0.5">
+                  <span className="order-last w-full min-w-0 text-sm font-black text-ink sm:order-none sm:w-auto sm:flex-1">{t.label}</span>
+                  <span className="ml-auto flex shrink-0 items-baseline gap-0.5 sm:ml-0">
                     <span className={cn("text-2xl font-black tabular-nums", on ? "text-brand-600" : "text-mist")}>{t.value}</span>
                     <span className="text-xs font-bold text-slate">건</span>
                     <span aria-hidden className="ml-1 text-lg font-black text-line">›</span>
