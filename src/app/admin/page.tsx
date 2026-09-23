@@ -6,9 +6,10 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DonutChart } from "@/components/admin/charts/DonutChart";
 import { BarChart } from "@/components/admin/charts/BarChart";
-import { NaverReservationsWidget } from "@/components/admin/NaverReservationsWidget";
-import { slotLabel } from "@/lib/naver-booking";
-import { countBy, GENDER_LABEL, getCurrentOrUpcomingTerm, getRosterSets, termLabel } from "./_lib/queries";
+import { courseHeadcounts } from "@/lib/course-headcount";
+import { bookingsByDay, checkedAgo, NAVER_PAGE, slotPassed, slotTime } from "@/lib/naver-booking";
+import { shiftDate } from "@/lib/term-window";
+import { countBy, GENDER_LABEL, getActiveCourseRows, getCurrentOrUpcomingTerm, termLabel } from "./_lib/queries";
 import { requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "대시보드", robots: { index: false } };
@@ -20,16 +21,22 @@ const slotKey = (label: string) => {
 };
 /** 좁은 화면용 짧은 시간대 이름: "10:00~12:10" → "10:00" */
 const slotShort = (label: string) => label.match(/\d{1,2}:\d{2}/)?.[0] ?? label;
+/** "2026-09-23" → "9/23 (수)" */
+const dayShort = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))} (${formatDate(d, { weekday: "short" })})`;
+/** 위젯의 날짜 칸 하나에 적는 예약 시각 수 — 넘치면 "외 N" 으로 줄인다 (자세한 것은 네이버 예약 화면) */
+const NAVER_TIMES_SHOWN = 4;
 
 export default async function AdminDashboardPage() {
   // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
   await requireStaff();
   const supabase = await createClient();
   const today = todayKST();
+  const tomorrow = shiftDate(today, 1);
 
-  const [roster, alumni, term, textbook, textbookCount, profiles, pendingVer, pendingHomework, newContacts, naver] = await Promise.all([
-    getRosterSets(supabase, today),
-    supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "alumni"),
+  const [courseRows, courseList, term, textbook, textbookCount, profiles, pendingVer, pendingHomework, newContacts, naver, naverStatus] = await Promise.all([
+    // 등록생 위젯 — 지금 수강 중인 등록의 반 배정을 강좌마다 사람 수로 센다 (2026-09-23 Alan)
+    getActiveCourseRows(supabase, today),
+    supabase.from("courses").select("id, name, program, target_score, is_active"),
     getCurrentOrUpcomingTerm(supabase, today),
     supabase
       .from("textbook_orders")
@@ -43,14 +50,16 @@ export default async function AdminDashboardPage() {
     supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).is("candidates->hold", null),
     supabase.from("homework_submissions").select("id", { count: "exact", head: true }).eq("status", "submitted"),
     supabase.from("contact_messages").select("id", { count: "exact", head: true }).eq("status", "new"),
-    // 네이버 예약은 10분마다 예약 페이지를 확인한 칸 기록에서 읽는다 (2026-09-21 — 첫토익과 같은 방식)
+    // 네이버 예약 위젯 — 오늘 · 내일(한국 날짜). 10분마다 예약 페이지를 확인한 칸 기록에서 읽는다 (2026-09-21 — 첫토익과 같은 방식)
     supabase
       .from("naver_booking_slots")
       .select("slot_at, booking_count")
       .gt("booking_count", 0)
-      .gte("slot_at", new Date().toISOString())
-      .order("slot_at", { ascending: true })
-      .limit(200),
+      .gte("slot_at", new Date(`${today}T00:00:00+09:00`).toISOString())
+      .lt("slot_at", new Date(`${shiftDate(today, 2)}T00:00:00+09:00`).toISOString())
+      .order("slot_at", { ascending: true }),
+    // 마지막 확인 시각 — 확인이 멈추면 "오늘 0명" 이 거짓말이 된다 (크론 '성공' 기록은 믿을 수 없다 — 도메인 규칙 8)
+    supabase.from("naver_sync_status").select("last_success_at, consecutive_failures").maybeSingle(),
   ]);
 
   /* 수업시간대별 인원수 — 강좌(행) × 시간대(열) 표 */
@@ -112,8 +121,11 @@ export default async function AdminDashboardPage() {
   const genderData = countBy(profiles.data ?? [], (p) => (p.gender ? GENDER_LABEL[p.gender] ?? p.gender : "미응답"), "미응답");
   const univData = countBy(profiles.data ?? [], (p) => p.university).slice(0, 5);
 
-  const naverNext = naver.data?.[0];
-  const naverCount = (naver.data ?? []).reduce((n, s) => n + s.booking_count, 0);
+  // 오늘 현황 — 등록생 위젯 · 네이버 예약 위젯 (2026-09-23 Alan: 예비등록생 · 졸업생 칸은 뺐다)
+  const headcounts = courseRows && !courseList.error ? courseHeadcounts(courseList.data ?? [], courseRows) : null;
+  const naverDays = new Map(bookingsByDay(naver.data ?? []).map((d) => [d.day, d]));
+  const naverFailing = (naverStatus.data?.consecutive_failures ?? 0) > 0;
+  const naverChecked = naverStatus.data?.last_success_at ?? null;
 
   // 칸에는 이름과 숫자만 둔다 (2026-09-22 Alan — 이름 아래 "검토할 수강증이 없어요" 같은 설명 줄이 PC 에서 "검토할…" 로 잘려 보였다).
   // 0건 · 1건 이상은 타일 색과 숫자가 말해 준다
@@ -122,20 +134,6 @@ export default async function AdminDashboardPage() {
     { label: "숙제 점검", value: pendingHomework.count ?? 0, href: "/admin/homework?status=submitted", icon: "homework" },
     { label: "교재주문", value: textbookCount.count ?? 0, href: "/admin/textbook-orders", icon: "orders" },
     { label: "새 문의", value: newContacts.count ?? 0, href: "/admin/contacts?status=new", icon: "contact" },
-  ];
-
-  const stats: { label: string; value: number; unit: string; href: string; icon: IconName; hint: string }[] = [
-    { label: "등록생", value: roster.activeIds.length, unit: "명", href: "/admin/students?tab=active", icon: "students", hint: "개강일~종강일 사이" },
-    { label: "예비등록생", value: roster.preliminaryIds.length, unit: "명", href: "/admin/students?tab=preliminary", icon: "verify", hint: "개강 전 등록 완료" },
-    { label: "졸업생", value: alumni.count ?? 0, unit: "명", href: "/admin/students?tab=alumni", icon: "rank1", hint: "종강일 경과" },
-    {
-      label: "네이버 예약",
-      value: naverCount,
-      unit: "건",
-      href: "#naver-reservations",
-      icon: "calendar",
-      hint: naverNext ? `가장 이른 예약 ${slotLabel(naverNext.slot_at)}` : "잡힌 예약 없음",
-    },
   ];
 
   return (
@@ -173,28 +171,97 @@ export default async function AdminDashboardPage() {
         </ul>
       </section>
 
-      {/* 오늘 현황 */}
+      {/* 오늘 현황 — 등록생 · 네이버 예약 두 위젯 (2026-09-23 Alan). 예비등록생 · 졸업생 칸은 뺐다 (학생명단 탭에 그대로 있다) */}
       <section aria-labelledby="stats-title" className="mb-8">
         <h2 id="stats-title" className="mb-3 text-sm font-black text-slate">오늘 현황</h2>
-        <ul className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-          {stats.map((s) => (
-            <li key={s.label}>
-              <Link href={s.href} className="card flex h-full flex-col p-4 transition hover:-translate-y-0.5 hover:shadow-pink">
-                <span className="flex items-center gap-2">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50">
-                    <Icon name={s.icon} size={20} />
-                  </span>
-                  <span className="min-w-0 truncate text-sm font-bold text-slate">{s.label}</span>
-                </span>
-                <span className="mt-3 flex items-baseline gap-1">
-                  <span className="text-3xl font-black tabular-nums text-ink">{s.value.toLocaleString("ko-KR")}</span>
-                  <span className="text-sm font-bold text-slate">{s.unit}</span>
-                </span>
-                <span className="mt-1 truncate text-xs text-mist">{s.hint}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <div className="grid gap-3 lg:grid-cols-5">
+          {/* 등록생 — 강좌마다 지금 수강 중인 사람 수를 크게. 주5일·120분 학생도 한 사람 (`courseHeadcounts`) */}
+          <Link href="/admin/students?tab=active" className="card flex flex-col p-4 transition hover:-translate-y-0.5 hover:shadow-pink sm:p-5 lg:col-span-3">
+            <div className="flex items-center gap-2">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                <Icon name="students" size={20} />
+              </span>
+              <span className="text-sm font-bold text-slate">등록생</span>
+              <span className="min-w-0 truncate text-xs text-mist">개강일~종강일 사이</span>
+              <span aria-hidden className="ml-auto text-lg font-black text-line">›</span>
+            </div>
+            {headcounts === null ? (
+              <p className="mt-4 text-sm text-slate">등록생 수를 불러오지 못했어요.</p>
+            ) : (
+              <ul className="mt-4 grid flex-1 grid-cols-6 gap-2 sm:grid-cols-5">
+                {headcounts.map((h) => (
+                  <li
+                    key={h.id}
+                    className={cn(
+                      "flex flex-col items-center justify-center rounded-xl bg-surface px-1 py-3 text-center",
+                      // 좁은 화면: 점수보장반 셋이 한 줄, 속성반 둘이 한 줄
+                      h.program === "sparta" ? "col-span-3 sm:col-span-1" : "col-span-2 sm:col-span-1",
+                    )}
+                  >
+                    <span className="text-xs font-black text-slate sm:text-sm">{h.label}</span>
+                    <span className="mt-1.5 flex items-baseline gap-0.5">
+                      <span className={cn("text-4xl font-black leading-none tabular-nums xl:text-5xl", h.count > 0 ? "text-ink" : "text-mist")}>
+                        {h.count.toLocaleString("ko-KR")}
+                      </span>
+                      <span className="text-xs font-bold text-slate">명</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Link>
+
+          {/* 네이버 예약 — 오늘 · 내일. 누르면 네이버 예약 화면으로 간다 (그전에는 대시보드 아래로 내려갔다) */}
+          <Link href={NAVER_PAGE} className="card flex flex-col p-4 transition hover:-translate-y-0.5 hover:shadow-pink sm:p-5 lg:col-span-2">
+            <div className="flex items-center gap-2">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                <Icon name="calendar" size={20} />
+              </span>
+              <span className="text-sm font-bold text-slate">네이버 예약</span>
+              <span aria-hidden className="ml-auto text-lg font-black text-line">›</span>
+            </div>
+            <div className="mt-4 grid flex-1 grid-cols-2 gap-2">
+              {[
+                { label: "오늘", day: today },
+                { label: "내일", day: tomorrow },
+              ].map(({ label, day }) => {
+                const g = naverDays.get(day);
+                return (
+                  <div key={day} className="flex flex-col rounded-xl bg-surface px-3 py-3">
+                    <span className="text-xs font-black text-slate sm:text-sm">{label} 예약</span>
+                    <span className="text-[11px] text-mist">{dayShort(day)}</span>
+                    <span className="mt-1.5 flex items-baseline gap-0.5">
+                      <span className={cn("text-4xl font-black leading-none tabular-nums xl:text-5xl", g ? "text-ink" : "text-mist")}>{g?.total ?? 0}</span>
+                      <span className="text-xs font-bold text-slate">명</span>
+                    </span>
+                    {g ? (
+                      <ul className="mt-2 space-y-0.5 text-xs tabular-nums">
+                        {g.slots.slice(0, NAVER_TIMES_SHOWN).map((s) => {
+                          const past = slotPassed(s.slot_at);
+                          return (
+                            <li key={s.slot_at} className={past ? "text-mist" : "font-bold text-ink"}>
+                              {slotTime(s.slot_at)} · {s.booking_count}명{past ? " (지남)" : ""}
+                            </li>
+                          );
+                        })}
+                        {g.slots.length > NAVER_TIMES_SHOWN && <li className="text-mist">외 {g.slots.length - NAVER_TIMES_SHOWN}개</li>}
+                      </ul>
+                    ) : (
+                      <span className="mt-2 text-xs text-mist">예약 없음</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className={cn("mt-3 text-[11px]", naverFailing ? "font-bold text-amber-800" : "text-mist")}>
+              {!naverChecked
+                ? "10분마다 네이버 예약 페이지를 확인해요 · 첫 확인을 기다리는 중"
+                : naverFailing
+                  ? `확인이 ${naverStatus.data?.consecutive_failures}번 연속 실패했어요 · 마지막 성공 ${checkedAgo(naverChecked)}`
+                  : `마지막 확인 ${checkedAgo(naverChecked)} · 10분마다 확인해요`}
+            </p>
+          </Link>
+        </div>
       </section>
 
       {/* 수업시간대별 인원수 */}
@@ -273,10 +340,8 @@ export default async function AdminDashboardPage() {
         )}
       </section>
 
+      {/* 네이버 예약 목록은 따로 뗀 화면(NAVER_PAGE)에 있다 — 위 '오늘 현황' 위젯을 누르면 간다. 여기에 다시 두지 말 것 */}
       <div className="grid items-start gap-6 lg:grid-cols-2">
-        {/* 네이버 예약 */}
-        <NaverReservationsWidget />
-
         {/* 교재주문 */}
         <section aria-labelledby="textbook-title" className="card p-5">
           <div className="mb-4 flex items-center justify-between gap-2">

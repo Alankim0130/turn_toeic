@@ -7,6 +7,7 @@ import {
   bookingEventMessage,
   HOURLY_QUERY,
   MAX_SEPARATE_PUSHES,
+  NAVER_PAGE,
   naverBookingIds,
   naverRange,
   parseHourly,
@@ -45,7 +46,7 @@ async function recordFailure(admin: Admin, message: string, retryAfterMinutes?: 
 
 async function pushEvents(events: BookingEvent[]) {
   if (events.length === 0) return;
-  const url = "/admin#naver-reservations";
+  const url = NAVER_PAGE;
   if (events.length > MAX_SEPARATE_PUSHES) {
     const count = (k: BookingEvent["kind"]) => events.filter((e) => e.kind === k).length;
     const parts = [
@@ -55,7 +56,7 @@ async function pushEvents(events: BookingEvent[]) {
     ].filter(Boolean);
     await notifyStaff("naver_reservation", {
       title: `네이버 상담예약 변동 ${events.length}건`,
-      body: `${parts.join(" · ")} — 대시보드에서 날짜·시각을 확인해 주세요.`,
+      body: `${parts.join(" · ")} — 네이버 예약 화면에서 날짜·시각을 확인해 주세요.`,
       url,
       tag: "naver-booking",
     });
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
         await notifyStaff("naver_reservation", {
           title: "네이버 예약 확인이 막혔어요",
           body: `네이버가 조회를 거절했어요 (HTTP ${res.status}). 한 시간 동안 쉬었다가 다시 확인해요.`,
-          url: "/admin#naver-reservations",
+          url: NAVER_PAGE,
           tag: "naver-sync-error",
         });
       }
@@ -118,7 +119,7 @@ export async function POST(req: NextRequest) {
       await notifyStaff("naver_reservation", {
         title: "네이버 예약 확인이 한 시간째 안 돼요",
         body: `마지막 오류: ${message.slice(0, 80)}. 그동안 들어온 예약은 다시 확인되면 알려 드려요.`,
-        url: "/admin#naver-reservations",
+        url: NAVER_PAGE,
         tag: "naver-sync-error",
       });
     }

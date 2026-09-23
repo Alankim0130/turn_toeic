@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bookingEventMessage, naverBookingIds, naverRange, parseHourly, slotLabel } from "./naver-booking";
+import { bookingEventMessage, bookingsByDay, checkedAgo, naverBookingIds, naverRange, parseHourly, slotDay, slotLabel, slotPassed, slotTime } from "./naver-booking";
 import { site } from "./site";
 
 /** 2026-09-21 실측 응답의 칸 하나 (역전토익 강사상담, 정원 2명) */
@@ -86,5 +86,42 @@ describe("알림 문구 — 날짜·시각과 인원만 (예약자는 모른다)
   });
   it("예약이 있던 칸이 사라지면 확인을 부탁한다", () => {
     expect(bookingEventMessage({ slot_at: "2026-09-23T06:20:00.000Z", kind: "vanished", prev: 1, new: 0, stock: null }).title).toContain("확인 필요");
+  });
+});
+
+describe("대시보드 오늘 · 내일 위젯과 네이버 예약 화면 — 한국 날짜로 묶는다", () => {
+  it("칸의 날짜와 시각은 한국 시간이다 (UTC 날짜가 하루 앞이어도)", () => {
+    // 한국 9월 24일 오전 8:00 = UTC 9월 23일 23:00
+    expect(slotDay("2026-09-23T23:00:00+00:00")).toBe("2026-09-24");
+    expect(slotTime("2026-09-23T23:00:00+00:00")).toBe("오전 8:00");
+    expect(slotTime("2026-09-23T06:20:00.000Z")).toBe("오후 3:20");
+  });
+  it("날짜마다 모으고 인원을 더한다 · 예약이 0 인 칸은 뺀다 · 시각 순서", () => {
+    const days = bookingsByDay([
+      { slot_at: "2026-09-23T07:40:00+00:00", booking_count: 1 },
+      { slot_at: "2026-09-23T06:20:00+00:00", booking_count: 2 },
+      { slot_at: "2026-09-23T06:40:00+00:00", booking_count: 0 },
+      { slot_at: "2026-09-24T06:20:00+00:00", booking_count: 2 },
+    ]);
+    expect(days.map((d) => [d.day, d.total, d.slots.length])).toEqual([
+      ["2026-09-23", 3, 2],
+      ["2026-09-24", 2, 1],
+    ]);
+    expect(days[0].slots.map((s) => slotTime(s.slot_at))).toEqual(["오후 3:20", "오후 4:40"]);
+  });
+  it("예약이 없으면 빈 목록", () => {
+    expect(bookingsByDay([{ slot_at: "2026-09-23T06:20:00+00:00", booking_count: 0 }])).toEqual([]);
+  });
+  it("지난 칸", () => {
+    const now = new Date("2026-09-23T06:30:00.000Z").getTime();
+    expect(slotPassed("2026-09-23T06:20:00+00:00", now)).toBe(true);
+    expect(slotPassed("2026-09-23T06:40:00+00:00", now)).toBe(false);
+  });
+  it("마지막 확인: 분 · 시간 · 하루가 넘으면 날짜", () => {
+    const now = new Date("2026-09-23T06:30:00.000Z").getTime();
+    expect(checkedAgo("2026-09-23T06:29:50.000Z", now)).toBe("방금");
+    expect(checkedAgo("2026-09-23T06:20:00.000Z", now)).toBe("10분 전");
+    expect(checkedAgo("2026-09-23T03:30:00.000Z", now)).toBe("3시간 전");
+    expect(checkedAgo("2026-09-21T06:20:00.000Z", now)).toBe("9월 21일(월) 오후 3:20");
   });
 });

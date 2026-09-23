@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyStaff } from "@/lib/push";
 import { koreanTime, parseNaverReservation, RESERVATION_STATUS_LABEL, type ParsedReservation, type ReservationStatus } from "@/lib/naver-reservation";
+import { NAVER_PAGE } from "@/lib/naver-booking";
 import { formatDate, todayKST } from "@/lib/utils";
 
 type Summary = {
@@ -96,7 +97,7 @@ export async function ingestNaverText(rawText: string, source: string): Promise<
 
   if (notify) {
     const msg = reservationMessage(merged, r.text);
-    await notifyStaff("naver_reservation", { ...msg, url: "/admin#naver-reservations", tag: `naver-${id}` });
+    await notifyStaff("naver_reservation", { ...msg, url: NAVER_PAGE, tag: `naver-${id}` });
   }
 
   return { id, duplicate: !notify, notify, reservation: merged };
