@@ -23,6 +23,7 @@ export function DecisionForms({
   pickerSections,
   order,
   requested = [],
+  current = [],
   ocrMode = null,
 }: {
   verificationId: number;
@@ -34,6 +35,8 @@ export function DecisionForms({
   order: OrderInfo | null;
   /** 수동 등업신청에서 **학생이 고른 반**. 미리 골라 두되 그대로 승인되지는 않는다 — 스태프가 수강증을 보고 정한다 */
   requested?: number[];
+  /** 이 학생의 지금 배정 (끝나지 않은 것) — 승인하면 체크한 반이 그 달의 최종 배정이 된다는 안내에 적는다 (2026-09-23) */
+  current?: string[];
   /** OCR 이 수강증에서 읽은 수강 방식 (강의실 `온라인 강의` · 호실 · `라이브방송`). 미리 골라 둔다 — 못 읽었으면 null */
   ocrMode?: "onsite" | "live" | null;
 }) {
@@ -72,6 +75,15 @@ export function DecisionForms({
         <form action={approveAction} className="space-y-4">
           <input type="hidden" name="verification_id" value={verificationId} />
           {approveState.error && <Alert kind="warning">{approveState.error}</Alert>}
+          {/* 스태프가 직접 고른 반이 그 달의 최종 배정이다 (2026-09-23 Alan) — 이미 그 반에 있어도 막지 않고 옮겨 온다 */}
+          {current.length > 0 && (
+            <Alert kind="info">
+              이 학생의 지금 배정: <b>{current.join(" / ")}</b>
+              <br />
+              승인하면 <b>체크한 반이 그 달의 최종 배정</b>이 돼요. 지금 배정은 미리 체크해 두었어요 — 그대로 두면 이 승인으로 옮겨 오고
+              (수강 방식은 아래에서 고른 값으로), 체크를 풀면 빠져요.
+            </Alert>
+          )}
 
           <fieldset>
             <legend className="label">배정할 반 (열려 있는 반만 표시)</legend>

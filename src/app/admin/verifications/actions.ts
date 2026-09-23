@@ -41,8 +41,9 @@ export async function approveVerification(_prev: ActionState, formData: FormData
   if (!ver) return { error: "검증 기록을 찾을 수 없습니다." };
   if (ver.result === "approved") return { error: "이미 승인된 기록입니다. 정정은 아래 배정 수정에서 해 주세요." };
 
-  // 승인 본체는 OCR 자동 승인과 같은 함수다 (src/lib/approve-verification.ts)
-  const approved = await approveVerificationWith(admin, { verificationId: id, userId: ver.user_id, sectionIds, mode });
+  // 승인 본체는 OCR 자동 승인과 같은 함수다 (src/lib/approve-verification.ts).
+  // 스태프가 직접 고른 반은 **그 달의 최종 배정**이다 (2026-09-23 Alan) — 이미 그 반에 있어도 막지 않고 옮겨 온다
+  const approved = await approveVerificationWith(admin, { verificationId: id, userId: ver.user_id, sectionIds, mode, final: true });
   if (!approved.ok) return { error: approved.error };
 
   revalidateAll(id);

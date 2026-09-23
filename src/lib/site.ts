@@ -291,7 +291,8 @@ export const NAV_BOTTOM: NavItem[] = [
   { href: "/", label: "홈", icon: "home" },
   // featureNav 는 아래에서 선언되어 여기서 못 쓴다 (TDZ) — 불라방 줄과 같은 꼴로 적는다
   { href: "/my/lc-audio", label: "LC음원", icon: "headphones", feature: "lc-audio" },
-  { href: STUDENT_HUB.href, label: STUDENT_HUB.label, icon: STUDENT_HUB.icon },
+  // 가운데 칸은 숙제제출 (2026-09-23 Alan "수강생전용 → 숙제제출"). 수강생전용 안내는 서랍 맨 위 `안내` 묶음 · PC 상단 메뉴에 그대로 있다
+  { href: "/my/homework", label: "숙제제출", icon: "homework", feature: "homework" },
   { href: "/my/live", label: "불라방", icon: "live", feature: "live" },
   { href: "/my", label: "마이", icon: "profile" },
 ];
