@@ -90,9 +90,11 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rejected, setRejected] = useState<string | null>(null);
-  const [done, setDone] = useState<null | "auto" | "manual" | "approved" | "preliminary">(null);
+  const [done, setDone] = useState<null | "auto" | "manual" | "approved" | "preliminary" | "held">(null);
   /** 자동으로 못 읽어 강사 검토로 갔을 때의 한 줄 (서버가 준다) */
   const [ocrNote, setOcrNote] = useState<string | null>(null);
+  /** 다음 달 수강증을 받아 뒀다 (2026-09-22) — 그 달 반이 열리면 저절로 배정된다 */
+  const [held, setHeld] = useState<{ month: number; note: string } | null>(null);
   // 결과 팝업 (2026-09-18 Alan — "반려 문구가 바로 보여야 하고, 승인이면 어떤 반인지 팝업으로 보여 주고 맞으면 확인, 아니면 수동신청")
   const [popup, setPopup] = useState<null | { kind: "approved" | "preliminary"; assigned: string[] } | { kind: "rejected"; reason: string }>(null);
   const [pending, startTransition] = useTransition();
@@ -195,7 +197,8 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
         if (res.ok) {
           // OCR 이 반을 찾아 바로 등업했으면 그렇게 말한다 (2026-09-18 자동 승인)
           setOcrNote(res.ocrNote ?? null);
-          const kind = res.approved ? (res.preliminary ? "preliminary" : "approved") : manual ? "manual" : "auto";
+          setHeld(res.held ?? null);
+          const kind = res.approved ? (res.preliminary ? "preliminary" : "approved") : res.held ? "held" : manual ? "manual" : "auto";
           setDone(kind);
           if (kind === "approved" || kind === "preliminary") setPopup({ kind, assigned: res.assigned ?? [] });
           return;
@@ -274,6 +277,15 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
         반이 잘못 배정됐다면 <button type="button" onClick={toManual} className="font-bold underline">수동 등업신청</button>으로 알려 주세요 — 강사가 바로 정정해 드립니다.
       </Alert>
       </>
+    );
+  }
+
+  // 다음 달 수강증 — 거절하지 않고 받아 뒀다. 그 달 반이 열리면 저절로 배정되니 다시 올릴 필요가 없다 (2026-09-22 Alan)
+  if (done === "held" && held) {
+    return (
+      <Alert kind="success" title={`${held.month}월 수강증을 받아 뒀어요`}>
+        {held.note}
+      </Alert>
     );
   }
 

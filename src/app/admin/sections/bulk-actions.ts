@@ -1,7 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { rematchHeldVerifications } from "@/lib/rematch-held";
 import { requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import { sectionKeyOf, timeBlockOf } from "@/components/admin/sections/bulk";
@@ -126,6 +129,8 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
     if (error) {
       return { ok: false, error: error.code === "42501" ? "권한이 없어요. 본인 반만 만들 수 있습니다." : "반을 개설하지 못했어요. 잠시 후 다시 시도해 주세요." };
     }
+    // 모집 중인 반이 열렸다 — 받아 둔 다음 달 수강증을 다시 맞춰 예비등록생으로 배정한다 (2026-09-22, `rematchHeldVerifications`)
+    if (inserts.some((r) => r.status === "open")) after(() => rematchHeldVerifications(createAdminClient(), { notify: true }));
   }
 
   revalidatePath("/admin/sections");

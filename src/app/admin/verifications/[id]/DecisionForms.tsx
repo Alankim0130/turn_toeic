@@ -34,7 +34,7 @@ export function DecisionForms({
   order: OrderInfo | null;
   /** 수동 등업신청에서 **학생이 고른 반**. 미리 골라 두되 그대로 승인되지는 않는다 — 스태프가 수강증을 보고 정한다 */
   requested?: number[];
-  /** OCR 이 수강증에서 읽은 수강 방식 (`라이브방송` 표기). 미리 골라 둔다 — 못 읽었으면 null */
+  /** OCR 이 수강증에서 읽은 수강 방식 (강의실 `온라인 강의` · 호실 · `라이브방송`). 미리 골라 둔다 — 못 읽었으면 null */
   ocrMode?: "onsite" | "live" | null;
 }) {
   const [approveState, approveAction] = useActionState<ActionState, FormData>(approveVerification, {});
@@ -86,11 +86,11 @@ export function DecisionForms({
 
           <div className="grid gap-4">
             <fieldset>
-              {/* 수강증의 `라이브방송` 표기로 OCR 이 정한다 (2026-09-16 Alan). 못 읽었을 때만 현장이 기본값이다 */}
+              {/* 수강증의 강의실 줄(`온라인 강의` = 불라방 · 호실 = 현장)로 OCR 이 정한다 (2026-09-18 Alan). 못 읽었을 때만 현장이 기본값이다 */}
               <legend className="label">
                 수강 방식{" "}
                 <span className="font-normal text-mist">
-                  {ocrMode ? `(OCR 판독: ${ocrMode === "live" ? "라이브방송 있음 → 불라방" : "라이브방송 없음 → 현장"})` : "(OCR 미판독 — 수강증에서 확인)"}
+                  {ocrMode ? `(OCR 판독: ${ocrMode === "live" ? "불라방" : "현장"})` : "(OCR 미판독 — 수강증의 강의실 줄에서 확인)"}
                 </span>
               </legend>
               <div className="grid grid-cols-2 gap-2">

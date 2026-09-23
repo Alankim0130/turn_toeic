@@ -1,4 +1,4 @@
-import type { ParsedReceipt } from "./receipt";
+import { receiptCourseMonth, type ParsedReceipt } from "./receipt";
 import { termKeyOf, type EnrollSection } from "./enroll-options";
 
 /**
@@ -11,11 +11,17 @@ import { termKeyOf, type EnrollSection } from "./enroll-options";
  * **딱 맞는 반이 정확히 그 수만큼 남을 때만 `match`** 다 (주3일 1개 · 주5일 2개). 둘 이상 남거나 하나도 없으면
  * 스태프 검토로 넘긴다 — 애매한데 골라 넣으면 오배정이고, 오배정은 학생이 남의 반 다시보기를 보게 한다.
  *
- * 수강월은 (1) 배지 `NN월 과정` → (2) 수강증의 날짜들 → (3) 열린 기수가 하나뿐이면 그것, 순서로 정한다.
+ * 수강월은 (1) 배지 `NN월 과정` → (2) 수강요일 줄의 개강일 달 `[4주-09/04]` → (3) 열린 기수가 하나뿐이면 그것, 순서로 정한다.
+ * **캡처 시각(`현재시간`)으로는 달을 고르지 않는다** (2026-09-22) — 9월 25일에 캡처한 10월 수강증이 배지를 못 읽으면
+ * 9월 반에 자동 배정됐다 (재현). 수강월을 읽었는데 **그 달 반이 없으면 다른 달로 넘어가지 않는다** — 예전에는 날짜로 내려가
+ * 10월 과정 수강증을 같은 시간대의 9월 반에 붙였다.
+ *
+ * 레벨이 흔들리면 대조하지 않는다 — 과정명(`중급속성` = 650)과 숫자가 다르거나, 점수보장반 수강증에 레벨 숫자가 여럿이면
+ * 앞의 숫자를 골라 **다른 레벨 반에 자동 배정**할 수 있다 (스파르타는 두 레벨을 함께 들어 숫자가 여럿일 수 있어 뺀다).
  * 화면·엔진·DB 가 없는 순수 함수라 테스트로 굳힌다.
  */
 
-export type MatchInput = Pick<ParsedReceipt, "level" | "program" | "weekly" | "tracks" | "time" | "months" | "courseMonth">;
+export type MatchInput = Pick<ParsedReceipt, "level" | "levels" | "courseLevel" | "program" | "weekly" | "tracks" | "time" | "courseMonth" | "startMonth">;
 
 export type MatchResult =
   | { kind: "match"; sectionIds: number[]; term: string }
@@ -34,19 +40,14 @@ export type MatchLog = {
 const usable = (s: EnrollSection): s is EnrollSection & { time_block: string; term: { year: number; month: number }; course: NonNullable<EnrollSection["course"]> } =>
   !!s.course && !!s.time_block && !!s.term;
 
-/** 수강월 후보 기수 — 배지 → 날짜 → 하나뿐이면 그것 */
-export function pickTerms(parsed: MatchInput, terms: readonly string[]): string[] {
+/**
+ * 수강월 후보 기수 — 수강월(배지 → 개강일 달)을 읽었으면 **그 달만**, 못 읽었으면 전부(하나뿐이면 그것이 답이다).
+ * 캡처 시각으로 고르지 않는다 (위 설명).
+ */
+export function pickTerms(parsed: Pick<MatchInput, "courseMonth" | "startMonth">, terms: readonly string[]): string[] {
   const uniq = [...new Set(terms)];
-  if (parsed.courseMonth) {
-    const hit = uniq.filter((k) => Number(k.split("-")[1]) === parsed.courseMonth);
-    if (hit.length > 0) return hit;
-  }
-  if (parsed.months.length > 0) {
-    const keys = new Set(parsed.months.map((m) => termKeyOf(m)));
-    const hit = uniq.filter((k) => keys.has(k));
-    if (hit.length > 0) return hit;
-  }
-  return uniq;
+  const month = receiptCourseMonth(parsed);
+  return month == null ? uniq : uniq.filter((k) => Number(k.split("-")[1]) === month);
 }
 
 export function matchSections(parsed: MatchInput, sections: readonly EnrollSection[]): { result: MatchResult; log: MatchLog[] } {
@@ -76,11 +77,23 @@ export function matchSections(parsed: MatchInput, sections: readonly EnrollSecti
     },
   }));
 
+  // 레벨이 흔들리면 대조를 멈춘다 — 앞의 숫자를 골라 다른 레벨 반에 넣지 않는다
+  if (parsed.courseLevel != null && parsed.courseLevel !== parsed.level) {
+    return { result: { kind: "ambiguous", reason: `과정명의 레벨(${parsed.courseLevel})과 레벨 숫자(${parsed.level})가 달라요` }, log };
+  }
+  if (parsed.program === "score" && parsed.levels.length > 1) {
+    return { result: { kind: "ambiguous", reason: `레벨 숫자가 여러 개 읽혔어요 (${parsed.levels.join(", ")})` }, log };
+  }
+
   if (byKey.length === 0) {
     return { result: { kind: "none", reason: `${parsed.level} ${parsed.program === "sparta" ? "프리미어반" : ""} ${parsed.time.timeBlock} 에 열린 반이 없어요`.replace(/\s+/g, " ") }, log };
   }
+  if (terms.length === 0) {
+    // 수강월은 읽었는데 그 달에 이 시간대 반이 없다 — 다른 달 반에 붙이지 않는다
+    return { result: { kind: "none", reason: `${receiptCourseMonth(parsed)}월 ${parsed.time.timeBlock} 반이 아직 없어요` }, log };
+  }
   if (terms.length !== 1) {
-    return { result: { kind: "ambiguous", reason: terms.length === 0 ? "수강월에 맞는 기수가 없어요" : `수강월이 어느 달인지 가릴 수 없어요 (${terms.join(", ")})` }, log };
+    return { result: { kind: "ambiguous", reason: `수강월을 읽지 못해 어느 달인지 가릴 수 없어요 (${terms.join(", ")})` }, log };
   }
 
   const inTerm = byKey.filter((s) => termKeyOf(s.term) === terms[0]);

@@ -2,13 +2,16 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireCrew } from "@/lib/auth";
+import { requireCrew, requireStaff } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { AUTO_VERIFY_KEY } from "@/lib/auto-verify";
+import { rematchHeldVerifications } from "@/lib/rematch-held";
 import { approveVerificationWith } from "@/lib/approve-verification";
 import { assignableError } from "@/lib/enrollment-window";
 import { todayKST } from "@/lib/utils";
 
-export type ActionState = { error?: string };
+export type ActionState = { error?: string; ok?: boolean; message?: string };
 
 function revalidateAll(id: number) {
   revalidatePath("/admin");
@@ -101,4 +104,51 @@ export async function updateEnrollment(_prev: ActionState, formData: FormData): 
 
   revalidateAll(verificationId);
   redirect(`/admin/verifications/${verificationId}?done=updated`);
+}
+
+/**
+ * 수강증 자동 판정 **긴급 스위치** 켜고 끄기 (2026-09-22 Alan "자동 승인 긴급 스위치", 마이그레이션 20260923000500).
+ * 끄면 자동 승인·자동 거절 둘 다 멈추고 모든 수강증이 검토 대기로 온다. 배포 없이 바로 먹는다.
+ *
+ * **강사·관리자만** — 조교에게 연 적 없는 권한이다 (조교는 상태만 본다). 서비스 롤을 쓰지 않고 로그인한 사람의 세션으로 바꿔
+ * RLS(`feature_flags: 스태프 수정`)가 한 번 더 막고, 누가 바꿨는지는 트리거가 적는다.
+ */
+export async function setAutoVerify(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await requireStaff();
+  const enabled = formData.get("enabled") === "true";
+  const note = String(formData.get("note") ?? "").trim().slice(0, 200);
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("feature_flags")
+    .update({ enabled, note: enabled ? null : note || null })
+    .eq("key", AUTO_VERIFY_KEY)
+    .select("key");
+  if (error) return { error: `바꾸지 못했어요. ${error.message}` };
+  if (!data || data.length === 0) return { error: "스위치를 찾지 못했어요 — 방금 배포했다면 잠시 뒤 다시 눌러 주세요." };
+
+  revalidatePath("/admin/verifications");
+  return {
+    ok: true,
+    message: enabled ? "자동 판정을 다시 켰어요. 이제 올라오는 수강증부터 자동으로 판정해요." : "자동 판정을 멈췄어요. 이제 모든 수강증이 검토 대기로 와요.",
+  };
+}
+
+/**
+ * 받아 둔 다음 달 수강증을 **지금** 다시 맞춘다 (2026-09-22). 보통은 반을 열 때 저절로 돌지만(반 편성의 개설·상태 변경),
+ * 반을 다른 길(SQL 등)로 열었거나 그때 실패했을 때의 길이다. 배정은 승인과 같은 일이라 승인 권한과 같이 조교도 누른다.
+ */
+export async function rematchHeldNow(): Promise<ActionState> {
+  await requireCrew();
+  const r = await rematchHeldVerifications(createAdminClient());
+  revalidatePath("/admin");
+  revalidatePath("/admin/students");
+  revalidatePath("/admin/verifications");
+  if (r.approved + r.review === 0) {
+    return { ok: true, message: r.waiting > 0 ? `아직 맞출 반이 없어요 — ${r.waiting}건은 그 달 반이 열릴 때까지 기다려요.` : "받아 둔 수강증이 없어요." };
+  }
+  return {
+    ok: true,
+    message: `자동 배정 ${r.approved}건${r.review > 0 ? ` · 확인이 필요해 검토 대기로 옮긴 ${r.review}건` : ""}${r.waiting > 0 ? ` · 아직 반이 없어 기다리는 ${r.waiting}건` : ""}.`,
+  };
 }
