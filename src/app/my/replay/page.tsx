@@ -23,8 +23,10 @@ export default async function ReplayPage() {
   const replays = (await getMyReplays()).filter((r) => r.session?.section);
   const mySections = await getMyAccessibleSections();
   const week5 = await getMyWeek5(mySections);
-  // 저녁 화목금 인강 학생은 오전 짝 반의 다시보기를 본다 (2026-09-18) — 내 반이 아닌 반의 녹화본이면 그렇게 적어 준다
+  // 저녁 반 학생은 오전 짝 반의 다시보기를 본다 (화목금 인강 2026-09-18 · 월수금 현장 2026-09-23) — 내 반이 아닌 반의 녹화본이면 그렇게 적어 준다.
+  // 짝은 같은 트랙이라(DB `private.recorded_source_section`), 그 트랙에 내 인강 반이 있으면 인강 학생이고 아니면 저녁 현장 학생이다
   const mine = new Set(mySections.map((s) => s.id));
+  const recordedTracks = new Set(mySections.filter((s) => s.recorded).map((s) => s.track));
 
   if (replays.length === 0) {
     return (
@@ -63,11 +65,17 @@ export default async function ReplayPage() {
               <p className="font-black text-ink">{g.section.course?.name ?? "강좌"}</p>
               {/* 60분 반은 같은 강좌가 시간마다 따로 있다 — 시간대로 구분한다 */}
               {g.section.time_block && <span className="text-sm font-bold tabular-nums text-ink-soft">{g.section.time_block}</span>}
-              {mine.size > 0 && !mine.has(g.section.id) && (
-                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-black text-violet-800" title="교실에 나오지 않고 그 날 오전 수업 녹화본을 봐요">
-                  {RECORDED_LABEL} · 오전 수업 녹화본
-                </span>
-              )}
+              {mine.size > 0 &&
+                !mine.has(g.section.id) &&
+                (recordedTracks.has(g.section.track) ? (
+                  <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-black text-violet-800" title="교실에 나오지 않고 그 날 오전 수업 녹화본을 봐요">
+                    {RECORDED_LABEL} · 오전 수업 녹화본
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-black text-brand-600" title="저녁 반은 그 날 오전 수업 녹화본을 다시보기로 봐요">
+                    오전 수업 녹화본
+                  </span>
+                ))}
               <p className="ml-auto flex items-center gap-1 text-xs font-semibold text-slate">
                 <Icon name="timeslot" size={16} />
                 종강일 {formatDate(g.section.closes_at, { month: "long", day: "numeric" })}까지 시청 가능
