@@ -36,7 +36,7 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
   if (!term) {
     return (
       <>
-        <PageHeader icon="study" title="스터디 신청자" description="대면·단어 스터디는 시간대별로, 비대면 스터디는 숙제 제출 현황과 함께 보여 드려요." />
+        <PageHeader icon="study" title="스터디 신청자" description="대면·단어 스터디는 시간대별로, 비대면 스터디는 날짜별 인증 현황과 함께 보여 드려요." />
         <EmptyState
           icon="study"
           title="아직 만든 스터디가 없어요"
@@ -114,7 +114,7 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
 
   return (
     <>
-      <PageHeader icon="study" title="스터디 신청자" description="대면·단어 스터디는 시간대별로, 비대면 스터디는 숙제 제출 현황과 함께 보여 드려요.">
+      <PageHeader icon="study" title="스터디 신청자" description="대면·단어 스터디는 시간대별로, 비대면 스터디는 날짜별 인증 현황과 함께 보여 드려요.">
         {/* 시간대는 전용 화면에서 (2026-09-18 Alan — 반 편성으로 보내면 한참 스크롤해야 했다) */}
         <Link href={`/admin/study/plan?term=${termKey}`} className="btn-secondary">
           <Icon name="timeslot" size={18} />

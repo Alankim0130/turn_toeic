@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { HomeworkCalendar, type HomeworkDay, type HomeworkMonth } from "@/components/my/homework/HomeworkCalendar";
 import { SubmissionCard } from "@/components/my/homework/SubmissionCard";
@@ -116,13 +115,8 @@ export default async function HomeworkPage() {
         </details>
       )}
 
-      <p className="text-center text-xs text-mist">
-        비대면 스터디 인증은 다른 곳이에요 —{" "}
-        <Link href="/my/study" className="font-bold text-brand-600 underline decoration-brand-200 underline-offset-2">
-          내 스터디
-        </Link>
-        에서 날짜마다 인증해 주세요.
-      </p>
+      {/* 비대면 스터디 인증(내 스터디)으로 가는 안내를 두지 않는다 — 두 일은 서로 다른 페이지에서 따로 관리한다 (2026-09-23 Alan
+          "숙제랑 비대면 인증은 다른페이지에서 분리해서 관리해야하니 연결안지었으면 좋겠어"). 이 화면 머리글이 "정규 수업 숙제예요" 라고 말한다 */}
     </div>
   );
 }

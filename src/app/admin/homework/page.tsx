@@ -128,7 +128,7 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
       <PageHeader
         icon="homework"
         title="숙제점검"
-        description="정규 수업 숙제입니다 (비대면 스터디 인증은 스터디 신청자 화면에 있어요). 강사(과목) → 레벨로 좁힌 뒤, 학생 줄을 누르면 숙제 사진을 넘겨 보면서 질문에 답하고 점검완료할 수 있어요."
+        description="정규 수업 숙제입니다. 강사(과목) → 레벨로 좁힌 뒤, 학생 줄을 누르면 숙제 사진을 넘겨 보면서 질문에 답하고 점검완료할 수 있어요."
       />
 
       {/* **과목이 먼저, 그 안에서 레벨** (2026-09-19 Alan — "RC와 LC가 구분되어 있고 과목안에서도 레벨까지만 구분이 되면 좋겠어").
