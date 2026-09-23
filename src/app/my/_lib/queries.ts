@@ -1,10 +1,20 @@
 import { createClient } from "@/lib/supabase/server";
+import { getSessionProfile } from "@/lib/auth";
 import { todayKST } from "@/lib/utils";
 import { week5SectionIds } from "@/lib/week5";
 import type { EnrollSection } from "@/lib/enroll-options";
 import { fetchOpenEnrollSections } from "@/lib/open-sections";
 
-/** 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다. */
+/**
+ * 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다.
+ *
+ * **단 "내 것" 은 RLS 에만 맡기지 않는다** (2026-09-23 Alan — 숙제제출 달력에 "750, 850반이 전부 다 나와").
+ * 학생 화면의 RLS 정책들은 대부분 `… or private.is_staff()` 라 **강사·관리자에게는 모든 반·모든 학생이 열린다** —
+ * 관리자 화면에는 맞지만 `/my` 에서 그대로 쓰면 남의 반 수업일과 **남의 등록 현황**이 내 화면에 선다.
+ * 그래서 여기서는 **내 반**(`public.my_section_ids()`)과 **내 user_id** 로 한 번 더 좁힌다.
+ * 학생에게는 달라지는 것이 없다 — `private.has_section_access` 와 `my_section_ids()` 는 같은 조건이고
+ * (본인 배정 · 등록 active · 종강 전), 등록도 본인 것만 보였다.
+ */
 
 const SECTION_COLS = `
   id, course_id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status, book_set, recorded, live_to_replay,
@@ -49,7 +59,10 @@ export async function getMyWeek5(sections?: MyAccessibleSection[]) {
   return week5SectionIds(sections ?? (await getMyAccessibleSections()));
 }
 
+/** 내 등록. **`user_id` 로 좁힌다** — 정책 `orders: 본인·스태프·조교 조회` 는 스태프에게 전부 열려 있다 (머리말) */
 export async function getMyOrders() {
+  const { user } = await getSessionProfile();
+  if (!user) return [];
   const supabase = await createClient();
   const { data } = await supabase
     .from("enrollment_orders")
@@ -60,6 +73,7 @@ export async function getMyOrders() {
          section:class_sections!enrollments_section_id_fkey(${SECTION_COLS})
        )`,
     )
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false });
   return data ?? [];
 }
@@ -85,13 +99,24 @@ export async function getMyVerifications() {
 }
 export type MyVerification = Awaited<ReturnType<typeof getMyVerifications>>[number];
 
+/**
+ * 내 수업일. **`my_section_ids()` 로 내 반만** 남긴다 — 정책 `session_dates: 수강생·스태프 조회` 에
+ * `or private.is_staff()` 가 있어 강사·관리자에게는 그 달 모든 반의 회차가 내려온다 (머리말).
+ * 인강 학생에게 열리는 **오전 짝 반의 회차도 빠진다** — 그건 다시보기용이지 내 시간표가 아니다.
+ *
+ * **배정이 없으면 빈 목록이다** (스태프가 반에 배정되지 않은 채 학생 화면을 볼 때) — 화면이
+ * "반에 배정되면 여기에 내 수업 달력이 나와요" 로 안내한다. 단 **조회 자체가 실패하면 예전처럼**
+ * RLS 가 주는 대로 둔다 — 근거가 없을 때 화면을 비우면 진짜 학생의 시간표가 사라진다.
+ */
 export async function getMySessions() {
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data: ids, error } = await supabase.rpc("my_section_ids");
+  if (!error && (ids ?? []).length === 0) return [];
+  let q = supabase
     .from("session_dates")
-    .select(`id, seq, date, start_time, end_time, section:class_sections(${SECTION_COLS})`)
-    .order("date", { ascending: true })
-    .order("start_time", { ascending: true });
+    .select(`id, seq, date, start_time, end_time, section:class_sections(${SECTION_COLS})`);
+  if (!error && ids) q = q.in("section_id", ids);
+  const { data } = await q.order("date", { ascending: true }).order("start_time", { ascending: true });
   return data ?? [];
 }
 export type MySession = Awaited<ReturnType<typeof getMySessions>>[number];
@@ -146,14 +171,18 @@ export type MyLiveCard = {
 export async function getMyLiveCards(): Promise<MyLiveCard[]> {
   const supabase = await createClient();
   const today = todayKST();
-  const [{ data: standing }, { data: perSession }] = await Promise.all([
+  const [{ data: ids, error: idsError }, { data: standing }, { data: perSession }] = await Promise.all([
+    supabase.rpc("my_section_ids"),
     supabase.from("section_live_links").select(`section_id, live_url, updated_at, section:class_sections(${SECTION_COLS})`),
     supabase.from("session_live_links").select(`session_date_id, live_url, session:session_dates(id, seq, date, section_id, section:class_sections(${SECTION_COLS}))`),
   ]);
+  // **내 반만** — 링크 정책도 스태프에게 전부 열려 있다 (머리말). 조회가 실패하면 예전처럼 둔다
+  const mine = idsError || !ids ? null : new Set(ids);
   const cards = new Map<number, MyLiveCard>();
-  for (const l of standing ?? []) if (l.section) cards.set(l.section_id, { sectionId: l.section_id, section: l.section, url: l.live_url, kind: "standing" });
+  for (const l of standing ?? [])
+    if (l.section && (!mine || mine.has(l.section_id))) cards.set(l.section_id, { sectionId: l.section_id, section: l.section, url: l.live_url, kind: "standing" });
   const upcoming = (perSession ?? [])
-    .filter((l) => l.session?.section && l.session.date >= today)
+    .filter((l) => l.session?.section && l.session.date >= today && (!mine || mine.has(l.session.section_id)))
     .sort((a, b) => a.session!.date.localeCompare(b.session!.date) || a.session!.seq - b.session!.seq);
   for (const l of upcoming) {
     const s = l.session!;
