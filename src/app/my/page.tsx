@@ -124,6 +124,11 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
    * 함께 살아 있을 수 있다) 한 줄로는 못 적는다. 여러 건이면 예전처럼 등록 줄마다 적는다.
    */
   const soleLive = live.length === 1 ? live[0] : null;
+  const phaseChip = (phase: ReturnType<typeof phaseOf>) => (
+    <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-black", phase === "active" ? "bg-brand-500 text-white" : "bg-ink text-white")}>
+      {ORDER_STATUS_LABEL[phase] ?? phase}
+    </span>
+  );
   const expiredTerms = [
     ...new Set(
       orders
@@ -152,8 +157,9 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
           <section aria-labelledby="orders-title" className="card flex gap-3 p-3.5 sm:gap-4 sm:p-4">
             <ProfilePhoto src={photo} />
             <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <h2 id="orders-title" className="text-sm font-black text-ink">내 등록 현황</h2>
+                {soleLive && phaseChip(phaseOf(soleLive))}
                 {soleLive && (
                   <span className="ml-auto shrink-0 text-xs text-mist">
                     {formatDate(soleLive.access_until, { month: "numeric", day: "numeric" })} 종강까지 이용
@@ -172,24 +178,17 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
                     const termMonth = o.enrollments.find((e) => e.section?.term)?.section?.term?.month ?? monthOf(o.activates_on);
                     return (
                       <li key={o.id}>
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <span
-                            className={cn(
-                              "rounded-full px-2.5 py-0.5 text-xs font-black",
-                              phase === "active" ? "bg-brand-500 text-white" : "bg-ink text-white",
-                            )}
-                          >
-                            {ORDER_STATUS_LABEL[phase] ?? phase}
-                          </span>
-                          {/* 등록이 여러 건일 때만 — 한 건이면 머리글 오른쪽에 이미 적혀 있다 */}
-                          {!soleLive && (
+                        {/* 등록이 여러 건일 때만 — 한 건이면 단계 배지·종강일이 머리글 줄에 이미 있다 */}
+                        {!soleLive && (
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            {phaseChip(phase)}
                             <span className="ml-auto text-xs text-mist">
                               {formatDate(o.access_until, { month: "numeric", day: "numeric" })} 종강까지 이용
                             </span>
-                          )}
-                        </div>
+                          </div>
+                        )}
 
-                        <ul className="mt-1.5 space-y-1">
+                        <ul className={cn("space-y-1", !soleLive && "mt-1.5")}>
                           {/* 주5일은 월수금·화목금 두 줄이 아니라 한 줄로 (2026-09-16 Alan) */}
                           {collapseWeek5(o.enrollments, (e) => e.section, week5).map((e) =>
                             e.section ? (
