@@ -114,6 +114,15 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
   // 단계(개강 전 · 수강 중 · 끝남)는 **날짜로** 정한다 — 상태 열이 자정 배치 전이라도 종강 다음 날이면 끝난 등록이다
   const phaseOf = (o: (typeof orders)[number]) => orderPhase(o, schedule.today);
   const live = orders.filter((o) => phaseOf(o) !== "expired");
+  /**
+   * **종강일은 머리글(`내 등록 현황`) 오른쪽에 적는다** (2026-09-23 Alan — "'수강 중' 오른쪽에 종강날짜를
+   * '내 등록 현황' 글자 오른쪽으로 옮겨줘. 왼쪽 프로필 사진과 높이가 안맞아서 균형이 안맞는것 같아").
+   * 칩 줄 오른쪽 끝에 두면 사진 옆 **첫 줄이 제목 하나로 비어** 오른쪽에 빈자리가 남았다.
+   *
+   * **단 등록이 한 건일 때만이다** — 등록마다 종강일이 다르므로(이번 달 수강 중 + 다음 달 예비등록이
+   * 함께 살아 있을 수 있다) 한 줄로는 못 적는다. 여러 건이면 예전처럼 등록 줄마다 적는다.
+   */
+  const soleLive = live.length === 1 ? live[0] : null;
   const expiredTerms = [
     ...new Set(
       orders
@@ -137,12 +146,19 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
           <span className="text-slate"> 님</span>
         </h1>
 
-        {/* 내 등록 현황 — **왼쪽에 프로필 사진** (2026-09-22 Alan). 종강일은 등록마다 카드 안에 적는다 */}
+        {/* 내 등록 현황 — **왼쪽에 프로필 사진** (2026-09-22 Alan) · 종강일은 머리글 오른쪽 (2026-09-23 Alan) */}
         {orders.length > 0 && (
           <section aria-labelledby="orders-title" className="card flex gap-3 p-3.5 sm:gap-4 sm:p-4">
             <ProfilePhoto src={photo} />
             <div className="min-w-0 flex-1">
-              <h2 id="orders-title" className="text-sm font-black text-ink">내 등록 현황</h2>
+              <div className="flex items-baseline gap-2">
+                <h2 id="orders-title" className="text-sm font-black text-ink">내 등록 현황</h2>
+                {soleLive && (
+                  <span className="ml-auto shrink-0 text-xs text-mist">
+                    {formatDate(soleLive.access_until, { month: "numeric", day: "numeric" })} 종강까지 이용
+                  </span>
+                )}
+              </div>
 
               {live.length === 0 ? (
                 <p className="mt-2 text-sm text-slate">지금 유효한 등록이 없어요.</p>
@@ -164,9 +180,12 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
                           >
                             {ORDER_STATUS_LABEL[phase] ?? phase}
                           </span>
-                          <span className="ml-auto text-xs text-mist">
-                            {formatDate(o.access_until, { month: "numeric", day: "numeric" })} 종강까지 이용
-                          </span>
+                          {/* 등록이 여러 건일 때만 — 한 건이면 머리글 오른쪽에 이미 적혀 있다 */}
+                          {!soleLive && (
+                            <span className="ml-auto text-xs text-mist">
+                              {formatDate(o.access_until, { month: "numeric", day: "numeric" })} 종강까지 이용
+                            </span>
+                          )}
                         </div>
 
                         <ul className="mt-1.5 space-y-1">
