@@ -6,7 +6,7 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DonutChart } from "@/components/admin/charts/DonutChart";
 import { BarChart } from "@/components/admin/charts/BarChart";
-import { courseHeadcounts } from "@/lib/course-headcount";
+import { courseHeadcounts, headcountTotal } from "@/lib/course-headcount";
 import { bookingsByDay, checkedAgo, NAVER_PAGE, slotPassed, slotTime } from "@/lib/naver-booking";
 import { shiftDate } from "@/lib/term-window";
 import { countBy, GENDER_LABEL, getActiveCourseRows, getCurrentOrUpcomingTerm, termLabel } from "./_lib/queries";
@@ -123,6 +123,7 @@ export default async function AdminDashboardPage() {
 
   // 오늘 현황 — 등록생 위젯 · 네이버 예약 위젯 (2026-09-23 Alan: 예비등록생 · 졸업생 칸은 뺐다)
   const headcounts = courseRows && !courseList.error ? courseHeadcounts(courseList.data ?? [], courseRows) : null;
+  const headTotal = courseRows ? headcountTotal(courseRows) : 0;
   const naverDays = new Map(bookingsByDay(naver.data ?? []).map((d) => [d.day, d]));
   const naverFailing = (naverStatus.data?.consecutive_failures ?? 0) > 0;
   const naverChecked = naverStatus.data?.last_success_at ?? null;
@@ -188,26 +189,30 @@ export default async function AdminDashboardPage() {
             {headcounts === null ? (
               <p className="mt-4 text-sm text-slate">등록생 수를 불러오지 못했어요.</p>
             ) : (
-              <ul className="mt-4 grid flex-1 grid-cols-6 gap-2 sm:grid-cols-5">
-                {headcounts.map((h) => (
-                  <li
-                    key={h.id}
-                    className={cn(
-                      "flex flex-col items-center justify-center rounded-xl bg-surface px-1 py-3 text-center",
-                      // 좁은 화면: 점수보장반 셋이 한 줄, 속성반 둘이 한 줄
-                      h.program === "sparta" ? "col-span-3 sm:col-span-1" : "col-span-2 sm:col-span-1",
-                    )}
-                  >
-                    <span className="text-xs font-black text-slate sm:text-sm">{h.label}</span>
-                    <span className="mt-1.5 flex items-baseline gap-0.5">
-                      <span className={cn("text-4xl font-black leading-none tabular-nums xl:text-5xl", h.count > 0 ? "text-ink" : "text-mist")}>
-                        {h.count.toLocaleString("ko-KR")}
+              // 한 강좌가 한 줄 — 왼쪽 이름, 오른쪽 인원 (2026-09-23 Alan "650 - 0명 / 750 - 0명 / … / 총인원 이렇게 가로로").
+              // 그전에는 칸 다섯 개가 옆으로 섰는데 옆 위젯 높이만큼 늘어나 숫자만 덩그러니 떠 보였다
+              <div className="mt-3">
+                <ul className="divide-y divide-line">
+                  {headcounts.map((h) => (
+                    <li key={h.id} className="flex items-center justify-between gap-3 py-2">
+                      <span className="text-sm font-black text-ink sm:text-base">{h.label}</span>
+                      <span className="flex items-baseline gap-0.5">
+                        <span className={cn("text-2xl font-black leading-none tabular-nums", h.count > 0 ? "text-ink" : "text-mist")}>
+                          {h.count.toLocaleString("ko-KR")}
+                        </span>
+                        <span className="text-xs font-bold text-slate">명</span>
                       </span>
-                      <span className="text-xs font-bold text-slate">명</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-brand-50 px-3 py-2.5">
+                  <span className="text-sm font-black text-brand-700 sm:text-base">총인원</span>
+                  <span className="flex items-baseline gap-0.5">
+                    <span className="text-3xl font-black leading-none tabular-nums text-brand-600">{headTotal.toLocaleString("ko-KR")}</span>
+                    <span className="text-xs font-bold text-slate">명</span>
+                  </span>
+                </div>
+              </div>
             )}
           </Link>
 

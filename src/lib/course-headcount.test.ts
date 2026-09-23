@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { courseHeadcounts, headcountLabel, type HeadcountCourse } from "./course-headcount";
+import { courseHeadcounts, headcountLabel, headcountTotal, type HeadcountCourse } from "./course-headcount";
 
 // 운영 강좌 그대로 (2026-09-23 조회) — 순서를 일부러 섞어 둔다
 const COURSES: HeadcountCourse[] = [
@@ -47,6 +47,19 @@ describe("대시보드 등록생 위젯 — 강좌마다 지금 수강 중인 �
     ];
     const byId = new Map(courseHeadcounts(COURSES, rows).map((h) => [h.id, h.count]));
     expect([byId.get(68), byId.get(70)]).toEqual([1, 1]);
+  });
+
+  it("총인원은 강좌 칸의 합이 아니라 사람 수다 — 두 강좌·주5일 두 반이어도 한 명, 테스터는 뺀다", () => {
+    const rows = [
+      { student_id: "a", role: "student", course_id: 68 },
+      { student_id: "a", role: "student", course_id: 68 },
+      { student_id: "a", role: "student", course_id: 70 },
+      { student_id: "b", role: "student", course_id: 71 },
+      { student_id: "t", role: "admin", course_id: 71 },
+      { student_id: "x", role: "student", course_id: null },
+    ];
+    expect(headcountTotal(rows)).toBe(2);
+    expect(headcountTotal([])).toBe(0);
   });
 
   it("쓰지 않는 강좌는 숨기되, 그 강좌에 학생이 있으면 보인다 (사람이 사라지지 않게)", () => {

@@ -17,6 +17,9 @@ export type Headcount = { id: number; label: string; program: string; count: num
 /** 테스트용 배정을 가진 스태프 등급 — `getRosterSets` 가 빼는 등급과 같다 */
 const TESTER_ROLES = new Set(["instructor", "admin"]);
 
+/** 세는 줄인가 — 강좌를 모르는 줄과 테스터의 테스트용 배정은 뺀다 */
+const countable = (r: HeadcountRow): r is HeadcountRow & { course_id: number } => r.course_id != null && !(r.role && TESTER_ROLES.has(r.role));
+
 export function headcountLabel(c: Pick<HeadcountCourse, "name" | "program" | "target_score">): string {
   if (c.program === "sparta") return courseShortName(c.name);
   return c.target_score != null ? String(c.target_score) : c.name;
@@ -25,10 +28,7 @@ export function headcountLabel(c: Pick<HeadcountCourse, "name" | "program" | "ta
 /** 점수보장반(레벨 순) 다음에 속성반(레벨 순) */
 export function courseHeadcounts(courses: HeadcountCourse[], rows: HeadcountRow[]): Headcount[] {
   const people = new Map<number, Set<string>>();
-  for (const r of rows) {
-    if (r.course_id == null || (r.role && TESTER_ROLES.has(r.role))) continue;
-    people.set(r.course_id, (people.get(r.course_id) ?? new Set()).add(r.student_id));
-  }
+  for (const r of rows.filter(countable)) people.set(r.course_id, (people.get(r.course_id) ?? new Set()).add(r.student_id));
   return courses
     .filter((c) => c.is_active || people.has(c.id))
     .sort(
@@ -38,4 +38,12 @@ export function courseHeadcounts(courses: HeadcountCourse[], rows: HeadcountRow[
         a.name.localeCompare(b.name, "ko"),
     )
     .map((c) => ({ id: c.id, label: headcountLabel(c), program: c.program, count: people.get(c.id)?.size ?? 0 }));
+}
+
+/**
+ * 위젯 맨 아래 **총인원** (2026-09-23 Alan — "650 - 0명 / 750 - 0명 / … / 총인원").
+ * 강좌 칸을 더한 값이 아니라 **사람 수**다 — 두 강좌를 함께 듣는 학생도 한 명이다. 테스터는 강좌 칸과 똑같이 뺀다.
+ */
+export function headcountTotal(rows: HeadcountRow[]): number {
+  return new Set(rows.filter(countable).map((r) => r.student_id)).size;
 }
