@@ -62,7 +62,7 @@ export async function getMyWeek5(sections?: MyAccessibleSection[]) {
 }
 
 /** 내 등록. **`user_id` 로 좁힌다** — 정책 `orders: 본인·스태프·조교 조회` 는 스태프에게 전부 열려 있다 (머리말) */
-export async function getMyOrders() {
+export const getMyOrders = cache(async () => {
   const { user } = await getSessionProfile();
   if (!user) return [];
   const supabase = await createClient();
@@ -78,7 +78,7 @@ export async function getMyOrders() {
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
   return data ?? [];
-}
+});
 export type MyOrder = Awaited<ReturnType<typeof getMyOrders>>[number];
 
 /**
@@ -127,17 +127,26 @@ export async function getMySessions() {
 export type MySession = Awaited<ReturnType<typeof getMySessions>>[number];
 
 /**
- * 내가 듣는 기수의 특강. RLS(private.is_term_enrollee)가 그 달 반에 배정된 수강생에게만 내려 준다.
- * 수업일(session_dates)과 함께 내 시간표에 표시한다.
+ * 내가 듣는 기수의 특강. 수업일(session_dates)과 함께 내 시간표에 표시하고, 특강 신청 화면이 쓴다.
+ *
+ * **RLS 에만 맡기지 않는다** (2026-09-24 전수조사 — 등급 체계 10). 학생에게는 `private.is_term_enrollee` 가
+ * 그 달 반에 배정된 기수만 내려 주지만 정책 "special_lectures: 스태프 조회" 가 강사·관리자에게 **모든 기수**를 연다 —
+ * 9월 반으로 테스트하는 관리자의 내 시간표·특강 신청에 10월 특강까지 섰다.
+ * 그래서 **내 등록에서 뽑은 기수**(`getMyStudyEligibility().signupTerms` — `is_term_enrollee` 와 같은 규칙)로 좁힌다.
+ * 예비등록생도 특강을 신청하므로 `my_section_ids()`(수강 중만)로 좁히면 안 된다.
  */
 export async function getMyLectures() {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("special_lectures")
-    .select("id, term_id, date, content, kinds, signup, capacity, signup_opens_at, applied_count, lecturer:lecturers(name), term:terms(year, month)")
-    .order("date", { ascending: true })
-    .order("id", { ascending: true });
-  return data ?? [];
+  const [{ data }, orders] = await Promise.all([
+    supabase
+      .from("special_lectures")
+      .select("id, term_id, date, content, kinds, signup, capacity, signup_opens_at, applied_count, lecturer:lecturers(name), term:terms(year, month)")
+      .order("date", { ascending: true })
+      .order("id", { ascending: true }),
+    getMyOrders(),
+  ]);
+  const { signupTerms } = await getMyStudyEligibility(orders);
+  return (data ?? []).filter((l) => signupTerms.has(l.term_id));
 }
 export type MyLecture = Awaited<ReturnType<typeof getMyLectures>>[number];
 
@@ -450,15 +459,22 @@ export function monthOf(date: string) {
 }
 
 /**
- * 대기 중인 계정 통합 신청 (2026-09-18 Alan). RLS 가 내 계정이 걸린 행만 돌려준다.
+ * 대기 중인 계정 통합 신청 (2026-09-18 Alan) — **내 계정이 걸린 행만** (남길 쪽이든 비워질 쪽이든).
  * 내가 신청하지 않은 행이면 **이 계정에서 확인해야** 합쳐진다 (본인 확인).
+ *
+ * **RLS 에만 맡기지 않는다** (2026-09-24 전수조사 — 등급 체계 10). 정책 "merge: 당사자 조회" 는
+ * 강사·관리자에게 **모든 학생의 신청**을 연다 — 관리자의 `/my` 에 남의 신청이 "계정 통합을 기다리고 있어요" 로 섰다.
+ * `/my/account` · `/my/verify` · `/my` 가 모두 이 함수 하나로 읽는다.
  */
 export async function getMyMergeRequests() {
+  const { user } = await getSessionProfile();
+  if (!user) return [];
   const supabase = await createClient();
   const { data } = await supabase
     .from("account_merge_requests")
     .select("id, from_user, to_user, requested_by, created_at")
     .eq("status", "pending")
+    .or(`from_user.eq.${user.id},to_user.eq.${user.id}`)
     .order("created_at", { ascending: false });
   return data ?? [];
 }
