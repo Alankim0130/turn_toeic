@@ -63,6 +63,13 @@
    묶음 반이면 안의 시간 단위 반까지)을 더한 집합으로 좁힌다. 그 전에는 좁히는 곳이 없어 **강사·관리자 화면에 모든 반의 녹화본이 섰다.**
    **좁히는 집합은 RLS 가 여는 집합보다 넓게 잡을 것** — `private.has_recorded_replay_access` 보다 좁게 잡으면
    저녁 반 학생이 오전 녹화본을 잃는다. 조회가 실패하면(`my_section_ids` 오류 · 반을 못 읽음) **좁히지 않는다.**
+   **레벨은 따로 거르지 않는다** (2026-09-24 Alan — "다시보기, 숙제, 불라방 모두 내 레벨에 맞는것만. 단 실전속성과 중급속성은 두 레벨").
+   `my_section_ids()` 가 곧 내 레벨이다 — 그 안에 `private.section_includes` 가 스파르타의 포함 레벨까지 넣어 주므로
+   중급속성은 650+850, 실전속성은 750+850 이 저절로 함께 열린다. **화면에서 레벨 숫자로 거르지 말 것** (작업 원칙 4).
+   **`src/app/my/_lib/queries.test.ts` 가 소스를 읽어 못박는다** — 스태프에게 열린 여섯 표
+   (`session_dates`·`replays`·`session_live_links`·`section_live_links`·`homework_submissions`·`enrollment_orders`)를
+   읽는 함수에 좁히기(`my_section_ids` · `user_id` · 부른 쪽이 준 `section_id` 목록)가 없으면 `npm test` 가 깨진다.
+   같은 실수를 2026-09-23~24 에 **네 번** 고쳤다 (숙제 달력 레벨 · 등록 현황 · 다시보기 · 숙제 제출 목록).
 
 ---
 
