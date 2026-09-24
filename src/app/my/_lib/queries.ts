@@ -90,11 +90,14 @@ export async function getOpenEnrollSections(): Promise<EnrollSection[]> {
 }
 
 export async function getMyVerifications() {
+  const { user } = await getSessionProfile();
+  if (!user) return [];
   const supabase = await createClient();
   const { data } = await supabase
     .from("enrollment_verifications")
     // hold = 받아 둔 다음 달 수강증의 달 (2026-09-22). 위조 신호가 든 candidates 전체는 가져오지 않는다 — 학생에게 보일 일이 없다
     .select("id, created_at, result, reject_reason, parsed, matched_section, hold:candidates->hold")
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(10);
   return data ?? [];
@@ -140,8 +143,10 @@ export type MyLecture = Awaited<ReturnType<typeof getMyLectures>>[number];
 
 /** 내가 신청한 특강 id 집합 */
 export async function getMyLectureSignupIds() {
+  const { user } = await getSessionProfile();
+  if (!user) return new Set<number>();
   const supabase = await createClient();
-  const { data } = await supabase.from("lecture_signups").select("lecture_id");
+  const { data } = await supabase.from("lecture_signups").select("lecture_id").eq("user_id", user.id);
   return new Set((data ?? []).map((r) => r.lecture_id));
 }
 
@@ -280,6 +285,8 @@ export type MyReplay = Awaited<ReturnType<typeof getMyReplays>>[number];
 
 
 export async function getMyTextbookOrders() {
+  const { user } = await getSessionProfile();
+  if (!user) return [];
   const supabase = await createClient();
   const { data } = await supabase
     .from("textbook_orders")
@@ -288,6 +295,7 @@ export async function getMyTextbookOrders() {
        term_id, items, items_total, shipping_fee, total_amount, depositor_name, pay_to,
        section:class_sections(id, track, course:courses(name), term:terms(year, month))`,
     )
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false });
   return data ?? [];
 }
@@ -344,7 +352,9 @@ export async function getMyStudyEligibility(orders?: MyOrder[]) {
 }
 
 /** 내 스터디 신청 (기수·유형·시간대 포함) */
-export async function getMyStudySignups() {
+export const getMyStudySignups = cache(async () => {
+  const { user } = await getSessionProfile();
+  if (!user) return [];
   const supabase = await createClient();
   const { data } = await supabase
     .from("study_signups")
@@ -353,17 +363,28 @@ export async function getMyStudySignups() {
        study:studies!study_signups_study_id_fkey(id, kind, status, notice, term_id, term:terms(id, year, month)),
        slot:study_slots!study_signups_slot_id_study_id_fkey(id, start_time, end_time)`,
     )
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false });
   return (data ?? []).filter((s) => s.study);
-}
+});
 export type MyStudySignup = Awaited<ReturnType<typeof getMyStudySignups>>[number];
 
 /** 내가 받을 수 있는 비대면 자료 (RLS: 신청했고, 수강 중이고, 해당 날짜가 된 것만) */
+/**
+ * 내 비대면 자료 — **내가 신청한 스터디의, 날짜가 된 회차만.**
+ * 정책 `study_materials: 신청자·스태프 조회` 의 스태프 갈래는 **모든 달 · 모든 스터디의 자료를 날짜도 안 보고** 연다 (머리말).
+ * 여기서 좁히는 조건은 그 정책의 **학생 갈래와 같다** — 진짜 학생에게는 달라지는 것이 없다.
+ */
 export async function getMyStudyMaterials() {
+  const signups = await getMyStudySignups();
+  const studyIds = [...new Set(signups.map((g) => g.study_id))];
+  if (studyIds.length === 0) return [];
   const supabase = await createClient();
   const { data } = await supabase
     .from("study_materials")
     .select("id, study_id, seq, date, title, file_name, file_size, content_type, updated_at")
+    .in("study_id", studyIds)
+    .lte("date", todayKST())
     .order("date", { ascending: false });
   return data ?? [];
 }
@@ -444,24 +465,38 @@ export async function getMyMergeRequests() {
 
 /** 내 비대면 스터디 인증 (자료 id → 인증). 2026-09-18 */
 export async function getMyStudyCheckins() {
+  const { user } = await getSessionProfile();
+  if (!user) return [];
   const supabase = await createClient();
-  const { data } = await supabase.from("study_checkins").select("id, material_id, created_at, study_checkin_files(count)");
+  const { data } = await supabase
+    .from("study_checkins")
+    .select("id, material_id, created_at, study_checkin_files(count)")
+    .eq("user_id", user.id);
   return (data ?? []).map((c) => ({ id: c.id, material_id: c.material_id, created_at: c.created_at, files: c.study_checkin_files?.[0]?.count ?? 0 }));
 }
 
 /** 선생님이 보낸 알림 (최근 100건). RLS 가 본인 것만 돌려준다 */
 export async function getMyMessages() {
+  const { user } = await getSessionProfile();
+  if (!user) return [];
   const supabase = await createClient();
   const { data } = await supabase
     .from("student_messages")
     .select("id, title, body, kind, related, sender_name, created_at, read_at")
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(100);
   return data ?? [];
 }
 
 export async function getUnreadMessageCount() {
+  const { user } = await getSessionProfile();
+  if (!user) return 0;
   const supabase = await createClient();
-  const { count } = await supabase.from("student_messages").select("id", { count: "exact", head: true }).is("read_at", null);
+  const { count } = await supabase
+    .from("student_messages")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .is("read_at", null);
   return count ?? 0;
 }
