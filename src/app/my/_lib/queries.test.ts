@@ -18,16 +18,25 @@ const SOURCE = readFileSync(FILE, "utf8");
 
 /** 스태프에게 전부 열려 있는 표 — 읽으면 반드시 좁혀야 한다 */
 const WIDE_OPEN_TABLES = [
+  // 반으로 열리는 것
   "session_dates",
   "replays",
   "session_live_links",
   "section_live_links",
+  // 사람으로 열리는 것 — 정책이 `본인 or 스태프(조교)` 라 스태프에게는 **모든 학생의 행**이 내려온다
   "homework_submissions",
   "enrollment_orders",
+  "enrollment_verifications",
+  "lecture_signups",
+  "textbook_orders",
+  "study_signups",
+  "study_checkins",
+  "student_messages",
+  "study_materials",
 ];
 
 /** 좁히는 방법 — 내 반(`public.my_section_ids()`) · 내 행(`user_id`) · 부른 쪽이 준 반 목록 */
-const NARROWERS = ['my_section_ids', '.eq("user_id"', '.in("section_id"'];
+const NARROWERS = ['my_section_ids', '.eq("user_id"', '.in("section_id"', '.in("study_id"'];
 
 /** 최상위 `export` 마다 한 덩어리로 자른다 (함수 본문을 파싱하지 않고 경계만 본다) */
 function exportBlocks(): { name: string; body: string }[] {

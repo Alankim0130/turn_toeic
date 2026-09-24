@@ -66,10 +66,15 @@
    **레벨은 따로 거르지 않는다** (2026-09-24 Alan — "다시보기, 숙제, 불라방 모두 내 레벨에 맞는것만. 단 실전속성과 중급속성은 두 레벨").
    `my_section_ids()` 가 곧 내 레벨이다 — 그 안에 `private.section_includes` 가 스파르타의 포함 레벨까지 넣어 주므로
    중급속성은 650+850, 실전속성은 750+850 이 저절로 함께 열린다. **화면에서 레벨 숫자로 거르지 말 것** (작업 원칙 4).
-   **`src/app/my/_lib/queries.test.ts` 가 소스를 읽어 못박는다** — 스태프에게 열린 여섯 표
-   (`session_dates`·`replays`·`session_live_links`·`section_live_links`·`homework_submissions`·`enrollment_orders`)를
-   읽는 함수에 좁히기(`my_section_ids` · `user_id` · 부른 쪽이 준 `section_id` 목록)가 없으면 `npm test` 가 깨진다.
-   같은 실수를 2026-09-23~24 에 **네 번** 고쳤다 (숙제 달력 레벨 · 등록 현황 · 다시보기 · 숙제 제출 목록).
+   **`src/app/my/_lib/queries.test.ts` 가 소스를 읽어 못박는다** — 스태프에게 열린 **열세 표**를 읽는 함수에
+   좁히기(`my_section_ids` · `user_id` · 부른 쪽이 준 `section_id`·`study_id` 목록)가 없으면 `npm test` 가 깨진다.
+   **반으로 열리는 것** `session_dates`·`replays`·`session_live_links`·`section_live_links` ·
+   **사람으로 열리는 것** `homework_submissions`·`enrollment_orders`·`enrollment_verifications`·`lecture_signups`·
+   `textbook_orders`·`study_signups`·`study_checkins`·`student_messages`·`study_materials`.
+   **새 `/my` 조회를 만들면 이 목록을 함께 늘릴 것** — 정책이 `본인 or 스태프` 면 반드시 여기 해당한다.
+   2026-09-23~24 에 같은 실수를 **열한 곳**에서 고쳤다: 숙제 달력 레벨 · 등록 현황 · 다시보기 · 숙제 제출 목록 ·
+   등업신청 기록 · 특강 신청 · 교재주문 · 스터디 신청 · 비대면 인증 · **알림함(읽지 않은 수 포함)** · 비대면 자료.
+   마지막 일곱은 2026-09-24 Alan "그럼 이제는 다 잡힌거야?" 에 **전수조사해서** 찾았다 — 세 화면만 보고 끝냈으면 남았다.
 
 ---
 
