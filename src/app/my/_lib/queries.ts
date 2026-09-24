@@ -145,13 +145,20 @@ export async function getMyLectureSignupIds() {
   return new Set((data ?? []).map((r) => r.lecture_id));
 }
 
+/** 반의 상시 불라방 링크 — **내 반만** (링크 정책도 스태프에게 전부 열려 있다 — 머리말) */
 export async function getMyLiveLinks() {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("section_live_links")
-    .select(`section_id, live_url, updated_at, section:class_sections(${SECTION_COLS})`)
-    .order("section_id", { ascending: true });
-  return data ?? [];
+  const [{ data: ids, error }, { data }] = await Promise.all([
+    supabase.rpc("my_section_ids"),
+    supabase
+      .from("section_live_links")
+      .select(`section_id, live_url, updated_at, section:class_sections(${SECTION_COLS})`)
+      .order("section_id", { ascending: true }),
+  ]);
+  // 조회가 실패하면 좁히지 않는다 — RLS 는 그대로 막고 있다
+  if (error || !ids) return data ?? [];
+  const mine = new Set<number>(ids);
+  return (data ?? []).filter((l) => mine.has(l.section_id));
 }
 export type MyLiveLink = Awaited<ReturnType<typeof getMyLiveLinks>>[number];
 
@@ -363,11 +370,19 @@ export async function getMyStudyMaterials() {
 export type MyStudyMaterial = Awaited<ReturnType<typeof getMyStudyMaterials>>[number];
 
 /** 내 숙제 제출물과 사진 (최근 순). 레벨·과목으로 좁힐 수 있다 */
+/**
+ * **내가** 낸 숙제. `user_id` 로 좁힌다 — 정책 `homework_submissions: 본인·스태프 조회` 는
+ * 스태프에게 **모든 학생의 제출**이 열려 있다 (머리말). 좁히지 않으면 `/my/homework` 의
+ * 달력 `제출 N` 과 "지금까지 낸 숙제" 에 **남의 숙제가 레벨 가리지 않고** 선다.
+ */
 export async function getMyHomework(filter?: { level?: number; subject?: string }) {
+  const { user } = await getSessionProfile();
+  if (!user) return [];
   const supabase = await createClient();
   let q = supabase
     .from("homework_submissions")
     .select("id, level, subject, class_date, question, feedback, status, created_at, checked_at, homework_files(id, file_name, file_size, content_type, created_at)")
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(60);
   if (filter?.level) q = q.eq("level", filter.level);
