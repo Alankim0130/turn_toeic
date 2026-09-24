@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionProfile } from "@/lib/auth";
 import { todayKST } from "@/lib/utils";
@@ -12,6 +13,7 @@ import { fetchOpenEnrollSections } from "@/lib/open-sections";
  * 학생 화면의 RLS 정책들은 대부분 `… or private.is_staff()` 라 **강사·관리자에게는 모든 반·모든 학생이 열린다** —
  * 관리자 화면에는 맞지만 `/my` 에서 그대로 쓰면 남의 반 수업일과 **남의 등록 현황**이 내 화면에 선다.
  * 그래서 여기서는 **내 반**(`public.my_section_ids()`)과 **내 user_id** 로 한 번 더 좁힌다.
+ * 다시보기는 저녁 반이 오전 짝 반의 녹화본을 보므로 짝(`public.term_recorded_pairs`)까지 더해서 좁힌다 — `getMyReplays` 머리말.
  * 학생에게는 달라지는 것이 없다 — `private.has_section_access` 와 `my_section_ids()` 는 같은 조건이고
  * (본인 배정 · 등록 active · 종강 전), 등록도 본인 것만 보였다.
  */
@@ -26,13 +28,13 @@ const SECTION_COLS = `
  * 지금 접근할 수 있는 반 — 직접 배정된 반 + 스파르타반이 함께 여는 점수보장반(예: 650 10:00 + 850 12:30).
  * 어떤 반이 열리는지는 DB 의 my_section_ids() (private.section_includes) 가 정한다. 화면에서 따로 계산하지 말 것.
  */
-export async function getMyAccessibleSections() {
+export const getMyAccessibleSections = cache(async () => {
   const supabase = await createClient();
   const { data: ids } = await supabase.rpc("my_section_ids");
   if (!ids || ids.length === 0) return [];
   const { data } = await supabase.from("class_sections").select(SECTION_COLS).in("id", ids);
   return data ?? [];
-}
+});
 export type MyAccessibleSection = Awaited<ReturnType<typeof getMyAccessibleSections>>[number];
 
 /**
@@ -208,16 +210,64 @@ export async function getNextSessionBySection(sectionIds: number[]) {
   return map;
 }
 
+/**
+ * 저녁 반(화목금 인강 · 월수금 현장) → **녹화본이 올라오는 오전 짝 반** (`public.term_recorded_pairs`).
+ * **짝을 화면에서 계산하지 말 것** — 판정은 DB 한곳이다 (도메인 규칙 1 "저녁 반 학생의 다시보기").
+ */
+async function getMyRecordedPairs(termIds: (number | null)[]) {
+  const out = new Map<number, number>();
+  const ids = [...new Set(termIds.filter((t): t is number => typeof t === "number"))];
+  if (ids.length === 0) return out;
+  const supabase = await createClient();
+  const rows = await Promise.all(ids.map((t) => supabase.rpc("term_recorded_pairs", { p_term_id: t })));
+  for (const { data } of rows) for (const r of data ?? []) out.set(r.recorded_id, r.source_id);
+  return out;
+}
+
+/**
+ * 내 다시보기 — **내 반 + 저녁 반의 오전 짝 반**의 녹화본만.
+ *
+ * 정책 `replays: 수강생·스태프 조회` 는 `… or private.is_staff()` 라 **강사·관리자에게는 모든 반의 녹화본이 열린다** (머리말).
+ * 관리자 화면에는 맞지만 `/my/replay` 에서 그대로 쓰면 **남의 반 녹화본이 내 화면에 선다.**
+ *
+ * **좁히는 집합은 RLS 가 여는 집합보다 넓게 잡는다** — 좁게 잡으면 진짜 학생이 볼 수 있는 녹화본이 사라진다.
+ * `private.has_recorded_replay_access` 와 같은 것을 본다: 내 저녁 반의 오전 짝, 그 짝이 묶음 반이면 안의 시간 단위 반까지.
+ */
 export async function getMyReplays() {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("replays")
-    .select(
-      `id, video_url, published_at,
-       session:session_dates(id, seq, date, start_time, end_time, section:class_sections(${SECTION_COLS}))`,
-    )
-    .order("published_at", { ascending: false });
-  return data ?? [];
+  const [{ data: rows }, { data: ids, error: idsError }] = await Promise.all([
+    supabase
+      .from("replays")
+      .select(
+        `id, video_url, published_at,
+         session:session_dates(id, seq, date, start_time, end_time, section:class_sections(${SECTION_COLS}))`,
+      )
+      .order("published_at", { ascending: false }),
+    supabase.rpc("my_section_ids"),
+  ]);
+  const replays = rows ?? [];
+  // 조회가 실패하면 좁히지 않는다 — 근거 없이 지우면 진짜 학생의 녹화본이 사라진다 (RLS 는 그대로 막고 있다)
+  if (idsError || !ids) return replays;
+  if (ids.length === 0) return [];
+
+  const sections = await getMyAccessibleSections();
+  if (sections.length === 0) return replays; // 반을 못 읽었다 — 오전 짝을 알 수 없으니 좁히지 않는다
+
+  const allowed = new Set<number>(ids);
+  const pairs = await getMyRecordedPairs(sections.map((s) => s.term_id));
+  const sources = sections.map((s) => pairs.get(s.id)).filter((id): id is number => typeof id === "number");
+  if (sources.length > 0) {
+    const includes = await getMySectionIncludes(sections.map((s) => s.term_id));
+    for (const src of sources) {
+      allowed.add(src);
+      for (const inner of includes.get(src) ?? []) allowed.add(inner);
+    }
+  }
+
+  return replays.filter((r) => {
+    const id = r.session?.section?.id;
+    return typeof id === "number" && allowed.has(id);
+  });
 }
 export type MyReplay = Awaited<ReturnType<typeof getMyReplays>>[number];
 
