@@ -66,15 +66,30 @@
    **레벨은 따로 거르지 않는다** (2026-09-24 Alan — "다시보기, 숙제, 불라방 모두 내 레벨에 맞는것만. 단 실전속성과 중급속성은 두 레벨").
    `my_section_ids()` 가 곧 내 레벨이다 — 그 안에 `private.section_includes` 가 스파르타의 포함 레벨까지 넣어 주므로
    중급속성은 650+850, 실전속성은 750+850 이 저절로 함께 열린다. **화면에서 레벨 숫자로 거르지 말 것** (작업 원칙 4).
-   **`src/app/my/_lib/queries.test.ts` 가 소스를 읽어 못박는다** — 스태프에게 열린 **열세 표**를 읽는 함수에
-   좁히기(`my_section_ids` · `user_id` · 부른 쪽이 준 `section_id`·`study_id` 목록)가 없으면 `npm test` 가 깨진다.
-   **반으로 열리는 것** `session_dates`·`replays`·`session_live_links`·`section_live_links` ·
-   **사람으로 열리는 것** `homework_submissions`·`enrollment_orders`·`enrollment_verifications`·`lecture_signups`·
-   `textbook_orders`·`study_signups`·`study_checkins`·`student_messages`·`study_materials`.
+   **`src/app/my/_lib/queries.test.ts` 가 소스를 읽어 못박는다 — `queries.ts` 한 파일이 아니라 학생이 닿는 파일 전부**
+   (`src/app/my` · `(public)` · `attend` · `(auth)` · `auth` · `src/components`(관리자 조각 빼고) · `src/lib/auth.ts`).
+   스태프에게 열린 **열아홉 표**를 읽는 함수에 좁히기(`my_section_ids` · `user_id`·`student_id` · 내 id 로 넣는 행 ·
+   계정 통합의 `from_user`·`to_user` · 부른 쪽이 준 `section_id`·`study_id` 목록 · 내 등록에서 뽑은 기수 `signupTerms`)가
+   없으면 `npm test` 가 깨지고, **걸린 곳을 한꺼번에** 적는다 (첫 실패가 같은 표의 다른 구멍을 가리지 않게).
+   **반·기수로 열리는 것** `session_dates`·`replays`·`session_live_links`·`section_live_links`·`study_materials`·`special_lectures` ·
+   **사람으로 열리는 것** `homework_submissions`·`enrollment_orders`·`enrollment_verifications`·`enrollments`·`lecture_signups`·
+   `textbook_orders`·`study_signups`·`study_checkins`·`student_messages`·`account_merge_requests`·`attendance_stamps`·
+   `attendance_events`·`profiles`. 목록은 **마이그레이션을 재생해 select 정책에 스태프·조교 갈래가 있는 표**로 뽑았다
+   (교재·음원·스터디 공지·반 목록 같은 공용 목록은 모두에게 같아서 뺐다).
    **새 `/my` 조회를 만들면 이 목록을 함께 늘릴 것** — 정책이 `본인 or 스태프` 면 반드시 여기 해당한다.
-   2026-09-23~24 에 같은 실수를 **열한 곳**에서 고쳤다: 숙제 달력 레벨 · 등록 현황 · 다시보기 · 숙제 제출 목록 ·
-   등업신청 기록 · 특강 신청 · 교재주문 · 스터디 신청 · 비대면 인증 · **알림함(읽지 않은 수 포함)** · 비대면 자료.
-   마지막 일곱은 2026-09-24 Alan "그럼 이제는 다 잡힌거야?" 에 **전수조사해서** 찾았다 — 세 화면만 보고 끝냈으면 남았다.
+   좁히지 않아도 되는 곳은 테스트의 `ALLOWED` 에 **까닭을 적어야** 들어간다 (지금 하나 — 교재주문 뒤 스태프 알림).
+   **DB 함수(`.rpc`)는 이 검사가 못 본다** — 학생이 부르는 함수는 전부 `auth.uid()` 로 거른다 (2026-09-24 확인:
+   `my_attendance_summary` · `attendance_scan` · `merge_candidates` · 계정 통합 셋 · `confirm_identity` · `complete_profile` ·
+   교재주문 둘). 새 학생용 함수도 그렇게 만들 것.
+   2026-09-23~24 에 같은 실수를 **열세 곳**에서 고쳤다: 숙제 달력 레벨 · 등록 현황 · 다시보기 · 숙제 제출 목록 ·
+   등업신청 기록 · 특강 신청 · 교재주문 · 스터디 신청 · 비대면 인증 · **알림함(읽지 않은 수 포함)** · 비대면 자료 ·
+   **계정 통합 신청** · **특강 목록**.
+   가운데 일곱은 2026-09-24 Alan "그럼 이제는 다 잡힌거야?" 에 **전수조사해서** 찾았다 — 세 화면만 보고 끝냈으면 남았다.
+   **그런데 그 전수조사도 `queries.ts` 한 파일만 봤다.** 마지막 둘은 같은 날 Alan "찾으니 계속 오류가 보이긴하네.
+   이제는 없을까?" 에 화면·서버 액션·DB 함수까지 넓혀 찾았다 — 관리자의 `/my` 에 남의 계정 통합 신청이
+   "계정 통합을 기다리고 있어요" 로 섰고, 9월 반으로 테스트하는 관리자의 내 시간표·특강 신청에 10월 특강까지 섰다.
+   **"다 잡혔다" 고 말하기 전에 무엇을 훑었는지부터 적을 것** — 한 파일을 보고 전체를 말하면 또 틀린다.
+   숙제 제출 취소(`deleteHomeworkSubmission`)는 정책이 이미 본인·점검 전만 허락하지만 `user_id` 를 함께 걸었다 (RLS 하나에 맡기지 않는다).
 
 ---
 

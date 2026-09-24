@@ -120,7 +120,8 @@ export async function deleteHomeworkSubmission(id: number): Promise<HomeworkResu
   if (!Number.isInteger(id)) return { ok: false, error: "잘못된 요청이에요." };
 
   const { data: files } = await supabase.from("homework_files").select("file_path").eq("submission_id", id);
-  const { data: deleted, error } = await supabase.from("homework_submissions").delete().eq("id", id).select("id");
+  // 내 제출만 — 정책도 본인·점검 전만 허락하지만 RLS 하나에 맡기지 않는다 (등급 체계 10)
+  const { data: deleted, error } = await supabase.from("homework_submissions").delete().eq("id", id).eq("user_id", user.id).select("id");
   if (error) return { ok: false, error: "취소하지 못했어요. 잠시 후 다시 시도해 주세요." };
   if (!deleted?.length) return { ok: false, error: "점검이 끝난 숙제는 취소할 수 없어요." };
   if (files?.length) await supabase.storage.from(BUCKET).remove(files.map((f) => f.file_path));

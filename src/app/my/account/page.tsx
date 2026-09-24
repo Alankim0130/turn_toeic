@@ -6,6 +6,7 @@ import { Reveal } from "@/components/ui/Reveal";
 import { IdentityConfirmForm } from "@/components/my/IdentityConfirmForm";
 import { MergePanel, type MergeCandidate, type MergeRequest } from "./MergePanel";
 import { formatDate } from "@/lib/utils";
+import { getMyMergeRequests } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "내 계정",
@@ -24,11 +25,8 @@ export default async function AccountPage() {
   const supabase = await createClient();
   const confirmed = Boolean(profile?.identity_confirmed_at);
 
-  const { data: requests } = await supabase
-    .from("account_merge_requests")
-    .select("id, from_user, to_user, requested_by, created_at")
-    .eq("status", "pending")
-    .order("created_at", { ascending: false });
+  // 내 계정이 걸린 신청만 — 정책은 강사·관리자에게 모든 학생의 신청을 연다 (getMyMergeRequests 머리말)
+  const requests = await getMyMergeRequests();
 
   let candidates: MergeCandidate[] = [];
   if (confirmed) {
@@ -65,7 +63,7 @@ export default async function AccountPage() {
           <h2 className="text-base font-black text-ink">계정 합치기</h2>
           {!confirmed ? (
             <p className="mt-2 text-sm text-slate">먼저 위에서 이름·전화번호를 확인해 주세요.</p>
-          ) : candidates.length === 0 && (requests ?? []).length === 0 ? (
+          ) : candidates.length === 0 && requests.length === 0 ? (
             <p className="mt-2 text-sm text-slate">같은 이름·전화번호로 만든 다른 계정이 없어요. 합칠 것이 없습니다.</p>
           ) : (
             <>
@@ -74,7 +72,7 @@ export default async function AccountPage() {
                 남지 않는 계정은 기록을 보존한 채 로그인만 막힙니다.
               </p>
               <div className="mt-4">
-                <MergePanel me={user.id} candidates={candidates} requests={(requests ?? []) as MergeRequest[]} />
+                <MergePanel me={user.id} candidates={candidates} requests={requests as MergeRequest[]} />
               </div>
             </>
           )}
