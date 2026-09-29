@@ -157,3 +157,72 @@ describe("반 자동 대조", () => {
     expect(matchSections(live(null), SECTIONS).result.kind).toBe("none");
   });
 });
+
+/**
+ * 방학달 — 새 시간표가 생기면 그 시간표대로 수강증이 새로 나온다 (2026-09-29 Alan "방학같은 경우는 새로운 시간표가 생기면서
+ * 해당시간표 수강증이 새로 생길거야. … 우리는 거기에 맞는 권한을 다 부여해야해").
+ * 반은 **그 달 시간표**(달마다 한 벌)에서 만들어져 시간대 라벨이 곧 시간표의 시각이다. 대조는 그 라벨과 수강증 수강시간의 **정확 일치**라,
+ * 방학달 시간표를 브로슈어(= 수강증) 시각 그대로 적어 두면 새 수강증이 그 달 반에 붙는다. 방학달 반은 60분 시간 단위가 없는 통짜 120분이다.
+ */
+describe("방학달 시간표로 만든 반 — 새 수강증이 그 달 반에 붙는다", () => {
+  const DEC = { year: 2026, month: 12 };
+  const JAN = { year: 2027, month: 1 };
+  const FEB = { year: 2027, month: 2 };
+  const S750 = course(5, 750, "sparta");
+  const V: EnrollSection[] = [];
+  const both = (term: { year: number; month: number }, c: ReturnType<typeof course>, tb: string) => {
+    for (const track of ["mwf", "ttf"] as const) V.push(sec(term, track, c, tb));
+  };
+  // 12월(평달) — 10:00~12:10 이 있지만 1월 수강증이 붙으면 안 된다
+  both(DEC, C650, "10:00~12:10");
+  // 1월(방학달) — 2026년 여름 브로슈어 모양: 통짜 120분 · 저녁 17:00~19:10(월수금 현강 + 화목금 인강) · 850 · 스파르타 200/180/240분
+  for (const tb of ["10:00~12:10", "12:30~14:40", "17:00~19:10"]) both(JAN, C650, tb);
+  for (const tb of ["10:00~12:10", "12:30~14:40", "17:00~19:10"]) both(JAN, C750, tb);
+  both(JAN, C850, "12:30~14:40");
+  for (const tb of ["12:30~16:50", "15:30~19:10", "10:00~13:30"]) both(JAN, S650, tb);
+  for (const tb of ["12:30~16:50", "10:00~14:40", "10:00~13:30"]) both(JAN, S750, tb);
+  // 2월 — 시간표가 1월과 다르다 (예: 650 이 09:30 으로 당겨짐)
+  both(FEB, C650, "09:30~11:40");
+
+  const pair = (term: { year: number; month: number }, cid: number, tb: string) =>
+    ["mwf", "ttf"].map((t) => V.find((s) => s.term === term && s.track === t && s.course!.id === cid && s.time_block === tb)!.id);
+  const receipt = (lines: string[]) =>
+    parseReceipt(["현재시간 2026-12-20 14:02:11", ...lines, "수강생 김민수", "수강센터 부산 서면센터", "강사 이영수 .이혜영"].join("\n"));
+
+  it("1월 650 한달 점수보장반 10:00~12:10 불라방 — 1월 두 반 (12월의 같은 시각 반이 아니라)", () => {
+    const p = receipt(["01월 과정", "역전토익 [종합반]", "650 목표", "강의실 온라인 강의", "수강요일 [4주-01/05] 주5일 (월18회 라이브방송)", "수강시간 10:00~12:10"]);
+    expect(p.courseMonth).toBe(1);
+    expect(p.mode).toBe("live");
+    expect(matchSections(p, V).result).toEqual({ kind: "match", sectionIds: pair(JAN, 1, "10:00~12:10"), term: "2027-01" });
+  });
+
+  it("1월 저녁 17:00~19:10 (월수금 현강 + 화목금 인강) — 저녁 두 반, 현장", () => {
+    const p = receipt(["01월 과정", "역전토익 [종합반]", "750 목표", "강의실 본관 701호", "수강요일 [4주-01/05] 주5일 (월18회) 월수금(현강)+화목금(인강)", "수강시간 17:00~19:10"]);
+    expect(p.mode).toBe("onsite");
+    expect(matchSections(p, V).result).toEqual({ kind: "match", sectionIds: pair(JAN, 2, "17:00~19:10"), term: "2027-01" });
+  });
+
+  it("1월 중급속성(프리미어반) 200분 12:30~16:50 — 스파르타 650 반에만 붙는다 (650·850 권한은 DB 가 연다)", () => {
+    const p = receipt(["01월 과정", "역전토익 [종합반] 프리미어반", "650 목표 중급속성", "강의실 본관 701호", "수강요일 [4주-01/05] 주5일 (월18회) 프리미어반", "수강시간 12:30~16:50"]);
+    expect(p.program).toBe("sparta");
+    expect(matchSections(p, V).result).toEqual({ kind: "match", sectionIds: pair(JAN, 4, "12:30~16:50"), term: "2027-01" });
+  });
+
+  it("1월 실전속성 240분 10:00~14:40 — 같은 10:00 시작이어도 180분 반(10:00~13:30)이 아니라 240분 반", () => {
+    const p = receipt(["01월 과정", "역전토익 [종합반] 프리미어반", "750 목표 실전속성", "강의실 본관 701호", "수강요일 [4주-01/05] 주5일 (월18회) 프리미어반", "수강시간 10:00~14:40"]);
+    expect(matchSections(p, V).result).toEqual({ kind: "match", sectionIds: pair(JAN, 5, "10:00~14:40"), term: "2027-01" });
+  });
+
+  it("2월 시간표가 달라지면 2월 수강증은 2월 시각의 반에 붙는다", () => {
+    const p = receipt(["02월 과정", "역전토익 [종합반]", "650 목표", "강의실 본관 701호", "수강요일 [4주-02/02] 주5일 (월18회)", "수강시간 09:30~11:40"]);
+    expect(matchSections(p, V).result).toEqual({ kind: "match", sectionIds: pair(FEB, 1, "09:30~11:40"), term: "2027-02" });
+  });
+
+  it("시간표에 없는 시각의 수강증은 아무 반에도 붙이지 않는다 — 강사 검토로 간다 (시간표 시각을 수강증과 똑같이 적어야 하는 까닭)", () => {
+    // 2월에 1월 시각(10:00~12:10)으로 낸 수강증 · 1월에 없는 13:00~15:10
+    const feb = receipt(["02월 과정", "역전토익 [종합반]", "650 목표", "강의실 본관 701호", "수강요일 [4주-02/02] 주5일 (월18회)", "수강시간 10:00~12:10"]);
+    expect(matchSections(feb, V).result.kind).toBe("none");
+    const jan = receipt(["01월 과정", "역전토익 [종합반]", "650 목표", "강의실 본관 701호", "수강요일 [4주-01/05] 주5일 (월18회)", "수강시간 13:00~15:10"]);
+    expect(matchSections(jan, V).result.kind).toBe("none");
+  });
+});
