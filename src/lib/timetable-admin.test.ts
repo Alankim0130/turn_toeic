@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { duplicateSlot, normalizeTime, parseSlotInput } from "./timetable-admin";
+import { duplicateSlot, HOURS, joinTime, minuteOptions, normalizeTime, parseSlotInput, splitTime } from "./timetable-admin";
 
 describe("normalizeTime", () => {
   it("9:00 · 09:00 · 09:00:00 → 09:00", () => {
@@ -13,6 +13,54 @@ describe("normalizeTime", () => {
     expect(normalizeTime("10")).toBeNull();
     expect(normalizeTime("")).toBeNull();
     expect(normalizeTime(null)).toBeNull();
+  });
+});
+
+describe("시 · 분 고르기 칸 (24시간제)", () => {
+  it("시는 00 ~ 23 스물네 칸 — 오후 6시는 18 이다 (브로슈어 표기)", () => {
+    expect(HOURS).toHaveLength(24);
+    expect(HOURS[0]).toBe("00");
+    expect(HOURS).toContain("18");
+    expect(HOURS.at(-1)).toBe("23");
+  });
+
+  it("분은 5분 간격 열두 칸 — 시간표의 10분 단위가 전부 들어 있다", () => {
+    const m = minuteOptions();
+    expect(m).toHaveLength(12);
+    expect(m[0]).toBe("00");
+    expect(m.at(-1)).toBe("55");
+    for (const v of ["00", "10", "30", "40", "50"]) expect(m).toContain(v);
+  });
+
+  it("저장된 값이 5분 간격 사이면 그 값도 칸에 넣고 순서를 지킨다", () => {
+    const m = minuteOptions("12");
+    expect(m).toHaveLength(13);
+    expect(m.slice(2, 4)).toEqual(["10", "12"]);
+    expect(minuteOptions("30")).toHaveLength(12);
+    expect(minuteOptions("75")).toHaveLength(12);
+  });
+
+  it("DB 시각을 두 칸으로 나눈다 — 못 읽으면 빈칸", () => {
+    expect(splitTime("18:30:00")).toEqual({ h: "18", m: "30" });
+    expect(splitTime("9:05")).toEqual({ h: "09", m: "05" });
+    expect(splitTime(null)).toBeNull();
+    expect(splitTime("")).toBeNull();
+  });
+
+  it("고른 두 칸을 HH:MM 으로 합친다 — 하나라도 비면 null", () => {
+    expect(joinTime("18", "30")).toBe("18:30");
+    expect(joinTime("9", "05")).toBe("09:05");
+    expect(joinTime("", "30")).toBeNull();
+    expect(joinTime("18", "")).toBeNull();
+    expect(joinTime("24", "00")).toBeNull();
+    expect(joinTime("18", "5")).toBeNull();
+    expect(joinTime(null, undefined)).toBeNull();
+  });
+
+  it("빈칸으로 보내면 저장하지 않고 고르라고 말한다", () => {
+    const r = parseSlotInput({ level: "650", program: "score", season: "regular", start: joinTime("", ""), end: joinTime("11", "00"), ttfRecorded: false });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/골라/);
   });
 });
 

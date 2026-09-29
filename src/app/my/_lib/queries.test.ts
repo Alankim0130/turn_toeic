@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+// posix — 윈도에서 `join` 은 `src\app\my\…` 를 만들어 아래 경로 비교와 SKIP_DIRS 가 통째로 어긋났다 (2026-09-29)
+import { posix } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -29,7 +30,7 @@ const SKIP_DIRS = ["src/components/admin"];
 function walk(dir: string): string[] {
   if (SKIP_DIRS.includes(dir)) return [];
   return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
+    const path = posix.join(dir, name);
     if (statSync(path).isDirectory()) return walk(path);
     return /\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : [];
   });

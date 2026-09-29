@@ -30,6 +30,39 @@ export function normalizeTime(v: string | null | undefined): string | null {
   return `${String(h).padStart(2, "0")}:${m[2]}`;
 }
 
+/*
+ * 시각은 **시 · 분 두 칸을 골라** 적는다 (2026-09-29 Alan — "시간 설정에서 다 보이지가 않아서 설정하는데 어려움이 있어").
+ * 브라우저 기본 시간 칸(`type="time"`)은 한국어 화면에서 `오전 10:00` 처럼 12시간제로 그려지고 기기마다 모양이 달라,
+ * 좁은 칸에서 `오전 1(` 로 잘렸다. 브로슈어와 반 시간대 라벨은 24시간제(`18:30`)라 고르는 칸도 24시간제로 맞춘다.
+ */
+
+/** 시 칸: 00 ~ 23 */
+export const HOURS: readonly string[] = Array.from({ length: 24 }, (_, h) => String(h).padStart(2, "0"));
+
+/** 분 칸 간격. 수업 시간표는 10분 단위라 5분이면 넉넉하다 */
+export const MINUTE_STEP = 5;
+
+/** 분 칸: 00 · 05 · … · 55. 이미 저장된 값이 그 사이면(예: 12분) 그 값도 넣어 둔다 — 안 넣으면 고르는 칸이 엉뚱한 값을 보여 준다 */
+export function minuteOptions(current?: string | null): string[] {
+  const out = Array.from({ length: 60 / MINUTE_STEP }, (_, i) => String(i * MINUTE_STEP).padStart(2, "0"));
+  if (current && /^[0-5]\d$/.test(current) && !out.includes(current)) out.push(current);
+  return out.sort();
+}
+
+/** "10:00:00" → { h: "10", m: "00" }. 못 읽으면 null (새 줄은 빈칸으로 시작한다) */
+export function splitTime(v: string | null | undefined): { h: string; m: string } | null {
+  const t = normalizeTime(v);
+  return t ? { h: t.slice(0, 2), m: t.slice(3, 5) } : null;
+}
+
+/** 고른 시 · 분 → "HH:MM". 하나라도 비었거나 엉뚱하면 null */
+export function joinTime(h: string | null | undefined, m: string | null | undefined): string | null {
+  const hh = String(h ?? "").trim();
+  const mm = String(m ?? "").trim();
+  if (!/^\d{1,2}$/.test(hh) || !/^\d{2}$/.test(mm)) return null;
+  return normalizeTime(`${hh}:${mm}`);
+}
+
 /** 폼 값 → 저장할 행. 틀리면 사람에게 보여 줄 한 줄 */
 export function parseSlotInput(raw: {
   level: string | null | undefined;
@@ -45,7 +78,7 @@ export function parseSlotInput(raw: {
   if (!isSeason(raw.season)) return { ok: false, error: "평달·방학달 중 하나여야 해요." };
   const start = normalizeTime(raw.start);
   const end = normalizeTime(raw.end);
-  if (!start || !end) return { ok: false, error: "시작·종료 시각을 HH:MM 으로 적어 주세요 (예: 10:00)." };
+  if (!start || !end) return { ok: false, error: "시작·종료 시각을 시·분까지 골라 주세요." };
   if (end <= start) return { ok: false, error: "종료 시각이 시작 시각보다 뒤여야 해요." };
   return { ok: true, slot: { level, program: raw.program, season: raw.season, start, end, ttfRecorded: raw.ttfRecorded } };
 }

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { isSeason } from "@/lib/timetable";
-import { duplicateSlot, parseSlotInput } from "@/lib/timetable-admin";
+import { duplicateSlot, joinTime, parseSlotInput } from "@/lib/timetable-admin";
 
 /**
  * 시간표 설정 (2026-09-23 Alan — "관리자모드에서 평달과 방학 시간표를 직접 설정할수 있도록").
@@ -36,12 +36,13 @@ export async function saveTimetableSlot(formData: FormData) {
   const id = idRaw ? Number(idRaw) : null;
   if (id !== null && !Number.isInteger(id)) done(season, false, "잘못된 요청입니다.");
 
+  // 시각은 시 · 분 두 칸으로 온다 (24시간제 — timetable-admin.ts)
   const parsed = parseSlotInput({
     level: str(formData, "level"),
     program: str(formData, "program"),
     season,
-    start: str(formData, "start_time"),
-    end: str(formData, "end_time"),
+    start: joinTime(str(formData, "start_h"), str(formData, "start_m")),
+    end: joinTime(str(formData, "end_h"), str(formData, "end_m")),
     ttfRecorded: str(formData, "ttf_recorded") === "on",
   });
   if (!parsed.ok) done(season, false, parsed.error);
