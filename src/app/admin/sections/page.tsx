@@ -7,7 +7,6 @@ import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { formatDate, TRACK_LABEL, todayKST, cn } from "@/lib/utils";
 import { sectionTypeLabel } from "@/lib/section-type";
-import { carryOverNote, nextMonthDefaults } from "@/lib/course-set";
 import { CreateSectionForm } from "@/components/admin/sections/CreateSectionForm";
 import { BulkCreateSections, type BulkSlot } from "@/components/admin/sections/BulkCreateSections";
 import { AssignInstructor } from "@/components/admin/sections/AssignInstructor";
@@ -63,7 +62,15 @@ export default async function AdminSectionsPage({
     isAdmin(profile.role)
       ? supabase.from("profiles").select("id, name, role, subject").in("role", ["instructor", "admin"]).order("name")
       : Promise.resolve({ data: null }),
-    supabase.from("timetable_slots").select("id, level, program, season, start_time, end_time").order("level").order("start_time").order("end_time"),
+    // 그 달 시간표 (2026-09-29 부터 달마다 한 벌) — 시간대 · 과정 · 트랙별 과목을 시간표 설정에서 정한다
+    supabase
+      .from("timetable_slots")
+      .select("id, level, program, start_time, end_time, book_set, subject_mwf, subject_ttf")
+      .eq("year", y)
+      .eq("month", m)
+      .order("level")
+      .order("start_time")
+      .order("end_time"),
   ]);
 
   const [{ data: classDates }, { data: lectureRows, error: lectureError }, { data: sections }, { data: studyRows }] = term
@@ -94,14 +101,6 @@ export default async function AdminSectionsPage({
   const prev = shiftMonth(y, m, -1);
   const next = shiftMonth(y, m, 1);
 
-  // 일괄 개설 표의 기본값: 지난달 같은 자리의 과목은 그대로, 과정 A/B 는 뒤집어서 (2026-09-23 Alan "12월 달까지는 자동채움으로").
-  // 계절이 바뀌는 달(방학달 ↔ 평달)은 시간표가 달라 채우지 않는다 — `lib/course-set.ts`
-  const { data: prevTerm } = await supabase.from("terms").select("id").eq("year", prev.y).eq("month", prev.m).maybeSingle();
-  const { data: prevSections } = prevTerm
-    ? await supabase.from("class_sections").select("course_id, track, time_block, subject, book_set").eq("term_id", prevTerm.id)
-    : { data: [] as { course_id: number; track: string; time_block: string | null; subject: string | null; book_set: string | null }[] };
-  const bulkDefaults = nextMonthDefaults(prevSections ?? [], { prevMonth: prev.m, month: m });
-  const carryNote = carryOverNote({ prevMonth: prev.m, month: m }, (prevSections?.length ?? 0) > 0, bulkDefaults.size);
   const { data: neighbourDates } = await supabase
     .from("term_class_dates")
     .select("date, track, term:terms!inner(id, year, month)")
@@ -186,14 +185,22 @@ export default async function AdminSectionsPage({
   };
   const hasSaved = !!term?.enrollment_opens_at && !!term?.closes_at;
 
-  // 시간표 기준 일괄 개설용: 레벨별 시간대와 이미 만들어진 (강좌·트랙·시간대) 조합.
-  // 평달과 방학달은 시간대가 다르다 (2026-09-16 Alan) — 이 기수의 계절에 맞는 시간대만 쓴다
-  const season = term ? seasonOfMonth(term.month) : "regular";
+  // 시간표 기준 일괄 개설용: 그 달 시간표의 시간대와 이미 만들어진 (강좌·트랙·시간대) 조합.
+  // 시간표는 달마다 한 벌이다 (2026-09-29 Alan) — 그 달 시간표가 없으면 표를 비우고 만들러 가는 길만 둔다
+  const season = seasonOfMonth(m);
   const bulkSlots: BulkSlot[] = (timetable ?? [])
-    .filter((s) => s.season === season)
-    .map((s) => ({ id: s.id, level: s.level, program: s.program, label: timeBlockOf(s.start_time, s.end_time) ?? "" }))
+    .map((s) => ({
+      id: s.id,
+      level: s.level,
+      program: s.program,
+      label: timeBlockOf(s.start_time, s.end_time) ?? "",
+      bookSet: s.book_set,
+      subjectMwf: s.subject_mwf,
+      subjectTtf: s.subject_ttf,
+    }))
     .filter((s) => s.label);
-  const seasonHasNoSlots = term != null && bulkSlots.length === 0 && (timetable ?? []).length > 0;
+  const monthHasNoSlots = term != null && bulkSlots.length === 0;
+  const timetableHref = `/admin/timetable?month=${key}`;
   const existingKeys = (sections ?? []).map((s) => sectionKeyOf(s.course_id, s.track, s.time_block));
 
   const studies: PlannerStudy[] = (studyRows ?? []).map((s) => ({
@@ -456,20 +463,21 @@ export default async function AdminSectionsPage({
               {(courses ?? []).length > 0 && (
                 <div className="mb-8">
                   <p className="mt-1 text-sm text-slate">
-                    시간표의 시간대와 강좌를 엮어 한 번에 개설합니다. 불라방은 따로 만들지 않고, 반마다 불라방 수강료를 넣으면 같은 반을 불라방으로 들을 수 있어요.
-                    {term && <> 지금은 <strong className="text-ink">{term.month}월 · {SEASON_LABEL[season]} 시간표</strong>를 씁니다.</>}
+                    시간표의 시간대와 강좌를 엮어 한 번에 개설합니다. 불라방은 따로 만들지 않아요 — 같은 반을 수강증에 따라 현장 또는 불라방으로 들어요.
+                    {term && <> 지금은 <strong className="text-ink">{termLabel} 시간표</strong>({SEASON_LABEL[season]})를 씁니다.</>}
                   </p>
                   <p className="mt-1 text-sm text-slate">
-                    <strong className="text-ink">주5일</strong> 칸을 누르면 월수금·화목금이 함께 골라져요. 120분·140분은 <strong className="text-ink">묶음 반</strong>이고 그 아래 ↳ 줄이
-                    실제 수업인 60분·70분 반이라, 묶음 반 학생은 안에 든 반을 자동으로 함께 들어요. <strong className="text-ink">과목(LC/RC)과 과정(A/B)</strong>은 시간 단위 반마다 고르고,
-                    지난달 편성이 있으면 과목은 그대로 · 과정은 뒤집어 미리 채워져요.
+                    <strong className="text-ink">주5일</strong> 칸을 누르면 월수금·화목금이 함께 골라져요. 120분·140분은 <strong className="text-ink">한달완성(묶음) 반</strong>이고 그 아래 ↳ 줄이
+                    실제 수업인 60분·70분 반이라, 한달완성 학생은 안에 든 반을 자동으로 함께 들어요. <strong className="text-ink">과목(LC/RC)과 과정(A/B)</strong>은
+                    시간표에서 정한 값으로 만들어져요.
                   </p>
-                  {seasonHasNoSlots && (
+                  {monthHasNoSlots && (
                     <div className="mt-3">
                       <Alert kind="warning">
-                        {term?.month}월은 <strong>{SEASON_LABEL[season]}</strong>인데 {SEASON_LABEL[season]} 시간대가 아직 등록돼 있지 않아요.
-                        평달 시간대로 만들면 반의 시간이 틀리게 박히므로 표에 아무것도 띄우지 않았습니다.
-                        그 달 레벨별 실제 시간을 알려 주시면 넣어 드릴게요.
+                        {termLabel} 시간표가 아직 없어요. 시간표가 있어야 반의 시간·과목·과정이 맞게 들어가므로 표에 아무것도 띄우지 않았습니다.{" "}
+                        <Link href={timetableHref} className="font-bold underline underline-offset-2">
+                          {m}월 시간표 만들기 →
+                        </Link>
                       </Alert>
                     </div>
                   )}
@@ -477,13 +485,12 @@ export default async function AdminSectionsPage({
                     <BulkCreateSections
                       termId={term.id}
                       termLabel={termLabel}
+                      timetableHref={timetableHref}
                       courses={courses ?? []}
                       slots={bulkSlots}
                       existingKeys={existingKeys}
                       instructors={instructors ?? null}
                       isAdmin={isAdmin(profile.role)}
-                      defaults={Object.fromEntries(bulkDefaults)}
-                      carryNote={carryNote}
                     />
                   </div>
                   <h3 className="mt-8 border-t border-line pt-6 text-base font-black text-ink">하나씩 만들기</h3>

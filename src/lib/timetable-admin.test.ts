@@ -58,18 +58,28 @@ describe("시 · 분 고르기 칸 (24시간제)", () => {
   });
 
   it("빈칸으로 보내면 저장하지 않고 고르라고 말한다", () => {
-    const r = parseSlotInput({ level: "650", program: "score", season: "regular", start: joinTime("", ""), end: joinTime("11", "00"), ttfRecorded: false });
+    const r = parseSlotInput({ month: "2026-10", level: "650", program: "score", start: joinTime("", ""), end: joinTime("11", "00"), ttfRecorded: false });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/골라/);
   });
 });
 
-describe("parseSlotInput", () => {
-  const base = { level: "650", program: "score", season: "vacation", start: "17:00", end: "19:10", ttfRecorded: true };
+describe("parseSlotInput — 달 줄", () => {
+  const base = { month: "2027-01", level: "650", program: "score", start: "17:00", end: "19:10", ttfRecorded: true };
 
-  it("브로슈어 줄 하나 — 방학달 650 17:00~19:10 화목금 인강", () => {
+  it("브로슈어 줄 하나 — 2027년 1월 650 17:00~19:10 화목금 인강", () => {
     const r = parseSlotInput(base);
-    expect(r).toEqual({ ok: true, slot: { level: 650, program: "score", season: "vacation", start: "17:00", end: "19:10", ttfRecorded: true } });
+    expect(r).toEqual({
+      ok: true,
+      slot: { year: 2027, month: 1, level: 650, program: "score", start: "17:00", end: "19:10", ttfRecorded: true, bookSet: null, subjectMwf: null, subjectTtf: null },
+    });
+  });
+
+  it("과정 · 트랙별 과목을 받는다 — 엉뚱한 값은 비운다", () => {
+    const r = parseSlotInput({ ...base, bookSet: "B", subjectMwf: "rc", subjectTtf: "lc" });
+    expect(r.ok && [r.slot.bookSet, r.slot.subjectMwf, r.slot.subjectTtf]).toEqual(["B", "rc", "lc"]);
+    const bad = parseSlotInput({ ...base, bookSet: "C", subjectMwf: "LC", subjectTtf: "" });
+    expect(bad.ok && [bad.slot.bookSet, bad.slot.subjectMwf, bad.slot.subjectTtf]).toEqual([null, null, null]);
   });
 
   it("종료가 시작보다 앞이면 거절", () => {
@@ -82,9 +92,10 @@ describe("parseSlotInput", () => {
     expect(parseSlotInput({ ...base, end: "17:00" }).ok).toBe(false);
   });
 
-  it("과정·계절·레벨이 엉뚱하면 거절", () => {
+  it("달·과정·레벨이 엉뚱하면 거절", () => {
+    expect(parseSlotInput({ ...base, month: "2027-13" }).ok).toBe(false);
+    expect(parseSlotInput({ ...base, month: "regular" }).ok).toBe(false);
     expect(parseSlotInput({ ...base, program: "premium" }).ok).toBe(false);
-    expect(parseSlotInput({ ...base, season: "summer" }).ok).toBe(false);
     expect(parseSlotInput({ ...base, level: "abc" }).ok).toBe(false);
     expect(parseSlotInput({ ...base, level: "5" }).ok).toBe(false);
   });
@@ -96,21 +107,22 @@ describe("parseSlotInput", () => {
   });
 });
 
-describe("duplicateSlot — 같은 자리에 같은 시간", () => {
+describe("duplicateSlot — 같은 달·자리에 같은 시간", () => {
   const rows = [
-    { id: 1, level: 650, program: "score", season: "regular", start_time: "10:00:00", end_time: "12:10:00" },
-    { id: 2, level: 650, program: "score", season: "vacation", start_time: "10:00:00", end_time: "12:10:00" },
+    { id: 1, year: 2026, month: 10, level: 650, program: "score", start_time: "10:00:00", end_time: "12:10:00" },
+    { id: 2, year: 2026, month: 11, level: 650, program: "score", start_time: "10:00:00", end_time: "12:10:00" },
   ];
-  const slot = { level: 650, program: "score" as const, season: "regular" as const, start: "10:00", end: "12:10", ttfRecorded: false };
+  const slot = { year: 2026, month: 10, level: 650, program: "score" as const, start: "10:00", end: "12:10", ttfRecorded: false, bookSet: null, subjectMwf: null, subjectTtf: null };
 
-  it("같은 레벨·과정·계절·시간이면 겹친다 (DB 시각의 초는 무시)", () => {
+  it("같은 달·레벨·과정·시간이면 겹친다 (DB 시각의 초는 무시)", () => {
     expect(duplicateSlot(rows, slot)?.id).toBe(1);
   });
   it("자기 자신은 빼고 본다 (고칠 때)", () => {
     expect(duplicateSlot(rows, slot, 1)).toBeNull();
   });
-  it("계절이 다르면 겹치지 않는다", () => {
-    expect(duplicateSlot(rows, { ...slot, season: "vacation" })?.id).toBe(2);
+  it("달이 다르면 겹치지 않는다", () => {
+    expect(duplicateSlot(rows, { ...slot, month: 11 })?.id).toBe(2);
+    expect(duplicateSlot(rows, { ...slot, month: 12 })).toBeNull();
     expect(duplicateSlot(rows, { ...slot, start: "10:00", end: "11:00" })).toBeNull();
   });
 });

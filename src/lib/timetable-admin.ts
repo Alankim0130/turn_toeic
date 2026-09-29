@@ -1,23 +1,31 @@
 /**
  * 시간표 설정 화면(`/admin/timetable`)의 입력 검사 (2026-09-23 Alan — "관리자모드에서 평달과 방학 시간표를 직접 설정할 수 있도록").
  *
- * 시간표는 평달·방학달 **두 벌**이고(①), 방학달은 방학 전에 그 벌을 고쳐 쓴다. 시간대를 더하면 반 일괄 개설 표에 그 줄이 바로 생기고,
- * 60분·120분 묶음 관계 · 묶음 반 권한 · 수강증 매칭은 시간의 포함·일치로 계산하므로 새 시간대도 저절로 따라온다.
- * 레벨은 늘지 않는다 (Alan) — 레벨은 `timetable_levels` 행 그대로이고 시간대만 더한다.
+ * 2026-09-29 부터 시간표는 **달마다 한 벌**이다 (Alan "월별로 … 1월 시간표를 정확하게 세팅하고, 2월 시간표까지 미리") — 규칙은 `timetable-month.ts`.
+ * 한 줄 = 그 달 · 레벨 · 과정의 시간대 하나이고, 시간 단위 줄에는 과정 A/B 와 트랙별 과목이 붙는다.
+ * 시간대를 더하면 그 달 반 일괄 개설 표에 그 줄이 바로 생기고, 60분·120분 묶음 관계 · 묶음 반 권한 · 수강증 매칭은
+ * 시간의 포함·일치로 계산하므로 새 시간대도 저절로 따라온다. 레벨은 늘지 않는다 (Alan) — 레벨은 `timetable_levels` 행 그대로다.
  */
 
-import { isProgram, isSeason, type Program, type Season } from "./timetable";
+import { isProgram, type Program } from "./timetable";
 
 export type SlotInput = {
+  /** 그 달 */
+  year: number;
+  month: number;
   level: number;
   program: Program;
-  season: Season;
   /** "HH:MM" */
   start: string;
   /** "HH:MM" */
   end: string;
   /** 이 시간대는 화목금이 인강 (저녁 줄) */
   ttfRecorded: boolean;
+  /** 과정 A|B — 줄의 종류가 허락할 때만 남긴다 (`fieldsFor`) */
+  bookSet: string | null;
+  /** 월수금 · 화목금 과목 lc|rc */
+  subjectMwf: string | null;
+  subjectTtf: string | null;
 };
 
 /** "9:00" · "09:00" · "09:00:00" → "09:00". 아니면 null */
@@ -65,26 +73,47 @@ export function joinTime(h: string | null | undefined, m: string | null | undefi
 
 /** 폼 값 → 저장할 행. 틀리면 사람에게 보여 줄 한 줄 */
 export function parseSlotInput(raw: {
+  month: string | null | undefined;
   level: string | null | undefined;
   program: string | null | undefined;
-  season: string | null | undefined;
   start: string | null | undefined;
   end: string | null | undefined;
   ttfRecorded: boolean;
+  bookSet?: string | null;
+  subjectMwf?: string | null;
+  subjectTtf?: string | null;
 }): { ok: true; slot: SlotInput } | { ok: false; error: string } {
+  const ym = String(raw.month ?? "").match(/^(\d{4})-(\d{2})$/);
+  const year = ym ? Number(ym[1]) : NaN;
+  const month = ym ? Number(ym[2]) : NaN;
+  if (!ym || year < 2020 || year > 2100 || month < 1 || month > 12) return { ok: false, error: "어느 달 시간표인지 다시 골라 주세요." };
   const level = Number(raw.level);
   if (!Number.isInteger(level) || level < 10 || level > 990) return { ok: false, error: "레벨을 다시 골라 주세요." };
   if (!isProgram(raw.program)) return { ok: false, error: "과정을 다시 골라 주세요." };
-  if (!isSeason(raw.season)) return { ok: false, error: "평달·방학달 중 하나여야 해요." };
   const start = normalizeTime(raw.start);
   const end = normalizeTime(raw.end);
   if (!start || !end) return { ok: false, error: "시작·종료 시각을 시·분까지 골라 주세요." };
   if (end <= start) return { ok: false, error: "종료 시각이 시작 시각보다 뒤여야 해요." };
-  return { ok: true, slot: { level, program: raw.program, season: raw.season, start, end, ttfRecorded: raw.ttfRecorded } };
+  const pick = (v: string | null | undefined, allowed: string[]) => (v && allowed.includes(v) ? v : null);
+  return {
+    ok: true,
+    slot: {
+      year,
+      month,
+      level,
+      program: raw.program,
+      start,
+      end,
+      ttfRecorded: raw.ttfRecorded,
+      bookSet: pick(raw.bookSet, ["A", "B"]),
+      subjectMwf: pick(raw.subjectMwf, ["lc", "rc"]),
+      subjectTtf: pick(raw.subjectTtf, ["lc", "rc"]),
+    },
+  };
 }
 
-/** 같은 (레벨 · 과정 · 계절)에 같은 시간이 이미 있나 — DB 의 unique 와 같은 키 */
-export function duplicateSlot<T extends { id: number; level: number; program: string; season: string; start_time: string; end_time: string }>(
+/** 같은 (달 · 레벨 · 과정)에 같은 시간이 이미 있나 — DB 의 unique(timetable_slots_month_key) 와 같은 키 */
+export function duplicateSlot<T extends { id: number; year: number | null; month: number | null; level: number; program: string; start_time: string; end_time: string }>(
   slots: T[],
   slot: SlotInput,
   excludeId?: number | null,
@@ -93,9 +122,10 @@ export function duplicateSlot<T extends { id: number; level: number; program: st
     slots.find(
       (s) =>
         s.id !== excludeId &&
+        s.year === slot.year &&
+        s.month === slot.month &&
         s.level === slot.level &&
         s.program === slot.program &&
-        s.season === slot.season &&
         normalizeTime(s.start_time) === slot.start &&
         normalizeTime(s.end_time) === slot.end,
     ) ?? null

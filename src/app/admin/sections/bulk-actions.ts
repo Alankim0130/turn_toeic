@@ -8,14 +8,17 @@ import { rematchHeldVerifications } from "@/lib/rematch-held";
 import { requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import { sectionKeyOf, timeBlockOf } from "@/components/admin/sections/bulk";
-import { SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
-import { blockContains } from "@/lib/time-blocks";
+import { fieldsFor, slotKinds } from "@/lib/timetable-month";
 
 /**
- * 반 일괄 개설: 시간표(레벨·시간대) × 강좌 × 트랙 조합에서 고른 것만 한 번에 만든다.
+ * 반 일괄 개설: **그 달 시간표**(레벨·시간대) × 강좌 × 트랙 조합에서 고른 것만 한 번에 만든다.
  * 한 달에 열리는 반이 수십 개라 하나씩 만들면 오래 걸린다 (2026-09-16 Alan 요청).
  * 수강료는 받지 않는다 (2026-09-18 Alan "수강료 부분은 다 삭제") — 불라방은 별도 반이 아니라 같은 반의 수강 방식(enrollments.mode)이다.
  * 같은 (강좌 · 트랙 · 시간대) 반이 이미 있으면 건너뛴다.
+ *
+ * **과정 A/B · 과목 LC/RC · 인강은 그 달 시간표 줄에서 가져온다** (2026-09-29 Alan "시간대마다 A과정과 B과정이 LC, RC가 구분되어있잖아?
+ * 이것도 확인할 수 있고, 또 변경이 가능하면 좋겠어") — 화면이 보낸 값은 받지 않는다. 고치는 곳은 시간표 설정 한곳이고,
+ * 거기서 고치면 DB 트리거가 이미 만든 반도 맞춘다 (마이그레이션 20260929160000).
  */
 type SectionInsert = Database["public"]["Tables"]["class_sections"]["Insert"];
 
@@ -25,10 +28,6 @@ export type BulkRow = {
   track: string;
   capacity: number | null;
   status: string;
-  /** 과목 (lc|rc). 시간 단위 반마다, 트랙마다 다르고 달이 바뀌어도 그대로 (2026-09-23) */
-  subject?: string | null;
-  /** 과정 A|B. (강좌·시간대) 단위로 두 트랙이 같고 달마다 뒤바뀐다. LC 시간에는 곧 LC 교재 */
-  bookSet?: string | null;
 };
 export type BulkResult = { ok: boolean; error?: string; created?: number; skipped?: number };
 
@@ -41,10 +40,9 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
   if (rows.length > 200) return { ok: false, error: "한 번에 200개까지 만들 수 있어요." };
 
   const supabase = await createClient();
-  const [{ data: term }, { data: classDates }, { data: slots }, { data: courses }, { data: existing }] = await Promise.all([
+  const [{ data: term }, { data: classDates }, { data: courses }, { data: existing }] = await Promise.all([
     supabase.from("terms").select("year, month, enrollment_opens_at, closes_at").eq("id", termId).maybeSingle(),
     supabase.from("term_class_dates").select("track").eq("term_id", termId),
-    supabase.from("timetable_slots").select("id, level, program, season, start_time, end_time, ttf_recorded"),
     supabase.from("courses").select("id, program, target_score").eq("is_active", true),
     supabase.from("class_sections").select("course_id, track, time_block").eq("term_id", termId),
   ]);
@@ -53,9 +51,14 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
     return { ok: false, error: "먼저 달력에서 개강일·종강일을 찍고 생성하기를 눌러 주세요." };
   }
 
-  // 평달과 방학달은 시간대가 다르다 (2026-09-16 Alan) — 이 기수의 계절에 맞는 시간대만 쓴다
-  const season = seasonOfMonth(term.month);
+  // 그 달 시간표 줄만 쓴다 (2026-09-29 — 달마다 한 벌). 다른 달 줄로 만들면 시간·과정·과목이 틀리게 박힌다
+  const { data: slots } = await supabase
+    .from("timetable_slots")
+    .select("id, year, month, level, program, start_time, end_time, ttf_recorded, book_set, subject_mwf, subject_ttf")
+    .eq("year", term.year)
+    .eq("month", term.month);
   const slotById = new Map((slots ?? []).map((s) => [s.id, s]));
+  const kinds = slotKinds(slots ?? []);
   const courseById = new Map((courses ?? []).map((c) => [c.id, c]));
   const taken = new Set((existing ?? []).map((s) => sectionKeyOf(s.course_id, s.track, s.time_block)));
   const sessionsOf = (t: string) => (classDates ?? []).filter((d) => d.track === t).length || 1;
@@ -81,25 +84,16 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
     if (capacity !== null && (!Number.isInteger(capacity) || capacity < 1)) return { ok: false, error: "정원은 1명 이상이어야 해요." };
 
     const slot = r.slotId == null ? null : slotById.get(Number(r.slotId));
-    if (r.slotId != null && !slot) return { ok: false, error: "시간대를 찾을 수 없어요. 새로고침한 뒤 다시 시도해 주세요." };
-    // 묶음 시간대(120분 · 140분: 같은 레벨 시간표에 안에 들어오는 시간 단위가 있는 것)에는 교재를 두지 않는다 —
-    // 묶음 반 학생은 안에 든 시간 단위 반의 교재를 쓴다. 스파르타 반도 함께 듣는 점수보장반의 교재를 쓴다
-    const isPackage =
-      !!slot &&
-      (slots ?? []).some(
-        (o) => o.id !== slot.id && o.level === slot.level && o.program === slot.program && o.season === slot.season && blockContains(timeBlockOf(slot.start_time, slot.end_time), timeBlockOf(o.start_time, o.end_time)),
-      );
-    const leafScore = course.program !== "sparta" && !isPackage;
-    const bookSet = leafScore && (r.bookSet === "A" || r.bookSet === "B") ? r.bookSet : null;
-    // 과목도 시간 단위 반에만 — 묶음·스파르타는 두 과목을 이어 듣는다. 비어 있으면 담당 강사를 정하지 않는다 (짐작하지 않는다)
-    const subject = leafScore && (r.subject === "lc" || r.subject === "rc") ? r.subject : null;
+    if (r.slotId != null && !slot) return { ok: false, error: `${term.month}월 시간표에 없는 시간대예요. 새로고침한 뒤 다시 시도해 주세요.` };
     // 점수보장반 시간대로 스파르타 반을 만들거나 그 반대가 되면 반의 시간·권한 판정이 틀어진다
     if (slot && (slot.program !== course.program || slot.level !== course.target_score)) {
       return { ok: false, error: "강좌와 맞지 않는 시간대예요. 새로고침한 뒤 다시 시도해 주세요." };
     }
-    if (slot && slot.season !== season) {
-      return { ok: false, error: `${term.month}월은 ${SEASON_LABEL[season]}이라 ${SEASON_LABEL[slot.season as "regular" | "vacation"] ?? slot.season} 시간대로는 반을 만들 수 없어요. 새로고침한 뒤 다시 시도해 주세요.` };
-    }
+    // 과정·과목은 시간표 줄의 것 — 한달완성(묶음)·스파르타 줄은 비어 있다 (안에 든 · 함께 듣는 시간 단위 반의 것을 쓴다).
+    // 비어 있으면 담당 강사를 정하지 않는다 (짐작하지 않는다)
+    const kind = slot ? kinds.get(slot.id)! : null;
+    const plan = slot && kind ? fieldsFor(kind, slot) : { book_set: null, subject_mwf: null, subject_ttf: null };
+    const isPackage = kind === "package";
     const timeBlock = slot ? timeBlockOf(slot.start_time, slot.end_time) : null;
 
     const key = sectionKeyOf(courseId, r.track, timeBlock);
@@ -120,8 +114,8 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
       instructor_id: isPackage || course.program === "sparta" ? null : pickedInstructor,
       capacity,
       status: r.status,
-      book_set: bookSet,
-      subject,
+      book_set: plan.book_set,
+      subject: r.track === "mwf" ? plan.subject_mwf : plan.subject_ttf,
       // 저녁반 화목금은 인강 — 시간표가 정한다 (2026-09-17 Alan). 월수금은 그대로 현장
       recorded: !!slot?.ttf_recorded && r.track === "ttf",
       // 저녁 줄(화목금 인강이 켜진 시간대)의 불라방은 라이브만 — 오전반만 수업 뒤 다시보기로 연결한다 (2026-09-18 Alan)

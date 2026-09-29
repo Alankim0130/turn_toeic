@@ -4,22 +4,26 @@ import { Reveal } from "@/components/ui/Reveal";
 import { InstructorCameo } from "@/components/ui/InstructorCameo";
 import { todayKST } from "@/lib/utils";
 import { PROGRAMS, SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
+import { madeMonths, sameYm, ymIndex } from "@/lib/timetable-month";
 import { timeBlockOf } from "@/components/admin/sections/bulk";
 import { TimetableCard, type TimetableCardData } from "./TimetableCard";
 
 /**
  * 목표 점수반별 수업 시간 (timetable_levels · timetable_slots). 매달 편성하는 반과 별개인 대표 시간표.
- * 평달과 방학달(1·2·7·8월)은 시간대가 다르다 (2026-09-16 Alan) — 이번 달에 맞는 쪽을 보여 준다.
- * 그 계절 시간대가 아직 없으면 평달 것을 보여 주되 **평달 기준이라고 밝힌다** (잘못된 시간을 그냥 내보내지 않는다).
+ * 2026-09-29 부터 시간표는 **달마다 한 벌**이다 — **이번 달 시간표**를 보여 주고, 아직 없으면 가장 가까운 앞선 달 것을 그 달 기준이라고 밝혀 보여 준다.
+ * 달 시간표가 하나도 없을 때만 예전 두 벌(평달·방학달 기본 줄)로 돌아가고, 그 계절 줄도 없으면 평달 것을 **평달 기준이라고 밝힌다**
+ * (잘못된 시간을 그냥 내보내지 않는다).
  * 카드는 과정(한 달 점수보장반 → 스파르타반) × 레벨로 나눈다 — 같은 650 이라도 스파르타반은 시간대가 다르다.
  */
 async function loadTimetable() {
   const supabase = await createClient();
-  const season = seasonOfMonth(Number(todayKST().slice(5, 7)));
+  const today = todayKST();
+  const target = { y: Number(today.slice(0, 4)), m: Number(today.slice(5, 7)) };
+  const season = seasonOfMonth(target.m);
   const [{ data }, { data: spartaCourses }] = await Promise.all([
     supabase
       .from("timetable_levels")
-      .select("level, note, timetable_slots(program, season, start_time, end_time, ttf_recorded)")
+      .select("level, note, timetable_slots(program, season, year, month, start_time, end_time, ttf_recorded)")
       .order("sort_order")
       .order("start_time", { referencedTable: "timetable_slots" }),
     // 스파르타는 두 레벨을 함께 듣는다 (650+ 중급속성 = 650 + 850). 구성은 courses.includes_levels 한곳 — 코드에 적지 않는다
@@ -32,7 +36,8 @@ async function loadTimetable() {
     if (!c) return null;
     return { name: c.name, levels: [level, ...c.includes_levels.filter((l) => l !== level).sort((a, b) => a - b)] };
   };
-  const pick = (want: string): TimetableCardData[] =>
+  type Slot = (typeof rows)[number]["timetable_slots"][number];
+  const pick = (keep: (s: Slot) => boolean): TimetableCardData[] =>
     PROGRAMS.flatMap((program) =>
       rows.map((t) => ({
         key: `${program}-${t.level}`,
@@ -42,7 +47,7 @@ async function loadTimetable() {
         note: program === "score" ? t.note : null,
         sparta: program === "sparta" ? spartaOf(t.level) : null,
         slots: t.timetable_slots
-          .filter((s) => s.season === want && s.program === program)
+          .filter((s) => keep(s) && s.program === program)
           .sort((a, b) => a.start_time.localeCompare(b.start_time) || a.end_time.localeCompare(b.end_time))
           .flatMap((s) => {
             const label = timeBlockOf(s.start_time, s.end_time);
@@ -51,15 +56,27 @@ async function loadTimetable() {
       })),
     ).filter((t) => t.slots.length > 0);
 
-  const wanted = pick(season);
-  if (wanted.length > 0) return { levels: wanted, season, fallback: false };
-  return { levels: pick("regular"), season, fallback: season !== "regular" };
+  // 이번 달 시간표 → 없으면 가장 가까운 앞선 달 시간표
+  const shown = madeMonths(rows.flatMap((t) => t.timetable_slots))
+    .filter((ym) => ymIndex(ym) <= ymIndex(target))
+    .at(-1);
+  if (shown) {
+    const levels = pick((s) => s.year === shown.y && s.month === shown.m);
+    if (levels.length > 0) return { levels, caption: sameYm(shown, target) ? `${shown.m}월 수업시간표예요.` : `${shown.m}월 기준 시간표예요.` };
+  }
+  // 달 시간표가 없을 때만 예전 두 벌 (기본 줄)
+  const wanted = pick((s) => s.year == null && s.season === season);
+  if (wanted.length > 0) return { levels: wanted, caption: `${SEASON_LABEL[season]} 기준 시간표예요.` };
+  return {
+    levels: pick((s) => s.year == null && s.season === "regular"),
+    caption: season === "regular" ? "평달 기준 시간표예요." : `평달 기준 시간표예요. ${SEASON_LABEL[season]} 시간표는 공지를 확인해 주세요.`,
+  };
 }
 
 // 그 달에 개설된 반 목록은 랜딩에 두지 않는다 (2026-09-17 Alan — 한 달에 수십 개라 방문자에게 필요 없는 정보였다).
 // 대표 시간표 카드만 보여 주고, 실제 반은 수강생의 내 시간표와 관리자 반 편성에서 본다.
 export async function Schedule() {
-  const { levels: timetable, season, fallback } = await loadTimetable();
+  const { levels: timetable, caption } = await loadTimetable();
 
   return (
     <section aria-labelledby="schedule-title" className="container-x relative py-20">
@@ -76,11 +93,7 @@ export async function Schedule() {
           내 일정에 맞는 시간을 고르세요
         </h2>
         <p className="mt-3 text-slate">목표 점수반마다 수업 시간이 정해져 있어요. 주3일과 주5일 중에 골라 들을 수 있습니다.</p>
-        {timetable.length > 0 && (
-          <p className="mt-2 text-sm font-semibold text-brand-600">
-            {fallback ? `평달 기준 시간표예요. ${SEASON_LABEL[season]} 시간표는 공지를 확인해 주세요.` : `${SEASON_LABEL[season]} 기준 시간표예요.`}
-          </p>
-        )}
+        {timetable.length > 0 && <p className="mt-2 text-sm font-semibold text-brand-600">{caption}</p>}
       </Reveal>
 
       {timetable.length > 0 && (

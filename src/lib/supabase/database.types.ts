@@ -2003,31 +2003,46 @@ export type Database = {
       }
       timetable_slots: {
         Row: {
+          book_set: string | null
           end_time: string
           id: number
           level: number
+          month: number | null
           program: string
-          season: string
+          season: string | null
           start_time: string
+          subject_mwf: string | null
+          subject_ttf: string | null
           ttf_recorded: boolean
+          year: number | null
         }
         Insert: {
+          book_set?: string | null
           end_time: string
           id?: number
           level: number
+          month?: number | null
           program?: string
-          season?: string
+          season?: string | null
           start_time: string
+          subject_mwf?: string | null
+          subject_ttf?: string | null
           ttf_recorded?: boolean
+          year?: number | null
         }
         Update: {
+          book_set?: string | null
           end_time?: string
           id?: number
           level?: number
+          month?: number | null
           program?: string
-          season?: string
+          season?: string | null
           start_time?: string
+          subject_mwf?: string | null
+          subject_ttf?: string | null
           ttf_recorded?: boolean
+          year?: number | null
         }
         Relationships: [
           {

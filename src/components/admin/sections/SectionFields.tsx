@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 /**
  * 반 개설/수정 폼의 공통 입력 필드 (정원 · 과목 · 과정 · 상태). 수업일·개강일·종강일은 반 편성 달력에서 정한다.
  * 수강료 칸은 없다 (2026-09-18 Alan "수강료 부분은 다 삭제" — 등록은 YBM 에서 하고 이 사이트는 학생 관리용).
@@ -7,8 +9,21 @@
  * 과목(LC/RC)과 과정(A/B)은 시간 단위 반에만 있다 (2026-09-23 Alan "RC도 A과정 B과정에 따라서 움직이잖아") —
  * 과정은 (강좌·시간대) 단위라 두 트랙이 같고 달마다 뒤바뀌며, LC 시간에는 곧 LC 교재다. 과목은 트랙마다 다르고 달이 바뀌어도 그대로다.
  * bookSetNote 가 있으면 둘 다 둘 수 없는 반(묶음 반 · 스파르타 반)이라 라디오 대신 안내만 보여 준다.
+ *
+ * **plan 이 있으면 그 달 시간표가 정하는 반이다** (2026-09-29 — 시간표는 달마다 한 벌이고 반은 시간표를 따라간다).
+ * 칸 없이 시간표의 값과 고치러 가는 길만 보여 준다 — 여기서 따로 고치면 시간표와 갈라지고, 시간표를 고치는 순간 되돌아간다.
  */
-export function SectionFields({ values, mode, bookSetNote }: { values: Record<string, string | undefined>; mode: "create" | "edit"; bookSetNote?: string }) {
+export function SectionFields({
+  values,
+  mode,
+  bookSetNote,
+  plan,
+}: {
+  values: Record<string, string | undefined>;
+  mode: "create" | "edit";
+  bookSetNote?: string;
+  plan?: { text: string; href: string };
+}) {
   const v = values;
   return (
     <>
@@ -19,7 +34,17 @@ export function SectionFields({ values, mode, bookSetNote }: { values: Record<st
         <input id="capacity" name="capacity" type="number" min={1} className="input" defaultValue={v.capacity ?? ""} />
       </div>
 
-      {bookSetNote ? (
+      {plan ? (
+        <div>
+          <p className="label">과목 · 과정</p>
+          <p className="rounded-xl bg-brand-50/60 px-4 py-3 text-sm text-slate">
+            {plan.text}{" "}
+            <Link href={plan.href} className="font-bold text-brand-600 underline-offset-2 hover:underline">
+              시간표 설정에서 바꾸기 →
+            </Link>
+          </p>
+        </div>
+      ) : bookSetNote ? (
         <div>
           <p className="label">과목 · 과정</p>
           <input type="hidden" name="subject" value="" />

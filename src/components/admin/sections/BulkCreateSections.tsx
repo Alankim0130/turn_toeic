@@ -1,16 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { bulkCreateSections, type BulkRow } from "@/app/admin/sections/bulk-actions";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { cn, COURSE_TYPE_LABEL, TRACK_LABEL } from "@/lib/utils";
 import { blockMinutes, buildBlockTree, dashLabel, flattenBlockTree, minutesLabel, TRACKS, type BlockNode } from "@/lib/time-blocks";
-import { slotKey, type SlotDefault } from "@/lib/course-set";
 import { sectionKeyOf } from "./bulk";
 
-export type BulkSlot = { id: number; level: number; program: string; label: string };
+/** 그 달 시간표 한 줄 — 과정 · 트랙별 과목은 시간표 설정에서 정한 값 (여기서는 보여 주기만 한다) */
+export type BulkSlot = { id: number; level: number; program: string; label: string; bookSet: string | null; subjectMwf: string | null; subjectTtf: string | null };
 export type BulkCourse = { id: number; name: string; course_type: string; target_score: number | null; program: string; includes_levels: number[] };
 type Instructor = { id: string; name: string; role: string };
 
@@ -28,52 +29,32 @@ type Row = { slot: BulkSlot | null; node: BlockNode | null; depth: number; leaf:
  * 묶음 반 학생은 안에 든 시간 단위 반의 수업일·다시보기·LC 교재를 그대로 받으므로 과목·과정은 시간 단위 반에만 고른다.
  * 주5일 = 같은 시간대의 월수금 + 화목금. 주5일 칸을 누르면 두 트랙이 함께 골라진다.
  *
- * **과목(LC/RC)과 과정(A/B)** (2026-09-23 Alan "RC도 A과정 B과정에 따라서 움직이잖아"): 시간 단위 반마다 둘 다 고른다.
- * 과정은 (강좌·시간대) 단위라 두 트랙이 같고 달마다 뒤바뀌며, 과목은 트랙마다 다르고 달이 바뀌어도 그대로다.
- * 지난달 편성이 있으면 `defaults` 로 미리 채워져 온다 (과목 그대로 · 과정 뒤집기, `lib/course-set.ts`) — 강사는 확인만 하고 다르면 고친다.
+ * **과목(LC/RC)과 과정(A/B)은 그 달 시간표에서 온다** (2026-09-29 Alan "시간대마다 A과정과 B과정이 LC, RC가 구분되어있잖아?
+ * 이것도 확인할 수 있고, 또 변경이 가능하면 좋겠어"). 여기서는 **보여 주기만** 한다 — 고치는 곳은 시간표 설정 한곳이고,
+ * 서버도 이 화면이 보낸 값이 아니라 시간표 줄의 값으로 반을 만든다. 두 곳에서 고치면 반드시 갈라진다.
  */
 export function BulkCreateSections({
   termId,
   termLabel,
+  timetableHref,
   courses,
   slots,
   existingKeys,
   instructors,
   isAdmin,
-  defaults,
-  carryNote,
 }: {
   termId: number;
   termLabel: string;
+  /** 이 달 시간표 설정 — 과목·과정을 고치는 곳 */
+  timetableHref: string;
   courses: BulkCourse[];
   slots: BulkSlot[];
   existingKeys: string[];
   instructors: Instructor[] | null;
   isAdmin: boolean;
-  /** 지난달 같은 자리(강좌·트랙·시간대)에서 이어받은 과목·과정 — `slotKey` 로 찾는다 */
-  defaults: Record<string, SlotDefault>;
-  /** 이어받았는지 · 왜 안 받았는지(방학달) 한 줄 */
-  carryNote: string | null;
 }) {
   const router = useRouter();
   const [common, setCommon] = useState({ capacity: "", status: "open" });
-  // 과목·과정은 시간 단위 · 트랙마다 정해진다 — 지난달 값으로 시작한다
-  const [subjects, setSubjects] = useState<Record<string, string>>(() => {
-    const out: Record<string, string> = {};
-    for (const c of courses) for (const s of slots) for (const t of TRACKS) {
-      const d = defaults[slotKey(c.id, t, s.label)];
-      if (d?.subject) out[cellKey(c.id, s.id, t)] = d.subject;
-    }
-    return out;
-  });
-  const [sets, setSets] = useState<Record<string, string>>(() => {
-    const out: Record<string, string> = {};
-    for (const c of courses) for (const s of slots) for (const t of TRACKS) {
-      const d = defaults[slotKey(c.id, t, s.label)];
-      if (d?.set) out[cellKey(c.id, s.id, t)] = d.set;
-    }
-    return out;
-  });
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [instructorId, setInstructorId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -121,16 +102,13 @@ export function BulkCreateSections({
         for (const t of TRACKS) {
           const key = cellKey(c.id, r.slot?.id ?? null, t);
           if (!checked.has(key)) continue;
-          // 과목·과정은 시간 단위 반에만. 묶음 반은 안에 든 반의 것을 쓰고, 스파르타 반은 함께 듣는 점수보장반의 것을 쓴다
-          const leafScore = c.program !== "sparta" && r.leaf;
+          // 과목·과정은 보내지 않는다 — 서버가 그 달 시간표 줄에서 가져온다
           rows.push({
             courseId: c.id,
             slotId: r.slot?.id ?? null,
             track: t,
             capacity: digits(common.capacity) ? Number(digits(common.capacity)) : null,
             status: common.status,
-            subject: leafScore ? subjects[key] || null : null,
-            bookSet: leafScore ? sets[key] || null : null,
           });
         }
       }
@@ -204,7 +182,13 @@ export function BulkCreateSections({
         )}
       </div>
 
-      {carryNote && <Alert kind="info">{carryNote}</Alert>}
+      <p className="rounded-xl bg-brand-50/60 px-4 py-3 text-sm text-slate">
+        과목(LC/RC)과 과정(A/B)은 <strong className="text-ink">{termLabel} 시간표</strong>에서 정해요. 바꾸려면{" "}
+        <Link href={timetableHref} className="font-bold text-brand-600 underline-offset-2 hover:underline">
+          시간표 설정
+        </Link>
+        에서 고치세요 — 이미 만든 반에도 바로 적용돼요.
+      </p>
 
       <div className="space-y-4">
         {courses.map((c) => {
@@ -299,32 +283,7 @@ export function BulkCreateSections({
                                       />
                                     </label>
                                   )}
-                                  {!taken && c.program !== "sparta" && r.leaf && (
-                                    <>
-                                      <label className="sr-only" htmlFor={`subject-${key}`}>{name} 과목</label>
-                                      <select
-                                        id={`subject-${key}`}
-                                        value={subjects[key] ?? ""}
-                                        onChange={(e) => setSubjects({ ...subjects, [key]: e.target.value })}
-                                        className="input !w-[3.9rem] !px-1.5 !py-1 text-xs"
-                                      >
-                                        <option value="">과목</option>
-                                        <option value="lc">LC</option>
-                                        <option value="rc">RC</option>
-                                      </select>
-                                      <label className="sr-only" htmlFor={`set-${key}`}>{name} 과정</label>
-                                      <select
-                                        id={`set-${key}`}
-                                        value={sets[key] ?? ""}
-                                        onChange={(e) => setSets({ ...sets, [key]: e.target.value })}
-                                        className="input !w-[3.9rem] !px-1.5 !py-1 text-xs"
-                                      >
-                                        <option value="">과정</option>
-                                        <option value="A">A</option>
-                                        <option value="B">B</option>
-                                      </select>
-                                    </>
-                                  )}
+                                  {c.program !== "sparta" && r.leaf && s && <PlanBadge slot={s} track={t} name={name} />}
                                 </span>
                               </td>
                             );
@@ -369,5 +328,23 @@ export function BulkCreateSections({
         </button>
       </div>
     </div>
+  );
+}
+
+/** 시간표가 정한 그 트랙의 과목 · 과정 (읽기 전용). 안 골랐으면 주황으로 — 그 반은 담당 강사·LC 교재가 정해지지 않는다 */
+function PlanBadge({ slot, track, name }: { slot: BulkSlot; track: string; name: string }) {
+  const subject = track === "mwf" ? slot.subjectMwf : slot.subjectTtf;
+  const text = [subject ? subject.toUpperCase() : null, slot.bookSet ? `${slot.bookSet}과정` : null].filter(Boolean).join(" · ");
+  if (!text) {
+    return (
+      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-black text-amber-800" title={`${name}: 시간표에서 과목·과정을 아직 안 골랐어요`}>
+        미정
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full bg-surface px-1.5 py-0.5 text-[11px] font-black text-ink-soft" title={`${name}: 시간표 설정에서 정한 과목·과정`}>
+      {text}
+    </span>
   );
 }

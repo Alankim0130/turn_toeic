@@ -14,6 +14,7 @@ export function SectionEditForm({
   instructors,
   readOnly,
   bookSetNote,
+  plan,
 }: {
   id: number;
   values: Record<string, string>;
@@ -21,6 +22,8 @@ export function SectionEditForm({
   readOnly: boolean;
   /** 교재를 고를 수 없는 반(묶음 반 · 스파르타 반)의 안내 */
   bookSetNote?: string;
+  /** 그 달 시간표가 과정·과목을 정하는 반 — 값과 고치러 가는 길 */
+  plan?: { text: string; href: string };
 }) {
   const [state, action] = useActionState<ActionState, FormData>(updateSection, {});
   const v: Record<string, string | undefined> = { ...values, ...(state.values ?? {}) };
@@ -32,7 +35,7 @@ export function SectionEditForm({
       {state.ok && <Alert kind="success">{state.message}</Alert>}
 
       <fieldset disabled={readOnly} className="space-y-5 disabled:opacity-70">
-        <SectionFields values={v} mode="edit" bookSetNote={bookSetNote} />
+        <SectionFields values={v} mode="edit" bookSetNote={bookSetNote} plan={plan} />
         {instructors && (
           <div>
             <label htmlFor="instructor_id" className="label">담당 강사 (관리자만 변경 가능)</label>

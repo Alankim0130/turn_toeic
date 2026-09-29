@@ -11,6 +11,7 @@ import type { Database } from "@/lib/supabase/database.types";
 import { isYmd, labelKo } from "@/components/admin/sections/dates";
 import { isLectureKind, sortLectureKinds } from "@/lib/utils";
 import { SUBJECT_LABEL } from "@/lib/instructor-subject";
+import { timetableRowOf } from "@/lib/timetable-row";
 
 type SectionInsert = Database["public"]["Tables"]["class_sections"]["Insert"];
 type SectionUpdate = Database["public"]["Tables"]["class_sections"]["Update"];
@@ -317,6 +318,17 @@ export async function updateSection(_prev: ActionState, formData: FormData): Pro
   const supabase = await createClient();
   const patch: SectionUpdate = { ...parsed.fields };
   if (isAdmin(profile.role) && values.instructor_id) patch.instructor_id = values.instructor_id;
+  // 과정·과목은 그 달 시간표가 정한다 (2026-09-29) — 시간표 줄이 있는 반은 여기서 바꾸지 않는다.
+  // 화면에도 칸이 없지만, 옛 화면이 보낸 빈 값이 시간표와 어긋나게 덮어쓰지 않도록 서버가 한 번 더 뺀다
+  const { data: current } = await supabase
+    .from("class_sections")
+    .select("time_block, course:courses(target_score, program), term:terms(year, month)")
+    .eq("id", id)
+    .maybeSingle();
+  if (current && (await timetableRowOf(supabase, current))) {
+    delete patch.book_set;
+    delete patch.subject;
+  }
 
   const { data, error } = await supabase.from("class_sections").update(patch).eq("id", id).select("id");
   if (error) return { error: rlsMessage(error.code), values };

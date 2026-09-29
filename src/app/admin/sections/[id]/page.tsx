@@ -14,6 +14,7 @@ import { LiveLinkForm } from "@/components/admin/sections/LiveLinkForm";
 import { DeleteSectionButton } from "@/components/admin/sections/DeleteSectionButton";
 import { labelKo, termKey } from "@/components/admin/sections/dates";
 import { blockContains, dashLabel } from "@/lib/time-blocks";
+import { timetableRowOf } from "@/lib/timetable-row";
 
 export const metadata: Metadata = { title: "반 상세", robots: { index: false } };
 
@@ -79,6 +80,19 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
     : isPackage
       ? "묶음 반은 과목·과정을 두지 않아요. 안에 든 시간 단위 반에 정하면 이 반 학생도 그 과목·교재를 봅니다."
       : undefined;
+
+  // 과정·과목은 그 달 시간표가 정한다 (2026-09-29) — 시간표 줄이 있는 반은 여기서 보여 주기만 하고 고치는 길은 시간표 설정 하나다
+  const planRow = await timetableRowOf(supabase, section);
+  const planSubject = section.track === "mwf" ? planRow?.subject_mwf : planRow?.subject_ttf;
+  const plan = planRow
+    ? {
+        href: `/admin/timetable?month=${termKey(section.term.year, section.term.month)}`,
+        text:
+          isSparta || isPackage
+            ? `${bookSetNote} 과정·과목은 ${section.term.month}월 시간표의 두 시간에서 정해요.`
+            : `${section.term.month}월 시간표에서 정해요 — ${planRow.book_set ? `${planRow.book_set} 과정` : "과정 미정"} · ${TRACK_LABEL[section.track] ?? section.track} ${planSubject ? planSubject.toUpperCase() : "과목 미정"}.`,
+      }
+    : undefined;
 
   const canManage = isAdmin(profile.role) || section.instructor_id === user.id;
   const sessionList = sessions ?? [];
@@ -317,6 +331,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
             instructors={instructors ?? null}
             readOnly={!canManage}
             bookSetNote={bookSetNote}
+            plan={plan}
           />
         </div>
       </section>
