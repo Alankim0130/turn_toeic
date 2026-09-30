@@ -21,22 +21,34 @@ export function Hero() {
 
       <div className="container-x grid items-center gap-10 py-14 md:grid-cols-[1.1fr_0.9fr] md:py-24">
         <div>
-          <p className="animate-fade-up chip" style={{ animationDelay: "0ms" }}>
+          {/* YBM어학원 서면 로고 (2026-09-30 Alan 제공) — 역전토익이 어느 학원 소속인지 첫 화면에서 보여 준다.
+              외부 브랜드 표식이라 색·모양을 바꾸지 않고, 이미 줄여 둔 PNG 라 `unoptimized` — CLAUDE.md "YBM 로고" */}
+          <Image
+            src="/partners/ybm-seomyeon.png"
+            alt="YBM어학원 서면"
+            width={640}
+            height={143}
+            unoptimized
+            priority
+            className="h-9 w-auto animate-fade-up sm:h-10"
+            style={{ animationDelay: "0ms" }}
+          />
+          <p className="mt-4 animate-fade-up chip" style={{ animationDelay: "60ms" }}>
             <Icon name="rank1" size={18} />
             YBM서면 전체 1위 · 22.01~현재 수강생 수 기준
           </p>
-          <h1 className="mt-5 animate-fade-up text-4xl font-black leading-[1.15] tracking-tight text-ink sm:text-5xl lg:text-6xl" style={{ animationDelay: "80ms" }}>
+          <h1 className="mt-5 animate-fade-up text-4xl font-black leading-[1.15] tracking-tight text-ink sm:text-5xl lg:text-6xl" style={{ animationDelay: "120ms" }}>
             점수를 뒤집는
             <br />
             가장 확실한 방법,
             <br />
             <span className="text-gradient-brand">역전토익</span>
           </h1>
-          <p className="mt-6 max-w-xl animate-fade-up text-base leading-relaxed text-slate sm:text-lg" style={{ animationDelay: "160ms" }}>
+          <p className="mt-6 max-w-xl animate-fade-up text-base leading-relaxed text-slate sm:text-lg" style={{ animationDelay: "200ms" }}>
             귀에 꽂히는 압도적인 전달력. 족집게식 핵심 학습과 최신 토익 경향을 실시간으로 반영한 커리큘럼으로,
             부산 서면 YBM어학원에서 목표 점수까지 최단 거리로 갑니다.
           </p>
-          <div className="mt-8 flex animate-fade-up flex-wrap gap-3" style={{ animationDelay: "240ms" }}>
+          <div className="mt-8 flex animate-fade-up flex-wrap gap-3" style={{ animationDelay: "280ms" }}>
             <Link href="/my/verify" className="btn-primary !px-6 !py-3.5 text-base">
               <Icon name="verify" size={22} className="brightness-0 invert" />
               수강증으로 등업신청
@@ -46,7 +58,7 @@ export function Hero() {
               스터디 신청하기
             </Link>
           </div>
-          <ul className="mt-8 flex animate-fade-up flex-wrap gap-x-6 gap-y-2 text-sm font-semibold text-ink-soft" style={{ animationDelay: "320ms" }}>
+          <ul className="mt-8 flex animate-fade-up flex-wrap gap-x-6 gap-y-2 text-sm font-semibold text-ink-soft" style={{ animationDelay: "360ms" }}>
             <li className="flex items-center gap-2"><Icon name="success" size={18} />누적 수강후기 7,356건</li>
             <li className="flex items-center gap-2"><Icon name="success" size={18} />현장 강의 + 불라방 실시간 라이브</li>
             <li className="flex items-center gap-2"><Icon name="success" size={18} />이혜영 LC · 이영수 RC</li>
