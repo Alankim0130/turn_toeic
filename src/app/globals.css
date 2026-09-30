@@ -307,3 +307,19 @@ html .app-splash[data-phase="play"], html .app-splash[data-phase="leave"] { disp
   .spot-shine { animation: none; background-image: none; color: #fff; -webkit-text-fill-color: #fff; }
   .spot-beam, .spot-glint { display: none; }
 }
+
+/* ─── 랜딩 히어로 `YBM 부산 전체 1위` 배지의 빛줄기 (2026-09-30 Alan "눈에 잘 띄는 게 키 포인트") ───
+   분홍 배지를 몇 초마다 한 번 가로지른다 (Hero.tsx). 시작 전에도 왼쪽 밖에 있어야 흰 띠가 멈춰 보이지 않는다 */
+@keyframes rank-sweep {
+  0% { transform: translateX(-120%) skewX(-18deg); }
+  40%, 100% { transform: translateX(420%) skewX(-18deg); }
+}
+.rank-sweep {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 32%; pointer-events: none;
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.42) 50%, rgba(255, 255, 255, 0) 100%);
+  transform: translateX(-120%) skewX(-18deg);
+  animation: rank-sweep 3.6s cubic-bezier(0.4, 0, 0.2, 1) 1.2s infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rank-sweep { display: none; }
+}

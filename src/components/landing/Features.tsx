@@ -15,7 +15,7 @@ const FEATURES: { icon: IconName; title: string; desc: string }[] = [
   {
     icon: "rank1",
     title: "몰입도 높은 고퀄 강의",
-    desc: "귀에 꽂히는 압도적인 전달력. 완전 초보도 이해가 쏙쏙 되는 설명으로 YBM서면 전체 1위를 지키고 있습니다.",
+    desc: "귀에 꽂히는 압도적인 전달력. 완전 초보도 이해가 쏙쏙 되는 설명으로 YBM 부산 전체 1위를 지키고 있습니다.",
   },
 ];
 

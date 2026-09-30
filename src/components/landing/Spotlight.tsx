@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
  */
 const WORDS = [
   "귀에 꽂히는 압도적인 전달력",
-  "YBM서면 전체 1위",
+  "YBM 부산 전체 1위",
   "족집게식 핵심 학습",
   "최신 경향 실시간 반영",
   "현장 강의 + 불라방",

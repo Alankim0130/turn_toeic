@@ -33,11 +33,41 @@ export function Hero() {
             className="h-9 w-auto animate-fade-up sm:h-10"
             style={{ animationDelay: "0ms" }}
           />
-          <p className="mt-4 animate-fade-up chip" style={{ animationDelay: "60ms" }}>
-            <Icon name="rank1" size={18} />
-            YBM서면 전체 1위 · 22.01~현재 수강생 수 기준
-          </p>
-          <h1 className="mt-5 animate-fade-up text-4xl font-black leading-[1.15] tracking-tight text-ink sm:text-5xl lg:text-6xl" style={{ animationDelay: "120ms" }}>
+          {/* `YBM 부산 전체 1위` 배지 (2026-09-30 Alan — "금색 메달 + 밑에 빨간 리본, 눈에 잘 띄는 게 키 포인트, 문구는 확실하게 크게").
+              메달은 힉스필드 GPT Image 2.5 로 만든 투명 컷이다. 배지를 가로지르는 빛줄기(`.rank-sweep`)가 몇 초마다 지나가고
+              메달 뒤에서 금빛 고리가 퍼진다 — CLAUDE.md "1위 배지" */}
+          <div className="mt-6 animate-fade-up" style={{ animationDelay: "60ms" }}>
+            <p className="relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-500 py-2.5 pl-2 pr-5 text-white shadow-pink ring-2 ring-amber-300 sm:gap-3 sm:pr-7">
+              <span aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
+                <span className="rank-sweep" />
+              </span>
+              <span aria-hidden className="relative isolate -my-6 -ml-2 shrink-0 animate-pop sm:-my-7 sm:-ml-4 lg:-my-8" style={{ animationDelay: "320ms" }}>
+                <span className="absolute left-1/2 top-[36%] -z-10 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-300/70 animate-pulse-ring" />
+                <Image
+                  src="/illustrations/medal-first.webp"
+                  alt=""
+                  width={228}
+                  height={360}
+                  unoptimized
+                  priority
+                  className="h-[6.5rem] w-auto drop-shadow-[0_8px_14px_rgba(143,12,70,0.35)] sm:h-28 lg:h-32"
+                />
+              </span>
+              <span className="relative">
+                <span className="block text-[1.65rem] font-black leading-[1.1] tracking-tight sm:text-4xl lg:text-[2.5rem]">
+                  <span className="whitespace-nowrap">YBM 부산</span>{" "}
+                  <span className="whitespace-nowrap">
+                    전체{" "}
+                    <span className="bg-gradient-to-b from-yellow-100 via-amber-200 to-amber-400 bg-clip-text text-transparent drop-shadow-[0_2px_0_rgba(143,12,70,0.45)]">
+                      1위
+                    </span>
+                  </span>
+                </span>
+                <span className="mt-1 block text-xs font-bold text-white/85 sm:text-sm">22.01~현재 수강생 수 기준</span>
+              </span>
+            </p>
+          </div>
+          <h1 className="mt-7 animate-fade-up text-4xl font-black leading-[1.15] tracking-tight text-ink sm:text-5xl lg:text-6xl" style={{ animationDelay: "120ms" }}>
             점수를 뒤집는
             <br />
             가장 확실한 방법,
