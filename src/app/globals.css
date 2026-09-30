@@ -324,35 +324,39 @@ html .app-splash[data-phase="play"], html .app-splash[data-phase="leave"] { disp
   .rank-sweep { display: none; }
 }
 
-/* ─── 랜딩 헤드라인 뒤집기 `FlipHeadline` (2026-09-30 Alan "글자들이 역전! 즉, 뒤짚어지면서 새로운 글자들도 확 바뀌는 느낌") ───
-   글자마다 카드처럼 위쪽이 뒤로 넘어간다: 지금 문구는 0° → 100° 로 넘어가 사라지고(out), 새 문구는 -100° 에서 넘어와 선다(in).
-   같은 방향으로 이어 도니 한 장을 뒤집는 것처럼 보인다. 분홍 낱말은 조금 늦게, 살짝 튀어 오르며 선다(in-em).
+/* ─── 랜딩 헤드라인 `FlipHeadline` — 글자가 사방으로 흩어지고 사방에서 날아와 뒤집히며 선다 ───
+   (2026-09-30 Alan "글자들이 역전! 즉, 뒤짚어지면서" → 같은 날 "애니메이션 효과가 약해 … 사방에서 글자가 날라오는 듯한 느낌 … 확실히 뭔가가 바뀐다는 느낌")
+   날아오는 자리·도는 각도는 글자마다 인라인 변수(--x · --y 는 em, --r 은 deg)로 받는다 — `scatter()`(src/lib/flip-headline.ts).
+   in: 먼 곳에서 크게 · 흐리게 · 돌며 · 뒤집힌 채(rotateY 180°) 날아와 제자리에서 또렷해진다. out: 제자리에서 반대로 튕겨 나가며 작아진다.
+   두 끝의 transform 함수 목록을 똑같이 둔다 — 다르면 브라우저가 행렬로 섞어 180° 회전이 엉뚱한 길로 돈다.
    원근(perspective)은 글자마다 transform 안에 둔다 — 부모에 두면 낱말 묶음(inline-block)에서 3D 가 눌려 납작해진다.
-   시간은 src/lib/flip-headline.ts 의 FLIP 과 같아야 한다 (inDuration 560 · outDuration 320) */
-.flip-ch {
+   시간은 src/lib/flip-headline.ts 의 FLIP 과 같아야 한다 (inDuration 700 · emDuration 850 · outDuration 450) */
+.fly-ch {
   display: inline-block;
   transform-origin: 50% 55%;
   backface-visibility: hidden;
-  will-change: transform, opacity;
+  will-change: transform, opacity, filter;
 }
-.flip-ch[data-phase="in"] { animation: flip-in 0.56s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
-.flip-ch[data-phase="in"][data-em] { animation-name: flip-in-em; }
-.flip-ch[data-phase="out"] { animation: flip-out 0.32s cubic-bezier(0.5, 0, 0.9, 0.4) both; }
-@keyframes flip-in {
-  0% { transform: perspective(420px) rotateX(-100deg); opacity: 0; }
-  45% { opacity: 1; }
-  100% { transform: perspective(420px) rotateX(0deg); opacity: 1; }
+.fly-ch[data-phase="in"] { animation: fly-in 0.7s cubic-bezier(0.16, 0.9, 0.3, 1.12) both; }
+.fly-ch[data-phase="in"][data-em] { animation: fly-in-em 0.85s cubic-bezier(0.16, 0.9, 0.3, 1.1) both; }
+.fly-ch[data-phase="out"] { animation: fly-out 0.45s cubic-bezier(0.55, 0, 0.85, 0.35) both; }
+@keyframes fly-in {
+  0% { transform: perspective(600px) translate(var(--x), var(--y)) rotate(var(--r)) rotateY(180deg) scale(1.7); opacity: 0; filter: blur(6px); }
+  55% { opacity: 1; filter: blur(0); }
+  100% { transform: perspective(600px) translate(0, 0) rotate(0deg) rotateY(0deg) scale(1); opacity: 1; filter: blur(0); }
 }
-@keyframes flip-in-em {
-  0% { transform: perspective(420px) rotateX(-100deg) scale(1); opacity: 0; }
-  55% { transform: perspective(420px) rotateX(14deg) scale(1.14); opacity: 1; }
-  100% { transform: perspective(420px) rotateX(0deg) scale(1); opacity: 1; }
+@keyframes fly-in-em {
+  0% { transform: perspective(600px) translate(var(--x), var(--y)) rotate(var(--r)) rotateY(180deg) scale(2.3); opacity: 0; filter: blur(8px); }
+  62% { transform: perspective(600px) translate(0, 0) rotate(0deg) rotateY(0deg) scale(1.3); opacity: 1; filter: blur(0); }
+  100% { transform: perspective(600px) translate(0, 0) rotate(0deg) rotateY(0deg) scale(1); opacity: 1; filter: blur(0); }
 }
-@keyframes flip-out {
-  0% { transform: perspective(420px) rotateX(0deg); opacity: 1; }
-  100% { transform: perspective(420px) rotateX(100deg); opacity: 0; }
+@keyframes fly-out {
+  0% { transform: perspective(600px) translate(0, 0) rotate(0deg) rotateY(0deg) scale(1); opacity: 1; filter: blur(0); }
+  100% { transform: perspective(600px) translate(var(--x), var(--y)) rotate(var(--r)) rotateY(-180deg) scale(0.4); opacity: 0; filter: blur(4px); }
 }
-/* 움직임 줄이기: 뒤집지 않고 문구만 바뀐다 (위의 전역 규칙은 길이만 줄여 지연이 남는다 — 글자가 하나씩 켜지는 것도 움직임이다) */
+/* 움직임 줄이기: 날지 않고 문구만 바뀐다 (위의 전역 규칙은 길이만 줄여 지연이 남는다 — 글자가 하나씩 켜지는 것도 움직임이다).
+   떠나는 겹은 바로 감춘다 — 안 그러면 바뀌는 순간 두 문구가 겹쳐 보인다 */
 @media (prefers-reduced-motion: reduce) {
-  .flip-ch { animation: none !important; will-change: auto; }
+  .fly-ch { animation: none !important; will-change: auto; }
+  .fly-ch[data-phase="out"] { visibility: hidden; }
 }

@@ -6,8 +6,8 @@ import { site } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
 /**
- * 강사별 카드 색. 흰 정장(이혜영)은 핫핑크 위에서, 핫핑크 정장(이영수)은 잉크 위에서 살아난다.
- * 그림(캐리커처 의상)이 바뀌면 여기 색 조합도 함께 확인할 것.
+ * 강사별 카드 색. 흰 재킷(이혜영)은 핫핑크 위에서, 핫핑크 재킷(이영수)은 잉크 위에서 살아난다.
+ * 사진이 바뀌면 여기 색 조합도 함께 확인할 것.
  */
 const TONE = {
   LC: {
@@ -31,12 +31,6 @@ const TONE = {
 } as const;
 
 type Instructor = (typeof site.instructors)[number];
-
-/**
- * 카드에 세우는 캐리커처 (2026-09-30 Alan — 히어로 밖의 강사 그림은 전부 캐리커처).
- * 포스터·시간표·CTA 에 쓰는 첫 장(point · thumbsup)과 겹치지 않게 둘째 자세를 고른다 — 같은 랜딩에 같은 그림이 두 번 나오지 않게
- */
-const CARD_POSE = { LC: "notebook", RC: "tablet" } as const;
 
 /** 한 줄 캐치프레이즈에서 강조어를 찾아 형광펜(`.mark-sweep`)을 씌운다. 못 찾으면 그대로 */
 function Tagline({ text, mark }: { text: string; mark: string }) {
@@ -135,7 +129,6 @@ export function Instructors() {
           {site.instructors.map((t, i) => {
             const tone = TONE[t.part];
             const flip = i % 2 === 1;
-            const art = t.caricatures.find((c) => c.pose === CARD_POSE[t.part]) ?? t.caricatures[0];
             return (
               <div
                 key={t.name}
@@ -165,11 +158,11 @@ export function Instructors() {
                       className="absolute left-1/2 top-[4%] aspect-square w-[74%] -translate-x-1/2 rounded-full border border-white/20 transition-transform duration-700 ease-out group-hover:scale-105"
                     />
 
-                    {/* 캐리커처: 카드 바닥에 세운다. 온몸 그림이라 발 쪽은 카드 아래로 조금 내보내 이름표 뒤에 숨긴다 — 머리가 커야 캐리커처답다 */}
-                    <div className="absolute inset-x-0 -bottom-[8%] top-[5%] origin-bottom transition-transform duration-700 ease-out group-hover:scale-[1.04]">
+                    {/* 사진: 카드 바닥에 세우고, 두 사진의 머리 크기가 같도록 높이를 맞춘다 */}
+                    <div className="absolute inset-x-0 bottom-0 top-[7%] origin-bottom transition-transform duration-700 ease-out group-hover:scale-[1.04]">
                       <Image
-                        src={art.src}
-                        alt={`${t.part} 담당 ${t.name} 강사 캐리커처`}
+                        src={t.photo.src}
+                        alt={`${t.part} 담당 ${t.name} 강사`}
                         fill
                         sizes="(max-width: 768px) 90vw, 450px"
                         className="object-contain object-bottom drop-shadow-[0_18px_30px_rgba(23,18,31,0.25)]"
