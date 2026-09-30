@@ -67,12 +67,12 @@ export function Hero() {
               </span>
             </p>
           </div>
-          <h1 className="mt-7 animate-fade-up text-4xl font-black leading-[1.15] tracking-tight text-ink sm:text-5xl lg:text-6xl" style={{ animationDelay: "120ms" }}>
-            점수를 뒤집는
+          {/* 헤드라인 (2026-09-30 Alan — "점수를 뒤집는 가장 확실한 방법, 역전토익" 에서 바꿈). 강조색은 예전처럼 끝의 `역전!` 한 곳.
+              360px 미만은 32px — 36px 이면 첫 줄이 `시작 점수가 / 달라도,` 로 쪼개진다 */}
+          <h1 className="mt-7 animate-fade-up text-[2rem] font-black leading-[1.15] tracking-tight text-ink min-[360px]:text-4xl sm:text-5xl lg:text-6xl" style={{ animationDelay: "120ms" }}>
+            시작 점수가 달라도,
             <br />
-            가장 확실한 방법,
-            <br />
-            <span className="text-gradient-brand">역전토익</span>
+            끝은 <span className="text-gradient-brand">역전!</span>
           </h1>
           <p className="mt-6 max-w-xl animate-fade-up text-base leading-relaxed text-slate sm:text-lg" style={{ animationDelay: "200ms" }}>
             귀에 꽂히는 압도적인 전달력. 족집게식 핵심 학습과 최신 토익 경향을 실시간으로 반영한 커리큘럼으로,
