@@ -323,3 +323,36 @@ html .app-splash[data-phase="play"], html .app-splash[data-phase="leave"] { disp
 @media (prefers-reduced-motion: reduce) {
   .rank-sweep { display: none; }
 }
+
+/* ─── 랜딩 헤드라인 뒤집기 `FlipHeadline` (2026-09-30 Alan "글자들이 역전! 즉, 뒤짚어지면서 새로운 글자들도 확 바뀌는 느낌") ───
+   글자마다 카드처럼 위쪽이 뒤로 넘어간다: 지금 문구는 0° → 100° 로 넘어가 사라지고(out), 새 문구는 -100° 에서 넘어와 선다(in).
+   같은 방향으로 이어 도니 한 장을 뒤집는 것처럼 보인다. 분홍 낱말은 조금 늦게, 살짝 튀어 오르며 선다(in-em).
+   원근(perspective)은 글자마다 transform 안에 둔다 — 부모에 두면 낱말 묶음(inline-block)에서 3D 가 눌려 납작해진다.
+   시간은 src/lib/flip-headline.ts 의 FLIP 과 같아야 한다 (inDuration 560 · outDuration 320) */
+.flip-ch {
+  display: inline-block;
+  transform-origin: 50% 55%;
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+.flip-ch[data-phase="in"] { animation: flip-in 0.56s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.flip-ch[data-phase="in"][data-em] { animation-name: flip-in-em; }
+.flip-ch[data-phase="out"] { animation: flip-out 0.32s cubic-bezier(0.5, 0, 0.9, 0.4) both; }
+@keyframes flip-in {
+  0% { transform: perspective(420px) rotateX(-100deg); opacity: 0; }
+  45% { opacity: 1; }
+  100% { transform: perspective(420px) rotateX(0deg); opacity: 1; }
+}
+@keyframes flip-in-em {
+  0% { transform: perspective(420px) rotateX(-100deg) scale(1); opacity: 0; }
+  55% { transform: perspective(420px) rotateX(14deg) scale(1.14); opacity: 1; }
+  100% { transform: perspective(420px) rotateX(0deg) scale(1); opacity: 1; }
+}
+@keyframes flip-out {
+  0% { transform: perspective(420px) rotateX(0deg); opacity: 1; }
+  100% { transform: perspective(420px) rotateX(100deg); opacity: 0; }
+}
+/* 움직임 줄이기: 뒤집지 않고 문구만 바뀐다 (위의 전역 규칙은 길이만 줄여 지연이 남는다 — 글자가 하나씩 켜지는 것도 움직임이다) */
+@media (prefers-reduced-motion: reduce) {
+  .flip-ch { animation: none !important; will-change: auto; }
+}

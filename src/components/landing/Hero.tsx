@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
+import { FlipHeadline } from "./FlipHeadline";
 
 export function Hero() {
   return (
@@ -71,13 +72,10 @@ export function Hero() {
               </span>
             </p>
           </div>
-          {/* 헤드라인 (2026-09-30 Alan — "점수를 뒤집는 가장 확실한 방법, 역전토익" 에서 바꿈). 강조색은 예전처럼 끝의 `역전!` 한 곳.
+          {/* 헤드라인 — "시작 점수가 달라도, 끝은 역전!" 과 예전 "점수를 뒤집는 가장 확실한 방법, 역전토익" 이 번갈아
+              글자마다 뒤집히며 바뀐다 (2026-09-30 Alan). 문구·시간은 src/lib/flip-headline.ts. 들어오는 움직임은 글자 뒤집기가 맡아 fade-up 을 뺐다.
               360px 미만은 32px — 36px 이면 첫 줄이 `시작 점수가 / 달라도,` 로 쪼개진다 */}
-          <h1 className="mt-7 animate-fade-up text-[2rem] font-black leading-[1.15] tracking-tight text-ink min-[360px]:text-4xl sm:text-5xl lg:text-6xl" style={{ animationDelay: "120ms" }}>
-            시작 점수가 달라도,
-            <br />
-            끝은 <span className="text-gradient-brand">역전!</span>
-          </h1>
+          <FlipHeadline className="mt-7 text-[2rem] font-black leading-[1.15] tracking-tight text-ink min-[360px]:text-4xl sm:text-5xl lg:text-6xl" />
           <p className="mt-6 max-w-xl animate-fade-up text-base leading-relaxed text-slate sm:text-lg" style={{ animationDelay: "200ms" }}>
             귀에 꽂히는 압도적인 전달력. 족집게식 핵심 학습과 최신 토익 경향을 실시간으로 반영한 커리큘럼으로,
             부산 서면 YBM어학원에서 목표 점수까지 최단 거리로 갑니다.
