@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fuzzyIncludes, levenshtein, normalizeReceiptText, parseReceipt, receiptComplete, receiptHasName } from "@/lib/receipt";
+import { fuzzyIncludes, levenshtein, normalizeReceiptText, parseReceipt, receiptComplete, receiptHasName, receiptStudentName } from "@/lib/receipt";
 
 /** CLAUDE.md "수강증 표기 규칙" 표의 강좌명. 학원명·강사명은 실제 수강증 양식을 받기 전까지의 가정 */
 const receipt = (course: string, extra = "") => `YBM어학원 서면센터\n역전토익 ${course}\n강사 이혜영\n수강생 김민수\n${extra}`;
@@ -548,5 +548,58 @@ describe("firsttoeic 사고에서 배운 것", () => {
   it("라벨 뒤 잡점이 붙은 시각(`수강시간.10.00~12.10`)도 시각으로 고친다 — 날짜(`2026.09.16`)는 그대로", () => {
     expect(normalizeReceiptText("수강시간.10.00~12.10").compact).toBe("수강시간.10:00~12:10");
     expect(normalizeReceiptText("2026.09.16").compact).toBe("2026.09.16");
+  });
+});
+
+describe("receiptStudentName — 수강증 `수강생` 칸의 이름 (이름 불일치 팝업에 보여 준다, 2026-09-30)", () => {
+  it("라벨과 한 줄로 읽힌 값", () => {
+    expect(receiptStudentName("수강생 _ 김민수\n수강센터 부산 서면센터")).toBe("김민수");
+  });
+  it("값이 다음 줄로 내려간 경우", () => {
+    expect(receiptStudentName("수강생\n김민수\n수강센터 부산 서면센터")).toBe("김민수");
+  });
+  it("값 뒤에 붙어 읽힌 다음 칸 라벨은 떼어 낸다", () => {
+    expect(receiptStudentName("수강생김민수수강센터부산서면센터")).toBe("김민수");
+  });
+  it("변형 여러 장을 이어 붙인 원문에서는 가장 많이 읽힌 값", () => {
+    expect(receiptStudentName("수강생 김민슈\n수강생 김민수\n수강생 김민수")).toBe("김민수");
+  });
+  it("라벨을 못 읽었거나 값이 이름 같지 않으면 null (다르다고 말할 근거가 없다)", () => {
+    expect(receiptStudentName("수강센터 부산 서면센터\n강사 이영수")).toBeNull();
+    expect(receiptStudentName("수강생 김\n")).toBeNull();
+    expect(receiptStudentName("수강생 가나다라마바사아자차")).toBeNull();
+  });
+});
+
+describe("수강생 라벨의 한 글자 오인식 (2026-09-30 받은 수강증 실측 — `수갈생 _ 양서윤`)", () => {
+  const card = (label: string) => `${label} _ 양서윤\n수강센터 부산 서면센터\n강사 이영수 .이혜영\n레벨 850+\n수강시관 12:30~15:00`;
+
+  it("가운데 글자만 틀린 `수?생` · 끝 글자가 생을 닮은 `수강?` 은 라벨로 본다", () => {
+    for (const l of ["수갈생", "수감생", "수강샘", "수강셍"]) {
+      expect(receiptHasName(card(l), "양서윤"), l).toBe(true);
+      expect(receiptStudentName(card(l)), l).toBe("양서윤");
+      expect(parseReceipt(card(l)).card, l).toBe(true);
+    }
+  });
+
+  it("다른 낱말은 라벨로 보지 않는다 — 수강센터 · 수강시간 · 수강신청 · 수험생 · 두 글자가 틀린 것", () => {
+    for (const l of ["수강센", "수강시", "수강신청", "수험생", "수김싱"]) {
+      expect(receiptHasName(`${l} 양서윤`, "양서윤"), l).toBe(false);
+      expect(receiptStudentName(`${l} 양서윤`), l).toBeNull();
+    }
+  });
+});
+
+describe("레벨은 카드 칸의 숫자가 먼저 (2026-09-30 — 한 번만 `650 곡표` 로 잘못 읽힌 850 수강증)", () => {
+  it("칸(`NNN 목표` · `레벨 NNN+`)에서 읽은 숫자만 쓴다 — 칸 밖에서 잘못 읽힌 숫자는 흔들지 못한다", () => {
+    const p = parseReceipt("850 목표\n수강생 박혜림\n레벨 850+\n650 곡표\n레벨 850+");
+    expect(p.levels).toEqual([850]);
+    expect(p.level).toBe(850);
+  });
+  it("칸끼리 다르면 여전히 여럿이다 (대조가 멈춘다)", () => {
+    expect(parseReceipt("750 목표\n레벨 650+").levels).toEqual([650, 750]);
+  });
+  it("칸을 못 읽었으면 원문 전체의 숫자를 쓴다 (예전과 같다)", () => {
+    expect(parseReceipt("역전토익 850\n수강료 204,300원").levels).toEqual([850]);
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Alert } from "@/components/ui/Alert";
 import { Dialog } from "@/components/ui/Dialog";
@@ -17,6 +18,7 @@ import {
 } from "@/lib/enroll-options";
 import { submitManualVerification, submitVerification } from "./actions";
 import { RETENTION_LABEL } from "@/lib/receipt-retention";
+import type { NameMismatch } from "@/lib/name-mismatch";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPT = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
@@ -95,8 +97,12 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
   const [ocrNote, setOcrNote] = useState<string | null>(null);
   /** 다음 달 수강증을 받아 뒀다 (2026-09-22) — 그 달 반이 열리면 저절로 배정된다 */
   const [held, setHeld] = useState<{ month: number; note: string } | null>(null);
+  /** 수강증 이름 ≠ 가입 실명 (2026-09-30 Alan — "수강증의 이름과 일치해서 넣어주세요") — 팝업과 접수 안내에 함께 적는다 */
+  const [nameMismatch, setNameMismatch] = useState<NameMismatch | null>(null);
   // 결과 팝업 (2026-09-18 Alan — "반려 문구가 바로 보여야 하고, 승인이면 어떤 반인지 팝업으로 보여 주고 맞으면 확인, 아니면 수동신청")
-  const [popup, setPopup] = useState<null | { kind: "approved" | "preliminary"; assigned: string[] } | { kind: "rejected"; reason: string }>(null);
+  const [popup, setPopup] = useState<
+    null | { kind: "approved" | "preliminary"; assigned: string[] } | { kind: "rejected"; reason: string } | ({ kind: "name" } & NameMismatch)
+  >(null);
   const [pending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -198,9 +204,12 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
           // OCR 이 반을 찾아 바로 등업했으면 그렇게 말한다 (2026-09-18 자동 승인)
           setOcrNote(res.ocrNote ?? null);
           setHeld(res.held ?? null);
+          setNameMismatch(res.nameMismatch ?? null);
           const kind = res.approved ? (res.preliminary ? "preliminary" : "approved") : res.held ? "held" : manual ? "manual" : "auto";
           setDone(kind);
           if (kind === "approved" || kind === "preliminary") setPopup({ kind, assigned: res.assigned ?? [] });
+          // 이름이 다르면 접수는 됐지만 자동으로 등업되지 않는다 — 바로 알려 준다
+          else if (res.nameMismatch) setPopup({ kind: "name", ...res.nameMismatch });
           return;
         }
         if ("rejected" in res) {
@@ -225,14 +234,66 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
     setManual(true);
   };
 
+  /** 다른 수강증으로 다시 올리기 — 확인 중인 신청은 새 수강증이 들어오면 저절로 바뀐다 (2026-09-18 "새로 올리면 새 정보로 자동 교체") */
+  const reupload = () => {
+    setPopup(null);
+    setDone(null);
+    setOcrNote(null);
+    setHeld(null);
+    setNameMismatch(null);
+    setRejected(null);
+    pick(null);
+    if (inputRef.current) inputRef.current.value = "";
+  };
+
+  /** 이름이 다를 때 할 일 — 팝업과 접수 안내가 같은 말을 한다 */
+  const nameHelp = (m: NameMismatch) => (
+    <>
+      <dl className="grid grid-cols-2 gap-2">
+        <div className="rounded-xl bg-surface px-3 py-2">
+          <dt className="text-xs font-bold text-slate">수강증 이름</dt>
+          <dd className="text-base font-black text-ink">{m.receiptName}</dd>
+        </div>
+        <div className="rounded-xl bg-surface px-3 py-2">
+          <dt className="text-xs font-bold text-slate">내 이름 (가입한 이름)</dt>
+          <dd className="text-base font-black text-ink">{m.myName}</dd>
+        </div>
+      </dl>
+      <p className="mt-3 font-bold text-ink">수강증의 이름과 일치하게 넣어 주세요.</p>
+      <ul className="mt-1.5 list-disc space-y-1 pl-5 text-slate">
+        <li>다른 사람의 수강증이라면 — <b className="text-ink">본인 이름이 적힌 수강증</b>을 다시 올려 주세요.</li>
+        <li>이름이 가려졌거나 흐리게 찍혔다면 — 이름이 또렷이 보이게 다시 캡처해 올려 주세요.</li>
+        <li>가입할 때 이름을 다르게 적었다면(별명 · 오타) — 선생님께 이름 수정을 요청해 주세요.</li>
+      </ul>
+    </>
+  );
+
   const resultPopup = popup && (
     <Dialog
       open
-      tone={popup.kind === "rejected" ? "warning" : "success"}
-      title={popup.kind === "rejected" ? "등업신청이 반려됐어요" : popup.kind === "approved" ? "등업이 완료됐어요" : "예비등록이 완료됐어요"}
+      tone={popup.kind === "rejected" || popup.kind === "name" ? "warning" : "success"}
+      title={
+        popup.kind === "rejected"
+          ? "등업신청이 반려됐어요"
+          : popup.kind === "name"
+            ? "수강증의 이름과 내 이름이 달라요"
+            : popup.kind === "approved"
+              ? "등업이 완료됐어요"
+              : "예비등록이 완료됐어요"
+      }
       onClose={() => setPopup(null)}
     >
-      {popup.kind === "rejected" ? (
+      {popup.kind === "name" ? (
+        <>
+          {nameHelp(popup)}
+          <p className="mt-3 text-slate">이번에 올린 수강증은 접수됐고, 이름이 달라 자동으로 등업되지 않아 선생님이 직접 확인해 드려요.</p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <button type="button" onClick={reupload} className="btn-primary w-full sm:w-auto">다른 수강증 다시 올리기</button>
+            <Link href="/contact" className="btn-secondary w-full sm:w-auto">선생님께 이름 수정 요청</Link>
+            <button type="button" onClick={() => setPopup(null)} className="btn-ghost w-full sm:w-auto">닫기</button>
+          </div>
+        </>
+      ) : popup.kind === "rejected" ? (
         <>
           <p>{popup.reason}</p>
           <p className="mt-2 text-slate">잘못 판정된 것 같다면 <b>수동 등업신청</b>으로 반을 직접 골라 내실 수 있어요. 강사가 수강증을 보고 확인해 드립니다.</p>
@@ -280,24 +341,44 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
     );
   }
 
+  // 이름이 달라 자동으로 등업되지 않았다 — 팝업을 닫아도 접수 안내 아래에 남긴다
+  const nameNote = nameMismatch && (
+    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-ink">
+      <p className="mb-2 font-black">수강증의 이름과 내 이름이 달라요</p>
+      {nameHelp(nameMismatch)}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" onClick={reupload} className="btn-primary !py-2 text-sm">다른 수강증 다시 올리기</button>
+        <Link href="/contact" className="btn-secondary !py-2 text-sm">선생님께 이름 수정 요청</Link>
+      </div>
+    </div>
+  );
+
   // 다음 달 수강증 — 거절하지 않고 받아 뒀다. 그 달 반이 열리면 저절로 배정되니 다시 올릴 필요가 없다 (2026-09-22 Alan)
   if (done === "held" && held) {
     return (
-      <Alert kind="success" title={`${held.month}월 수강증을 받아 뒀어요`}>
-        {held.note}
-      </Alert>
+      <>
+        {resultPopup}
+        <Alert kind="success" title={`${held.month}월 수강증을 받아 뒀어요`}>
+          {held.note}
+        </Alert>
+        {nameNote}
+      </>
     );
   }
 
   if (done) {
     return (
-      <Alert kind="success" title="접수됐어요. 확인 후 등업됩니다.">
-        {done === "manual"
-          ? "고르신 반으로 신청이 접수됐어요. 강사가 수강증을 확인한 뒤 배정해 드립니다."
-          : "보통 1일 이내 처리돼요."}{" "}
-        개강일 전에 올리셨다면 예비등록생으로 표시되고, 개강일에 수강생으로 자동 전환됩니다.
-        {ocrNote && <span className="mt-2 block font-bold text-ink">{ocrNote}</span>}
-      </Alert>
+      <>
+        {resultPopup}
+        <Alert kind="success" title="접수됐어요. 확인 후 등업됩니다.">
+          {done === "manual"
+            ? "고르신 반으로 신청이 접수됐어요. 강사가 수강증을 확인한 뒤 배정해 드립니다."
+            : "보통 1일 이내 처리돼요."}{" "}
+          개강일 전에 올리셨다면 예비등록생으로 표시되고, 개강일에 수강생으로 자동 전환됩니다.
+          {ocrNote && <span className="mt-2 block font-bold text-ink">{ocrNote}</span>}
+        </Alert>
+        {nameNote}
+      </>
     );
   }
 

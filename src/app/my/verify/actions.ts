@@ -10,7 +10,8 @@ import { decideVerification, type VerifyTerm } from "@/lib/verify-decision";
 import { todayKST } from "@/lib/utils";
 import { resolveEnrollChoice, type EnrollSection } from "@/lib/enroll-options";
 import { getOpenEnrollSections } from "../_lib/queries";
-import { parseReceipt, readEnoughFor, receiptHasName, type ParsedReceipt } from "@/lib/receipt";
+import { parseReceipt, readEnoughFor, receiptHasName, receiptStudentName, type ParsedReceipt } from "@/lib/receipt";
+import { nameMismatchOf, type NameMismatch } from "@/lib/name-mismatch";
 import { readReceiptText, tesseractOcr } from "@/lib/ocr";
 import { measurePalette } from "@/lib/ocr-image";
 import type { PaletteShares } from "@/lib/receipt-forensics";
@@ -27,7 +28,16 @@ export type SubmitVerificationResult =
    * assigned = 배정된 반 한 줄들 — 팝업에 "이 반으로 승인됐어요, 맞나요?" (2026-09-18 Alan)
    * held = 다음 달 수강증이라 받아 뒀다 — 그 달 반이 열리면 다시 맞춰 배정한다 (2026-09-22 Alan). note 는 학생에게 그대로 보인다
    */
-  | { ok: true; approved?: boolean; preliminary?: boolean; ocrNote?: string; assigned?: string[]; held?: { month: number; note: string } }
+  | {
+      ok: true;
+      approved?: boolean;
+      preliminary?: boolean;
+      ocrNote?: string;
+      assigned?: string[];
+      held?: { month: number; note: string };
+      /** 수강증 `수강생` 칸의 이름이 가입 실명과 다르다 — 화면이 팝업으로 알린다 (2026-09-30 Alan). 이름을 또렷이 읽었을 때만 */
+      nameMismatch?: NameMismatch;
+    }
   | { ok: false; error: string }
   | { ok: false; rejected: true; reason: string };
 
@@ -243,6 +253,8 @@ export async function submitVerification(input: { filePath: string }): Promise<S
   const outcome = await readReceipt(admin, filePath, profile?.name ?? null);
   const read = outcome.ok ? outcome : null;
   const decision = decideVerification(read?.parsed ?? null, openTermsOf(sections), todayKST());
+  // 수강증 이름 ≠ 가입 실명 — 거절하지 않고(오인식일 수 있다) 검토로 보내되, 학생에게 팝업으로 알린다 (2026-09-30 Alan)
+  const nameMismatch = read ? nameMismatchOf(read.nameMatches, receiptStudentName(read.parsed.text), profile?.name) : undefined;
   const rejected = decision.kind === "reject" && auto.on;
   // 다음 달 수강증인데 그 달 반이 아직 없다 — 거절하지 않고 받아 둔다. 반이 열리면 `rematchHeldVerifications` 가 다시 맞춘다
   const held = decision.kind === "upcoming" ? decision.month : null;
@@ -323,7 +335,7 @@ export async function submitVerification(input: { filePath: string }): Promise<S
   // 받아 둔 예비 접수 — 스태프에게 지금 알리지 않는다 (배정할 반이 아직 없다). 반이 열려 다시 맞출 때 한 번에 알린다
   if (held != null && decision.kind === "upcoming") {
     done();
-    return { ok: true, held: { month: held, note: decision.note } };
+    return { ok: true, held: { month: held, note: decision.note }, nameMismatch };
   }
 
   notifyNew(admin, user.id, false);
@@ -339,7 +351,7 @@ export async function submitVerification(input: { filePath: string }): Promise<S
       : flags && flags.alreadyEnrolled.length > 0
         ? "이미 이 달 반에 배정돼 있어서, 강사가 확인한 뒤 반영해 드려요."
         : undefined;
-  return { ok: true, ocrNote };
+  return { ok: true, ocrNote, nameMismatch };
 }
 
 /**
@@ -404,5 +416,5 @@ export async function submitManualVerification(input: {
 
   notifyNew(admin, user.id, true);
   done();
-  return { ok: true };
+  return { ok: true, nameMismatch: read ? nameMismatchOf(read.nameMatches, receiptStudentName(read.parsed.text), profile?.name) : undefined };
 }

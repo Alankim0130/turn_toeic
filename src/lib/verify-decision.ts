@@ -89,11 +89,14 @@ export function decideVerification(parsed: ParsedReceipt | null, openTerms: read
   }
 
   // ① 우리 수강증인가 (게이트 G1 · G2)
+  // 카카오톡 대화 캡처 · YBM 앱의 다른 화면(출석 QR 등)도 여기서 걸린다 (2026-09-30 받은 수강증 30장 실측 — 5장 모두) —
+  // 그래서 "무엇을 올려야 하는지" 를 말해 준다
   if (!parsed.gates.academy) {
     return {
       kind: "reject",
       code: "academy",
-      reason: "부산 서면센터 수강증이 아닌 것 같아요. 수강센터 줄이 보이도록 화면 전체를 캡처해 올려 주세요.",
+      reason:
+        "YBM 부산 서면센터 수강증 화면이 아닌 것 같아요. 카카오톡 대화나 다른 앱 화면 말고, 수강생 · 수강센터 · 수강시간이 보이는 파란 수강증 카드를 캡처해 올려 주세요.",
     };
   }
   if (!parsed.gates.brand) {

@@ -213,6 +213,40 @@ function nameLetters(s: string, hangulOnly: boolean): string {
 /** 수강증 칸 라벨의 첫머리. 수강생 값이 다음 줄로 내려갔을 때 그 줄이 라벨이면 값이 아니고, 값 뒤에 붙어 읽힌 다음 라벨은 떼어 낸다 */
 const RECEIPT_LABEL_LINE = /^(수강|강사|레벨|강의실)/;
 
+/** `생` 을 잘못 읽은 글자 (실측·흔한 오인식) */
+const SAENG_LOOKALIKES = "샘셍싱섕";
+
+/**
+ * 줄에서 `수강생` 라벨이 끝나는 자리 (없으면 -1). 그대로 읽힌 `수강생` 이 먼저고, 없으면 **줄 첫머리의 한 글자 오인식**을 봐준다
+ * (2026-09-30 받은 수강증 30장 실측 — 또렷한 카드인데 `수갈생 _ 양서윤` 으로 읽혀 이름을 통째로 놓쳤다).
+ * 봐주는 것은 딱 두 모양이다 — **가운데 글자만 틀린 `수?생`**(`수갈생` · `수감생`, 단 `수험생` 은 낱말이라 뺀다)과
+ * **끝 글자가 `생` 을 닮은 `수강?`**(`수강샘` · `수강셍`). `수강센터` · `수강시간` · `수강신청` 같은 다른 낱말은 여기 들지 않는다.
+ */
+function studentLabelEnd(line: string): number {
+  const at = line.indexOf("수강생");
+  if (at >= 0) return at + 3;
+  const lead = line.length - line.replace(/^[^가-힣]+/, "").length;
+  const head = line.slice(lead, lead + 3);
+  if (head.length !== 3 || head[0] !== "수") return -1;
+  const middleMisread = head[2] === "생" && head !== "수험생";
+  const lastMisread = head[1] === "강" && SAENG_LOOKALIKES.includes(head[2]);
+  return middleMisread || lastMisread ? lead + 3 : -1;
+}
+
+/** `수강생` 칸의 값들 (줄마다 하나, 공백 없이). 값이 다음 줄로 내려간 경우도 본다 */
+function studentValues(text: string, hangulOnly: boolean): string[] {
+  const lines = (text ?? "").normalize("NFKC").split("\n").map((l) => l.replace(/\s+/g, ""));
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const end = studentLabelEnd(lines[i]);
+    if (end < 0) continue;
+    let value = nameLetters(lines[i].slice(end), hangulOnly);
+    if (!value && i + 1 < lines.length && !RECEIPT_LABEL_LINE.test(lines[i + 1])) value = nameLetters(lines[i + 1], hangulOnly);
+    out.push(value);
+  }
+  return out;
+}
+
 /**
  * 게이트 G3: 가입 실명이 수강증의 **`수강생` 칸 값**과 같은가 (공백 무시, 정확 일치 — 두세 글자 이름에 편집거리를 허용하면 동명이인이 섞인다).
  *
@@ -228,17 +262,32 @@ export function receiptHasName(text: string, name: string | null | undefined): b
   const want = nameLetters(raw, hangulOnly);
   if (want.length < 2) return false;
 
-  const lines = (text ?? "").normalize("NFKC").split("\n").map((l) => l.replace(/\s+/g, ""));
-  for (let i = 0; i < lines.length; i++) {
-    const at = lines[i].indexOf("수강생");
-    if (at < 0) continue;
-    let value = nameLetters(lines[i].slice(at + "수강생".length), hangulOnly);
-    if (!value && i + 1 < lines.length && !RECEIPT_LABEL_LINE.test(lines[i + 1])) value = nameLetters(lines[i + 1], hangulOnly);
-    // 값 뒤에 다음 칸 라벨이 한 줄로 붙어 읽혔으면(`김민수수강센터부산…`) 이름까지만 본다 — 이름 뒤가 라벨로 시작할 때만.
-    // `김민` 학생이 `김민수` 의 수강증을 내면 뒤가 `수수강센터…` 라 라벨이 아니어서 통과하지 않는다
-    if (value === want || (value.startsWith(want) && RECEIPT_LABEL_LINE.test(value.slice(want.length)))) return true;
+  // 값 뒤에 다음 칸 라벨이 한 줄로 붙어 읽혔으면(`김민수수강센터부산…`) 이름까지만 본다 — 이름 뒤가 라벨로 시작할 때만.
+  // `김민` 학생이 `김민수` 의 수강증을 내면 뒤가 `수수강센터…` 라 라벨이 아니어서 통과하지 않는다
+  return studentValues(text, hangulOnly).some((value) => value === want || (value.startsWith(want) && RECEIPT_LABEL_LINE.test(value.slice(want.length))));
+}
+
+/** 이름 값 뒤에 붙어 읽히는 다음 칸 라벨 — 떼어 낸다 */
+const NEXT_LABEL = /수강센터|수강요일|수강시간|수강료|강사|레벨|강의실/;
+
+/**
+ * 수강증 **`수강생` 칸에 적힌 이름** — 이름이 다를 때 학생에게 "수강증에서 읽은 이름" 을 보여 주는 데 쓴다 (2026-09-30 Alan
+ * "수강증의 이름과 내 이름이 일치하지 않으면 등업신청에서 팝업 안내"). **한글 2~5자로 또렷이 읽혔을 때만** 돌려주고 아니면 null —
+ * 라벨을 못 읽었거나 찌꺼기가 섞여 길어졌으면 "이름이 다르다" 고 말할 근거가 없다.
+ * OCR 원문은 변형 여러 장을 이어 붙인 것이라 같은 칸이 여러 번 나온다 — 가장 많이 읽힌 값을 고른다.
+ * 판정(G3)은 여전히 `receiptHasName` 이다 — 이 값은 보여 주기만 한다.
+ */
+export function receiptStudentName(text: string): string | null {
+  const counts = new Map<string, number>();
+  for (let value of studentValues(text, true)) {
+    const cut = value.search(NEXT_LABEL);
+    if (cut > 0) value = value.slice(0, cut);
+    if (value.length >= 2 && value.length <= 5) counts.set(value, (counts.get(value) ?? 0) + 1);
   }
-  return false;
+  let best: string | null = null;
+  let most = 0;
+  for (const [v, c] of counts) if (c > most) [best, most] = [v, c];
+  return best;
 }
 
 function parseTimes(compact: string): ReceiptTime[] {
@@ -259,7 +308,22 @@ function parseTimes(compact: string): ReceiptTime[] {
   return out;
 }
 
+/**
+ * 레벨 숫자 — **수강증 카드의 칸에서 읽은 숫자가 먼저다** (2026-09-30 받은 수강증 30장 실측). 제목 줄 `850 목표` 와 레벨 칸 `레벨 850+` 이다.
+ * 변형 여러 장을 이어 붙인 원문이라 한 장이 `850 목표` 를 `650 곡표` 로 잘못 읽으면 레벨이 [650, 850] 으로 흔들려 멀쩡한 850 수강증이
+ * 검토로 갔다. 칸에서 읽은 숫자가 있으면 그것만 쓰고(칸끼리 다르면 여전히 여럿 — 대조가 멈춘다), 없을 때만 원문 전체의 숫자를 쓴다.
+ * 칸 밖의 숫자(광고 배너 `550+ 1단계` 따위)가 레벨을 흔들지 못하게 되는 덤도 있다.
+ */
 function parseLevels(compact: string): number[] {
+  const fielded = new Set<number>();
+  for (const m of compact.matchAll(/(?<![\d:,])(650|750|850)(?=목표)/g)) fielded.add(Number(m[1]));
+  for (const m of compact.matchAll(/레벨[^\d가-힣]{0,3}(650|750|850)(?![\d:,원])/g)) fielded.add(Number(m[1]));
+  if (fielded.size > 0) return LEVELS.filter((l) => fielded.has(l));
+  return anyLevels(compact);
+}
+
+/** 원문 어디든 적힌 레벨 숫자 (카드 칸을 못 읽었을 때) */
+function anyLevels(compact: string): number[] {
   // 앞뒤에 숫자·콜론이 붙으면 레벨이 아니다 — "16:50" 의 6:50, "1650원" 의 650 을 걸러낸다.
   // **금액의 세 자리 묶음도 레벨이 아니다** (2026-09-22) — `650,000원` · `1,850,000원` 의 650·850 을 레벨로 읽어
   // 750 수강증이 [650, 750] 이 되고 앞의 650 반에 자동 배정될 뻔했다 (재현). 그래서 앞뒤의 `,` 와 뒤의 `원` 도 막는다.
@@ -410,7 +474,11 @@ export function parseReceipt(raw: string): ParsedReceipt {
   if (!modeEvidence) warnings.push("강의실(온라인 강의/호실)을 못 읽어 수강 방식을 현장으로 두었어요");
   else if (modeEvidence === "live") warnings.push("강의실 칸을 못 읽어 칸 밖의 글자로 불라방으로 봤어요");
 
-  const card = CARD_LABELS.every((label) => compact.includes(label));
+  // 한 글자 오인식은 봐준다 (2026-09-30 실측 `수갈생` · `수강시관`) — 수강생은 줄 첫머리 규칙(`studentLabelEnd`), 네 글자 라벨은 편집거리 1.
+  // `수강센터` ↔ `수강시간` 은 두 글자가 달라 서로를 대신하지 못한다
+  const card =
+    text.split("\n").some((l) => studentLabelEnd(l.replace(/\s+/g, "")) >= 0) &&
+    CARD_LABELS.filter((label) => label !== "수강생").every((label) => fuzzyIncludes(compact, label, 1));
   if (!card) warnings.push(`수강증 카드의 칸(${CARD_LABELS.join("·")})이 다 보이지 않아요`);
   const brandExact = compact.includes(RECEIPT_KEYWORDS.brand);
   // 다시보기권 같은 "등업이 아닌 상품" 은 따로 보지 않는다 (2026-09-22 Alan "역전토익은 다시보기권 없어") —
