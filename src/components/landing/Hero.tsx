@@ -97,15 +97,16 @@ export function Hero() {
           </ul>
         </div>
 
-        {/* 두 강사 투샷 (2026-09-17 Alan — 일러스트 소녀 대신 "우리 강사님 두 분이 같이 있는 이미지").
-            힉스필드 GPT Image 2.5 로 원본 사진 두 장을 참조해 한 장으로 합친 투명 배경 컷 — CLAUDE.md "히어로 강사 투샷" */}
+        {/* 두 강사 투샷. 왼쪽 이혜영은 **실제 사진 그대로**(2026-09-30 Alan — "왼쪽에 혜영쌤 이 사진으로 교체"),
+            오른쪽 이영수는 2026-09-17 힉스필드 투샷의 엄지척 컷을 그대로 두고 sharp 로 다시 합쳤다 — CLAUDE.md "히어로 강사 투샷".
+            여기만 실사이고 다른 강사 그림은 전부 캐리커처다 */}
         <div className="relative mx-auto w-full max-w-md md:max-w-lg">
           <div aria-hidden className="absolute left-1/2 top-1/2 -z-10 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-300/40 animate-pulse-ring" />
           <div aria-hidden className="absolute left-1/2 top-1/2 -z-10 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-300/30 animate-pulse-ring" style={{ animationDelay: "1.2s" }} />
           <Image
             src="/illustrations/hero-instructors.webp"
             alt="역전토익 대표 강사 이혜영(LC)과 이영수(RC)"
-            width={1600}
+            width={1620}
             height={1806}
             priority
             sizes="(max-width: 768px) 90vw, 40vw"

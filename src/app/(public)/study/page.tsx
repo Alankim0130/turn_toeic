@@ -72,7 +72,7 @@ export default async function StudyPage() {
 
   return (
     <section className="container-x py-10 sm:py-14">
-      {/* 제목 오른쪽에 노트를 든 강사. 모바일은 카드 위에서 흐려지고, PC 는 아래쪽이 소개 카드 뒤로 들어간다 */}
+      {/* 제목 오른쪽에 노트를 든 강사 캐리커처. PC 는 아래쪽이 소개 카드 뒤로 들어간다 */}
       <div className="flex items-end justify-between gap-3">
         <PageHeader icon="study" title="스터디 신청하기" description="혼자보다 함께. 매달 열리는 역전토익 스터디 중 나에게 맞는 스터디를 골라 신청하세요." />
         <InstructorCameo

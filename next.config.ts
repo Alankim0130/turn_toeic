@@ -47,8 +47,8 @@ const nextConfig: NextConfig = {
       "./public/brand/logo.png",
       "./public/brand/symbol.png",
       "./public/posters/attendance-*.webp",
-      // 강사 캐리커처 (2026-09-30 — 그전에는 public/instructors/casual/*.png 실사 컷)
-      "./public/posters/caricature-*.webp",
+      // 강사 캐리커처 (2026-09-30 — 그전에는 public/instructors/casual/*.png 실사 컷). 포스터는 site.instructors[].caricatures[0]
+      "./public/instructors/caricature/*.webp",
     ],
   },
 

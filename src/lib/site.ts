@@ -70,9 +70,11 @@ export const site = {
     { src: "/reviews/3.webp", w: 898, h: 1612, kind: "ybm", badge: "600+기초 한달 점수보장반", title: "역전토익 강사님들은 토익 요령을 귀에 다이렉트로 꼽아주십니다", meta: "yebbi77**** · 2025-05-23" },
     { src: "/reviews/4.webp", w: 900, h: 1607, kind: "ybm", badge: "700+중급 두달완성", title: "역전토익은 빛이다", meta: "tnwl99**** · 2025-05-23" },
   ],
-  // 강사 사진: 배경 투명 PNG. 두 장 모두 머리 크기(380px)·구도가 같고 얼굴이 가로 중앙이라 나란히 둬도 맞는다
-  // casual: 원본 얼굴을 유지한 채 힉스필드(Nano Banana Pro)로 의상·자세만 바꾸고 배경을 지운 컷. 무릎 위까지라
-  //         설명 구간 곳곳에 <InstructorCameo /> 로 등장시킨다. 손짓 방향은 모두 화면 왼쪽 → 콘텐츠 오른쪽에 둔다
+  // photo: 실사 사진(배경 투명 PNG). 두 장 모두 머리 크기(380px)·구도가 같고 얼굴이 가로 중앙이라 나란히 둬도 맞는다.
+  //        지금은 랜딩 히어로 투샷의 재료와 JSON-LD Person.image 에만 쓴다 — 화면의 다른 강사 그림은 전부 캐리커처다
+  // caricatures: 힉스필드 GPT Image 2.5 큰 머리 스티커 스타일 온몸 그림 (2026-09-30 Alan "다른 페이지에 쌤들 나와있는거는 전부 다 캐리커처로").
+  //        <InstructorCameo name pose /> 와 랜딩 강사 소개 카드가 pose 로 고른다. 손짓은 화면 왼쪽을 향하므로 콘텐츠 오른쪽에 둔다.
+  //        **첫 장은 출석 QR 포스터가 쓴다** (attendance-poster-assets.ts 가 [0] 을 읽는다) — 순서를 바꾸면 인쇄물이 달라진다
   /**
    * 강사 소개 (2026-09-17 Alan 제공 — 소개 슬라이드 2장을 옮겨 적었다).
    * `tagline`·`education`·`years`·`highlights`·`awards` 가 랜딩 강사 소개의 설명 블록이 된다.
@@ -102,12 +104,12 @@ export const site = {
       ],
       awards: ["P어학원 최우수 강사 선정", "P어학원 수강생이 직접 뽑은 토익부문 최우수 강사 선정", "지인추천 압도적인 강사추천도"],
       photo: { src: "/instructors/lee-hyeyoung.png", width: 827, height: 1500 },
-      casual: [
-        { pose: "point", src: "/instructors/casual/lee-hyeyoung-point.png", width: 655, height: 1400 },
-        { pose: "notebook", src: "/instructors/casual/lee-hyeyoung-notebook.png", width: 623, height: 1400 },
+      caricatures: [
+        // point: 윙크하며 왼쪽을 가리킨다 — 출석 QR 포스터(QR 을 가리킴)와 랜딩 시간표 옆
+        { pose: "point", src: "/instructors/caricature/lee-hyeyoung-point.webp", width: 900, height: 1680 },
+        // notebook: 노트 + 펜, 목에 헤드폰(LC) — 강사 소개 카드와 스터디 페이지
+        { pose: "notebook", src: "/instructors/caricature/lee-hyeyoung-notebook.webp", width: 696, height: 1700 },
       ],
-      // 출석 QR 포스터의 캐리커처 (2026-09-30 Alan "QR 포스터는 케릭커쳐로") — 윙크하며 왼쪽(QR)을 가리킨다. 힉스필드 GPT Image 2.5
-      caricature: { src: "/posters/caricature-lee-hyeyoung.webp", width: 900, height: 1680 },
     },
     {
       name: "이영수",
@@ -130,12 +132,12 @@ export const site = {
       ],
       awards: ["P어학원 최우수 강사 선정", "지인추천 압도적인 강사추천도"],
       photo: { src: "/instructors/lee-yeongsu.png", width: 1233, height: 1500 },
-      casual: [
-        { pose: "thumbsup", src: "/instructors/casual/lee-yeongsu-thumbsup.png", width: 681, height: 1400 },
-        { pose: "tablet", src: "/instructors/casual/lee-yeongsu-tablet.png", width: 888, height: 1400 },
+      caricatures: [
+        // thumbsup: 엄지척 + 휴대폰 — 출석 QR 포스터(QR 을 찍음)와 랜딩 CTA 배너
+        { pose: "thumbsup", src: "/instructors/caricature/lee-yeongsu-thumbsup.webp", width: 900, height: 1968 },
+        // tablet: 태블릿 화면을 가리키며 설명 — 강사 소개 카드와 수강생전용 소개 페이지
+        { pose: "tablet", src: "/instructors/caricature/lee-yeongsu-tablet.webp", width: 647, height: 1700 },
       ],
-      // 출석 QR 포스터의 캐리커처 — 엄지척 + 휴대폰(QR 을 찍는다). 힉스필드 GPT Image 2.5
-      caricature: { src: "/posters/caricature-lee-yeongsu.webp", width: 900, height: 1968 },
     },
   ],
   /**

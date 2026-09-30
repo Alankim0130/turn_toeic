@@ -40,7 +40,8 @@ async function load(): Promise<PosterAssets> {
     image("posters/attendance-phone.webp", 480),
     image("posters/attendance-stamp.webp", 480),
     Promise.all(
-      site.instructors.slice(0, 2).map(async (i) => ({ name: i.name, part: i.part, photo: await image(i.caricature.src.replace(/^\//, ""), 660, true) })),
+      // 포스터는 캐리커처 첫 장(이혜영 point · 이영수 thumbsup)을 쓴다 — site.ts 의 순서가 곧 인쇄물이다
+      site.instructors.slice(0, 2).map(async (i) => ({ name: i.name, part: i.part, photo: await image(i.caricatures[0].src.replace(/^\//, ""), 660, true) })),
     ),
   ]);
   return { fonts: { black, bold, semibold }, logo, symbol, phone, stamp, people };

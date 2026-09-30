@@ -31,11 +31,10 @@ export function CTA() {
               </Link>
             </div>
           </div>
-          {/* 모바일은 버튼 아래 오른쪽, PC 는 배너 오른쪽. 배너 아래 가장자리에 무릎이 잘리도록 바닥에 붙인다 */}
+          {/* 모바일은 버튼 아래 오른쪽, PC 는 배너 오른쪽. 캐리커처는 스티커처럼 흰 테두리가 있어 분홍 배너 위에서도 살아난다 */}
           <InstructorCameo
             name="이영수"
             pose="thumbsup"
-            fade={false}
             sizes="(min-width: 1024px) 200px, 120px"
             className="relative -mb-8 ml-auto mt-4 block h-56 drop-shadow-[0_12px_24px_rgba(92,7,48,0.35)] sm:-mb-12 lg:absolute lg:bottom-0 lg:right-12 lg:mb-0 lg:mt-0 lg:h-[92%] xl:right-20"
           />
