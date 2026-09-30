@@ -465,8 +465,8 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
           ) : (
             <Icon name="upload" size={44} />
           )}
-          <span className="text-sm font-bold text-ink">{file ? file.name : "여기를 눌러 수강증 사진 또는 PDF 선택"}</span>
-          <span className="text-xs text-mist">JPG · PNG · WEBP · PDF, 10MB 이하. 글자가 잘 보이게 찍어 주세요.</span>
+          <span className="text-sm font-bold text-ink">{file ? file.name : "여기를 눌러 파란색 수강증 캡처 선택"}</span>
+          <span className="text-xs text-mist">마이페이지 → 수강증의 파란 화면 · JPG · PNG · WEBP · PDF, 10MB 이하</span>
         </label>
       </div>
 

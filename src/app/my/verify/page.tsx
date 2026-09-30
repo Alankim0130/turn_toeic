@@ -7,6 +7,7 @@ import { getMyVerifications, getOpenEnrollSections, VERIFICATION_STATUS_LABEL } 
 import { heldMonth } from "@/lib/verify-decision";
 import { VerifyForm } from "./VerifyForm";
 import { NoReceiptCard } from "./NoReceiptCard";
+import { ReceiptGuide } from "./ReceiptGuide";
 import { getSessionProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { IdentityConfirmForm } from "@/components/my/IdentityConfirmForm";
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
 };
 
 const STEPS: { icon: IconName; title: string; desc: string }[] = [
-  { icon: "upload", title: "수강증 업로드", desc: "YBM 홈페이지·앱에서 보이는 수강증 화면을 캡처해 올립니다. 결제 영수증은 받지 않아요." },
+  { icon: "upload", title: "수강증 업로드", desc: "마이페이지 → 수강증에서 나오는 파란색 수강증 화면을 캡처해 올립니다. 결제 영수증·카톡 캡처는 받지 않아요." },
   { icon: "target", title: "확인", desc: "역전토익 수강증이 맞는지, 이번 달 수강증이 맞는지 확인합니다. 아니면 이유를 적어 바로 알려드려요." },
   // 흐름은 업로드 → 이름·전화번호 → (같은 사람 계정이 있으면) 합치기 다 (2026-09-19 Alan)
   { icon: "profile", title: "이름·전화번호 확인", desc: "같은 이름을 쓰는 수강생이 있어서 한 번 더 확인합니다. 같은 사람의 계정이 여러 개면 여기서 하나로 합쳐요." },
@@ -86,6 +87,11 @@ export default async function VerifyPage() {
         </Reveal>
       )}
 
+      {/* 무엇을 올리나 — 파란색 수강증 (2026-09-30 Alan "파란색 수강증을 올리는게 가장 중요해!"). 폼 앞, 한 줄 전체 */}
+      <Reveal>
+        <ReceiptGuide />
+      </Reveal>
+
       <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
         <div className="space-y-4">
           <Reveal>
@@ -131,7 +137,7 @@ export default async function VerifyPage() {
                   <dd className="text-ink">인증이 끝나고 {RETENTION_LABEL} 뒤 원본 파일을 삭제합니다</dd>
                 </div>
               </dl>
-              <p className="mt-3 text-xs text-mist">가입한 실명과 수강증의 이름이 다르면 등업이 반려됩니다. 수강증 1건은 1개 계정에만 사용할 수 있어요.</p>
+              <p className="mt-3 text-xs text-mist">가입한 실명과 수강증의 이름이 다르면 자동으로 등업되지 않고 선생님이 확인해요. 수강증 1건은 1개 계정에만 사용할 수 있어요.</p>
             </section>
           </Reveal>
         </div>
