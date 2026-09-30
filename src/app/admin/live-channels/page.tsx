@@ -10,7 +10,7 @@ import { youtubeConfigured } from "@/lib/youtube";
 import { cn, formatDate, todayKST, TRACK_LABEL } from "@/lib/utils";
 import { disconnectYoutube } from "./actions";
 
-export const metadata: Metadata = { title: "불라방 자동 연결", robots: { index: false } };
+export const metadata: Metadata = { title: "유튜브 자동 연결", robots: { index: false } };
 
 const ERROR_TEXT: Record<string, string> = {
   config: "아직 구글 설정이 안 끝났어요. 관리자가 아래 안내대로 설정하면 연결할 수 있어요.",
@@ -58,9 +58,14 @@ export default async function LiveChannelsPage({ searchParams }: { searchParams:
     <>
       <PageHeader
         icon="live"
-        title="불라방 자동 연결"
+        title="유튜브 자동 연결"
         description={`강사님 유튜브 채널을 한 번 연결해 두면, 수업 시작 앞뒤 ${LIVE_MATCH_MINUTES}분 안에 켠 방송이 그 회차 불라방 링크로 저절로 들어가고 불라방 학생에게 바로 알림이 가요.`}
       />
+      {/* 2026-09-30 Alan — "불라방은 zoom으로 올리고, 다시보기는 유튜브로 따로" */}
+      <Alert kind="info" className="mb-4" title="지금 불라방은 Zoom 으로 해요">
+        입장 링크는 <Link href="/admin/live" className="font-bold text-brand-600 hover:underline">불라방 링크</Link> 화면에서 넣어요. 이 화면은 유튜브 라이브로 방송할 때만 씁니다 —
+        Zoom 링크는 다시보기로 올라가지 않으니 녹화본은 유튜브에 올린 뒤 다시보기 등록에서 붙여 주세요.
+      </Alert>
       {ok && <Alert kind="success" className="mb-4">{ok === "linked" ? "유튜브 채널을 연결했어요." : "연결을 끊었어요."}</Alert>}
       {error && <Alert kind="warning" className="mb-4">{ERROR_TEXT[error] ?? "처리하지 못했어요."}</Alert>}
 

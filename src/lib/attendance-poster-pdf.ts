@@ -2,7 +2,8 @@
  * 출석 QR 포스터 PDF (2026-09-22 Alan — "새로 만들기 버튼을 누르면 인쇄까지 할 수 있도록 다운로드가 있으면 좋겠어").
  *
  * - **A4 가로 한 장 = A5 세로 포스터 두 장.** 가운데 점선을 자르면 강의실마다 한 장씩 붙인다. 두 장은 QR 이 같고
- *   강사만 다르다 (`site.instructors[].casual` 의 첫 컷 — 이혜영 가리키기 · 이영수 엄지척).
+ *   강사만 다르다 — **캐리커처**(`site.instructors[].caricature`, 2026-09-30 Alan "QR 포스터는 케릭커쳐로" · "케릭커쳐 위주로"):
+ *   이혜영 윙크하며 QR 가리키기 · 이영수 엄지척 + 휴대폰. 온몸 그림(폭 53mm)이고 발밑에 이름표(`LC · 이혜영`)를 받침처럼 둔다.
  * - **전부 벡터로 그린다** — QR 칸은 순검정 네모라 어떤 프린터에서도 또렷하고, 글자는 `assets/poster-fonts/` 의
  *   Pretendard(포스터 글자만 남긴 파일)를 넣는다. 그림(QR 을 찍는 휴대폰 · 출석 도장)은 힉스필드로 만든 `public/posters/` 다 —
  *   AI 가 그린 QR 은 안 찍히고 한글은 깨지므로 QR 과 글자는 코드로 그린다.
@@ -196,10 +197,17 @@ function drawPoster(cv: Canvas, img: Images, who: { name: string; part: string; 
   cv.image(img.logo, L, 15.4, (10 * img.logo.width) / img.logo.height, 10);
   cv.pill(T.pill, { right: R, top: 16.7, h: 7.4, padX: 3.4, size: 9.5, font: bold, fill: C.brand, color: C.white, ls: -0.01 });
 
-  // ─ 강사 사진 (제목·QR·안내 상자보다 먼저 — 그 아래에 깔린다. 사진은 흰 바탕 JPEG 라 먼저 그려야 흰 네모가 안 보인다) ─
-  const photoH = 50 * who.ratio;
-  cv.image(who.photo, R + 5 - 50, 151.58 - photoH, 50, photoH);
-  cv.pill(`${who.part} · ${who.name}`, { right: R, top: 134, h: 6.2, padX: 2.8, size: 8, font: bold, fill: C.ink, color: C.white });
+  // ─ 강사 캐리커처 (제목·QR·안내 상자보다 먼저 — 그 아래에 깔린다. 흰 바탕 JPEG 라 먼저 그려야 흰 네모가 안 보인다) ─
+  // 온몸 그림이라 발밑에 이름표를 받침처럼 둔다 (오른쪽 끝에 두면 신발을 가린다). 폭 53mm 가 끝이다 —
+  // 더 키우면 키가 큰 그림(이영수)의 머리가 위 "강의실 출석 QR" 알약(바닥 24.1)을 덮는다 (그림이 알약보다 나중에 그려진다)
+  const photoW = 53;
+  const photoH = photoW * who.ratio;
+  const feet = 141.5; // 발바닥 — 이름표가 발끝을 살짝 덮는다
+  const cx = R + 5 - photoW / 2;
+  cv.image(who.photo, R + 5 - photoW, feet - photoH, photoW, photoH);
+  const tag = `${who.part} · ${who.name}`;
+  const tagW = cv.width(tag, bold, 8) + 2.8 * 2;
+  cv.pill(tag, { right: cx + tagW / 2, top: 139.6, h: 6.2, padX: 2.8, size: 8, font: bold, fill: C.ink, color: C.white });
 
   // ─ 큰 제목 · 설명 ─
   T.title.forEach((runs, i) => {

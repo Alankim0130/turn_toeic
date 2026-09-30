@@ -402,6 +402,9 @@ export async function upsertLiveLink(_prev: ActionState, formData: FormData): Pr
 function revalidateLive(sectionId: number) {
   revalidatePath(`/admin/sections/${sectionId}`);
   revalidatePath("/admin/sections");
+  // 대시보드 불라방 위젯 · 불라방 링크 화면 (2026-09-30) 도 같은 저장을 쓴다
+  revalidatePath("/admin");
+  revalidatePath("/admin/live");
   revalidatePath("/admin/replays");
   revalidatePath("/my/live");
   revalidatePath("/my/replay");

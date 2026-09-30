@@ -442,6 +442,9 @@ export type Database = {
           message: string
           name: string
           phone: string | null
+          replied_at: string | null
+          replied_by: string | null
+          reply: string | null
           status: string
           user_id: string | null
         }
@@ -452,6 +455,9 @@ export type Database = {
           message: string
           name: string
           phone?: string | null
+          replied_at?: string | null
+          replied_by?: string | null
+          reply?: string | null
           status?: string
           user_id?: string | null
         }
@@ -462,10 +468,20 @@ export type Database = {
           message?: string
           name?: string
           phone?: string | null
+          replied_at?: string | null
+          replied_by?: string | null
+          reply?: string | null
           status?: string
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "contact_messages_replied_by_fkey"
+            columns: ["replied_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "contact_messages_user_id_fkey"
             columns: ["user_id"]
@@ -1536,6 +1552,7 @@ export type Database = {
           file_path: string
           file_size: number | null
           id: number
+          note: string | null
           seq: number
           title: string | null
           updated_at: string
@@ -1548,6 +1565,7 @@ export type Database = {
           file_path: string
           file_size?: number | null
           id?: number
+          note?: string | null
           seq: number
           title?: string | null
           updated_at?: string
@@ -1560,6 +1578,7 @@ export type Database = {
           file_path?: string
           file_size?: number | null
           id?: number
+          note?: string | null
           seq?: number
           title?: string | null
           updated_at?: string
@@ -1577,6 +1596,7 @@ export type Database = {
           file_size: number | null
           id: number
           item_id: number | null
+          note: string | null
           seq: number | null
           study_id: number
           title: string | null
@@ -1592,6 +1612,7 @@ export type Database = {
           file_size?: number | null
           id?: number
           item_id?: number | null
+          note?: string | null
           seq?: number | null
           study_id: number
           title?: string | null
@@ -1607,6 +1628,7 @@ export type Database = {
           file_size?: number | null
           id?: number
           item_id?: number | null
+          note?: string | null
           seq?: number | null
           study_id?: number
           title?: string | null

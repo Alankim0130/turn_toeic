@@ -10,6 +10,8 @@ import { courseHeadcounts, headcountTotal } from "@/lib/course-headcount";
 import { bookingsByDay, checkedAgo, NAVER_PAGE, slotPassed, slotTime } from "@/lib/naver-booking";
 import { shiftDate } from "@/lib/term-window";
 import { countBy, GENDER_LABEL, getActiveCourseRows, getCurrentOrUpcomingTerm, termLabel } from "./_lib/queries";
+import { getLiveLinkSessions } from "./_lib/live-links";
+import { forInstructor, linkKindLabel, nowKst, pickFocus } from "@/lib/live-links";
 import { requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "대시보드", robots: { index: false } };
@@ -28,12 +30,12 @@ const NAVER_TIMES_SHOWN = 4;
 
 export default async function AdminDashboardPage() {
   // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
-  await requireStaff();
+  const { user, profile } = await requireStaff();
   const supabase = await createClient();
   const today = todayKST();
   const tomorrow = shiftDate(today, 1);
 
-  const [courseRows, courseList, term, textbook, textbookCount, profiles, pendingVer, pendingHomework, newContacts, naver, naverStatus] = await Promise.all([
+  const [courseRows, courseList, term, textbook, textbookCount, profiles, pendingVer, pendingHomework, newContacts, naver, naverStatus, liveSessions] = await Promise.all([
     // 등록생 위젯 — 지금 수강 중인 등록의 반 배정을 강좌마다 사람 수로 센다 (2026-09-23 Alan)
     getActiveCourseRows(supabase, today),
     supabase.from("courses").select("id, name, program, target_score, is_active"),
@@ -60,6 +62,8 @@ export default async function AdminDashboardPage() {
       .order("slot_at", { ascending: true }),
     // 마지막 확인 시각 — 확인이 멈추면 "오늘 0명" 이 거짓말이 된다 (크론 '성공' 기록은 믿을 수 없다 — 도메인 규칙 8)
     supabase.from("naver_sync_status").select("last_success_at, consecutive_failures").maybeSingle(),
+    // 불라방 링크 위젯 — 지금(또는 다음) 수업의 링크 (2026-09-30 Alan "강사 대시보드에서 불라방 위젯")
+    getLiveLinkSessions(supabase, { from: today, to: shiftDate(today, 13) }),
   ]);
 
   /* 수업시간대별 인원수 — 강좌(행) × 시간대(열) 표 */
@@ -128,6 +132,13 @@ export default async function AdminDashboardPage() {
   const naverFailing = (naverStatus.data?.consecutive_failures ?? 0) > 0;
   const naverChecked = naverStatus.data?.last_success_at ?? null;
 
+  // 불라방 링크 위젯 — 강사는 자기 반(+ 담당이 빈 반)만, 관리자는 전부 (`/admin/live` 와 같은 규칙)
+  const liveView = profile.role === "instructor" ? forInstructor(liveSessions, user.id) : liveSessions;
+  const liveNow = nowKst();
+  const { focus: liveFocus, state: liveState } = pickFocus(liveView, liveNow.date, liveNow.minutes);
+  const liveToday = liveView.filter((s) => s.date === today);
+  const liveNeed = liveFocus.some((s) => !s.link);
+
   // 칸에는 이름과 숫자만 둔다 (2026-09-22 Alan — 이름 아래 "검토할 수강증이 없어요" 같은 설명 줄이 PC 에서 "검토할…" 로 잘려 보였다).
   // 0건 · 1건 이상은 타일 색과 숫자가 말해 준다
   const todo: { label: string; value: number; href: string; icon: IconName }[] = [
@@ -178,6 +189,54 @@ export default async function AdminDashboardPage() {
       <section aria-labelledby="stats-title" className="mb-8">
         <h2 id="stats-title" className="mb-3 text-sm font-black text-slate">오늘 현황</h2>
         <div className="grid gap-3 lg:grid-cols-5">
+          {/* 불라방 링크 — 지금(또는 다음) 수업의 Zoom 링크가 들어갔나. 누르면 링크를 넣는 화면 (2026-09-30 Alan) */}
+          <Link
+            href="/admin/live"
+            className={cn(
+              "card flex flex-col gap-3 p-4 transition hover:-translate-y-0.5 hover:shadow-pink sm:p-5 lg:col-span-5",
+              liveNeed && "border-brand-300 bg-gradient-to-br from-brand-50 via-paper to-paper",
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", liveNeed ? "bg-brand-500 shadow-pink" : "bg-brand-50")}>
+                <Icon name="live" size={20} className={cn(liveNeed && "brightness-0 invert")} />
+              </span>
+              <span className="text-sm font-bold text-slate">불라방 링크</span>
+              <span className="min-w-0 truncate text-xs text-mist">{profile.role === "instructor" ? "내 수업" : "전체 수업"} · Zoom 입장 링크</span>
+              <span aria-hidden className="ml-auto text-lg font-black text-line">›</span>
+            </div>
+            {liveFocus.length === 0 ? (
+              <p className="text-sm text-slate">앞으로 2주 안에 {profile.role === "instructor" ? "담당 " : ""}수업이 없어요.</p>
+            ) : (
+              <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+                <span className="shrink-0 rounded-full bg-ink px-2.5 py-1 text-xs font-black text-white">
+                  {liveState === "now"
+                    ? "지금 수업"
+                    : `다음 수업 · ${liveFocus[0].date === today ? "오늘" : formatDate(liveFocus[0].date, { month: "numeric", day: "numeric", weekday: "short" })}`}
+                </span>
+                <ul className="min-w-0 flex-1 space-y-1.5">
+                  {liveFocus.map((s) => (
+                    <li key={s.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="text-lg font-black tabular-nums text-ink">{s.time_block ?? "시간 미정"}</span>
+                      <span className="min-w-0 text-sm font-bold text-ink-soft">
+                        {s.courseName} · {s.track === "mwf" ? "월수금" : "화목금"}
+                      </span>
+                      {profile.role !== "instructor" && s.instructorName && <span className="text-xs text-mist">{s.instructorName}</span>}
+                      {s.link ? (
+                        <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-black text-white">{linkKindLabel(s.link.url)} 링크 있음</span>
+                      ) : (
+                        <span className="rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-black text-white">링크 넣기</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <p className="text-xs text-mist">
+              오늘 {profile.role === "instructor" ? "내 " : ""}수업 {liveToday.length}개 · 링크 {liveToday.filter((s) => s.link).length}개 들어감
+            </p>
+          </Link>
+
           {/* 등록생 — 강좌마다 지금 수강 중인 사람 수를 크게. 주5일·120분 학생도 한 사람 (`courseHeadcounts`) */}
           <Link href="/admin/students?tab=active" className="card flex flex-col p-4 transition hover:-translate-y-0.5 hover:shadow-pink sm:p-5 lg:col-span-3">
             <div className="flex items-center gap-2">

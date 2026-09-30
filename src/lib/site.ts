@@ -106,6 +106,8 @@ export const site = {
         { pose: "point", src: "/instructors/casual/lee-hyeyoung-point.png", width: 655, height: 1400 },
         { pose: "notebook", src: "/instructors/casual/lee-hyeyoung-notebook.png", width: 623, height: 1400 },
       ],
+      // 출석 QR 포스터의 캐리커처 (2026-09-30 Alan "QR 포스터는 케릭커쳐로") — 윙크하며 왼쪽(QR)을 가리킨다. 힉스필드 GPT Image 2.5
+      caricature: { src: "/posters/caricature-lee-hyeyoung.webp", width: 900, height: 1680 },
     },
     {
       name: "이영수",
@@ -132,6 +134,8 @@ export const site = {
         { pose: "thumbsup", src: "/instructors/casual/lee-yeongsu-thumbsup.png", width: 681, height: 1400 },
         { pose: "tablet", src: "/instructors/casual/lee-yeongsu-tablet.png", width: 888, height: 1400 },
       ],
+      // 출석 QR 포스터의 캐리커처 — 엄지척 + 휴대폰(QR 을 찍는다). 힉스필드 GPT Image 2.5
+      caricature: { src: "/posters/caricature-lee-yeongsu.webp", width: 900, height: 1968 },
     },
   ],
   /**
@@ -314,9 +318,12 @@ export const NAV_ADMIN: NavItem[] = [
   { href: "/admin/lectures", label: "특강 신청", icon: "bolt" },
   { href: "/admin/verifications", label: "등업 로그", icon: "verify", crew: true },
   { href: "/admin/textbook-orders", label: "교재주문", icon: "orders", crew: true },
+  // 불라방(Zoom) 입장 링크 — 지금 수업이 맨 위, 강사는 자기 반만 (2026-09-30 Alan). 대시보드 불라방 위젯이 여기로 온다
+  { href: "/admin/live", label: "불라방 링크", icon: "live" },
   { href: "/admin/replays", label: "다시보기", icon: "replay" },
-  // 강사 유튜브 채널 연결 · 오늘 회차 자동 연결 상태 (2026-09-21) — 강사·관리자만
-  { href: "/admin/live-channels", label: "불라방 자동 연결", icon: "live" },
+  // 강사 유튜브 채널 연결 · 오늘 회차 자동 연결 상태 (2026-09-21) — 강사·관리자만.
+  // 2026-09-30 부터 불라방은 Zoom 이라 쓰지 않는다 — 유튜브 라이브로 되돌아갈 때를 위해 남겨 두고 이름만 갈랐다
+  { href: "/admin/live-channels", label: "유튜브 자동 연결", icon: "live" },
   { href: "/admin/analytics", label: "마케팅 분석", icon: "analytics" },
   { href: "/admin/study", label: "스터디 신청자", icon: "study", crew: true },
   { href: "/admin/study-materials", label: "비대면 자료", icon: "online" },

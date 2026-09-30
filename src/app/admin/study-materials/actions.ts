@@ -5,7 +5,7 @@ import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { isSafeObjectPath, type UploadedFile } from "@/lib/upload";
 import { studyErrorMessage } from "@/lib/study";
-import { MATERIAL_ROUND_MAX } from "@/lib/study-rounds";
+import { MATERIAL_NOTE_MAX, MATERIAL_ROUND_MAX } from "@/lib/study-rounds";
 
 export type MaterialResult = { ok: boolean; error?: string };
 
@@ -32,16 +32,25 @@ async function removeIfUnused(supabase: Awaited<ReturnType<typeof createClient>>
  * 파일은 브라우저가 먼저 저장소(`items/…`)에 올리고, 여기서는 자료실 행만 만든다/고친다.
  * 그 달 날짜에 붙이는 일은 DB 가 한다 (자료실 트리거 → `private.sync_online_materials`).
  *  - itemId 없음: 새 회차 (파일 필수)
- *  - itemId 있음: 제목 수정, file 이 있으면 파일 교체 후 옛 파일 삭제
+ *  - itemId 있음: 제목·안내 문구 수정, file 이 있으면 파일 교체 후 옛 파일 삭제
+ * 안내 문구(2026-09-30 Alan "각 회차마다 안내문구")는 그 달 적용분으로 복사돼 학생 `/my/study` 의 그 회차 줄에 보인다.
  */
-export async function saveMaterialItem(input: { seq: number; title: string; itemId?: number | null; file?: UploadedFile | null }): Promise<MaterialResult> {
+export async function saveMaterialItem(input: {
+  seq: number;
+  title: string;
+  note?: string | null;
+  itemId?: number | null;
+  file?: UploadedFile | null;
+}): Promise<MaterialResult> {
   const { user } = await requireStaff();
   const seq = Number(input.seq);
   const title = String(input.title ?? "").trim();
+  const note = String(input.note ?? "").trim();
   const file = input.file ?? null;
 
   if (!Number.isInteger(seq) || seq < 1 || seq > MATERIAL_ROUND_MAX) return { ok: false, error: "회차를 확인해 주세요." };
   if (title.length > 100) return { ok: false, error: "제목은 100자 이내로 적어 주세요." };
+  if (note.length > MATERIAL_NOTE_MAX) return { ok: false, error: `안내 문구는 ${MATERIAL_NOTE_MAX}자 이내로 적어 주세요.` };
   if (file && (!isSafeObjectPath(file.path, "items/") || !file.name || file.size < 0)) return { ok: false, error: "파일 정보가 올바르지 않아요." };
 
   const supabase = await createClient();
@@ -54,6 +63,7 @@ export async function saveMaterialItem(input: { seq: number; title: string; item
     const { error } = await supabase.from("study_material_items").insert({
       seq,
       title: title || null,
+      note: note || null,
       file_path: file.path,
       file_name: file.name.slice(0, 200),
       file_size: file.size,
@@ -73,7 +83,7 @@ export async function saveMaterialItem(input: { seq: number; title: string; item
 
   const { data, error } = await supabase
     .from("study_material_items")
-    .update({ title: title || null, updated_at: new Date().toISOString(), ...fileFields })
+    .update({ title: title || null, note: note || null, updated_at: new Date().toISOString(), ...fileFields })
     .eq("id", itemId)
     .select("id");
   if (error) return { ok: false, error: studyErrorMessage(error) };

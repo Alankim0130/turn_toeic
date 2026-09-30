@@ -24,7 +24,7 @@ export default async function NotificationsPage() {
   return (
     <div className="space-y-6">
       <MarkRead unread={unread} />
-      <PageHeader icon="bell" title="알림" description="선생님이 보낸 알림과 수업 시작 알림이 여기에 쌓여요." />
+      <PageHeader icon="bell" title="알림" description="선생님이 보낸 알림 · 문의 답변 · 수업 시작 알림이 여기에 쌓여요." />
 
       {messages.length === 0 ? (
         <EmptyState icon="bell" title="아직 알림이 없어요" description="선생님이 보낸 안내나 불라방 수업 시작 알림이 오면 여기에서 볼 수 있어요." />
@@ -55,6 +55,12 @@ export default async function NotificationsPage() {
                   {m.kind === "homework_checked" && (
                     <Link href="/my/homework" className="btn-primary mt-3 !px-4 !py-2 text-sm">
                       숙제업로드에서 확인하기
+                    </Link>
+                  )}
+                  {/* 문의 답변 (2026-09-30) — 연락하기로 보낸 문의에 선생님이 답한 것. 더 물을 것은 다시 연락하기로 */}
+                  {m.kind === "contact_reply" && (
+                    <Link href="/contact" className="btn-secondary mt-3 !px-4 !py-2 text-sm">
+                      더 궁금한 점 문의하기
                     </Link>
                   )}
                   {/* 수업 시작 알림 — 불라방 학생에게만 간다 (크론). 늦게 열어도 그 날 링크는 그대로다 */}

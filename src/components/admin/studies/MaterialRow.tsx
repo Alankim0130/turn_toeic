@@ -9,11 +9,21 @@ import { formatBytes, shortDateTimeKST } from "@/lib/study";
 import { MB, objectName, type UploadedFile } from "@/lib/upload";
 import { removeUploaded, uploadFile } from "@/lib/upload-client";
 import { labelKo } from "@/components/admin/sections/dates";
+import { MATERIAL_NOTE_MAX } from "@/lib/study-rounds";
 
 const BUCKET = "study-materials";
 const MAX = 50 * MB;
 
-export type MaterialItemLite = { id: number; seq: number; title: string | null; file_name: string; file_size: number | null; updated_at: string };
+export type MaterialItemLite = {
+  id: number;
+  seq: number;
+  title: string | null;
+  /** 회차 안내 문구 (2026-09-30 Alan "각 회차마다 안내문구") — 학생 `/my/study` 의 그 회차 줄에 보인다 */
+  note: string | null;
+  file_name: string;
+  file_size: number | null;
+  updated_at: string;
+};
 
 /** 파일 선택 → 저장소 업로드(items/…) → 서버 등록. 등록 실패 시 올린 파일을 지운다 */
 function useItemSave() {
@@ -21,7 +31,7 @@ function useItemSave() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function save(args: { seq: number; title: string; itemId?: number; file: File | null }) {
+  async function save(args: { seq: number; title: string; note: string; itemId?: number; file: File | null }) {
     setError(null);
     if (args.file && args.file.size > MAX) {
       setError("파일은 50MB 이하만 올릴 수 있어요. PDF 로 줄이거나 나눠 주세요.");
@@ -31,7 +41,7 @@ function useItemSave() {
     let uploaded: UploadedFile | null = null;
     try {
       if (args.file) uploaded = await uploadFile(BUCKET, `items/${args.seq}-${objectName(args.file)}`, args.file);
-      const res = await saveMaterialItem({ seq: args.seq, title: args.title, itemId: args.itemId ?? null, file: uploaded });
+      const res = await saveMaterialItem({ seq: args.seq, title: args.title, note: args.note, itemId: args.itemId ?? null, file: uploaded });
       if (!res.ok) {
         if (uploaded) await removeUploaded(BUCKET, [uploaded.path]);
         setError(res.error ?? "저장하지 못했어요.");
@@ -75,6 +85,7 @@ export function MaterialRow({
   const [pending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
 
   const isToday = date === today;
 
@@ -82,7 +93,13 @@ export function MaterialRow({
     e.preventDefault();
     const file = fileRef.current?.files?.[0] ?? null;
     if (mode === "upload" && !file) return setError("올릴 파일을 선택해 주세요.");
-    const ok = await save({ seq, title: titleRef.current?.value ?? "", itemId: mode === "edit" ? item?.id : undefined, file });
+    const ok = await save({
+      seq,
+      title: titleRef.current?.value ?? "",
+      note: noteRef.current?.value ?? "",
+      itemId: mode === "edit" ? item?.id : undefined,
+      file,
+    });
     if (ok) setMode("view");
   }
 
@@ -152,6 +169,13 @@ export function MaterialRow({
         )}
       </div>
 
+      {item?.note && mode !== "edit" && (
+        <p className="mt-3 whitespace-pre-wrap rounded-xl bg-brand-50/70 px-3 py-2 text-sm leading-relaxed text-ink-soft">
+          <span className="mr-1.5 text-xs font-black text-brand-700">안내</span>
+          {item.note}
+        </p>
+      )}
+
       {(mode === "upload" || mode === "edit") && (
         <form onSubmit={onSubmit} className="mt-3 grid gap-2 rounded-xl border border-line bg-surface p-3 sm:grid-cols-[1fr_auto] sm:items-end">
           <div className="grid gap-2 sm:grid-cols-2">
@@ -164,6 +188,21 @@ export function MaterialRow({
                 {mode === "edit" ? <>파일 교체 <span className="font-normal text-mist">(바꿀 때만)</span></> : "파일"}
               </label>
               <input id={`file-${seq}`} ref={fileRef} type="file" className="input !py-1.5 text-sm file:mr-3 file:rounded-full file:border-0 file:bg-brand-50 file:px-3 file:py-1 file:text-xs file:font-bold file:text-brand-700" disabled={busy} />
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor={`note-${seq}`} className="label !mb-1 text-xs">
+                안내 문구 <span className="font-normal text-mist">(선택 · 학생에게 이 회차 자료와 함께 보여요)</span>
+              </label>
+              <textarea
+                id={`note-${seq}`}
+                ref={noteRef}
+                rows={3}
+                maxLength={MATERIAL_NOTE_MAX}
+                defaultValue={item?.note ?? ""}
+                placeholder="예: Part 5 1~30번을 풀고 채점한 뒤, 틀린 문제에 표시해서 풀이 사진으로 인증해 주세요."
+                className="input resize-y !py-2 text-sm"
+                disabled={busy}
+              />
             </div>
           </div>
           <div className="flex gap-1">

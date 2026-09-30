@@ -4,15 +4,26 @@ import { useActionState } from "react";
 import { submitContact, type FormState } from "./actions";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
+import Link from "next/link";
 
-export function ContactForm({ defaults }: { defaults: { name: string; phone: string; email: string } }) {
+export function ContactForm({ defaults, signedIn = false }: { defaults: { name: string; phone: string; email: string }; signedIn?: boolean }) {
   const [state, action] = useActionState<FormState, FormData>(submitContact, {});
   const v: Record<string, string> = { ...defaults, ...(state.values ?? {}) };
 
   if (state.ok) {
     return (
       <Alert kind="success" title="문의가 접수됐어요">
-        확인 후 남겨주신 연락처로 답변드립니다.
+        {signedIn ? (
+          <>확인 후 <b>마이페이지 → 알림</b>으로 답변을 보내드려요.</>
+        ) : (
+          <>
+            확인 후 남겨주신 연락처로 답변드립니다. 다음에는{" "}
+            <Link href="/signup" className="font-bold text-brand-600 underline underline-offset-2">
+              회원가입
+            </Link>{" "}
+            후 로그인하고 문의하면 답변을 사이트 알림함으로 바로 받을 수 있어요.
+          </>
+        )}
       </Alert>
     );
   }

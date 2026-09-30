@@ -11,6 +11,9 @@
 /** 회차 수의 끝 — DB check(seq between 1 and 60) 와 같다 */
 export const MATERIAL_ROUND_MAX = 60;
 
+/** 회차 안내 문구 길이 끝 — DB check(char_length(note) <= 500) 와 같다 (2026-09-30 Alan "각 회차마다 안내문구") */
+export const MATERIAL_NOTE_MAX = 500;
+
 /** 그 달 수업일(트랙 섞여도 됨) → 회차별 날짜. 같은 날이 두 트랙에 있어도 하루로 센다. 개강일~종강일이 있으면 그 안만 */
 export function classDayRounds(dates: readonly string[], window: { opens?: string | null; closes?: string | null } = {}): string[] {
   return [...new Set(dates)]

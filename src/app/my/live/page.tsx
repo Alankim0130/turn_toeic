@@ -7,6 +7,7 @@ import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
 import { cn, formatDate, formatTime, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
 import { studentTrackLabel } from "@/lib/week5";
+import { isYoutubeUrl } from "@/lib/live-links";
 import { getMyLiveCards, getMyWeek5, getNextSessionBySection, termLabel } from "../_lib/queries";
 
 export const metadata: Metadata = {
@@ -87,7 +88,8 @@ export default async function LivePage() {
                       불라방 입장
                     </a>
                     <p className="mt-2 text-center text-xs text-mist">
-                      {c.kind === "today" && s.live_to_replay
+                      {/* 유튜브 라이브만 끝나면 그 주소가 녹화본이다 — Zoom 입장 링크는 다시보기로 올라가지 않는다 (2026-09-30) */}
+                      {c.kind === "today" && s.live_to_replay && isYoutubeUrl(c.url)
                         ? "수업이 끝나면 이 주소가 그대로 다시보기에 올라와요. "
                         : ""}
                       수업이 시작되면 알림이 와요. 링크는 본인만 사용해 주세요.

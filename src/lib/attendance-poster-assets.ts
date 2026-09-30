@@ -7,9 +7,10 @@ import { site } from "./site";
 /**
  * 포스터 PDF 에 넣는 글꼴·그림을 읽는다 (2026-09-22). 서버에서만 부른다 — `/admin/attendance/poster/download`.
  *
- * - 그림은 `public/` 의 원본(강사 컷 1.3MB · 힉스필드 webp)을 **인쇄에 맞는 크기로 줄여** 넣는다
- *   (A5 에 50mm 폭이면 300dpi 에 600px 로 충분하다). PDF 는 webp 를 못 담는다.
- *   강사 사진은 **흰 바탕을 채운 JPEG** 다 — 투명 PNG 로 두면 두 장에 2.6MB 인데 JPEG 는 0.2MB 다.
+ * - 그림은 `public/` 의 원본(힉스필드 webp)을 **인쇄에 맞는 크기로 줄여** 넣는다
+ *   (A5 에 56mm 폭이면 300dpi 에 660px 로 충분하다). PDF 는 webp 를 못 담는다.
+ *   강사 그림은 **캐리커처**다 (2026-09-30 Alan "QR 포스터는 케릭커쳐로 진행하자" — 그전에는 실사 캐주얼 컷).
+ *   **흰 바탕을 채운 JPEG** 로 넣는다 — 투명 PNG 로 두면 두 장에 몇 MB 인데 JPEG 는 0.2MB 대다.
  *   사진 자리는 포스터의 흰 바탕이고 그 위로 겹치는 것(안내 상자·이름표)은 사진 뒤에 그리므로 흰 네모가 드러나지 않는다.
  * - Vercel 함수에는 `public/` 이 따라가지 않는다 — `next.config.ts` 의 `outputFileTracingIncludes` 에 이 파일들을 적어 두었다.
  *   여기서 읽는 파일을 바꾸면 거기도 고친다.
@@ -39,7 +40,7 @@ async function load(): Promise<PosterAssets> {
     image("posters/attendance-phone.webp", 480),
     image("posters/attendance-stamp.webp", 480),
     Promise.all(
-      site.instructors.slice(0, 2).map(async (i) => ({ name: i.name, part: i.part, photo: await image(i.casual[0].src.replace(/^\//, ""), 600, true) })),
+      site.instructors.slice(0, 2).map(async (i) => ({ name: i.name, part: i.part, photo: await image(i.caricature.src.replace(/^\//, ""), 660, true) })),
     ),
   ]);
   return { fonts: { black, bold, semibold }, logo, symbol, phone, stamp, people };

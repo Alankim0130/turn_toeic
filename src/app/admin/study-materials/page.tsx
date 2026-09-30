@@ -31,7 +31,7 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
   const term = pickTerm(terms ?? [], sp.term, today);
 
   const [{ data: itemRows }, { data: study }, { data: classDates }] = await Promise.all([
-    supabase.from("study_material_items").select("id, seq, title, file_name, file_size, updated_at").order("seq"),
+    supabase.from("study_material_items").select("id, seq, title, note, file_name, file_size, updated_at").order("seq"),
     term
       ? supabase.from("studies").select("id, status").eq("term_id", term.id).eq("kind", "online").maybeSingle()
       : Promise.resolve({ data: null as { id: number; status: string } | null }),

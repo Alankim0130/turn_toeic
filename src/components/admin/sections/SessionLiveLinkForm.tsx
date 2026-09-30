@@ -5,6 +5,7 @@ import { setLiveToReplay, upsertSessionLiveLink, type ActionState } from "@/app/
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
+import { isYoutubeUrl } from "@/lib/live-links";
 
 function shorten(url: string, max = 36) {
   const s = url.replace(/^https?:\/\//, "");
@@ -13,7 +14,8 @@ function shorten(url: string, max = 36) {
 
 /**
  * 회차 하나의 불라방 링크 (2026-09-18 Alan). 유튜브 라이브처럼 방송이 끝나면 그 주소가 녹화본이 되므로,
- * 오전반(live_to_replay)은 수업이 끝난 뒤 이 링크가 그 회차 다시보기로 자동 연결된다.
+ * 오전반(live_to_replay)은 수업이 끝난 뒤 이 링크가 그 회차 다시보기로 자동 연결된다 — **유튜브 주소일 때만**.
+ * 2026-09-30 부터 불라방은 Zoom 이라(Alan) Zoom 링크는 다시보기로 올라가지 않는다 (DB private.is_youtube_url).
  */
 export function SessionLiveLinkForm({
   sessionDateId,
@@ -46,6 +48,8 @@ export function SessionLiveLinkForm({
     if (state.ok) setEditing(false);
   }
   const value = state.values?.live_url ?? current;
+  // 끝나면 다시보기로 올라가는 것은 유튜브 주소뿐이다
+  const replayable = autoReplay && isYoutubeUrl(current);
 
   if (readOnly) {
     return current ? (
@@ -70,10 +74,18 @@ export function SessionLiveLinkForm({
           </span>
         )}
         <span
-          className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-black", promoted ? "bg-brand-500 text-white" : autoReplay ? "bg-brand-50 text-brand-700" : "bg-line text-slate")}
-          title={promoted ? "이 링크가 이 회차 다시보기로 연결됐어요" : autoReplay ? "수업이 끝나면 이 회차 다시보기로 자동 연결돼요" : "이 반의 불라방은 다시보기와 연결하지 않아요"}
+          className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-black", promoted ? "bg-brand-500 text-white" : replayable ? "bg-brand-50 text-brand-700" : "bg-line text-slate")}
+          title={
+            promoted
+              ? "이 링크가 이 회차 다시보기로 연결됐어요"
+              : replayable
+                ? "수업이 끝나면 이 회차 다시보기로 자동 연결돼요"
+                : autoReplay
+                  ? "유튜브 주소가 아니라 다시보기로 올라가지 않아요 — 녹화본은 다시보기 등록에서 붙여요"
+                  : "이 반의 불라방은 다시보기와 연결하지 않아요"
+          }
         >
-          {promoted ? "다시보기 연결됨" : autoReplay ? "끝나면 다시보기로" : "라이브만"}
+          {promoted ? "다시보기 연결됨" : replayable ? "끝나면 다시보기로" : "라이브만"}
         </span>
         <button type="button" onClick={() => setEditing(true)} className="btn-ghost !px-2 !py-0.5 text-[11px]">수정</button>
         {state.ok && state.message && <span className="text-[11px] font-semibold text-brand-600">{state.message}</span>}
@@ -90,7 +102,7 @@ export function SessionLiveLinkForm({
           name="live_url"
           type="url"
           inputMode="url"
-          placeholder="https://youtu.be/… 이 회차 라이브 주소"
+          placeholder="https://zoom.us/j/… 이 회차 입장 링크"
           className="input !w-56 !py-1 text-xs"
           defaultValue={value}
           aria-label={`${seq}회 불라방 링크`}
@@ -101,7 +113,7 @@ export function SessionLiveLinkForm({
         )}
       </span>
       {state.error && <span className="text-[11px] font-semibold text-red-600">{state.error}</span>}
-      {current && <span className="text-[11px] text-mist">비워서 저장하면 링크를 지워요. 다시보기가 이미 만들어졌으면 주소가 함께 바뀝니다.</span>}
+      {current && <span className="text-[11px] text-mist">비워서 저장하면 링크를 지워요. 유튜브 주소로 다시보기가 이미 만들어졌으면 새 유튜브 주소로 함께 바뀝니다.</span>}
     </form>
   );
 }
@@ -122,9 +134,9 @@ export function LiveReplayToggle({ sectionId, on, readOnly }: { sectionId: numbe
           onChange={(e) => setChecked(e.target.checked)}
           className="size-4 accent-[#ff2e88]"
         />
-        수업이 끝나면 그 회차 불라방 링크를 다시보기로 자동 연결
+        수업이 끝나면 그 회차 불라방 링크를 다시보기로 자동 연결 (유튜브 주소일 때만)
       </label>
-      <span className="text-xs text-slate">{checked ? "오전반처럼 — 라이브가 끝난 주소가 그대로 녹화본이 돼요." : "저녁반처럼 — 라이브만 하고 다시보기는 만들지 않아요."}</span>
+      <span className="text-xs text-slate">{checked ? "오전반처럼 — 유튜브 라이브가 끝난 주소가 그대로 녹화본이 돼요. Zoom 링크는 올라가지 않아요." : "저녁반처럼 — 라이브만 하고 다시보기는 만들지 않아요."}</span>
       {!readOnly && checked !== on && <SubmitButton className="!w-auto !px-3 !py-1 text-xs" pendingText="저장 중…">저장</SubmitButton>}
       {state.error && <span className="text-xs font-semibold text-red-600">{state.error}</span>}
       {state.ok && state.message && checked === on && <span className="text-xs font-semibold text-brand-600">{state.message}</span>}

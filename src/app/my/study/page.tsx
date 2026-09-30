@@ -130,6 +130,13 @@ export default async function MyStudyPage() {
                           {m.title ? `${m.title} · ` : ""}
                           {m.file_name} · {formatBytes(m.file_size)}
                         </p>
+                        {/* 회차 안내 문구 (2026-09-30 Alan "각 회차마다 안내문구") — 강사가 자료실에 적은 것. 접지 않는다 */}
+                        {m.note && (
+                          <p className="mt-2 whitespace-pre-wrap rounded-xl bg-brand-50 px-3 py-2 text-sm leading-relaxed text-ink-soft">
+                            <span className="mr-1.5 text-xs font-black text-brand-700">안내</span>
+                            {m.note}
+                          </p>
+                        )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <a href={`/files/material/${m.id}?download=1`} className="btn-primary !px-4 !py-2 text-sm">

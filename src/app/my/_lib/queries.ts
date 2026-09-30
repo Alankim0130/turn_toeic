@@ -391,7 +391,7 @@ export async function getMyStudyMaterials() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("study_materials")
-    .select("id, study_id, seq, date, title, file_name, file_size, content_type, updated_at")
+    .select("id, study_id, seq, date, title, note, file_name, file_size, content_type, updated_at")
     .in("study_id", studyIds)
     .lte("date", todayKST())
     .order("date", { ascending: false });

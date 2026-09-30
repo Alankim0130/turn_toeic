@@ -5,6 +5,7 @@ import { Reveal } from "@/components/ui/Reveal";
 import { getSessionProfile } from "@/lib/auth";
 import { site } from "@/lib/site";
 import { ContactForm } from "./ContactForm";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "연락하기",
@@ -22,7 +23,7 @@ export default async function ContactPage() {
   const { user, profile } = await getSessionProfile();
   return (
     <section className="container-x py-10 sm:py-14">
-      <PageHeader icon="contact" title="연락하기" description="궁금한 점을 남겨 주시면 확인 후 연락드립니다." />
+      <PageHeader icon="contact" title="연락하기" description="궁금한 점을 남겨 주시면 확인 후 답변드립니다." />
 
       <div className="grid gap-8 lg:grid-cols-[1fr_1.2fr]">
         <div className="space-y-4">
@@ -62,7 +63,30 @@ export default async function ContactPage() {
           </Reveal>
         </div>
         <Reveal delay={120} className="card p-6 sm:p-8">
-          <ContactForm defaults={{ name: profile?.name ?? "", phone: profile?.phone ?? "", email: user?.email ?? "" }} />
+          {/* 답변이 어디로 오나 (2026-09-30 Alan — "회원가입을 하면 답변을 여기로 바로 받을 수 있다고 안내도 같이").
+              로그인하고 보낸 문의만 답변이 알림함으로 간다 — 비회원 문의는 남긴 연락처로 연락한다 */}
+          {user ? (
+            <p className="mb-5 flex items-start gap-2 rounded-xl bg-brand-50 px-4 py-3 text-sm text-ink">
+              <Icon name="bell" size={20} className="mt-0.5" />
+              <span>
+                답변은 <b>마이페이지 → 알림</b>으로 바로 보내드려요.
+              </span>
+            </p>
+          ) : (
+            <div className="mb-5 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-ink">
+              <p className="flex items-start gap-2">
+                <Icon name="bell" size={20} className="mt-0.5" />
+                <span>
+                  <b>로그인하고 문의하면 답변을 사이트 알림함으로 바로 받아요.</b> 비회원 문의는 남겨 주신 연락처로 답변드려요.
+                </span>
+              </p>
+              <div className="mt-2.5 flex flex-wrap gap-2 pl-7">
+                <Link href="/login?next=%2Fcontact" className="btn-primary !px-4 !py-1.5 text-xs">로그인</Link>
+                <Link href="/signup" className="btn-secondary !px-4 !py-1.5 text-xs">회원가입</Link>
+              </div>
+            </div>
+          )}
+          <ContactForm signedIn={!!user} defaults={{ name: profile?.name ?? "", phone: profile?.phone ?? "", email: user?.email ?? "" }} />
         </Reveal>
       </div>
     </section>
