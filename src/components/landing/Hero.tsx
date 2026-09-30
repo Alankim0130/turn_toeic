@@ -19,24 +19,28 @@ export function Hero() {
         />
       </div>
 
-      <div className="container-x grid items-center gap-10 py-14 md:grid-cols-[1.1fr_0.9fr] md:py-24">
+      {/* YBM어학원 서면 로고 (2026-09-30 Alan 제공) — 역전토익이 어느 학원 소속인지 첫 화면에서 보여 준다.
+          **히어로 맨 오른쪽 위** 한 줄이다 (같은 날 Alan "YBM 로고 맨 오른쪽으로 빼줘" — 처음에는 왼쪽 1위 배지 위에 있었다).
+          외부 브랜드 표식이라 색·모양을 바꾸지 않고, 이미 줄여 둔 PNG 라 `unoptimized` — CLAUDE.md "YBM 로고" */}
+      <div className="container-x flex justify-end pt-5 md:pt-8">
+        <Image
+          src="/partners/ybm-seomyeon.png"
+          alt="YBM어학원 서면"
+          width={640}
+          height={143}
+          unoptimized
+          priority
+          className="h-9 w-auto animate-fade-up sm:h-10"
+          style={{ animationDelay: "0ms" }}
+        />
+      </div>
+
+      <div className="container-x grid items-center gap-10 pb-14 pt-8 md:grid-cols-[1.1fr_0.9fr] md:pb-24 md:pt-12">
         <div>
-          {/* YBM어학원 서면 로고 (2026-09-30 Alan 제공) — 역전토익이 어느 학원 소속인지 첫 화면에서 보여 준다.
-              외부 브랜드 표식이라 색·모양을 바꾸지 않고, 이미 줄여 둔 PNG 라 `unoptimized` — CLAUDE.md "YBM 로고" */}
-          <Image
-            src="/partners/ybm-seomyeon.png"
-            alt="YBM어학원 서면"
-            width={640}
-            height={143}
-            unoptimized
-            priority
-            className="h-9 w-auto animate-fade-up sm:h-10"
-            style={{ animationDelay: "0ms" }}
-          />
           {/* `YBM 부산 전체 1위` 배지 (2026-09-30 Alan — "금색 메달 + 밑에 빨간 리본, 눈에 잘 띄는 게 키 포인트, 문구는 확실하게 크게").
               메달은 힉스필드 GPT Image 2.5 로 만든 투명 컷이다. 배지를 가로지르는 빛줄기(`.rank-sweep`)가 몇 초마다 지나가고
               메달 뒤에서 금빛 고리가 퍼진다 — CLAUDE.md "1위 배지" */}
-          <div className="mt-6 animate-fade-up" style={{ animationDelay: "60ms" }}>
+          <div className="animate-fade-up" style={{ animationDelay: "60ms" }}>
             <p className="relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-500 py-2.5 pl-2 pr-5 text-white shadow-pink ring-2 ring-amber-300 sm:gap-3 sm:pr-7">
               <span aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
                 <span className="rank-sweep" />
