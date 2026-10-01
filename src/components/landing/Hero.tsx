@@ -118,11 +118,7 @@ export function Hero({ reviewTotal }: { reviewTotal: number | null }) {
             sizes="(max-width: 768px) 90vw, 40vw"
             className="h-auto w-full animate-float drop-shadow-[0_24px_40px_rgba(255,46,136,0.25)]"
           />
-          {/* 왼쪽 아래(페이드로 녹아드는 치마 자리)에 둔다 — 위쪽은 두 분 얼굴·머리라 카드를 올리면 가린다 */}
-          <div className="absolute -left-2 bottom-6 hidden rounded-xl2 bg-paper/90 px-4 py-3 shadow-soft ring-1 ring-brand-100 sm:block animate-float-slow">
-            <p className="text-[11px] font-bold text-mist">이번 달 목표</p>
-            <p className="text-lg font-black text-brand-600">650 → 750 → 850</p>
-          </div>
+          {/* `이번 달 목표 650 → 750 → 850` 카드는 2026-10-01 Alan 요청으로 지웠다 — 다시 넣지 말 것 */}
         </div>
       </div>
     </section>
