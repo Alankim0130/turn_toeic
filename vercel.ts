@@ -13,5 +13,7 @@ export const config: VercelConfig = {
     { path: "/api/cron/daily-digest", schedule: "0 12 * * *" },
     // 수강증 원본 삭제 — 매일 03:20 KST (18:20 UTC). 사람이 안 쓰는 시각에 돌린다
     { path: "/api/cron/purge-receipts", schedule: "20 18 * * *" },
+    // YBM 공식 페이지의 수강후기 통계(누적 후기 수 + 태그 8개) — 매일 04:10 KST (19:10 UTC). 2026-10-01 Alan "매일 한 번씩"
+    { path: "/api/cron/ybm-stats", schedule: "10 19 * * *" },
   ],
 };

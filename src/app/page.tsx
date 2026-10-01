@@ -12,6 +12,7 @@ import { Instructors } from "@/components/landing/Instructors";
 import { Schedule } from "@/components/landing/Schedule";
 import { CTA } from "@/components/landing/CTA";
 import { site } from "@/lib/site";
+import { getYbmReviewStats } from "@/lib/ybm-stats-data";
 
 export const metadata: Metadata = {
   title: site.fullName,
@@ -54,14 +55,16 @@ function JsonLd() {
   return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data).replace(/</g, "\u003c") }} />;
 }
 
-export default function HomePage() {
+export default async function HomePage() {
+  // YBM 공식 페이지의 수강후기 통계 (매일 크론이 갱신). 한 번 읽어 히어로 · 헤드라인 띠 · 통계 구간이 나눠 쓴다 — 못 읽으면 셋 다 그 숫자를 비운다
+  const stats = await getYbmReviewStats();
   return (
     <>
       <JsonLd />
-      <Hero />
-      <Spotlight />
+      <Hero reviewTotal={stats?.total ?? null} />
+      <Spotlight reviewTotal={stats?.total ?? null} />
       <IntroVideo />
-      <Stats />
+      <Stats stats={stats} />
       <Reviews kind="kakao" />
       <Reviews kind="ybm" />
       <Features />

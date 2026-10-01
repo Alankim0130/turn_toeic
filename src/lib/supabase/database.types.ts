@@ -756,6 +756,39 @@ export type Database = {
           },
         ]
       }
+      ybm_review_stats: {
+        Row: {
+          fetched_at: string
+          id: boolean
+          last_attempt_at: string | null
+          last_error: string | null
+          last_error_at: string | null
+          source_url: string
+          tags: Json
+          total: number
+        }
+        Insert: {
+          fetched_at?: string
+          id?: boolean
+          last_attempt_at?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
+          source_url: string
+          tags?: Json
+          total: number
+        }
+        Update: {
+          fetched_at?: string
+          id?: boolean
+          last_attempt_at?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
+          source_url?: string
+          tags?: Json
+          total?: number
+        }
+        Relationships: []
+      }
       homework_files: {
         Row: {
           content_type: string | null

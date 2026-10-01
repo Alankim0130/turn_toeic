@@ -4,7 +4,8 @@ import { Icon } from "@/components/ui/Icon";
 import { FlipHeadline } from "./FlipHeadline";
 import { KakaoChatButton } from "@/components/ui/KakaoChatButton";
 
-export function Hero() {
+/** `reviewTotal` = YBM 공식 페이지의 누적 수강후기 수 (`ybm_review_stats`, 매일 갱신). 못 읽었으면 그 줄을 비운다 — 지어내지 않는다 */
+export function Hero({ reviewTotal }: { reviewTotal: number | null }) {
   return (
     <section className="relative overflow-hidden">
       {/* 배경 블롭 */}
@@ -94,7 +95,9 @@ export function Hero() {
             <KakaoChatButton size="lg" />
           </div>
           <ul className="mt-8 flex animate-fade-up flex-wrap gap-x-6 gap-y-2 text-sm font-semibold text-ink-soft" style={{ animationDelay: "360ms" }}>
-            <li className="flex items-center gap-2"><Icon name="success" size={18} />누적 수강후기 7,356건</li>
+            {reviewTotal !== null && (
+              <li className="flex items-center gap-2"><Icon name="success" size={18} />누적 수강후기 {reviewTotal.toLocaleString("ko-KR")}건</li>
+            )}
             <li className="flex items-center gap-2"><Icon name="success" size={18} />현장 강의 + 불라방 실시간 라이브</li>
             <li className="flex items-center gap-2"><Icon name="success" size={18} />이혜영 LC · 이영수 RC</li>
           </ul>
