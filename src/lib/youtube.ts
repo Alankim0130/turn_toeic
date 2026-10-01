@@ -4,7 +4,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyUser } from "@/lib/push";
 
 /**
- * 강사 유튜브 채널 연결 · 진행 중 방송 조회 (2026-09-21 — 불라방 자동 연결, 마이그레이션 20260921120500).
+ * 강사 유튜브 채널 연결 · 진행 중 방송 조회 (2026-09-21 — 불라방 자동 연결, 마이그레이션 20260921120500.
+ * 2026-10-01 부터는 Zoom 이 유튜브로 함께 송출한 방송을 찾아 **다시보기**로 올리는 데 쓴다 — 20261001130000).
  *
  * 구글 동의는 **읽기 권한(youtube.readonly) 하나만** 받는다. 토큰은 `youtube_channels` 에 두고 service_role 만 읽는다.
  * 키는 `YOUTUBE_CLIENT_ID` · `YOUTUBE_CLIENT_SECRET` (Vercel 환경변수). **없으면 연결 버튼 대신 설정 안내를 보여 주고 크론은 건너뛴다.**
@@ -105,12 +106,12 @@ export async function channelAccessToken(row: ChannelRow, force = false): Promis
   const t = await tokenRequest({ refresh_token: row.refresh_token, grant_type: "refresh_token" });
   if (!t.access_token) {
     const reason =
-      t.error === "invalid_grant" ? "유튜브 연결이 끊겼어요. 불라방 자동 연결 화면에서 다시 연결해 주세요." : `토큰을 받지 못했어요 (${t.error ?? "알 수 없음"})`;
+      t.error === "invalid_grant" ? "유튜브 연결이 끊겼어요. 유튜브 자동 연결 화면에서 다시 연결해 주세요." : `토큰을 받지 못했어요 (${t.error ?? "알 수 없음"})`;
     await admin.from("youtube_channels").update({ last_error: reason, last_error_at: new Date().toISOString() }).eq("user_id", row.user_id);
     if (!row.last_error) {
       await notifyUser(row.user_id, "live_detected", {
         title: "유튜브 연결을 확인해 주세요",
-        body: `${reason} 그동안은 반 상세에서 링크를 직접 넣어 주세요.`,
+        body: `${reason} 그동안은 녹화본을 다시보기 등록에서 직접 붙여 주세요.`,
         url: "/admin/live-channels",
         tag: "youtube-link-error",
       });

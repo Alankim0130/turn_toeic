@@ -1410,6 +1410,35 @@ export type Database = {
           },
         ]
       }
+      session_streams: {
+        Row: {
+          detected_at: string
+          promoted_at: string | null
+          session_date_id: number
+          video_url: string
+        }
+        Insert: {
+          detected_at?: string
+          promoted_at?: string | null
+          session_date_id: number
+          video_url: string
+        }
+        Update: {
+          detected_at?: string
+          promoted_at?: string | null
+          session_date_id?: number
+          video_url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_streams_session_date_id_fkey"
+            columns: ["session_date_id"]
+            isOneToOne: true
+            referencedRelation: "session_dates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       section_live_links: {
         Row: {
           live_url: string
@@ -2243,7 +2272,7 @@ export type Database = {
         Args: never
         Returns: { instructor_id: string; label: string; section_id: number; session_date_id: number; starts_at: string }[]
       }
-      register_detected_live: {
+      register_detected_stream: {
         Args: { p_session_date_ids: number[]; p_url: string }
         Returns: number[]
       }

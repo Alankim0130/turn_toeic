@@ -6,14 +6,14 @@ import { matchBroadcasts, toBroadcasts, watchUrl, type LiveCandidate } from "@/l
 import { activeBroadcasts, channelAccessToken, youtubeConfigured, type ChannelRow } from "@/lib/youtube";
 
 /**
- * 유튜브 불라방 감지 (2026-09-21). DB 크론 `live-detect` 가 **감지할 회차가 있을 때만** 30초마다 부른다
- * (`private.live_detect_due` → `private.call_app`, 마이그레이션 20260921120500).
+ * 유튜브 송출 감지 (2026-09-21 → 2026-10-01 다시보기용). DB 크론 `live-detect` 가 **감지할 회차가 있을 때만** 30초마다 부른다
+ * (`private.live_detect_due` → `private.call_app`, 마이그레이션 20260921120500 · 20261001130000).
  *
- * 1. 지금 감지할 회차 (오늘 · 시간 단위 반 · 인강 아님 · 담당 강사가 채널 연결 · 링크 없음 · 수업 시작 −10분 ~ +30분)
- * 2. 담당 강사마다 그 채널의 진행 중 방송을 조회 (강사 토큰 — 일부공개도 보인다)
- * 3. 방송 **시작 시각** 이 수업 시작 ±10분이면 그 회차에 링크를 넣는다 (`register_detected_live`, 손으로 넣은 링크는 건드리지 않는다)
- *    → DB 트리거가 그 순간 불라방 학생 알림을 넣는다. 오전반은 수업이 끝나면 같은 주소가 다시보기가 된다 (promote_live_replays).
- * 4. 넣었으면 그 강사에게 확인 푸시 (알림 설정의 "내 불라방 자동 연결").
+ * 1. 지금 감지할 회차 (오늘 · 시간 단위 반 · 인강 아님 · live_to_replay · 담당 강사가 채널 연결 · 송출·다시보기 없음 · 수업 시작 −10분 ~ +30분)
+ * 2. 담당 강사마다 그 채널의 진행 중 방송을 조회 (강사 토큰 — 일부공개도 보인다). Zoom 이 유튜브로 함께 송출한 방송이 여기 잡힌다.
+ * 3. 방송 **시작 시각** 이 수업 시작 ±10분이면 그 회차에 걸어 둔다 (`register_detected_stream` → `session_streams`).
+ *    불라방 링크(Zoom)는 건드리지 않고 학생 알림도 가지 않는다. 수업이 끝나면 같은 주소가 다시보기가 된다 (`promote_live_replays`).
+ * 4. 걸어 뒀으면 그 강사에게 확인 푸시 (알림 설정의 "내 유튜브 자동 연결").
  *
  * **응답에 영상 id·주소를 담지 않는다** — 일부공개 영상은 주소가 곧 시청권이다 (첫토익 D5).
  */
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     let found = false;
     for (const m of matchBroadcasts(byInstructor.get(ch.user_id) ?? [], toBroadcasts(res.json), now)) {
       if (m.sessions.length === 0) continue;
-      const { data: ids, error: regError } = await admin.rpc("register_detected_live", {
+      const { data: ids, error: regError } = await admin.rpc("register_detected_stream", {
         p_session_date_ids: m.sessions.map((s) => s.session_date_id),
         p_url: watchUrl(m.broadcast.id),
       });
@@ -72,14 +72,16 @@ export async function POST(req: NextRequest) {
         continue;
       }
       const inserted = new Set((ids ?? []) as number[]);
-      if (inserted.size === 0) continue; // 그 사이 강사가 손으로 넣었다 — 알리지 않는다
+      if (inserted.size === 0) continue; // 그 사이 다른 방송이 먼저 잡혔다 — 알리지 않는다
       found = true;
       registered += inserted.size;
       const labels = m.sessions.filter((s) => inserted.has(s.session_date_id)).map((s) => s.label);
+      // 수업 영상은 일부 공개여야 한다 — 공개로 켰으면 강사가 바로 알게 한 줄 덧붙인다
+      const privacyNote = m.broadcast.privacy === "public" ? " ⚠ 공개로 켜져 있어요 — 유튜브에서 일부 공개로 바꿔 주세요." : "";
       await notifyUser(ch.user_id, "live_detected", {
-        title: "불라방 링크가 자동으로 들어갔어요",
-        body: `${labels.join(" · ")} — 불라방 학생에게 시작 알림이 갔어요.`,
-        url: `/admin/sections/${m.sessions[0].section_id}`,
+        title: "유튜브 송출을 찾았어요",
+        body: `${labels.join(" · ")} — 수업이 끝나면 이 영상이 다시보기로 올라가요.${privacyNote}`,
+        url: "/admin/live-channels",
         tag: `live-detected-${m.sessions[0].session_date_id}`,
       });
     }

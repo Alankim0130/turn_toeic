@@ -343,8 +343,8 @@ export const NAV_ADMIN: NavItem[] = [
   // 불라방(Zoom) 입장 링크 — 지금 수업이 맨 위, 강사는 자기 반만 (2026-09-30 Alan). 대시보드 불라방 위젯이 여기로 온다
   { href: "/admin/live", label: "불라방 링크", icon: "live" },
   { href: "/admin/replays", label: "다시보기", icon: "replay" },
-  // 강사 유튜브 채널 연결 · 오늘 회차 자동 연결 상태 (2026-09-21) — 강사·관리자만.
-  // 2026-09-30 부터 불라방은 Zoom 이라 쓰지 않는다 — 유튜브 라이브로 되돌아갈 때를 위해 남겨 두고 이름만 갈랐다
+  // 강사 유튜브 채널 연결 · 오늘 회차 송출 상태 (2026-09-21) — 강사·관리자만.
+  // 2026-10-01 부터 Zoom 수업을 유튜브로 함께 송출한 방송을 찾아 **다시보기**로 올린다 (불라방 입장은 Zoom 그대로 — 도메인 규칙 1)
   { href: "/admin/live-channels", label: "유튜브 자동 연결", icon: "live" },
   { href: "/admin/analytics", label: "마케팅 분석", icon: "analytics" },
   { href: "/admin/study", label: "스터디 신청자", icon: "study", crew: true },

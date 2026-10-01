@@ -35,7 +35,11 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
   if (!section || !section.term) notFound();
 
   const [{ data: sessions }, { data: sibling }, { data: live }, { count: enrolled }, { data: instructors }, { data: sameCourse }] = await Promise.all([
-    supabase.from("session_dates").select("id, seq, date, replays(id, video_url), session_live_links(live_url, promoted_at, source)").eq("section_id", id).order("date"),
+    supabase
+      .from("session_dates")
+      .select("id, seq, date, replays(id, video_url), session_live_links(live_url, promoted_at, source), session_streams(video_url, promoted_at)")
+      .eq("section_id", id)
+      .order("date"),
     // 주5일 짝 = 같은 기수 · 강좌 · 시간대의 반대 트랙 반 (시간대가 없는 반은 하나씩 만들기의 bundle_id 로)
     section.time_block
       ? supabase
@@ -74,6 +78,11 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
   const sessionLink = (s: NonNullable<typeof sessions>[number]) => {
     const l = s.session_live_links;
     return (Array.isArray(l) ? l[0] : l) ?? null;
+  };
+  // Zoom 수업을 유튜브로 함께 송출한 방송 — 수업이 끝나면 이 주소가 다시보기가 된다 (2026-10-01, session_streams)
+  const sessionStream = (s: NonNullable<typeof sessions>[number]) => {
+    const st = s.session_streams;
+    return (Array.isArray(st) ? st[0] : st) ?? null;
   };
   const bookSetNote = isSparta
     ? "스파르타 반은 과목·과정을 두지 않아요. 두 과목을 이어 듣고, 함께 듣는 점수보장반의 과정·교재를 씁니다."
@@ -243,6 +252,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
                 {sessionList.map((s) => {
                   const rep = s.replays?.[0];
                   const link = sessionLink(s);
+                  const stream = sessionStream(s);
                   return (
                     <tr key={s.id}>
                       <td className="px-5 py-2.5 font-black text-brand-600">{s.seq}회</td>
@@ -264,7 +274,11 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
                         {rep ? (
                           <a href={rep.video_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:underline">
                             <Icon name="replay" size={14} />
-                            {link?.promoted_at && rep.video_url === link.live_url ? "불라방에서 연결됨" : "등록됨"}
+                            {stream?.promoted_at && rep.video_url === stream.video_url
+                              ? "유튜브 송출에서 연결됨"
+                              : link?.promoted_at && rep.video_url === link.live_url
+                                ? "불라방에서 연결됨"
+                                : "등록됨"}
                           </a>
                         ) : (
                           <span className="text-xs text-mist">없음</span>
