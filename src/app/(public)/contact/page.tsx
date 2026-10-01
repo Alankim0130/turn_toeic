@@ -3,7 +3,10 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Icon } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
 import { getSessionProfile } from "@/lib/auth";
-import { site } from "@/lib/site";
+import { CONTACT_OPTIONS, site } from "@/lib/site";
+import { cn } from "@/lib/utils";
+import { KakaoMark } from "@/components/ui/BrandMarks";
+import { ExternalMark } from "@/components/layout/NavLinks";
 import { ContactForm } from "./ContactForm";
 import Link from "next/link";
 
@@ -23,9 +26,49 @@ export default async function ContactPage() {
   const { user, profile } = await getSessionProfile();
   return (
     <section className="container-x py-10 sm:py-14">
-      <PageHeader icon="contact" title="연락하기" description="궁금한 점을 남겨 주시면 확인 후 답변드립니다." />
+      <PageHeader icon="contact" title="연락하기" description="카카오톡 · 이메일 · 네이버 예약 중 편한 방법으로 연락 주세요." />
 
-      <div className="grid gap-8 lg:grid-cols-[1fr_1.2fr]">
+      {/* 세 갈래 고르기 (2026-10-01 Alan — "셋 중에서 하나 선택"). 목록은 CONTACT_OPTIONS 한곳 — 이메일은 아래 문의 폼으로 내려간다 */}
+      <ul className="mb-8 grid gap-3 sm:grid-cols-3">
+        {CONTACT_OPTIONS.map((o, i) => {
+          const body = (
+            <>
+              <span
+                className={cn(
+                  "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl",
+                  o.key === "kakao" ? "bg-[#FEE500]" : "bg-brand-50",
+                )}
+              >
+                {o.key === "kakao" ? <KakaoMark size={26} /> : <Icon name={o.icon} size={30} />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5 text-base font-black text-ink">
+                  {o.label}
+                  {o.external && <ExternalMark className="text-mist" />}
+                </span>
+                <span className="block text-sm text-slate">{o.summary}</span>
+              </span>
+            </>
+          );
+          const className = "card flex h-full items-center gap-4 p-4 transition hover:-translate-y-0.5 hover:shadow-pink";
+          return (
+            <Reveal key={o.key} delay={i * 80} as="li">
+              {o.external ? (
+                <a href={o.href} target="_blank" rel="noopener noreferrer" className={className}>
+                  {body}
+                  <span className="sr-only">(새 창)</span>
+                </a>
+              ) : (
+                <a href="#contact-form" className={className}>
+                  {body}
+                </a>
+              )}
+            </Reveal>
+          );
+        })}
+      </ul>
+
+      <div id="contact-form" className="grid scroll-mt-24 gap-8 lg:grid-cols-[1fr_1.2fr]">
         <div className="space-y-4">
           <Reveal>
             <article className="card p-6">

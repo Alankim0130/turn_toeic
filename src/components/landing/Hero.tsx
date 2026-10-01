@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
 import { FlipHeadline } from "./FlipHeadline";
+import { KakaoChatButton } from "@/components/ui/KakaoChatButton";
 
 export function Hero() {
   return (
@@ -89,6 +90,8 @@ export function Hero() {
               <Icon name="study" size={22} />
               스터디 신청하기
             </Link>
+            {/* 카카오톡 상담 (2026-10-01 Alan) — 랜딩 곳곳의 노란 버튼 중 첫 번째 */}
+            <KakaoChatButton size="lg" />
           </div>
           <ul className="mt-8 flex animate-fade-up flex-wrap gap-x-6 gap-y-2 text-sm font-semibold text-ink-soft" style={{ animationDelay: "360ms" }}>
             <li className="flex items-center gap-2"><Icon name="success" size={18} />누적 수강후기 7,356건</li>

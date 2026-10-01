@@ -3,6 +3,7 @@ import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
 import { Symbol } from "@/components/ui/Logo";
 import { InstructorCameo } from "@/components/ui/InstructorCameo";
+import { KakaoChatButton } from "@/components/ui/KakaoChatButton";
 import { site } from "@/lib/site";
 
 export function CTA() {
@@ -29,6 +30,8 @@ export function CTA() {
                 <Icon name="verify" size={22} className="brightness-0 invert" />
                 수강증 올리고 등업하기
               </Link>
+              {/* 카카오톡 상담 (2026-10-01 Alan) — 분홍 배너 위라 노란 버튼이 가장 잘 보이는 자리 */}
+              <KakaoChatButton size="lg" label="카카오톡으로 상담" />
             </div>
           </div>
           {/* 모바일은 버튼 아래 오른쪽, PC 는 배너 오른쪽. 캐리커처는 스티커처럼 흰 테두리가 있어 분홍 배너 위에서도 살아난다 */}

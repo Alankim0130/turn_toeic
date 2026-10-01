@@ -1,5 +1,6 @@
 import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
+import { KakaoChatButton } from "@/components/ui/KakaoChatButton";
 
 const LEVELS = [
   { score: 650, name: "650 목표", tag: "초급 · 중급속성", pct: 55, desc: "기초부터 차근차근. 토익이 처음이어도 파트별 핵심 유형을 잡아 650을 넘깁니다." },
@@ -58,7 +59,11 @@ export function Curriculum() {
                 <p className="text-sm text-white/85">1개월 등록 시 토익 응시권 증정. 750 목표 실전 집중 과정.</p>
               </div>
             </div>
-            <p className="text-sm font-semibold text-white/80">자세한 개설 정보는 YBM 공식 사이트에서</p>
+            {/* 어느 반이 맞는지 모르겠으면 카카오톡으로 — 랜딩 곳곳의 카카오톡 상담 버튼 (2026-10-01 Alan) */}
+            <div className="flex flex-col items-start gap-2 sm:items-end">
+              <KakaoChatButton label="어떤 반이 맞을지 물어보기" />
+              <p className="text-xs font-semibold text-white/80">자세한 개설 정보는 YBM 공식 사이트에서</p>
+            </div>
           </div>
         </Reveal>
       </div>

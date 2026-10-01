@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Logo } from "@/components/ui/Logo";
 import { Icon } from "@/components/ui/Icon";
-import { site } from "@/lib/site";
+import { CONTACT_OPTIONS, site } from "@/lib/site";
+import { ExternalMark } from "./NavLinks";
 
 export function Footer() {
   return (
@@ -29,7 +30,23 @@ export function Footer() {
             <li><Link href="/my/live" className="hover:text-brand-600">불라방</Link></li>
             <li><Link href="/my/replay" className="hover:text-brand-600">강의 다시보기</Link></li>
             <li><Link href="/study" className="hover:text-brand-600">스터디 신청하기</Link></li>
-            <li><Link href="/contact" className="hover:text-brand-600">연락하기</Link></li>
+          </ul>
+          {/* 연락하기 세 갈래 (2026-10-01) — CONTACT_OPTIONS 한곳. 카카오톡·네이버는 새 창 */}
+          <p className="mt-5 text-sm font-bold text-ink">연락하기</p>
+          <ul className="mt-3 space-y-2 text-sm text-slate">
+            {CONTACT_OPTIONS.map((o) => (
+              <li key={o.key}>
+                {o.external ? (
+                  <a href={o.href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:text-brand-600">
+                    {o.label}
+                    <ExternalMark className="text-mist" />
+                    <span className="sr-only">(새 창)</span>
+                  </a>
+                ) : (
+                  <Link href={o.href} className="hover:text-brand-600">{o.label}</Link>
+                )}
+              </li>
+            ))}
           </ul>
         </nav>
         <div>

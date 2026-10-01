@@ -35,6 +35,10 @@ export const site = {
     // 네이버 예약 "역전토익 강사상담" 상품 (사업장 459658). 상단 메뉴의 "네이버 상담예약"이 새 창으로 연다
     naverBookingUrl:
       "https://m.booking.naver.com/booking/12/bizes/459658/items/4139011?area=bmp&lang=ko&service-target=map-pc&startDateTime=2026-09-16T00%3A00%3A00%2B09%3A00&theme=place",
+    // 카카오톡 채널 1:1 채팅 (2026-10-01 Alan 제공). Alan 이 준 주소는 카카오 로그인 페이지로 감싼 꼴
+    // (`accounts.kakao.com/login/?continue=https%3A%2F%2Fpf.kakao.com%2F_xbtSTn%2Fchat`)이었는데 **채팅 주소만 남겼다** —
+    // 로그인이 필요하면 카카오가 알아서 띄우고, 감싼 주소는 로그아웃 상태에서 복사한 흔적일 뿐이다 (인스타 공유 토큰을 뗀 것과 같은 규칙)
+    kakaoChatUrl: "https://pf.kakao.com/_xbtSTn/chat",
     address: "부산광역시 부산진구 서면",
   },
   /**
@@ -268,8 +272,8 @@ export type NavItem = {
   label: string;
   icon: string;
   auth?: "member" | "student" | "staff";
-  /** 수강생전용 하위 메뉴를 펼치는 항목 */
-  group?: "student";
+  /** 하위 메뉴를 펼치는 항목 — 수강생전용(기능 7개) · 연락하기(CONTACT_OPTIONS 세 갈래) */
+  group?: "student" | "contact";
   /** 수강생전용 기능이면 잠금 판정에 쓴다 */
   feature?: StudentFeatureKey;
   /** 바깥 사이트로 나가는 링크. 새 창으로 열고 현재 페이지 표시를 하지 않는다 */
@@ -278,13 +282,26 @@ export type NavItem = {
   crew?: true;
 };
 
-/** 상단 네비게이션 */
+/**
+ * 연락하기의 세 갈래 (2026-10-01 Alan — "'연락하기' '네이버 예약상담' 두 개를 연락하기 하나로 합치고 셋 중에서 하나 선택:
+ * 비대면상담 (카카오톡) · 비대면상담 (이메일) · 대면상담 (네이버예약)").
+ * PC 상단 메뉴의 `연락하기` 드롭다운 · 햄버거 서랍의 `연락` 묶음 · 푸터 · `/contact` 맨 위 선택 카드가 전부 여기서 나온다 — 한 곳만 고친다.
+ * `email` 은 이 사이트의 문의 폼(`/contact`)이다 — 답변은 알림함(회원) 또는 남긴 연락처로 간다 (도메인 규칙 7-3).
+ */
+export type ContactOption = { key: "kakao" | "email" | "naver"; label: string; short: string; summary: string; href: string; icon: string; external?: true };
+export const CONTACT_OPTIONS: ContactOption[] = [
+  { key: "kakao", label: "비대면상담 (카카오톡)", short: "카카오톡 상담", summary: "카카오톡 채널에서 바로 채팅", href: site.academy.kakaoChatUrl, icon: "online", external: true },
+  { key: "email", label: "비대면상담 (이메일)", short: "이메일 문의", summary: "문의를 남기면 알림함·연락처로 답변", href: "/contact", icon: "contact" },
+  { key: "naver", label: "대면상담 (네이버예약)", short: "네이버 예약", summary: "학원에서 강사와 직접 상담", href: site.academy.naverBookingUrl, icon: "calendar", external: true },
+];
+const contactNav = (o: ContactOption): NavItem => ({ href: o.href, label: o.label, icon: o.icon, external: o.external });
+
+/** 상단 네비게이션. `연락하기` 는 드롭다운(CONTACT_OPTIONS) — 2026-10-01 까지는 `연락하기` · `네이버 상담예약` 두 항목이었다 */
 export const NAV_MAIN: NavItem[] = [
   { href: "/", label: "소개", icon: "home" },
   { href: "/my/verify", label: "등업신청", icon: "verify", auth: "member" },
   { href: STUDENT_HUB.href, label: STUDENT_HUB.label, icon: STUDENT_HUB.icon, group: "student" },
-  { href: "/contact", label: "연락하기", icon: "contact" },
-  { href: site.academy.naverBookingUrl, label: "네이버 상담예약", icon: "calendar", external: true },
+  { href: "/contact", label: "연락하기", icon: "contact", group: "contact" },
 ];
 
 /**
@@ -380,7 +397,7 @@ export type NavSection = { label: string; items: NavItem[] };
 export const NAV_DRAWER: NavSection[] = [
   // **소개·수강생전용 안내가 맨 위다** (2026-09-19 Alan — "안내 카테고리 안에 소개랑 수강생전용은 맨 위로").
   // 아래로 내려 두면 학습 묶음까지 지나야 나와서, 처음 온 사람이 "여기가 뭐 하는 곳인가" 를 못 찾는다.
-  // 연락하기·네이버 상담예약은 같이 올리지 않고 맨 아래 `연락` 묶음에 남겼다 — 부르신 두 줄만 옮긴다
+  // 연락(카카오톡 · 이메일 · 네이버예약)은 같이 올리지 않고 맨 아래 `연락` 묶음에 남겼다 — 부르신 두 줄만 옮긴다
   {
     label: "안내",
     items: [
@@ -418,10 +435,8 @@ export const NAV_DRAWER: NavSection[] = [
     ],
   },
   {
+    // 연락하기의 세 갈래 그대로 (2026-10-01) — PC 드롭다운과 같은 목록
     label: "연락",
-    items: [
-      { href: "/contact", label: "연락하기", icon: "contact" },
-      { href: site.academy.naverBookingUrl, label: "네이버 상담예약", icon: "calendar", external: true },
-    ],
+    items: CONTACT_OPTIONS.map(contactNav),
   },
 ];

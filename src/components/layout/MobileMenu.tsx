@@ -6,7 +6,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
 import { Logo } from "@/components/ui/Logo";
-import { canUseFeature, featureHref, NAV_DRAWER, navAdminFor, STUDENT_FEATURES, type NavItem, type NavSection } from "@/lib/site";
+import { canUseFeature, featureHref, NAV_DRAWER, navAdminFor, site, STUDENT_FEATURES, type NavItem, type NavSection } from "@/lib/site";
+import { KakaoMark } from "@/components/ui/BrandMarks";
 import { cn } from "@/lib/utils";
 import { ExternalMark, isActivePath } from "./NavLinks";
 import { isStudentAreaPath, type NavAccess } from "./DesktopNav";
@@ -241,9 +242,17 @@ function Row({ item, pathname, access, onExternal }: { item: NavItem; pathname: 
     "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-bold transition",
     active ? "bg-brand-50 text-brand-700" : "text-ink hover:bg-surface",
   );
+  // 카카오톡 상담 줄은 PC 드롭다운·/contact 와 같은 노란 타일 + 카카오 심벌 (2026-10-01)
+  const kakao = item.href === site.academy.kakaoChatUrl;
   const icon = (
     <span className="relative shrink-0">
-      <Icon name={item.icon} size={24} className={cn(locked && "opacity-60")} />
+      {kakao ? (
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[#FEE500]">
+          <KakaoMark size={16} />
+        </span>
+      ) : (
+        <Icon name={item.icon} size={24} className={cn(locked && "opacity-60")} />
+      )}
       {locked && (
         <span className="absolute -bottom-1 -right-1.5 rounded bg-paper p-px shadow-soft">
           <Icon name="lock" size={11} />

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Reveal } from "@/components/ui/Reveal";
 import { InstructorCameo } from "@/components/ui/InstructorCameo";
+import { KakaoChatButton } from "@/components/ui/KakaoChatButton";
 import { todayKST } from "@/lib/utils";
 import { PROGRAMS, SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
 import { madeMonths, sameYm, ymIndex } from "@/lib/timetable-month";
@@ -104,11 +105,15 @@ export async function Schedule() {
         </div>
       )}
 
-      <Reveal delay={160} className="mt-8 text-center text-sm text-slate">
-        이미 수강 신청을 하셨나요?{" "}
-        <Link href="/my/verify" className="font-bold text-brand-600 underline-offset-2 hover:underline">
-          수강증을 올리면 바로 등업됩니다
-        </Link>
+      {/* 시간대가 고민되면 카카오톡으로 — 랜딩 곳곳의 카카오톡 상담 버튼 (2026-10-01 Alan) */}
+      <Reveal delay={160} className="mt-10 text-center">
+        <KakaoChatButton size="lg" label="시간대가 고민되면 카카오톡 상담" />
+        <p className="mt-4 text-sm text-slate">
+          이미 수강 신청을 하셨나요?{" "}
+          <Link href="/my/verify" className="font-bold text-brand-600 underline-offset-2 hover:underline">
+            수강증을 올리면 바로 등업됩니다
+          </Link>
+        </p>
       </Reveal>
     </section>
   );
