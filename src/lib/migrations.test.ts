@@ -49,3 +49,20 @@ describe("마이그레이션 — 없는 정책을 drop 하지 않는다", () => 
     expect(missing, `없는 정책을 drop 한다:\n${missing.join("\n")}`).toEqual([]);
   });
 });
+
+describe("마이그레이션 — 버전 번호(파일 이름 앞 14자리)가 겹치지 않는다", () => {
+  // Supabase 는 버전 번호로 적용 여부를 기억한다. 같은 번호의 파일이 둘이면 먼저 적용된 쪽만 남고 **다른 쪽은 조용히 건너뛴다** —
+  // 2026-10-01 에 실제로 20261001130000 이 두 파일(ybm_review_stats · youtube_stream_replay)에 붙어 뒤 것이 운영에 적용되지 않은 채
+  // 코드만 배포됐다 (반 상세 수업일 표가 빈 채로 떴다). 파일을 만들 때 마지막 번호를 보고 그보다 뒤 번호를 쓸 것
+  const files = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
+
+  it("같은 번호의 파일이 둘 이상 없다", () => {
+    const byVersion = new Map<string, string[]>();
+    for (const f of files) {
+      const v = f.slice(0, 14);
+      byVersion.set(v, [...(byVersion.get(v) ?? []), f]);
+    }
+    const dup = [...byVersion.entries()].filter(([, fs]) => fs.length > 1).map(([v, fs]) => `${v}: ${fs.join(", ")}`);
+    expect(dup, `버전이 겹친다 — 뒤 파일은 운영에 적용되지 않는다:\n${dup.join("\n")}`).toEqual([]);
+  });
+});

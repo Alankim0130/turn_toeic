@@ -149,6 +149,10 @@
   (2026-09-19 에 `drop policy "verifications: 스태프 조회"` 를 쓸 뻔했는데, 그 이름은 이미 20260915045300 에서
   `"verifications: 본인·스태프 조회"` 로 합쳐져 사라진 뒤였다). **지금 살아 있는 이름은 마이그레이션을 파일 순서대로
   재생해 확인한다** — `src/lib/migrations.test.ts` 가 `npm test` 에서 그 재생을 자동으로 한다.
+  **★ 버전 번호(파일 이름 앞 14자리)가 겹치는 파일이 둘이면 뒤 것은 조용히 건너뛴다** (2026-10-01 실제로 겪었다 — 다른 세션이 같은 날
+  `20261001130000_ybm_review_stats.sql` 을 올려 둔 것을 못 보고 같은 번호로 `youtube_stream_replay` 를 만들어 머지했더니, 배포는 성공으로
+  뜨는데 표가 안 생겨 **반 상세 수업일 표가 빈 채로** 떴다. `20261001140000` 으로 바꿔 다시 머지했다). 파일을 만들기 전에
+  `ls supabase/migrations | tail` 로 마지막 번호를 보고 그보다 뒤 번호를 쓸 것 — 같은 테스트가 겹침도 잡는다.
   **미리보기 브랜치(Preview branches)는 켜지 않는다** — Branching Compute 는 별도 과금이다.
 - OCR: **tesseract.js 한국어, 서버에서 자체 실행** (`src/lib/ocr.ts` — 미확정 5 에서 확정됐다).
   외부 OCR API 를 부르지 않는다 — 수강증의 실명이 밖으로 나가지 않게 하려는 것이다
@@ -883,7 +887,7 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 - 학생 `/my/live` 의 "수업이 끝나면 이 주소가 그대로 다시보기에 올라와요" 는 유튜브 주소일 때만 적는다. 반 상세 회차 표의 `끝나면 다시보기로` 칩도 같다.
 
 **유튜브 방송을 감지해 다시보기로 올린다 — Zoom 수업을 유튜브로 함께 송출** (2026-09-21 Alan 요청 — 첫토익 "OBS 방송 자동 게시", 마이그레이션 20260921120500
-→ **2026-10-01 Alan, 마이그레이션 20261001130000**)
+→ **2026-10-01 Alan, 마이그레이션 20261001140000**)
 - **2026-10-01 Alan**: "Zoom에서 고급에 들어가면 유튜브를 자동으로 연결하는 기능이 있다 … 쌤들이 Zoom으로 수업을 하되, 유튜브 자동연결을 통해서 미공개로 송출 …
   해당 유튜브 링크를 자동으로 다시보기란으로 넣어줄 수 있을까? … 지금 불라방 자동연결 페이지에서 쌤들이 해야할 순서를 하나씩 업로드해주면 좋겠어."
   - **감지한 방송은 불라방 링크가 아니라 `session_streams`(회차별 유튜브 송출)에 걸어 둔다** — 불라방 입장은 Zoom 링크 그대로(2026-09-30), 학생 알림도 가지 않는다.
@@ -2169,7 +2173,7 @@ create table session_live_links (          -- 회차별 불라방 링크 (202609
                                            -- 링크를 바꾸면 트리거가 다시보기 주소도 바꾸고 이 값을 다시 판정한다
 );
 
-create table session_streams (             -- 회차별 유튜브 송출 (20261001130000). Zoom 수업을 유튜브로 함께 송출한 방송을 감지해 걸어 둔다. 스태프만 조회, 쓰기는 service_role
+create table session_streams (             -- 회차별 유튜브 송출 (20261001140000). Zoom 수업을 유튜브로 함께 송출한 방송을 감지해 걸어 둔다. 스태프만 조회, 쓰기는 service_role
   session_date_id bigint primary key references session_dates on delete cascade,
   video_url   text not null,               -- https://www.youtube.com/watch?v=… (register_detected_stream 이 모양을 검사한다)
   detected_at timestamptz default now(),
@@ -2381,7 +2385,7 @@ create table youtube_channels (            -- 강사 채널 연결. 토큰 칸�
 );
 -- session_live_links.source : manual(강사가 붙여 넣음) | youtube(2026-09-21~30 감지해 저절로 넣은 옛 줄 — 2026-10-01 부터 감지는 session_streams 로 간다)
 -- notification_settings.live_detected : 내 송출이 잡혀 다시보기로 예약되면 강사 본인에게
--- public.live_detect_candidates() · public.register_detected_stream(ids, url) — service_role 전용 (register_detected_live 는 20261001130000 에서 지웠다) ·
+-- public.live_detect_candidates() · public.register_detected_stream(ids, url) — service_role 전용 (register_detected_live 는 20261001140000 에서 지웠다) ·
 -- private.notify_live_session(반, 날짜)
 
 -- ─── 불라방 교재주문 (마이그레이션 20260921110500 — 도메인 규칙 7-1) ───

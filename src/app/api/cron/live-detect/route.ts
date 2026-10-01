@@ -7,7 +7,7 @@ import { activeBroadcasts, channelAccessToken, youtubeConfigured, type ChannelRo
 
 /**
  * 유튜브 송출 감지 (2026-09-21 → 2026-10-01 다시보기용). DB 크론 `live-detect` 가 **감지할 회차가 있을 때만** 30초마다 부른다
- * (`private.live_detect_due` → `private.call_app`, 마이그레이션 20260921120500 · 20261001130000).
+ * (`private.live_detect_due` → `private.call_app`, 마이그레이션 20260921120500 · 20261001140000).
  *
  * 1. 지금 감지할 회차 (오늘 · 시간 단위 반 · 인강 아님 · live_to_replay · 담당 강사가 채널 연결 · 송출·다시보기 없음 · 수업 시작 −10분 ~ +30분)
  * 2. 담당 강사마다 그 채널의 진행 중 방송을 조회 (강사 토큰 — 일부공개도 보인다). Zoom 이 유튜브로 함께 송출한 방송이 여기 잡힌다.
