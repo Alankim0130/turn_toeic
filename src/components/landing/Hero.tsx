@@ -97,16 +97,16 @@ export function Hero() {
           </ul>
         </div>
 
-        {/* 두 강사 투샷. 왼쪽 이혜영은 **실제 사진 그대로**(2026-09-30 Alan — "왼쪽에 혜영쌤 이 사진으로 교체"),
-            오른쪽 이영수는 2026-09-17 힉스필드 투샷의 엄지척 컷을 그대로 두고 sharp 로 다시 합쳤다 — CLAUDE.md "히어로 강사 투샷".
-            여기만 실사이고 다른 강사 그림은 전부 캐리커처다 */}
+        {/* 두 강사 투샷 — **두 분 모두 강사프로필 원본 실사**(2026-10-01 Alan — "내가 준 원본 사진으로, 높이·얼굴 크기를 맞춰서").
+            머리 높이를 똑같이(445px) 맞춰 sharp 로 합쳤다. 왼쪽 이혜영 팔짱, 오른쪽 이영수 허리에 손 — 참고 사진의 구도.
+            CLAUDE.md "히어로 강사 투샷". 여기만 실사이고 다른 강사 그림은 전부 캐리커처다 */}
         <div className="relative mx-auto w-full max-w-md md:max-w-lg">
           <div aria-hidden className="absolute left-1/2 top-1/2 -z-10 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-300/40 animate-pulse-ring" />
           <div aria-hidden className="absolute left-1/2 top-1/2 -z-10 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-300/30 animate-pulse-ring" style={{ animationDelay: "1.2s" }} />
           <Image
             src="/illustrations/hero-instructors.webp"
             alt="역전토익 대표 강사 이혜영(LC)과 이영수(RC)"
-            width={1620}
+            width={1743}
             height={1806}
             priority
             sizes="(max-width: 768px) 90vw, 40vw"

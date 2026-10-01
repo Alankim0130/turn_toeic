@@ -67,7 +67,11 @@ function Intro({ t, tone }: { t: Instructor; tone: (typeof TONE)[Instructor["par
       <h3 className="mt-4 text-2xl font-black leading-snug tracking-tight text-ink sm:text-3xl lg:text-[2.1rem]">
         <Tagline text={t.tagline} mark={t.taglineMark} />
       </h3>
-      <p className="mt-2 text-sm font-semibold text-slate">{t.education}</p>
+      {/* 학력 — 캐치프레이즈 바로 아래 또렷하게 (2026-10-01 Alan "학력이 눈에 안 띄어서 좀 더 크게"). 작은 회색 한 줄이었다 */}
+      <p className="mt-3 inline-flex items-center gap-2 rounded-xl border border-brand-100 bg-paper px-3.5 py-2 text-base font-bold text-ink shadow-soft sm:text-lg">
+        <span aria-hidden className="h-5 w-1 shrink-0 rounded-full bg-brand-500" />
+        {t.education}
+      </p>
 
       {/* 강점. 카드가 차례로 뜨고, 카드 안의 줄이 그 뒤를 잇는다 */}
       <div className="stagger mt-6 grid gap-3 sm:grid-cols-2">
