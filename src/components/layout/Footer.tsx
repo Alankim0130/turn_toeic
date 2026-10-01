@@ -75,7 +75,13 @@ export function Footer() {
       <div className="border-t border-line">
         <div className="container-x flex flex-col gap-2 py-5 text-xs text-mist sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} 역전토익. All rights reserved.</p>
-          <p>본 사이트는 수강생 학습 관리를 위한 페이지입니다.</p>
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>본 사이트는 수강생 학습 관리를 위한 페이지입니다.</span>
+            {/* 개인정보처리방침 (2026-10-01) — 구글 OAuth 동의 화면 게시 조건이기도 하다 */}
+            <Link href="/privacy" className="font-semibold text-slate underline decoration-line underline-offset-2 hover:text-brand-600 hover:decoration-brand-300">
+              개인정보처리방침
+            </Link>
+          </p>
         </div>
       </div>
     </footer>

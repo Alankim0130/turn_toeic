@@ -311,7 +311,12 @@ export default async function LiveChannelsPage({ searchParams }: { searchParams:
           <p className="mt-1 text-sm text-slate">{configured ? "구글 설정이 되어 있어요." : "아직 안 됐어요. 구글 클라우드에서 한 번만 하면 돼요."}</p>
           <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs text-slate">
             <li><Ext href="https://console.cloud.google.com/">Google Cloud Console</Ext> 에서 프로젝트를 고르고 <b>YouTube Data API v3</b> 를 사용 설정한다.</li>
-            <li>OAuth 동의 화면: 외부 · 범위에 <code>youtube.readonly</code> · <b>게시(프로덕션)</b> 상태로 — 테스트 상태면 강사 구글 계정을 테스트 사용자에 넣어야 연결되고 7일 뒤 끊긴다.</li>
+            <li>
+              OAuth 동의 화면(Google Auth Platform): 외부 · 데이터 액세스의 범위에 <code>https://www.googleapis.com/auth/youtube.readonly</code> ·
+              브랜딩에 앱 이름 <code>역전토익</code> · 홈페이지 <code>https://winnertoeic.com</code> · 개인정보처리방침 <code>https://winnertoeic.com/privacy</code> ·
+              승인된 도메인 <code>winnertoeic.com</code> (로고는 올리지 않는다 — 올리면 구글 심사가 붙는다) · 대상에서 <b>앱 게시(프로덕션)</b> —
+              테스트 상태면 강사 구글 계정을 테스트 사용자에 넣어야 연결되고 7일 뒤 끊긴다.
+            </li>
             <li>사용자 인증 정보 → OAuth 클라이언트 ID(웹) → 승인된 리디렉션 URI 에 <code>https://winnertoeic.com/api/youtube/callback</code>.</li>
             <li>Vercel 환경변수 <code>YOUTUBE_CLIENT_ID</code> · <code>YOUTUBE_CLIENT_SECRET</code> 에 넣고 다시 배포한다.</li>
           </ol>
