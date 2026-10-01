@@ -14,7 +14,7 @@ export type NotificationKind = keyof Pick<SettingsRow, "verification" | "textboo
 
 export const NOTIFICATION_KINDS: { key: NotificationKind; label: string; desc: string }[] = [
   { key: "naver_reservation", label: "네이버 예약", desc: "예약이 들어오거나 바뀌면 날짜·시각을 바로 알려줘요" },
-  { key: "live_detected", label: "내 유튜브 자동 연결", desc: "Zoom 에서 유튜브로 송출한 내 방송이 잡혀 다시보기로 예약되면 (내 것만)" },
+  { key: "live_detected", label: "내 유튜브 자동 연결", desc: "Zoom 에서 유튜브로 송출한 내 방송이 잡혀 불라방 링크·다시보기로 연결되면 (내 것만)" },
   { key: "verification", label: "등업신청 접수", desc: "수강생이 수강증을 올리면 바로" },
   { key: "textbook_order", label: "불라방 교재주문", desc: "교재 배송 신청이 들어오면 바로" },
   { key: "contact", label: "연락하기 문의", desc: "새 문의가 오면 바로" },

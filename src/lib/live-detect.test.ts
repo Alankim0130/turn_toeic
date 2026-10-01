@@ -89,7 +89,10 @@ describe("오늘 회차 상태 칩 (유튜브 자동 연결 화면) — 2026-10-
     expect(streamState({ ...base, liveToReplay: false })).toMatchObject({ tone: "muted", text: "다시보기를 만들지 않는 반" });
   });
   it("송출이 잡히면 끝나면 다시보기로 — 잡힌 시각을 함께", () => {
-    expect(streamState({ ...base, stream })).toMatchObject({ tone: "caught", at: stream.detected_at });
+    expect(streamState({ ...base, stream })).toMatchObject({ tone: "caught", at: stream.detected_at, text: "송출 잡힘 — 끝나면 다시보기로" });
+  });
+  it("비어 있던 불라방 링크에도 들어갔으면 그렇게 적는다 (2026-10-01 Alan — 불라방도 유튜브 링크로)", () => {
+    expect(streamState({ ...base, stream, liveLinked: true })).toMatchObject({ tone: "caught", text: "송출 잡힘 · 불라방 연결 — 끝나면 다시보기로" });
   });
   it("승격되면 다시보기 올라감 — 올라간 시각을 함께", () => {
     const promoted = { ...stream, promoted_at: "2026-10-07T02:10:00Z" };

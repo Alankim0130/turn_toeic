@@ -110,8 +110,11 @@ export default async function LiveLinksPage() {
               </li>
               <li>불라방 수강생에게는 &ldquo;불라방이 시작됐어요&rdquo; 알림이 가요 — 수업 15분 전부터는 저장하는 순간, 그 전에 넣어 두면 수업 시각에.</li>
               <li>
-                Zoom 링크는 다시보기로 올라가지 않아요. 녹화본은 유튜브에 올린 뒤{" "}
-                <Link href="/admin/replays" className="font-bold text-brand-600 hover:underline">다시보기 등록</Link>에서 회차에 붙여 주세요.
+                {/* 2026-10-01 Alan — "불라방도 유튜브 링크를 가져와서 바로 연결" */}
+                <b className="text-ink">비워 두면</b> Zoom 의 유튜브 송출이 잡힐 때 그 주소가 저절로 들어가고(
+                <Link href="/admin/live-channels" className="font-bold text-brand-600 hover:underline">유튜브 자동 연결</Link>), 수업이 끝나면 다시보기로 올라가요.
+                Zoom 링크를 직접 넣어 두면 그대로 두고 덮어쓰지 않아요 — Zoom 링크는 다시보기로 올라가지 않으니 녹화본은{" "}
+                <Link href="/admin/replays" className="font-bold text-brand-600 hover:underline">다시보기 등록</Link>에서 붙여 주세요.
               </li>
             </ul>
           </aside>

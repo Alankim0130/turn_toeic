@@ -91,7 +91,7 @@ export default async function LiveChannelsPage({ searchParams }: { searchParams:
     supabase
       .from("session_dates")
       .select(
-        "id, seq, date, section:class_sections(id, track, time_block, recorded, live_to_replay, instructor_id, course:courses(name, program)), session_streams(detected_at, promoted_at), replays(id)",
+        "id, seq, date, section:class_sections(id, track, time_block, recorded, live_to_replay, instructor_id, course:courses(name, program)), session_streams(detected_at, promoted_at), session_live_links(source), replays(id)",
       )
       .eq("date", today),
   ]);
@@ -108,7 +108,7 @@ export default async function LiveChannelsPage({ searchParams }: { searchParams:
       <PageHeader
         icon="live"
         title="유튜브 자동 연결"
-        description="Zoom 수업을 유튜브로 함께 송출하면, 수업이 끝난 뒤 그 영상이 그 회차 다시보기로 저절로 올라가요. 불라방 입장 링크(Zoom)는 그대로예요."
+        description="Zoom 수업을 유튜브로 함께 송출하면, 잡힌 주소가 그 회차 불라방 링크로 들어가고(비워 둔 칸만) 수업이 끝난 뒤에는 다시보기로 올라가요."
       />
       {ok && <Alert kind="success" className="mb-4">{ok === "linked" ? "유튜브 채널을 연결했어요. 「지금 내 방송 확인」으로 바로 테스트해 볼 수 있어요." : "연결을 끊었어요."}</Alert>}
       {error && <Alert kind="warning" className="mb-4">{ERROR_TEXT[error] ?? "처리하지 못했어요."}</Alert>}
@@ -206,7 +206,9 @@ export default async function LiveChannelsPage({ searchParams }: { searchParams:
                   Zoom <b className="text-ink">더 보기(…) → YouTube에서 라이브</b> → 제목 입력 → 공개 범위 <b className="text-ink">일부 공개</b> → <b className="text-ink">YouTube에서 라이브 시작</b>.
                 </Step>
                 <Step n={5} dark title="30초 뒤 알림이 오면 잡힌 것">
-                  휴대폰에 &ldquo;유튜브 송출을 찾았어요&rdquo; 알림이 오고 아래 「오늘 회차」가 <b className="text-ink">송출 잡힘</b>으로 바뀌어요. 안 바뀌면 「지금 내 방송 확인」부터 눌러 보세요.
+                  휴대폰에 &ldquo;유튜브 송출을 찾았어요&rdquo; 알림이 오고 아래 「오늘 회차」가 <b className="text-ink">송출 잡힘</b>으로 바뀌어요.
+                  불라방 링크를 비워 뒀다면 그 주소가 <b className="text-ink">불라방 링크로도 들어가</b> 학생에게 &ldquo;불라방이 시작됐어요&rdquo; 알림이 가요 — Zoom 링크를 넣어 둔 교시는 그대로예요.
+                  안 바뀌면 「지금 내 방송 확인」부터 눌러 보세요.
                 </Step>
                 <Step n={6} dark title="교시가 끝나면 송출 끄기, 다음 교시는 새로 켜기">
                   <b className="text-ink">더 보기(…) → 라이브 스트림 중지</b>. 한 송출로 두 교시를 이으면 뒤 교시는 안 잡혀요. 수업이 끝나면 10분 안에 다시보기에 올라가요.
@@ -222,6 +224,7 @@ export default async function LiveChannelsPage({ searchParams }: { searchParams:
             <ul className="mt-2 list-disc space-y-1 pl-5">
               <li>송출을 {LIVE_MATCH_MINUTES}분 넘게 늦게 켰거나 끊겨서 다시 켠 두 번째 방송은 안 잡혀요 → YouTube 스튜디오 → 콘텐츠 → 실시간 스트리밍에서 영상 주소를 복사해 <Link href="/admin/replays" className="font-bold underline">다시보기 등록</Link>에서 붙여 주세요.</li>
               <li>Zoom 의 YouTube 로그인과 이 화면의 연결이 <b>같은 구글 계정</b>이어야 해요.</li>
+              <li>학생을 Zoom 으로 들이고 싶은 교시는 <Link href="/admin/live" className="font-bold underline">불라방 링크</Link>에 Zoom 주소를 먼저 넣어 두세요 — 넣어 둔 링크는 덮어쓰지 않아요. 비워 두면 유튜브 송출 주소가 들어가요.</li>
               <li>공개로 켰으면 알림에 ⚠ 가 붙어요 → 유튜브에서 일부 공개로 바꾸면 돼요 (주소는 그대로).</li>
               <li>저녁 반처럼 &ldquo;끝나면 다시보기로&rdquo; 가 꺼진 반은 송출해도 다시보기를 만들지 않아요 (반 상세의 스위치).</li>
             </ul>
@@ -243,6 +246,7 @@ export default async function LiveChannelsPage({ searchParams }: { searchParams:
                   stream,
                   hasReplay: (s.replays?.length ?? 0) > 0,
                   connected: (channels ?? []).some((c) => c.user_id === sec.instructor_id),
+                  liveLinked: one(s.session_live_links)?.source === "youtube",
                 });
                 return (
                   <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">

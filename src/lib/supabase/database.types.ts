@@ -2274,7 +2274,7 @@ export type Database = {
       }
       register_detected_stream: {
         Args: { p_session_date_ids: number[]; p_url: string }
-        Returns: number[]
+        Returns: { live_linked: boolean; session_date_id: number }[]
       }
       attendance_scan: {
         Args: { p_method?: string; p_token: string }

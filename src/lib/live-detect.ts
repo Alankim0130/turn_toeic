@@ -98,11 +98,13 @@ export function streamState(s: {
   stream: { detected_at: string; promoted_at: string | null } | null;
   hasReplay: boolean;
   connected: boolean;
+  /** 잡힌 송출이 불라방 링크로도 들어갔다 (`session_live_links.source = 'youtube'`, 2026-10-01 — 비어 있던 칸에만) */
+  liveLinked?: boolean;
 }): { text: string; tone: StreamTone; at?: string } {
   if (s.recorded) return { text: "인강 — 방송 없음", tone: "recorded" };
   if (!s.liveToReplay) return { text: "다시보기를 만들지 않는 반", tone: "muted" };
   if (s.stream?.promoted_at) return { text: "다시보기 올라감", tone: "done", at: s.stream.promoted_at };
-  if (s.stream) return { text: "송출 잡힘 — 끝나면 다시보기로", tone: "caught", at: s.stream.detected_at };
+  if (s.stream) return { text: s.liveLinked ? "송출 잡힘 · 불라방 연결 — 끝나면 다시보기로" : "송출 잡힘 — 끝나면 다시보기로", tone: "caught", at: s.stream.detected_at };
   if (s.hasReplay) return { text: "다시보기 직접 등록됨", tone: "manual" };
   if (s.connected) return { text: "방송을 기다리는 중", tone: "wait" };
   return { text: "채널 미연결", tone: "muted" };
