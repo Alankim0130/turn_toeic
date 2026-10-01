@@ -289,7 +289,7 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
           <p className="mt-3 text-slate">이번에 올린 수강증은 접수됐고, 이름이 달라 자동으로 등업되지 않아 선생님이 직접 확인해 드려요.</p>
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
             <button type="button" onClick={reupload} className="btn-primary w-full sm:w-auto">다른 수강증 다시 올리기</button>
-            <Link href="/contact" className="btn-secondary w-full sm:w-auto">선생님께 이름 수정 요청</Link>
+            <Link href="/contact/inquiry" className="btn-secondary w-full sm:w-auto">선생님께 이름 수정 요청</Link>
             <button type="button" onClick={() => setPopup(null)} className="btn-ghost w-full sm:w-auto">닫기</button>
           </div>
         </>
@@ -348,7 +348,7 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
       {nameHelp(nameMismatch)}
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" onClick={reupload} className="btn-primary !py-2 text-sm">다른 수강증 다시 올리기</button>
-        <Link href="/contact" className="btn-secondary !py-2 text-sm">선생님께 이름 수정 요청</Link>
+        <Link href="/contact/inquiry" className="btn-secondary !py-2 text-sm">선생님께 이름 수정 요청</Link>
       </div>
     </div>
   );

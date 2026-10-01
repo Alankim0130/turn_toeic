@@ -33,7 +33,7 @@ export default async function AccountMergedPage() {
           <form action={signOut}>
             <SubmitButton pendingText="로그아웃 중…">로그아웃하고 다시 로그인</SubmitButton>
           </form>
-          <Link href="/contact" className="btn-secondary">문의하기</Link>
+          <Link href="/contact/inquiry" className="btn-secondary">문의하기</Link>
         </div>
       </section>
     </div>

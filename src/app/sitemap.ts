@@ -12,6 +12,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${site.url}/student`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
     { url: `${site.url}/study`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${site.url}/contact`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
+    { url: `${site.url}/contact/inquiry`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
     { url: `${site.url}/signup`, lastModified: now, changeFrequency: "yearly", priority: 0.4 },
     { url: `${site.url}/login`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
   ];

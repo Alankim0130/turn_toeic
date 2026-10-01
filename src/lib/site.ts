@@ -285,13 +285,14 @@ export type NavItem = {
 /**
  * 연락하기의 세 갈래 (2026-10-01 Alan — "'연락하기' '네이버 예약상담' 두 개를 연락하기 하나로 합치고 셋 중에서 하나 선택:
  * 비대면상담 (카카오톡) · 비대면상담 (이메일) · 대면상담 (네이버예약)").
- * PC 상단 메뉴의 `연락하기` 드롭다운 · 햄버거 서랍의 `연락` 묶음 · 푸터 · `/contact` 맨 위 선택 카드가 전부 여기서 나온다 — 한 곳만 고친다.
- * `email` 은 이 사이트의 문의 폼(`/contact`)이다 — 답변은 알림함(회원) 또는 남긴 연락처로 간다 (도메인 규칙 7-3).
+ * PC 상단 메뉴의 `연락하기` 드롭다운 · 햄버거 서랍의 `연락` 묶음 · 푸터 · `/contact` 허브의 카드 세 장이 전부 여기서 나온다 — 한 곳만 고친다.
+ * `email` 은 이 사이트의 문의 폼(`/contact/inquiry`)이다 — 답변은 알림함(회원) 또는 남긴 전화·이메일로 간다 (도메인 규칙 7-3).
  */
 export type ContactOption = { key: "kakao" | "email" | "naver"; label: string; short: string; summary: string; href: string; icon: string; external?: true };
 export const CONTACT_OPTIONS: ContactOption[] = [
   { key: "kakao", label: "비대면상담 (카카오톡)", short: "카카오톡 상담", summary: "카카오톡 채널에서 바로 채팅", href: site.academy.kakaoChatUrl, icon: "online", external: true },
-  { key: "email", label: "비대면상담 (이메일)", short: "이메일 문의", summary: "문의를 남기면 알림함·연락처로 답변", href: "/contact", icon: "contact" },
+  // 문의 폼은 허브(/contact)가 아니라 전용 페이지다 (2026-10-01 Alan — "버튼을 클릭 안 해도 이미 아래에 나와 있어 헷갈려. 단독 페이지로")
+  { key: "email", label: "비대면상담 (이메일·전화)", short: "이메일·전화 문의", summary: "문의를 남기면 알림함·전화·이메일로 답변", href: "/contact/inquiry", icon: "contact" },
   { key: "naver", label: "대면상담 (네이버예약)", short: "네이버 예약", summary: "학원에서 강사와 직접 상담", href: site.academy.naverBookingUrl, icon: "calendar", external: true },
 ];
 const contactNav = (o: ContactOption): NavItem => ({ href: o.href, label: o.label, icon: o.icon, external: o.external });
@@ -437,8 +438,9 @@ export const NAV_DRAWER: NavSection[] = [
     ],
   },
   {
-    // 연락하기의 세 갈래 그대로 (2026-10-01) — PC 드롭다운과 같은 목록
+    // 맨 위는 허브(카드 세 장 — 2026-10-01 Alan "연락하기 페이지를 누르면 카드 3개만"), 그 아래 세 갈래 그대로 — PC 드롭다운과 같은 목록.
+    // 허브 줄이 있어야 좁은 화면에서도 그 페이지에 갈 수 있다 (PC 상단 메뉴의 `연락하기` 글자가 허브 링크다)
     label: "연락",
-    items: CONTACT_OPTIONS.map(contactNav),
+    items: [{ href: "/contact", label: "연락하기", icon: "bolt" }, ...CONTACT_OPTIONS.map(contactNav)],
   },
 ];

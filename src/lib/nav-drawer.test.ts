@@ -54,7 +54,7 @@ describe("햄버거 메뉴 묶음 (NAV_DRAWER)", () => {
 describe("연락하기 세 갈래 (CONTACT_OPTIONS)", () => {
   it("비대면 카카오톡 · 비대면 이메일 · 대면 네이버예약 순서다", () => {
     expect(CONTACT_OPTIONS.map((o) => o.key)).toEqual(["kakao", "email", "naver"]);
-    expect(CONTACT_OPTIONS.map((o) => o.label)).toEqual(["비대면상담 (카카오톡)", "비대면상담 (이메일)", "대면상담 (네이버예약)"]);
+    expect(CONTACT_OPTIONS.map((o) => o.label)).toEqual(["비대면상담 (카카오톡)", "비대면상담 (이메일·전화)", "대면상담 (네이버예약)"]);
   });
 
   it("카카오톡은 채팅 주소다 — Alan 이 준 로그인 페이지로 감싼 주소를 그대로 넣지 않는다", () => {
@@ -65,9 +65,10 @@ describe("연락하기 세 갈래 (CONTACT_OPTIONS)", () => {
     expect(kakao.external).toBe(true);
   });
 
-  it("이메일은 이 사이트의 문의 폼이고 네이버는 예약 상품으로 나간다", () => {
+  it("이메일·전화는 이 사이트의 문의 폼 전용 페이지이고 네이버는 예약 상품으로 나간다", () => {
+    // 허브(/contact)가 아니라 전용 페이지다 — 허브에 폼까지 두면 카드를 누르지 않아도 폼이 보여 헷갈린다 (2026-10-01 Alan)
     const email = CONTACT_OPTIONS.find((o) => o.key === "email")!;
-    expect(email.href).toBe("/contact");
+    expect(email.href).toBe("/contact/inquiry");
     expect(email.external).toBeUndefined();
     expect(CONTACT_OPTIONS.find((o) => o.key === "naver")).toMatchObject({ href: site.academy.naverBookingUrl, external: true });
   });
@@ -79,9 +80,9 @@ describe("연락하기 세 갈래 (CONTACT_OPTIONS)", () => {
     expect(NAV_MAIN.some((i) => i.external)).toBe(false);
   });
 
-  it("서랍 `연락` 묶음이 같은 세 갈래다", () => {
+  it("서랍 `연락` 묶음 = 허브(/contact) 한 줄 + 같은 세 갈래", () => {
     const section = NAV_DRAWER.find((s) => s.label === "연락")!;
-    expect(section.items.map((i) => i.href)).toEqual(CONTACT_OPTIONS.map((o) => o.href));
-    expect(section.items.map((i) => i.label)).toEqual(CONTACT_OPTIONS.map((o) => o.label));
+    expect(section.items.map((i) => i.href)).toEqual(["/contact", ...CONTACT_OPTIONS.map((o) => o.href)]);
+    expect(section.items.slice(1).map((i) => i.label)).toEqual(CONTACT_OPTIONS.map((o) => o.label));
   });
 });

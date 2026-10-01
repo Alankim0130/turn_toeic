@@ -59,7 +59,7 @@ export default async function NotificationsPage() {
                   )}
                   {/* 문의 답변 (2026-09-30) — 연락하기로 보낸 문의에 선생님이 답한 것. 더 물을 것은 다시 연락하기로 */}
                   {m.kind === "contact_reply" && (
-                    <Link href="/contact" className="btn-secondary mt-3 !px-4 !py-2 text-sm">
+                    <Link href="/contact/inquiry" className="btn-secondary mt-3 !px-4 !py-2 text-sm">
                       더 궁금한 점 문의하기
                     </Link>
                   )}

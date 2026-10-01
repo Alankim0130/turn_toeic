@@ -199,19 +199,21 @@ function StudentDropdown({ access, pathname }: { access: NavAccess; pathname: st
 
 /**
  * 연락하기 드롭다운 (2026-10-01 Alan — 연락하기 · 네이버 상담예약 두 항목을 하나로 합치고 셋 중 고른다).
- * 목록은 `CONTACT_OPTIONS` 한곳 — 카카오톡(새 창) · 이메일 문의(/contact) · 네이버 예약(새 창). 카카오 줄은 노란 타일에 카카오 심벌.
+ * 목록은 `CONTACT_OPTIONS` 한곳 — 카카오톡(새 창) · 이메일·전화 문의(/contact/inquiry) · 네이버 예약(새 창). 카카오 줄은 노란 타일에 카카오 심벌.
+ * **글자 자체는 허브(`/contact`, 카드 세 장)로 가는 링크**다 (같은 날 Alan "연락하기 페이지를 누르면 카드 3개만") — 마우스를 올리면 빠른 메뉴가 펼쳐지고,
+ * 누르면 허브로 간다. 수강생전용 메뉴(버튼 토글)와 다른 점이고, 키보드로는 링크를 따라가면 허브에 같은 세 갈래가 있다.
  */
 function ContactDropdown({ pathname }: { pathname: string }) {
-  const { open, wrapRef, openNow, closeSoon, toggle, close } = useDropdown(pathname);
+  const { open, wrapRef, openNow, closeSoon, close } = useDropdown(pathname);
   const active = isActivePath(pathname, "/contact");
 
   return (
     <div ref={wrapRef} className="relative" onMouseEnter={openNow} onMouseLeave={closeSoon}>
-      <button type="button" aria-expanded={open} aria-haspopup="true" aria-controls="contact-menu" onClick={toggle} className={cn(linkClass(active), "gap-1.5")}>
+      <Link href="/contact" aria-current={active ? "page" : undefined} onClick={close} className={cn(linkClass(active), "gap-1.5")}>
         연락하기
         <Chevron open={open} />
         {active && <ActiveBar />}
-      </button>
+      </Link>
 
       <div id="contact-menu" className={cn(panelClass(open), "w-72")}>
         <div className="card p-2">
@@ -252,6 +254,11 @@ function ContactDropdown({ pathname }: { pathname: string }) {
               );
             })}
           </ul>
+          <div className="mt-1.5 flex justify-end rounded-xl bg-surface px-3 py-2 text-xs">
+            <Link href="/contact" onClick={close} className="font-bold text-brand-600 hover:underline">
+              연락 방법 한눈에 보기 →
+            </Link>
+          </div>
         </div>
       </div>
     </div>

@@ -32,7 +32,9 @@ export function Footer() {
             <li><Link href="/study" className="hover:text-brand-600">스터디 신청하기</Link></li>
           </ul>
           {/* 연락하기 세 갈래 (2026-10-01) — CONTACT_OPTIONS 한곳. 카카오톡·네이버는 새 창 */}
-          <p className="mt-5 text-sm font-bold text-ink">연락하기</p>
+          <p className="mt-5 text-sm font-bold text-ink">
+            <Link href="/contact" className="hover:text-brand-600">연락하기</Link>
+          </p>
           <ul className="mt-3 space-y-2 text-sm text-slate">
             {CONTACT_OPTIONS.map((o) => (
               <li key={o.key}>
