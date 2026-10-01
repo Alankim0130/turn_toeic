@@ -417,8 +417,10 @@ export const NAV_DRAWER: NavSection[] = [
     label: "수업",
     items: [
       { href: "/my/class", label: "내 시간표", icon: "calendar" },
-      // 현장 수강생의 내 출석 기록 — 찍는 것은 강의실 앞 출석 QR 포스터를 휴대폰 카메라로 (2026-09-21 · 2026-09-22 포스터 하나로)
-      { href: "/my/attendance", label: "출석", icon: "location" },
+      // 현장 수강생 출석 — 찍는 곳(카메라가 바로 켜진다)과 보는 곳(출석 달력 · 연속 출석)을 나눴다
+      // (2026-10-01 Alan — "학생들도 본인이 출석을 잘 하고 있는지 확인 할 수 있는 공간이 따로 마련되면 좋겠어!")
+      { href: "/my/attendance", label: "출석 찍기", icon: "location" },
+      { href: "/my/attendance/record", label: "내 출석", icon: "success" },
       featureNav("live"),
       featureNav("replay"),
       featureNav("lecture"),

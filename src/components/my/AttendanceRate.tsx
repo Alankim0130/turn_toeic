@@ -75,9 +75,10 @@ export function AttendanceRate({ rows, link = true }: { rows: Row[]; link?: bool
             </p>
             <p className="mt-2 text-sm font-bold text-ink">{cheer}</p>
             <p className="mt-1 text-xs text-slate">퇴실까지 찍어야 출석으로 세요. 선생님이 출석 인정한 날도 들어가요.</p>
+            {/* 출석 달력 · 지난 기록은 따로 둔 화면에 있다 (2026-10-01 Alan — "확인 할 수 있는 공간이 따로") */}
             {link && (
-              <Link href="/my/attendance" className="mt-3 inline-block text-sm font-bold text-brand-600 hover:underline">
-                출석 찍기 · 내 기록 →
+              <Link href="/my/attendance/record" className="mt-3 inline-block text-sm font-bold text-brand-600 hover:underline">
+                내 출석 달력 보기 →
               </Link>
             )}
           </section>

@@ -26,7 +26,7 @@ export function AttendScan({ token }: { token: string }) {
     <div className="space-y-4">
       {result ? <AttendanceResult result={result} /> : <p className="rounded-xl bg-surface px-4 py-6 text-center text-sm text-slate">출석을 확인하는 중이에요…</p>}
       <div className="flex flex-wrap gap-2">
-        <Link href="/my/attendance" className="btn-secondary">내 출석 보기</Link>
+        <Link href="/my/attendance/record" className="btn-secondary">내 출석 보기</Link>
         <Link href="/my" className="btn-ghost">마이페이지</Link>
       </div>
     </div>

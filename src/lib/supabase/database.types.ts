@@ -2234,6 +2234,31 @@ export type Database = {
         Args: { p_term_id: number }
         Returns: { absent: number; classes: number; in_only: number; late: number; missing: number; phone: string | null; present: number; sections: string | null; student_id: string; student_name: string; tester: boolean }[]
       }
+      attendance_term_board: {
+        Args: { p_term_id: number }
+        Returns: { student_id: string; student_name: string; tester: boolean; section_ids: number[] | null; days: Json }[]
+      }
+      my_attendance_days: {
+        Args: never
+        Returns: {
+          term_id: number
+          year: number
+          month: number
+          opens: string
+          closes: string
+          class_date: string
+          section_id: number
+          course_name: string
+          track: string
+          time_block: string | null
+          done: boolean
+          status: string | null
+          late: boolean
+          check_in_at: string | null
+          check_out_at: string | null
+          decided_note: string | null
+        }[]
+      }
       attendance_poster_token: {
         Args: never
         Returns: Json

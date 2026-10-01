@@ -110,7 +110,8 @@ describe("/my 조회는 내 것으로 한 번 더 좁힌다", () => {
     expect(found("replays", "getMyReplays")).toBe(true);
     expect(found("account_merge_requests", "getMyMergeRequests")).toBe(true);
     expect(found("special_lectures", "getMyLectures")).toBe(true);
-    expect(found("attendance_stamps", "MyAttendancePage")).toBe(true);
+    // 출석은 2026-10-01 부터 학생 화면이 표를 직접 읽지 않고 auth.uid() 로 거르는 DB 함수(my_attendance_days)로 읽는다
+    expect(found("student_messages", "getMyMessages")).toBe(true);
     expect(found("enrollment_orders", "getStudentAccess")).toBe(true);
   });
 
