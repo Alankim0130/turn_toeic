@@ -1,8 +1,25 @@
 import { CountUp } from "@/components/ui/CountUp";
+import { Icon } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
 import { ExternalMark } from "@/components/layout/NavLinks";
 import { site } from "@/lib/site";
 import type { YbmReviewStatsRow } from "@/lib/ybm-stats-data";
+
+/**
+ * 태그 칸마다 어울리는 아이콘 (2026-10-01 Alan — "8개 카드에 맞는 디자인으로 이미지를 하나씩"). 힉스필드로 기존 아이콘과 같은
+ * 잉크 + 핫핑크 2톤으로 만든 `public/icons/tag-*.png`. 열쇠는 YBM 페이지의 태그 번호(w01~w08)다 — YBM 이 태그를 더하거나 순서를 바꾸면
+ * 여기 없는 번호는 아이콘 없이 숫자만 나온다 (틀린 그림을 붙이지 않는다). 그때 라벨을 보고 짝을 다시 맞춘다.
+ */
+const TAG_ICON: Record<string, string> = {
+  w01: "tag-curriculum", // 커리큘럼이 탄탄해요 — 쌓인 책
+  w02: "tag-feedback", // 피드백이 상세해요 — 체크리스트 말풍선 + 연필
+  w03: "tag-goal", // 목표 달성에 도움이 돼요 — 정상의 깃발
+  w04: "tag-trend", // 시험 트렌드에 적합해요 — 오르는 그래프
+  w05: "tag-growth", // 실력이 빠르게 늘어요 — 로켓
+  w06: "tag-practice", // 실전 대비가 잘돼요 — OMR + 스톱워치
+  w07: "tag-recommend", // 추천하고 싶은 강의에요 — 엄지척 + 하트
+  w08: "tag-vibe", // 수업 분위기가 좋아요 — 웃는 얼굴 둘
+};
 
 /**
  * YBM 공식 페이지의 수강후기 통계 — 누적 후기 수 + 후기 태그 8개 (2026-10-01 Alan — "YBM 홈페이지에서 실제 데이터를 매일 한 번씩
@@ -35,17 +52,25 @@ export function Stats({ stats }: { stats: YbmReviewStatsRow | null }) {
         </div>
       </Reveal>
 
-      {/* 후기 태그 8개 — YBM 페이지의 순서 그대로. 수강생이 후기에 붙인 평가 태그와 그 수 */}
+      {/* 후기 태그 8개 — YBM 페이지의 순서 그대로. 수강생이 후기에 붙인 평가 태그와 그 수. 칸마다 연분홍 타일에 담은 아이콘(관리자 위젯과 같은 꼴) */}
       <ul className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="수강생이 남긴 평가">
-        {stats.tags.map((t, i) => (
-          <Reveal key={t.key} delay={i * 60} as="li" className="card relative overflow-hidden p-4 sm:p-5">
-            <div aria-hidden className="absolute -right-5 -top-5 h-16 w-16 rounded-full bg-brand-50" />
-            <p className="relative text-2xl font-black tracking-tight text-ink sm:text-3xl">
-              <CountUp value={t.count} suffix="명" />
-            </p>
-            <p className="relative mt-1 text-sm font-semibold text-slate">“{t.label}”</p>
-          </Reveal>
-        ))}
+        {stats.tags.map((t, i) => {
+          const icon = TAG_ICON[t.key];
+          return (
+            <Reveal key={t.key} delay={i * 60} as="li" className="card relative overflow-hidden p-4 sm:p-5">
+              <div aria-hidden className="absolute -right-5 -top-5 h-16 w-16 rounded-full bg-brand-50" />
+              {icon && (
+                <span className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 ring-1 ring-brand-100 sm:h-14 sm:w-14">
+                  <Icon name={icon} size={32} className="sm:!h-9 sm:!w-9" />
+                </span>
+              )}
+              <p className="relative mt-3 text-2xl font-black tracking-tight text-ink sm:text-3xl">
+                <CountUp value={t.count} suffix="명" />
+              </p>
+              <p className="relative mt-1 text-sm font-semibold text-slate">“{t.label}”</p>
+            </Reveal>
+          );
+        })}
       </ul>
     </section>
   );

@@ -385,6 +385,9 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
     누적 후기가 반 넘게 줄어든 값도 받지 않는다(`looksLikeRegression`) — 페이지가 바뀐 신호다. 조회는 모두에게 열려 있고 쓰기는 서버만.
   - 랜딩은 `page.tsx` 가 `getYbmReviewStats()` 로 **한 번** 읽어 히어로 줄 · 헤드라인 띠(`Spotlight`) · 통계 구간(`Stats`)에 넘긴다. **읽지 못하면 셋 다 그 숫자를 비운다** —
     지어낸 수를 적지 않는다. `Stats` 는 누적 후기 수(크게) + `후기 바로보기`(YBM 후기 탭, 새 창) + 태그 8칸(페이지 순서 그대로, `N명`) + "YBM 공식 홈페이지 기준 · N월 N일 갱신".
+  - **태그 8칸마다 아이콘**이 있다 (같은 날 Alan "8개 카드에 맞는 디자인으로 이미지를 하나씩") — `public/icons/tag-{curriculum,feedback,goal,trend,growth,practice,recommend,vibe}.png`,
+    힉스필드 GPT Image 2.5 로 기존 아이콘 셋(target · study · analytics)을 `image_references` 로 주고 "같은 잉크+핫핑크 2톤" 으로 만든 뒤 256px 로 맞췄다.
+    짝은 `Stats.tsx` 의 `TAG_ICON`(YBM 태그 번호 w01~w08 → 아이콘 이름)이고, **없는 번호는 아이콘 없이 숫자만** 나온다 — YBM 이 태그를 바꾸면 라벨을 보고 짝을 다시 맞춘다.
   - YBM 이 화면을 바꾸면 증상은 "숫자가 어느 날부터 안 바뀐다 + `last_error` 에 판독 실패" 다 — 그때 픽스처를 새 페이지로 갈고 정규식을 맞춘다.
   - **이 환경에서 ybmedu.com 이 열렸다** (2026-10-01, 200 — 2026-09-16~30 메모의 "프록시 403" 은 더는 아니다). 페이지를 볼 일이 있으면 그냥 curl 한다
 - **랜딩 수업시간표의 인강 표시** (2026-09-17 Alan — "650반도 저녁에는 화목금 인강이야. 750반 봤을때 저녁반만 화목금 인강인데 전체가 다 그런것처럼 보여").

@@ -11,7 +11,9 @@ export type IconName =
   | "success" | "warning" | "logout" | "login" | "location" | "rank1" | "target" | "bolt"
   | "offline" | "online" | "vocab" | "homework" | "headphones" | "download"
   | "lock" | "exclusive" | "bell"
-  | "rc" | "lc" | "camera";
+  | "rc" | "lc" | "camera"
+  // 랜딩 YBM 후기 태그 8칸 (2026-10-01, Stats.tsx 의 TAG_ICON)
+  | "tag-curriculum" | "tag-feedback" | "tag-goal" | "tag-trend" | "tag-growth" | "tag-practice" | "tag-recommend" | "tag-vibe";
 
 export function Icon({
   name,
