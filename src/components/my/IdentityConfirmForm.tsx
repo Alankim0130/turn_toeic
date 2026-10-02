@@ -8,7 +8,8 @@ import { Alert } from "@/components/ui/Alert";
 /**
  * 수강증 인증 뒤 **이름·전화번호 확인** (2026-09-18 Alan 요청 — 동명이인 방지).
  *
- * 이름은 가입 실명과 같은지 **확인만** 한다 (바꾸려면 강사에게 — 수강증 대조 기준이 가입 실명이다).
+ * 이름은 가입 실명과 같은지 본다. **다르면 등업 전에는 적은 이름으로 고쳐 준다** (2026-10-02 Alan — 오타를 고칠 기회,
+ * `can_rename_self`). 등업 뒤에는 그대로 막히고 강사가 고친다 — 수강증 대조 기준이 가입 실명이라서다.
  * 전화번호는 여기서 저장한다. 판정은 DB 의 `public.confirm_identity` 가 한다.
  * 확인이 끝나면 같은 이름·전화번호 계정이 있을 때만 **계정 합치기 카드**가 이어서 뜬다 (2026-09-19 Alan).
  */
@@ -25,7 +26,8 @@ export function IdentityConfirmForm({ phone, done = false }: { phone: string | n
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <label htmlFor="identity-name" className="label">이름</label>
-          <input id="identity-name" name="name" required autoComplete="name" className="input" placeholder="가입할 때 적은 실명" />
+          <input id="identity-name" name="name" required autoComplete="name" className="input" placeholder="수강증에 적힌 실명" />
+          <p className="mt-1 text-xs text-mist">가입할 때 이름을 잘못 적었다면 수강증 이름으로 적어 주세요. 등업 전에는 여기서 바로 고쳐져요.</p>
         </div>
         <div>
           <label htmlFor="identity-phone" className="label">전화번호</label>

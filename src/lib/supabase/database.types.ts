@@ -2173,7 +2173,9 @@ export type Database = {
     Functions: {
       cancel_account_merge: { Args: { p_request: number }; Returns: undefined }
       confirm_account_merge: { Args: { p_request: number }; Returns: Json }
-      confirm_identity: { Args: { p_name: string; p_phone: string }; Returns: undefined }
+      can_rename_self: { Args: Record<string, never>; Returns: boolean }
+      confirm_identity: { Args: { p_name: string; p_phone: string }; Returns: Json }
+      rename_myself: { Args: { p_name: string }; Returns: Json }
       merge_candidates: {
         Args: Record<string, never>
         Returns: {

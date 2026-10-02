@@ -414,6 +414,7 @@ export const NAV_DRAWER: NavSection[] = [
       { href: "/my", label: "대시보드", icon: "profile" },
       { href: "/my/notifications", label: "알림", icon: "bell" },
       { href: "/my/verify", label: "등업신청", icon: "verify" },
+      { href: "/my/profile", label: "내 정보", icon: "profile" },
     ],
   },
   {

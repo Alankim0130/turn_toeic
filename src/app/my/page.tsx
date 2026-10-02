@@ -45,6 +45,8 @@ const QUICK: { href: string; label: string; desc: string; icon: IconName }[] = [
   { href: "/my/homework", label: "숙제업로드", desc: "수업 숙제 사진", icon: "homework" },
   { href: "/my/lc-audio", label: "LC음원듣기", desc: "레벨별 음원", icon: "headphones" },
   { href: "/my/notifications", label: "알림", desc: "선생님 안내 · 수업 시작", icon: "bell" },
+  // 내 정보 (2026-10-02 Alan — "학생이 '내 정보' 수정을 할 수 있는 공간이 없는 것 같아")
+  { href: "/my/profile", label: "내 정보", desc: "이름 · 연락처 수정", icon: "profile" },
 ];
 // `내 계정`(/my/account) 은 바로가기에 두지 않는다 (2026-09-19 Alan) — 이름·전화번호 확인과
 // 계정 합치기는 등업 흐름(/my/verify) 안에서 한다. 그 페이지는 **반대쪽 계정이 합치기를 확인할 때만**

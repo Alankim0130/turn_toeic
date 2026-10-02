@@ -7,7 +7,8 @@
  *
  * **팝업은 이름을 또렷이 읽었을 때만** 띄운다 (`receiptStudentName` 이 한글 2~5자를 읽음). 라벨을 못 읽었으면 "다르다" 고 말할 근거가 없다.
  * 가입 이름이 한글이 아니면(외국 이름) 비교하지 않는다 — 수강증 칸은 한글로만 읽는다.
- * 학생이 스스로 이름을 바꾸는 길은 없다 — 수강증 대조의 기준이라 선생님이 고친다 (CLAUDE.md 도메인 규칙 3-1).
+ * 가입 이름의 오타는 **등업 전까지** 학생이 내 정보(/my/profile)에서 고칠 수 있다 (2026-10-02 Alan, `can_rename_self`) —
+ * 고치면 이름 때문에 멈춘 수강증을 다시 본다 (`rename-recheck.ts`). 등업 뒤에는 선생님이 고친다 (CLAUDE.md 도메인 규칙 3-1).
  */
 export type NameMismatch = { receiptName: string; myName: string };
 

@@ -35,7 +35,13 @@ const STEPS: { icon: IconName; title: string; desc: string }[] = [
 ];
 
 export default async function VerifyPage() {
-  const [verifications, sections, { profile }] = await Promise.all([getMyVerifications(), getOpenEnrollSections(), getSessionProfile()]);
+  const [verifications, sections, { profile }, canRename] = await Promise.all([
+    getMyVerifications(),
+    getOpenEnrollSections(),
+    getSessionProfile(),
+    // 등업 전이면 이름을 본인이 고칠 수 있다 — 이름 불일치 안내가 "내 정보에서 고치기" 로 보낸다 (2026-10-02 Alan)
+    createClient().then((s) => s.rpc("can_rename_self")).then((r) => r.data === true),
+  ]);
 
   // 수강증을 낸 뒤 이름·전화번호를 한 번 확인받는다 (2026-09-18 Alan — 동명이인 방지)
   const confirmed = Boolean(profile?.identity_confirmed_at);
@@ -144,7 +150,7 @@ export default async function VerifyPage() {
 
         <Reveal delay={120} className="card p-5 sm:p-7">
           <h2 className="mb-4 text-base font-black text-ink">수강증 올리기</h2>
-          <VerifyForm sections={sections} />
+          <VerifyForm sections={sections} canRename={canRename} />
         </Reveal>
       </div>
 

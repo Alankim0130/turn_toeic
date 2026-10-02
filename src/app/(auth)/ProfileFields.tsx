@@ -37,7 +37,16 @@ export function FormError({ error, stateKey }: { error?: string; stateKey: unkno
   );
 }
 
-export function NameField({ defaultValue, readOnly = false }: { defaultValue?: string; readOnly?: boolean }) {
+export function NameField({
+  defaultValue,
+  readOnly = false,
+  lockedNote,
+}: {
+  defaultValue?: string;
+  readOnly?: boolean;
+  /** 잠겼을 때 칸 아래에 적을 말 (기본: 수강증 대조에 쓰여 바꿀 수 없다) */
+  lockedNote?: React.ReactNode;
+}) {
   return (
     <div>
       <label htmlFor="name" className="label">실명</label>
@@ -51,7 +60,7 @@ export function NameField({ defaultValue, readOnly = false }: { defaultValue?: s
         placeholder="수강증에 적힌 이름과 같아야 해요"
         defaultValue={defaultValue}
       />
-      {readOnly && <p className="mt-1 text-xs text-mist">이름은 수강증 대조에 쓰여서 바꿀 수 없어요.</p>}
+      {readOnly && <p className="mt-1 text-xs text-mist">{lockedNote ?? "이름은 수강증 대조에 쓰여서 바꿀 수 없어요."}</p>}
     </div>
   );
 }

@@ -82,7 +82,13 @@ function ChoiceRow<T extends string | number>({
  * 자동 판정이 바로 거절하면 이유를 보여 주고 **그 자리에서 수동으로 넘어갈 수 있게** 한다 —
  * 잘못 거절당한 학생이 되돌아갈 길이 없으면 안 된다. 올린 파일은 그대로 두고 반만 더 고른다.
  */
-export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
+/** 이름 불일치 안내에서 내 정보로 보내는 주소 — 수강증에서 읽은 이름을 칸에 미리 넣어 준다 (2026-10-02 Alan "수정의 기회") */
+const fixNameHref = (m: NameMismatch) => `/my/profile?name=${encodeURIComponent(m.receiptName)}`;
+
+/**
+ * @param canRename 등업 전이라 본인이 이름을 고칠 수 있다 (`can_rename_self`). 그러면 이름 불일치 안내가 "내 정보에서 고치기" 로 보낸다
+ */
+export function VerifyForm({ sections, canRename = false }: { sections: EnrollSection[]; canRename?: boolean }) {
   const [manual, setManual] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -263,7 +269,14 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
       <ul className="mt-1.5 list-disc space-y-1 pl-5 text-slate">
         <li>다른 사람의 수강증이라면 — <b className="text-ink">본인 이름이 적힌 수강증</b>을 다시 올려 주세요.</li>
         <li>이름이 가려졌거나 흐리게 찍혔다면 — 이름이 또렷이 보이게 다시 캡처해 올려 주세요.</li>
-        <li>가입할 때 이름을 다르게 적었다면(별명 · 오타) — 선생님께 이름 수정을 요청해 주세요.</li>
+        {canRename ? (
+          <li>
+            가입할 때 이름을 다르게 적었다면(별명 · 오타) —{" "}
+            <Link href={fixNameHref(m)} className="font-bold text-ink underline">내 정보에서 이름을 고치면</Link> 올린 수강증을 다시 확인해 등업해 드려요.
+          </li>
+        ) : (
+          <li>가입할 때 이름을 다르게 적었다면(별명 · 오타) — 선생님께 이름 수정을 요청해 주세요.</li>
+        )}
       </ul>
     </>
   );
@@ -289,7 +302,11 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
           <p className="mt-3 text-slate">이번에 올린 수강증은 접수됐고, 이름이 달라 자동으로 등업되지 않아 선생님이 직접 확인해 드려요.</p>
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
             <button type="button" onClick={reupload} className="btn-primary w-full sm:w-auto">다른 수강증 다시 올리기</button>
-            <Link href="/contact/inquiry" className="btn-secondary w-full sm:w-auto">선생님께 이름 수정 요청</Link>
+            {canRename ? (
+              <Link href={fixNameHref(popup)} className="btn-secondary w-full sm:w-auto">내 정보에서 이름 고치기</Link>
+            ) : (
+              <Link href="/contact/inquiry" className="btn-secondary w-full sm:w-auto">선생님께 이름 수정 요청</Link>
+            )}
             <button type="button" onClick={() => setPopup(null)} className="btn-ghost w-full sm:w-auto">닫기</button>
           </div>
         </>
@@ -348,7 +365,11 @@ export function VerifyForm({ sections }: { sections: EnrollSection[] }) {
       {nameHelp(nameMismatch)}
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" onClick={reupload} className="btn-primary !py-2 text-sm">다른 수강증 다시 올리기</button>
-        <Link href="/contact/inquiry" className="btn-secondary !py-2 text-sm">선생님께 이름 수정 요청</Link>
+        {canRename ? (
+          <Link href={fixNameHref(nameMismatch)} className="btn-secondary !py-2 text-sm">내 정보에서 이름 고치기</Link>
+        ) : (
+          <Link href="/contact/inquiry" className="btn-secondary !py-2 text-sm">선생님께 이름 수정 요청</Link>
+        )}
       </div>
     </div>
   );
