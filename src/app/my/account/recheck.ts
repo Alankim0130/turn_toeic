@@ -5,6 +5,7 @@ import { approveVerificationWith } from "@/lib/approve-verification";
 import { readAutoVerify } from "@/lib/auto-verify";
 import { assignedLabels } from "@/lib/assigned-label";
 import { notifyStaff } from "@/lib/push";
+import { sendTextbookNotice } from "@/lib/textbook-guide";
 import { planRenameRecheck, type StoredCandidates } from "@/lib/rename-recheck";
 import type { StoredParsed } from "@/lib/held-receipt";
 import type { Json } from "@/lib/supabase/database.types";
@@ -63,6 +64,7 @@ export async function recheckAfterRename(userId: string, from: string, to: strin
       if (approved.ok) {
         await admin.from("enrollment_verifications").update({ parsed: parsedNext }).eq("id", row.id);
         after(async () => {
+          if (plan.mode === "live") await sendTextbookNotice(admin, userId, approved.termId);
           await notifyStaff("verification", {
             title: "자동 등업 완료 (이름 고침)",
             body: `${to}님이 가입 이름을 '${from}' → '${to}' 로 고쳐 수강증이 맞아 반을 배정했어요${approved.status === "preliminary" ? " (개강 전 — 예비등록생)" : ""}. 잘못됐으면 승인 화면에서 정정해 주세요.`,

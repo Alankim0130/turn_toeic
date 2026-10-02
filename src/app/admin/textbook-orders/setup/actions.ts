@@ -69,14 +69,27 @@ export async function deleteTextbookAccount(formData: FormData) {
 }
 
 // ─── 교재 ─────────────────────────────────────────────────────────────────
+/** "lc-A" → 과목 · 과정 (2026-10-02 — 내 반 교재). 비우면 학생이 직접 고르는 교재 */
+function bookKeyOf(v: string): { subject: "lc" | "rc"; book_set: "A" | "B" } | null | "invalid" {
+  if (!v) return null;
+  const m = /^(lc|rc)-(A|B)$/.exec(v);
+  return m ? { subject: m[1] as "lc" | "rc", book_set: m[2] as "A" | "B" } : "invalid";
+}
+
 export async function saveTextbookItem(formData: FormData) {
   await requireStaff();
   const id = num(formData, "id");
   const level = num(formData, "level");
   const accountId = num(formData, "account_id");
+  const book = bookKeyOf(str(formData, "book"));
+  if (book === "invalid") done("items", false, "어느 시간의 교재인지 다시 골라 주세요.");
+  // DB 도 막는다 (textbook_items_book_key_check) — 레벨 없이 "LC A과정" 이면 어느 반 학생에게 골라 둘지 모른다
+  if (book && level === null) done("items", false, "LC · RC 과정을 고르면 레벨도 골라 주세요.");
   const row = {
     name: str(formData, "name"),
     level,
+    subject: book?.subject ?? null,
+    book_set: book?.book_set ?? null,
     price: num(formData, "price") ?? -1,
     account_id: accountId,
     note: str(formData, "note") || null,

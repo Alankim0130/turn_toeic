@@ -24,7 +24,8 @@ export type ApproveInput = {
   final?: boolean;
 };
 
-export type ApproveResult = { ok: true; orderId: number; status: "active" | "preliminary" } | { ok: false; error: string };
+/** termId = 배정한 달(기수) — 한 등록에는 한 달의 반만 들어간다 (`assignableError`) */
+export type ApproveResult = { ok: true; orderId: number; status: "active" | "preliminary"; termId: number } | { ok: false; error: string };
 
 /**
  * 등업 승인의 본체 — **스태프 승인과 OCR 자동 승인이 같은 코드를 쓴다** (2026-09-18).
@@ -144,5 +145,5 @@ export async function approveVerificationWith(admin: Admin, input: ApproveInput)
 
   if (status === "active") await promoteToStudent(admin, input.userId);
 
-  return { ok: true, orderId: order.id, status };
+  return { ok: true, orderId: order.id, status, termId: sections[0].term_id };
 }
