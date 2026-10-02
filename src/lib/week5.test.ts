@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collapseWeek5, studentTrackLabel, week5SectionIds, type Week5Section } from "./week5";
+import { collapseWeek5, groupWeek5, studentTrackLabel, week5SectionIds, type Week5Section } from "./week5";
 
 const TRACK = { mwf: "월수금", ttf: "화목금" };
 const s = (id: number, track: string, block: string | null = "10:00~12:10", course = 1, term = 9): Week5Section => ({
@@ -80,5 +80,30 @@ describe("collapseWeek5 — 등록 목록은 한 줄로", () => {
     const mixed = [s(1, "mwf"), s(2, "ttf"), s(7, "mwf", "18:30~20:40"), s(8, "ttf", "10:00~12:10", 2)];
     const ids = week5SectionIds(mixed);
     expect(collapseWeek5(mixed, (r) => r, ids).map((r) => r.id)).toEqual([1, 7, 8]);
+  });
+});
+
+describe("groupWeek5 — 줄은 하나, 배정은 둘 (학생 관리 반 배정, 2026-10-02 Alan)", () => {
+  it("주5일 짝은 한 묶음 [월수금, 화목금] 이고 collapseWeek5 와 같은 자리에 선다", () => {
+    const rows = [s(2, "ttf"), s(7, "mwf", "18:30~20:40"), s(1, "mwf")];
+    const week5 = week5SectionIds(rows);
+    const groups = groupWeek5(rows, (r) => r, week5);
+    expect(groups.map((g) => g.map((r) => r.id))).toEqual([[7], [1, 2]]);
+    expect(groups.map((g) => g[0].id)).toEqual(collapseWeek5(rows, (r) => r, week5).map((r) => r.id));
+  });
+
+  it("주3일 · 다른 시간대 · 다른 달은 혼자 한 묶음이다", () => {
+    const rows = [s(1, "mwf"), s(2, "ttf", "11:10~12:10"), s(3, "ttf", "10:00~12:10", 1, 10)];
+    expect(groupWeek5(rows, (r) => r, week5SectionIds(rows)).map((g) => g.map((r) => r.id))).toEqual([[1], [2], [3]]);
+  });
+
+  it("반이 없는 줄도 혼자 남는다 (지워진 반)", () => {
+    const rows: { id: number; section: Week5Section | null }[] = [
+      { id: 11, section: s(1, "mwf") },
+      { id: 12, section: null },
+      { id: 13, section: s(2, "ttf") },
+    ];
+    const week5 = week5SectionIds(rows.flatMap((r) => (r.section ? [r.section] : [])));
+    expect(groupWeek5(rows, (r) => r.section, week5).map((g) => g.map((r) => r.id))).toEqual([[11, 13], [12]]);
   });
 });

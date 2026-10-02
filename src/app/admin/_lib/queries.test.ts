@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sectionChip } from "./queries";
+import { enrollmentLines, sectionChip, sectionSummary } from "./queries";
 import { week5SectionIds, collapseWeek5 } from "@/lib/week5";
 
 const term = { year: 2026, month: 9 };
@@ -71,5 +71,74 @@ describe("명단 카드가 주5일 두 줄을 한 줄로 합친다", () => {
     // 학생 A 는 월수금만, 학생 B 는 화목금만 → 둘 다 주3일이다
     expect(week5SectionIds([mwf]).size).toBe(0);
     expect(week5SectionIds([ttf]).size).toBe(0);
+  });
+});
+
+describe("학생 관리 반 배정 — 주5일은 한 줄 (2026-10-02 Alan)", () => {
+  const oct = { year: 2026, month: 10 };
+  const sec = (id: number, track: string, extra: Partial<{ term_id: number; time_block: string; closes_at: string }> = {}) => ({
+    id,
+    term_id: 10,
+    course_id: 65,
+    track,
+    time_block: "10:00~12:10",
+    start_time: null,
+    end_time: null,
+    closes_at: "2026-11-01",
+    term: oct,
+    course: { name: "650+ 왕기초반" },
+    ...extra,
+  });
+
+  it("월수금 + 화목금 두 배정이 `주5일` 한 줄이 되고, 그 줄이 두 배정을 함께 가진다 (해제도 둘 같이)", () => {
+    const lines = enrollmentLines(
+      [
+        { id: 21, mode: "onsite", status: "active", section: sec(1, "mwf") },
+        { id: 22, mode: "onsite", status: "active", section: sec(2, "ttf") },
+      ],
+      { withEnd: true },
+    );
+    expect(lines).toEqual([
+      { key: "21-22", ids: [21, 22], week5: true, label: "10월 · 650+ 왕기초반 · 주5일 · 10:00~12:10 · 현장", closesAt: "2026-11-01", statuses: ["active"] },
+    ]);
+  });
+
+  it("화목금이 먼저 와도 월수금 줄로 선다 — 순서가 바뀌어도 같은 줄", () => {
+    const lines = enrollmentLines([
+      { id: 22, mode: "onsite", section: sec(2, "ttf") },
+      { id: 21, mode: "onsite", section: sec(1, "mwf") },
+    ]);
+    expect(lines.map((l) => l.ids)).toEqual([[21, 22]]);
+  });
+
+  it("두 트랙의 수강 방식이 다르면 둘 다 적는다 — 한쪽만 적으면 없는 말이 된다", () => {
+    const [line] = enrollmentLines([
+      { id: 21, mode: "onsite", section: sec(1, "mwf") },
+      { id: 22, mode: "live", section: sec(2, "ttf") },
+    ]);
+    expect(line.label).toBe("10월 · 650+ 왕기초반 · 주5일 · 10:00~12:10 · 현장 · 불라방");
+  });
+
+  it("주3일 · 다른 달은 트랙 그대로 한 줄씩 — 9월 월수금 + 10월 화목금은 주5일이 아니다", () => {
+    const lines = enrollmentLines([
+      { id: 31, mode: "onsite", section: sec(5, "mwf", { term_id: 9, closes_at: "2026-10-03" }) },
+      { id: 32, mode: "onsite", section: sec(6, "ttf") },
+    ]);
+    expect(lines.map((l) => [l.ids, l.week5, l.closesAt])).toEqual([
+      [[31], false, "2026-10-03"],
+      [[32], false, "2026-11-01"],
+    ]);
+    expect(lines[1].label).toBe("10월 · 650+ 왕기초반 · 화목금 · 10:00~12:10 · 현장");
+  });
+
+  it("반이 지워진 배정도 한 줄로 남는다 (해제할 수 있게)", () => {
+    expect(enrollmentLines([{ id: 41, mode: "onsite", section: null }])).toEqual([
+      { key: "41", ids: [41], week5: false, label: "반 미배정", closesAt: null, statuses: ["active"] },
+    ]);
+  });
+
+  it("sectionSummary 의 예전 부르기(방식 하나)는 그대로다", () => {
+    expect(sectionSummary(sec(1, "mwf"), "live")).toBe("10월 · 650+ 왕기초반 · 월수금 · 10:00~12:10 · 불라방");
+    expect(sectionSummary(sec(1, "mwf"), null)).toBe("10월 · 650+ 왕기초반 · 월수금 · 10:00~12:10");
   });
 });

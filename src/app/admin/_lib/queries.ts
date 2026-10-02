@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database.types";
 import { pickCurrentTerm } from "@/lib/term-window";
 import { formatTime, TRACK_LABEL, MODE_LABEL } from "@/lib/utils";
-import { WEEK5_LABEL } from "@/lib/week5";
+import { groupWeek5, week5SectionIds, WEEK5_LABEL, type Week5Section } from "@/lib/week5";
 
 export type DB = SupabaseClient<Database>;
 
@@ -17,29 +17,81 @@ export function termLabel(t?: { year: number; month: number } | null, short = fa
   return short ? `${t.month}월` : `${t.year}년 ${t.month}월`;
 }
 
-/** "9월 · 강좌명 · 월수금 · 10:00 · 현장". 시간 컬럼이 없는 반(일괄 개설)은 시간대 라벨 "10:00~12:10" 을 쓴다 */
+type SummarySection = {
+  track?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  time_block?: string | null;
+  term?: { year: number; month: number } | null;
+  course?: { name: string } | null;
+};
+
+/**
+ * "9월 · 강좌명 · 월수금 · 10:00 · 현장". 시간 컬럼이 없는 반(일괄 개설)은 시간대 라벨 "10:00~12:10" 을 쓴다.
+ * `week5` 면 트랙 자리에 `주5일` 을 적는다 (주5일 짝을 한 줄로 그릴 때 — `enrollmentLines`).
+ * 수강 방식을 여럿 주면 겹치지 않게 다 적는다 — 주5일 두 트랙의 방식이 다르면 한쪽만 적어서는 없는 말이 된다.
+ */
 export function sectionSummary(
-  s: {
-    track?: string | null;
-    start_time?: string | null;
-    end_time?: string | null;
-    time_block?: string | null;
-    term?: { year: number; month: number } | null;
-    course?: { name: string } | null;
-  } | null | undefined,
-  mode?: string | null,
-  opts: { withEnd?: boolean } = {},
+  s: SummarySection | null | undefined,
+  mode?: string | readonly (string | null)[] | null,
+  opts: { withEnd?: boolean; week5?: boolean } = {},
 ) {
   if (!s) return "반 미배정";
+  const modes = [...new Set(mode == null ? [] : typeof mode === "string" ? [mode] : mode.filter((m): m is string => !!m))];
   const parts = [
     termLabel(s.term, true),
     s.course?.name ?? "강좌",
-    s.track ? (TRACK_LABEL[s.track] ?? s.track) : null,
+    opts.week5 ? WEEK5_LABEL : s.track ? (TRACK_LABEL[s.track] ?? s.track) : null,
     // 같은 강좌·트랙의 오전반·저녁반을 반 배정에서 구분할 수 있어야 한다
     s.start_time ? (opts.withEnd && s.end_time ? `${formatTime(s.start_time)}–${formatTime(s.end_time)}` : formatTime(s.start_time)) : (s.time_block ?? null),
-    mode ? (MODE_LABEL[mode] ?? mode) : null,
+    modes.length > 0 ? modes.map((m) => MODE_LABEL[m] ?? m).join(" · ") : null,
   ].filter(Boolean);
   return parts.join(" · ");
+}
+
+/** 학생 관리의 반 배정 한 줄 — 주5일 짝이면 배정 둘을 함께 가진다 */
+export type EnrollmentLine = {
+  /** React key — 묶인 배정 id 들 */
+  key: string;
+  /** 이 줄의 배정(enrollments.id). 주5일이면 [월수금, 화목금] — 배정 해제는 이 둘을 함께 지운다 */
+  ids: number[];
+  week5: boolean;
+  /** "10월 · 650+ 왕기초반 · 주5일 · 10:00~12:10 · 현장" */
+  label: string;
+  /** 두 반의 종강일 중 늦은 쪽 (시청 만료일과 같은 규칙) */
+  closesAt: string | null;
+  /** 배정 상태 — 보통 하나. 두 트랙이 다르면 둘 다 */
+  statuses: string[];
+};
+
+/**
+ * 학생 한 명의 반 배정을 줄로 (2026-10-02 Alan — "반배정에서 주5일반을 고르면 저렇게 2개반으로 표시가 되고 있어. 주5일반으로 하나로").
+ * **주5일 짝(같은 기수·강좌·시간대의 월수금 + 화목금)은 한 줄**이고 트랙 자리에 `주5일` 을 적는다 (`groupWeek5`).
+ * 짝은 **넘겨준 배정 안에서만** 찾는다 — 학생 관리는 그 학생의 배정, 올린 수강증은 그 수강증으로 만든 등록의 배정.
+ * 반 편성처럼 트랙 단위로 편성하는 화면에는 쓰지 않는다 (도메인 규칙 1 — 관리자 화면은 트랙 그대로, 학생 한 명을 훑는 곳만 합친다).
+ */
+export function enrollmentLines(
+  rows: readonly {
+    id: number;
+    mode: string | null;
+    status?: string | null;
+    section: (SummarySection & Week5Section & { closes_at?: string | null }) | null;
+  }[],
+  opts: { withEnd?: boolean } = {},
+): EnrollmentLine[] {
+  const week5 = week5SectionIds(rows.flatMap((e) => (e.section ? [e.section] : [])));
+  return groupWeek5([...rows], (e) => e.section, week5).map((group) => {
+    const pair = group.length > 1;
+    const closes = group.map((e) => e.section?.closes_at).filter((d): d is string => !!d).sort();
+    return {
+      key: group.map((e) => e.id).join("-"),
+      ids: group.map((e) => e.id),
+      week5: pair,
+      label: sectionSummary(group[0].section, group.map((e) => e.mode), { withEnd: opts.withEnd, week5: pair }),
+      closesAt: closes.at(-1) ?? null,
+      statuses: [...new Set(group.map((e) => e.status ?? "active"))],
+    };
+  });
 }
 
 /**

@@ -145,22 +145,32 @@ export async function assignSections(_prev: StudentActionState, formData: FormDa
   };
 }
 
-/** 배정 해제. 등록에 남은 반이 없으면 등록도 함께 지운다 */
-export async function removeEnrollment(enrollmentId: number): Promise<StudentActionState> {
+/**
+ * 배정 해제. 등록에 남은 반이 없으면 등록도 함께 지운다.
+ * **주5일은 한 줄이라 두 배정(월수금 + 화목금)을 함께 지운다** (2026-10-02 Alan — 학생 관리의 반 배정이 주5일을 한 줄로 보여 준다).
+ * 주5일을 주3일로 바꾸려면 해제한 뒤 남길 트랙만 다시 배정한다. 한 번에 **한 학생의 배정만** 지운다 — 섞여 오면 아무것도 지우지 않는다.
+ */
+export async function removeEnrollment(enrollmentIds: number[]): Promise<StudentActionState> {
   await requireCrew();
-  if (!Number.isInteger(enrollmentId)) return { error: "잘못된 요청이에요." };
+  const ids = [...new Set(Array.isArray(enrollmentIds) ? enrollmentIds : [])];
+  if (ids.length === 0 || ids.length > 4 || !ids.every((n) => Number.isInteger(n) && n > 0)) return { error: "잘못된 요청이에요." };
 
   const admin = createAdminClient();
-  const { data: gone, error } = await admin.from("enrollments").delete().eq("id", enrollmentId).select("student_id, order_id");
+  const { data: rows, error: readError } = await admin.from("enrollments").select("id, student_id").in("id", ids);
+  if (readError) return { error: `배정을 해제하지 못했어요. ${readError.message}` };
+  if (!rows?.length) return { error: "배정을 찾을 수 없어요." };
+  if (new Set(rows.map((r) => r.student_id)).size > 1) return { error: "잘못된 요청이에요." };
+
+  const { data: gone, error } = await admin.from("enrollments").delete().in("id", ids).select("student_id, order_id");
   if (error) return { error: `배정을 해제하지 못했어요. ${error.message}` };
   if (!gone?.length) return { error: "배정을 찾을 수 없어요." };
 
-  const { student_id: studentId, order_id: orderId } = gone[0];
-  if (orderId) {
+  for (const orderId of new Set(gone.map((g) => g.order_id).filter((o): o is number => o != null))) {
     const { count } = await admin.from("enrollments").select("id", { count: "exact", head: true }).eq("order_id", orderId);
     if (!count) await admin.from("enrollment_orders").delete().eq("id", orderId);
   }
 
+  const studentId = gone[0].student_id;
   if (studentId) revalidateStudent(studentId);
   return { ok: true, message: "배정을 해제했어요." };
 }
