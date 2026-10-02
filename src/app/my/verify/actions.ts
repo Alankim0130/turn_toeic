@@ -21,6 +21,8 @@ import { approveVerificationWith } from "@/lib/approve-verification";
 import { receiptFlags, type FlagInput } from "@/lib/verify-flags";
 import { autoApproveBlockers } from "@/lib/auto-approve";
 import { readAutoVerify } from "@/lib/auto-verify";
+import { sendTextbookNotice } from "@/lib/textbook-guide";
+import type { TextbookNotice } from "@/lib/textbook";
 
 export type SubmitVerificationResult =
   /**
@@ -39,6 +41,8 @@ export type SubmitVerificationResult =
       nameMismatch?: NameMismatch;
       /** 이미 승인된 수강증을 또 올렸다 — 접수하지 않고 닫았다 (2026-10-02 Alan) */
       alreadyApproved?: boolean;
+      /** 불라방으로 등업됐다 — 내 반 교재비 안내 (2026-10-02 Alan "수강증 업로드를 하고 나면 거기에 맞춰서 교재비 안내"). 알림함에도 같은 것이 간다 */
+      textbook?: TextbookNotice;
     }
   | { ok: false; error: string }
   | { ok: false; rejected: true; reason: string };
@@ -330,12 +334,15 @@ export async function submitVerification(input: { filePath: string }): Promise<S
     });
     if (approved.ok) {
       notifyAutoApproved(admin, user.id, approved.status);
+      // 불라방이면 그 달 내 반 교재비를 팝업과 알림함에 (그 달 이미 안내했거나 교재 · 계좌가 아직 없으면 없다)
+      const textbook = read.parsed.mode === "live" ? await sendTextbookNotice(admin, user.id, approved.termId) : null;
       done();
       return {
         ok: true,
         approved: true,
         preliminary: approved.status === "preliminary",
         assigned: assignedLabels(sections, matched.sectionIds, read.parsed.mode),
+        ...(textbook ? { textbook } : {}),
       };
     }
     // 승인 단계에서 막히면(이미 같은 반에 배정 등) 검토 대기로 남긴다 — 접수는 됐다

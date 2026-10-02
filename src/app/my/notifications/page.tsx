@@ -24,7 +24,7 @@ export default async function NotificationsPage() {
   return (
     <div className="space-y-6">
       <MarkRead unread={unread} />
-      <PageHeader icon="bell" title="알림" description="선생님이 보낸 알림 · 문의 답변 · 수업 시작 알림이 여기에 쌓여요." />
+      <PageHeader icon="bell" title="알림" description="선생님이 보낸 알림 · 문의 답변 · 수업 시작 알림 · 교재비 안내가 여기에 쌓여요." />
 
       {messages.length === 0 ? (
         <EmptyState icon="bell" title="아직 알림이 없어요" description="선생님이 보낸 안내나 불라방 수업 시작 알림이 오면 여기에서 볼 수 있어요." />
@@ -73,6 +73,12 @@ export default async function NotificationsPage() {
                   {m.kind === "merge_choice" && (
                     <Link href="/my/account" className="btn-primary mt-3 !px-4 !py-2 text-sm">
                       남길 계정 고르기
+                    </Link>
+                  )}
+                  {/* 불라방 교재비 안내 (2026-10-02) — 수강증이 불라방으로 승인되면 그 달 한 번. 주문 화면은 내 반 교재를 미리 골라 둔다 */}
+                  {m.kind === "textbook" && (
+                    <Link href="/my/textbook" className="btn-primary mt-3 !px-4 !py-2 text-sm">
+                      교재 주문하기
                     </Link>
                   )}
                   {/* 수업 시작 알림 — 불라방 학생에게만 간다 (크론). 늦게 열어도 그 날 링크는 그대로다 */}

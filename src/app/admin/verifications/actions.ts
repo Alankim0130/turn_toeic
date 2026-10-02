@@ -8,6 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { AUTO_VERIFY_KEY } from "@/lib/auto-verify";
 import { rematchHeldVerifications } from "@/lib/rematch-held";
 import { approveVerificationWith } from "@/lib/approve-verification";
+import { sendTextbookNotice } from "@/lib/textbook-guide";
 import { assignableError } from "@/lib/enrollment-window";
 import { todayKST } from "@/lib/utils";
 
@@ -45,6 +46,8 @@ export async function approveVerification(_prev: ActionState, formData: FormData
   // 스태프가 직접 고른 반은 **그 달의 최종 배정**이다 (2026-09-23 Alan) — 이미 그 반에 있어도 막지 않고 옮겨 온다
   const approved = await approveVerificationWith(admin, { verificationId: id, userId: ver.user_id, sectionIds, mode, final: true });
   if (!approved.ok) return { error: approved.error };
+  // 불라방이면 그 달 내 반 교재비 안내를 알림함에 (2026-10-02 Alan — 한 달에 한 번, 못 보내도 승인은 그대로)
+  if (mode === "live") await sendTextbookNotice(admin, ver.user_id, approved.termId);
 
   revalidateAll(id);
   redirect(`/admin/verifications/${id}?done=approved`);
@@ -102,6 +105,8 @@ export async function updateEnrollment(_prev: ActionState, formData: FormData): 
   if (error) return { error: error.code === "23505" ? "이미 같은 반에 배정되어 있습니다." : `저장에 실패했습니다. ${error.message}` };
   // 등록 기간(개강일~종강일)·상태·학생 등급은 DB 트리거가 옮긴 반의 날짜로 다시 맞춘다 (private.sync_order_window, 20260922113000).
   // 그전에는 여기서 만료일만 고쳐 개강일·상태가 옛 반 그대로 남았다
+  // 현장 → 불라방으로 고쳤으면 교재비 안내 (그 달 이미 보냈으면 다시 보내지 않는다 — 주문 화면은 늘 지금 반으로 다시 계산한다)
+  if (mode === "live" && enr.student_id) await sendTextbookNotice(admin, enr.student_id, target.term_id);
 
   revalidateAll(verificationId);
   redirect(`/admin/verifications/${verificationId}?done=updated`);

@@ -12,6 +12,7 @@ import { heldReady, toMatchInput, type StoredParsed } from "./held-receipt";
 import { heldMonth } from "./verify-decision";
 import type { PaletteShares } from "./receipt-forensics";
 import { notifyStaff } from "./push";
+import { sendTextbookNotice } from "./textbook-guide";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -106,6 +107,7 @@ export async function rematchHeldVerifications(admin: Admin, opts: { notify?: bo
         if (approved.ok) {
           summary.approved++;
           await tellStudent(admin, v.user_id, month, assignedLabels(sections, matched.sectionIds, mode), approved.status);
+          if (mode === "live") await sendTextbookNotice(admin, v.user_id, approved.termId);
           continue;
         }
         // 막히면(이미 같은 반에 배정 등) 스태프에게 — 접수는 그대로 있다

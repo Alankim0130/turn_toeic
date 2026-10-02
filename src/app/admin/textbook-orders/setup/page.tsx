@@ -19,6 +19,19 @@ import {
 
 export const metadata: Metadata = { title: "교재·입금 계좌 설정", robots: { index: false } };
 
+/** 어느 시간의 교재인가 — 과목(LC · RC) × 과정(A · B). 한 칸으로 고른다 (과목만 · 과정만 고른 상태가 생기지 않게) */
+function BookSelect({ defaultValue, label }: { defaultValue: string; label: string }) {
+  return (
+    <select name="book" defaultValue={defaultValue} className="input !py-2 text-sm sm:col-span-2" aria-label={label}>
+      <option value="">시간 안 정함 (학생이 고름)</option>
+      <option value="lc-A">LC · A과정 교재</option>
+      <option value="lc-B">LC · B과정 교재</option>
+      <option value="rc-A">RC · A과정 교재</option>
+      <option value="rc-B">RC · B과정 교재</option>
+    </select>
+  );
+}
+
 const OK_TEXT: Record<string, string> = { accounts: "입금 계좌를 저장했어요.", items: "교재를 저장했어요.", settings: "배송비·안내를 저장했어요." };
 
 /**
@@ -114,6 +127,11 @@ export default async function TextbookSetupPage({ searchParams }: { searchParams
           <p className="mt-1 text-sm text-slate">
             학생은 자기 레벨 교재와 &ldquo;모든 레벨&rdquo; 교재만 봐요. 속성반은 두 레벨 교재가 다 보여요. 계좌를 안 고른 교재는 기본 계좌로 가요.
           </p>
+          <p className="mt-1 text-sm text-slate">
+            <b className="text-ink">어느 시간의 교재</b>(LC · RC × A · B 과정)를 고르면 그 시간을 듣는 불라방 학생에게 미리 골라지고,
+            수강증이 승인되면 그 금액으로 <b className="text-ink">교재비 안내</b>가 학생 알림함에 가요 — 주5일 120분은 4권, 주3일 · 주5일 60분은 2권이 저절로 잡혀요.
+            지난 주문에서 받은 교재는 빼고 안내해요.
+          </p>
 
           {(items ?? []).length > 0 && (
             <ul className="mt-4 space-y-3">
@@ -137,10 +155,14 @@ export default async function TextbookSetupPage({ searchParams }: { searchParams
                     </select>
                     <input name="sort_order" defaultValue={i.sort_order} inputMode="numeric" className="input !py-2 text-sm" aria-label="순서" />
                     <button type="submit" className="btn-secondary !py-2 text-xs">저장</button>
-                    <input name="note" defaultValue={i.note ?? ""} maxLength={200} className="input !py-2 text-sm sm:col-span-6" placeholder="설명 (선택, 예: 월수금반은 B, 화목금반은 A)" aria-label="설명" />
+                    <BookSelect defaultValue={i.subject && i.book_set ? `${i.subject}-${i.book_set}` : ""} label="어느 시간의 교재" />
+                    <input name="note" defaultValue={i.note ?? ""} maxLength={200} className="input !py-2 text-sm sm:col-span-4" placeholder="설명 (선택)" aria-label="설명" />
                   </form>
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                    <span className="font-bold text-ink">{i.level ?? "모든 레벨"} · {formatWon(i.price)}</span>
+                    <span className="font-bold text-ink">
+                      {i.level ?? "모든 레벨"} · {formatWon(i.price)}
+                      {i.subject && i.book_set ? ` · ${i.subject.toUpperCase()} ${i.book_set}과정 교재` : ""}
+                    </span>
                     {!i.active && <span className="rounded-full bg-line px-2 py-0.5 font-bold text-slate">학생에게 안 보임</span>}
                     <form action={toggleTextbookItem}>
                       <input type="hidden" name="id" value={i.id} />
@@ -174,7 +196,8 @@ export default async function TextbookSetupPage({ searchParams }: { searchParams
             </select>
             <input name="sort_order" defaultValue={(items ?? []).length} inputMode="numeric" className="input !py-2 text-sm" aria-label="새 교재 순서" />
             <button type="submit" className="btn-primary !py-2 text-xs">교재 더하기</button>
-            <input name="note" maxLength={200} className="input !py-2 text-sm sm:col-span-6" placeholder="설명 (선택)" aria-label="새 교재 설명" />
+            <BookSelect defaultValue="" label="새 교재 — 어느 시간의 교재" />
+            <input name="note" maxLength={200} className="input !py-2 text-sm sm:col-span-4" placeholder="설명 (선택)" aria-label="새 교재 설명" />
           </form>
         </section>
 

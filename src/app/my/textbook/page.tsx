@@ -6,7 +6,18 @@ import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { itemsForLevels, TEXTBOOK_STATUS, type TextbookAccount, type TextbookItem, type TextbookSettings } from "@/lib/textbook";
+import {
+  booksForSections,
+  itemsForLevels,
+  orderPreset,
+  ownedItemIds,
+  textbookGuide,
+  TEXTBOOK_STATUS,
+  type TextbookAccount,
+  type TextbookItem,
+  type TextbookSettings,
+} from "@/lib/textbook";
+import { bookSectionsOf, TEXTBOOK_ACCOUNT_COLS, TEXTBOOK_ITEM_COLS } from "@/lib/textbook-guide";
 import { cn, formatDate, formatWon, TRACK_LABEL } from "@/lib/utils";
 import { collapseWeek5, studentTrackLabel, week5SectionIds } from "@/lib/week5";
 import { getMyOrders, getMyTextbookOrders, getMyTextbookTerms, termLabel, type MyTextbookTerm } from "../_lib/queries";
@@ -39,19 +50,26 @@ export default async function TextbookPage() {
     requireUser("/my/textbook"),
     getMyOrders(),
     getMyTextbookOrders(),
-    supabase.from("textbook_items").select("id, name, level, price, account_id, note, active, sort_order").eq("active", true),
-    supabase.from("textbook_accounts").select("id, bank_name, account_no, holder, label, active, sort_order").eq("active", true),
+    supabase.from("textbook_items").select(TEXTBOOK_ITEM_COLS).eq("active", true),
+    supabase.from("textbook_accounts").select(TEXTBOOK_ACCOUNT_COLS).eq("active", true),
     supabase.from("textbook_settings").select("shipping_fee, default_account_id, notice").maybeSingle(),
   ]);
 
   const terms = await getMyTextbookTerms(orders);
   const orderedTerms = new Set(myOrders.filter((o) => o.status !== "cancelled" && o.term_id).map((o) => o.term_id));
-  const formTerms: OrderTerm[] = terms.map((t) => ({
-    id: t.termId,
-    label: termOrderLabel(t),
-    items: itemsForLevels((items ?? []) as TextbookItem[], t.levels),
-    ordered: orderedTerms.has(t.termId),
-  }));
+  // 내 반 교재 (2026-10-02 Alan — "주5일은 4권 … 주3일과 주5일 60분이면 2권") — 함께 듣는 반은 DB 가 정한다 (term_section_includes)
+  const { includes, sections } = await bookSectionsOf(supabase, terms.flatMap((t) => t.sections));
+  const formTerms: OrderTerm[] = terms.map((t) => {
+    const levelItems = itemsForLevels((items ?? []) as TextbookItem[], t.levels);
+    const guide = textbookGuide({
+      books: booksForSections(t.sections.map((s) => s.id), includes, sections),
+      items: levelItems,
+      accounts: (accounts ?? []) as TextbookAccount[],
+      settings: (settings ?? null) as TextbookSettings | null,
+      ownedItemIds: ownedItemIds(myOrders, t.termId),
+    });
+    return { id: t.termId, label: termOrderLabel(t), items: levelItems, ordered: orderedTerms.has(t.termId), ...orderPreset(guide) };
+  });
 
   return (
     <div className="space-y-8">

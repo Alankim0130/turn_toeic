@@ -4,32 +4,27 @@ import { useActionState, useState } from "react";
 import { submitTextbookOrder, type TextbookState } from "./actions";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
+import { CopyButton } from "@/components/ui/CopyButton";
 import { cn, formatWon } from "@/lib/utils";
 import { textbookQuote, type TextbookAccount, type TextbookItem, type TextbookSettings } from "@/lib/textbook";
 
-export type OrderTerm = { id: number; label: string; items: TextbookItem[]; ordered: boolean };
+export type OrderTerm = {
+  id: number;
+  label: string;
+  items: TextbookItem[];
+  ordered: boolean;
+  /**
+   * 내 반 교재 중 새로 살 것 (2026-10-02 Alan — "주5일은 4권 … 주3일과 주5일 60분이면 2권") — 처음부터 골라 둔다.
+   * null = 내 반 교재를 정하지 못했다(학생이 직접 고른다). [] = 정했지만 지난 주문에서 다 받았다
+   */
+  recommended: number[] | null;
+  /** 골라 둔 까닭 한 줄 (몇 권 · 지난 주문에서 뺀 것 · 아직 등록 안 된 교재) */
+  note: string | null;
+};
 
-/** 계좌번호 복사 — 누르면 "복사됨" 으로 잠깐 바뀐다 */
-function CopyButton({ text }: { text: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      type="button"
-      className="btn-ghost !px-2.5 !py-1 text-xs"
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(text);
-          setDone(true);
-          setTimeout(() => setDone(false), 1500);
-        } catch {
-          // 복사가 막힌 브라우저 — 번호는 화면에 그대로 있다
-        }
-      }}
-    >
-      {done ? "복사됨" : "복사"}
-    </button>
-  );
-}
+/** 처음 골라 둘 교재 — 내 반 교재. 정하지 못했으면 예전처럼 교재가 하나뿐일 때 그것 */
+const initialPick = (t: OrderTerm | undefined) =>
+  new Set(!t ? [] : t.recommended ?? (t.items.length === 1 ? [t.items[0].id] : []));
 
 /**
  * 불라방 교재 주문 (2026-09-21). 교재·계좌·배송비는 강사가 등록한 것을 쓴다.
@@ -51,7 +46,7 @@ export function TextbookForm({
   const open = terms.filter((t) => !t.ordered);
   const [termId, setTermId] = useState<number>(Number(v.term_id) || open[0]?.id || 0);
   const term = terms.find((t) => t.id === termId) ?? open[0];
-  const [picked, setPicked] = useState<Set<number>>(() => new Set(term && term.items.length === 1 ? [term.items[0].id] : []));
+  const [picked, setPicked] = useState<Set<number>>(() => initialPick(term));
   const [recipient, setRecipient] = useState(v.recipient_name ?? "");
   // 입금자명은 받는 분 이름으로 미리 채운다 (첫토익과 같다) — 부모님 이름으로 보내면 고친다
   const [depositor, setDepositor] = useState(v.depositor_name ?? v.recipient_name ?? "");
@@ -87,7 +82,7 @@ export function TextbookForm({
             onChange={(e) => {
               const next = terms.find((t) => t.id === Number(e.target.value));
               setTermId(Number(e.target.value));
-              setPicked(new Set(next && next.items.length === 1 ? [next.items[0].id] : []));
+              setPicked(initialPick(next));
             }}
           >
             {open.map((t) => (
@@ -107,6 +102,8 @@ export function TextbookForm({
 
       <fieldset>
         <legend className="label">교재 고르기</legend>
+        {/* 내 반 교재를 골라 둔 까닭 (2026-10-02) — 몇 권인지 · 지난 주문에서 뺀 것. 바꾸고 싶으면 체크를 고친다 */}
+        {term.note && <p className="mb-2 rounded-xl bg-brand-50 px-3 py-2 text-sm font-bold text-ink">{term.note}</p>}
         {term.items.length === 0 ? (
           <p className="rounded-xl border border-dashed border-line px-4 py-5 text-center text-sm text-slate">
             강사님이 이 레벨 교재를 아직 등록하지 않았어요. 등록되면 여기에서 고를 수 있어요.
@@ -115,6 +112,7 @@ export function TextbookForm({
           <ul className="space-y-2">
             {term.items.map((i) => {
               const on = picked.has(i.id);
+              const mine = term.recommended?.includes(i.id) ?? false;
               return (
                 <li key={i.id}>
                   <label className={cn("flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition", on ? "border-brand-400 bg-brand-50/60" : "border-line hover:border-brand-200")}>
@@ -132,9 +130,13 @@ export function TextbookForm({
                       className="mt-1 h-4 w-4 accent-brand-500"
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="flex flex-wrap items-baseline justify-between gap-x-3">
-                        <span className="font-bold text-ink">{i.name}</span>
-                        <span className="font-black tabular-nums text-ink">{formatWon(i.price)}</span>
+                      {/* 가격은 늘 오른쪽 — 좁은 화면에서는 '내 반 교재' 표가 이름 아래로 접힌다 */}
+                      <span className="flex items-baseline justify-between gap-x-3">
+                        <span className="min-w-0 font-bold text-ink">
+                          {i.name}
+                          {mine && <span className="ml-1.5 inline-block rounded-full bg-brand-500 px-2 py-0.5 align-middle text-[10px] font-black text-white">내 반 교재</span>}
+                        </span>
+                        <span className="shrink-0 font-black tabular-nums text-ink">{formatWon(i.price)}</span>
                       </span>
                       {i.note && <span className="mt-0.5 block text-xs text-slate">{i.note}</span>}
                     </span>

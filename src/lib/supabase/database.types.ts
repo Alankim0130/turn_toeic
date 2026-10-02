@@ -1894,6 +1894,7 @@ export type Database = {
         Row: {
           account_id: number | null
           active: boolean
+          book_set: string | null
           created_at: string
           id: number
           level: number | null
@@ -1901,11 +1902,13 @@ export type Database = {
           note: string | null
           price: number
           sort_order: number
+          subject: string | null
           updated_at: string
         }
         Insert: {
           account_id?: number | null
           active?: boolean
+          book_set?: string | null
           created_at?: string
           id?: number
           level?: number | null
@@ -1913,11 +1916,13 @@ export type Database = {
           note?: string | null
           price: number
           sort_order?: number
+          subject?: string | null
           updated_at?: string
         }
         Update: {
           account_id?: number | null
           active?: boolean
+          book_set?: string | null
           created_at?: string
           id?: number
           level?: number | null
@@ -1925,6 +1930,7 @@ export type Database = {
           note?: string | null
           price?: number
           sort_order?: number
+          subject?: string | null
           updated_at?: string
         }
         Relationships: [

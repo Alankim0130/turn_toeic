@@ -33,9 +33,15 @@ export function Dialog({ open, title, onClose, children, tone = "info" }: { open
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div aria-hidden onClick={onClose} className="absolute inset-0 bg-ink/60 backdrop-blur-sm" />
-      <div role="dialog" aria-modal="true" aria-labelledby="dialog-title" className="card relative w-full max-w-md overflow-hidden p-0 shadow-pink">
-        <div className={`h-1.5 ${bar}`} />
-        <div className="p-5 sm:p-6">
+      {/* 화면보다 길면 팝업 안에서 스크롤한다 — 뒤 화면은 잠겨 있어 잘린 아래쪽(버튼)에 닿을 길이 없다 (교재비 안내가 붙은 등업 팝업, 2026-10-02) */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dialog-title"
+        className="card relative flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden p-0 shadow-pink"
+      >
+        <div className={`h-1.5 shrink-0 ${bar}`} />
+        <div className="overflow-y-auto overscroll-contain p-5 sm:p-6">
           <h2 id="dialog-title" ref={titleRef} tabIndex={-1} className="text-lg font-black text-ink outline-none">
             {title}
           </h2>

@@ -19,6 +19,8 @@ import {
 import { submitManualVerification, submitVerification } from "./actions";
 import { RETENTION_LABEL } from "@/lib/receipt-retention";
 import type { NameMismatch } from "@/lib/name-mismatch";
+import type { TextbookNotice } from "@/lib/textbook";
+import { TextbookNoticeCard } from "@/components/my/TextbookNoticeCard";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPT = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
@@ -106,6 +108,8 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
   const [held, setHeld] = useState<{ month: number; note: string } | null>(null);
   /** 수강증 이름 ≠ 가입 실명 (2026-09-30 Alan — "수강증의 이름과 일치해서 넣어주세요") — 팝업과 접수 안내에 함께 적는다 */
   const [nameMismatch, setNameMismatch] = useState<NameMismatch | null>(null);
+  /** 불라방으로 등업됐다 — 내 반 교재비 안내 (2026-10-02 Alan). 팝업과 그 아래 안내에 함께 보인다 */
+  const [textbook, setTextbook] = useState<TextbookNotice | null>(null);
   // 결과 팝업 (2026-09-18 Alan — "반려 문구가 바로 보여야 하고, 승인이면 어떤 반인지 팝업으로 보여 주고 맞으면 확인, 아니면 수동신청")
   const [popup, setPopup] = useState<
     null | { kind: "approved" | "preliminary"; assigned: string[] } | { kind: "rejected"; reason: string } | ({ kind: "name" } & NameMismatch)
@@ -217,6 +221,7 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
           setOcrNote(res.ocrNote ?? null);
           setHeld(res.held ?? null);
           setNameMismatch(res.nameMismatch ?? null);
+          setTextbook(res.textbook ?? null);
           const kind = res.approved ? (res.preliminary ? "preliminary" : "approved") : res.held ? "held" : manual ? "manual" : "auto";
           setDone(kind);
           if (kind === "approved" || kind === "preliminary") setPopup({ kind, assigned: res.assigned ?? [] });
@@ -243,6 +248,8 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
     setPopup(null);
     setDone(null);
     setRejected(null);
+    // 반이 다르면 그 반으로 계산한 교재비도 틀린다 — 주문 화면은 고친 반으로 다시 계산한다
+    setTextbook(null);
     setManual(true);
   };
 
@@ -253,6 +260,7 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
     setOcrNote(null);
     setHeld(null);
     setNameMismatch(null);
+    setTextbook(null);
     setRejected(null);
     pick(null);
     if (inputRef.current) inputRef.current.value = "";
@@ -340,6 +348,11 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
           <p className="mt-3 text-slate">
             {popup.kind === "approved" ? "이제 불라방·다시보기·숙제업로드를 쓸 수 있어요." : "개강일에 수강생으로 자동 전환되고, 그때부터 불라방·다시보기가 열려요."}
           </p>
+          {textbook && (
+            <div className="mt-4">
+              <TextbookNoticeCard notice={textbook} cta="secondary" />
+            </div>
+          )}
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
             <button type="button" onClick={() => setPopup(null)} className="btn-primary w-full sm:w-auto">맞아요, 확인</button>
             <button type="button" onClick={toManual} className="btn-secondary w-full sm:w-auto">반이 달라요 — 수동신청</button>
@@ -360,6 +373,12 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
           : "개강일에 수강생으로 자동 전환되고, 그때부터 불라방·다시보기가 열려요."}{" "}
         반이 잘못 배정됐다면 <button type="button" onClick={toManual} className="font-bold underline">수동 등업신청</button>으로 알려 주세요 — 강사가 바로 정정해 드립니다.
       </Alert>
+      {/* 팝업을 닫아도 교재비 안내는 남긴다 — 알림함에도 같은 글이 있다 */}
+      {textbook && (
+        <div className="mt-4">
+          <TextbookNoticeCard notice={textbook} />
+        </div>
+      )}
       </>
     );
   }
