@@ -430,6 +430,9 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   iOS 는 공유 버튼 위치 안내(Safari 26 은 ⋯→공유, UA 의 iOS 버전이 18.6 으로 고정되어 `Version/26` 으로 판별),
   카카오톡·인앱 브라우저는 `kakaotalk://web/openExternal`·`intent://`·`x-safari-https:` 로 외부 브라우저에 `?install=1` 을 붙여 넘겨 안내를 이어서 연다
 - 상단 메뉴는 `소개 · 등업신청 · 수강생전용(하위 메뉴) · 연락하기(하위 메뉴)`. PC(lg 이상)는 드롭다운, 그보다 좁으면 햄버거.
+  **드롭다운 두 개 모두 글자 자체가 허브로 가는 링크다** — `수강생전용` → `/student`(한눈에 보기, 2026-10-02 Alan "해당 글자를 클릭하면 바로
+  수강생전용 한눈에 보기 페이지로"), `연락하기` → `/contact`. 마우스를 올리면 펼쳐지고 누르면 허브로 간다 (`DesktopNav` 의 `StudentDropdown` · `ContactDropdown`).
+  수강생전용은 2026-10-02 전까지 누르면 메뉴만 토글되는 버튼이었다 — 되돌리지 말 것.
   **연락하기는 세 갈래 드롭다운이다** (2026-10-01 Alan — "'연락하기' '네이버 예약상담' 두 개를 연락하기 하나로 합치고 셋 중에서 하나 선택"):
   `비대면상담 (카카오톡)` → 카카오톡 채널 채팅(`site.academy.kakaoChatUrl`, 새 창) · `비대면상담 (이메일·전화)` → **문의 폼 전용 페이지 `/contact/inquiry`** ·
   `대면상담 (네이버예약)` → 네이버 예약 "역전토익 강사상담" 상품(`site.academy.naverBookingUrl`, 새 창). 목록은 **`src/lib/site.ts` 의 `CONTACT_OPTIONS` 한곳**이고
@@ -1460,6 +1463,8 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 - 공개 상태: `draft`(학생에게 안 보임) → `open`(신청·변경·취소 가능) → `closed`(보이지만 신청·취소 불가).
 - **신청 자격**: 그 달 반에 배정돼 **지금 수강 중(개강일~종강일)**인 수강생 (`private.is_term_enrollee`, 마이그레이션 20261002220000 —
   2026-10-02 Alan "뭐든 권한이 개강일에 맞춰서". 그전에는 예비등록생도 신청했다). 개강 전 배정이 있으면 `/study` 칩이 `N월 N일 개강부터 신청` 이다.
+  **로그인한 수강생의 `/study` 는 내 기수(수강 중 + 개강 전 배정)를 보여 준다** (같은 날 Alan — 10월 예비등록생이 "이번 달 스터디 일정 보기" 를 누르니
+  9월이 나왔다). 그 달 스터디가 아직 없으면 `강사님이 N월 스터디를 설정 중이에요` 카드가 선다. 배정이 없는 방문자·회원만 예전처럼 끝나지 않은 가까운 두 달이다.
   **자료·음원 열람**: 주문이 active 인 수강생만 (`private.has_term_access`). 비대면 자료는 **해당 날짜(KST)부터** 공개.
 - 한 스터디에 신청은 1건. 시간대 변경은 같은 행의 `slot_id` 만 바꾼다. 정원(`capacity`, 선택)은
   트리거가 `applied_count` 를 조건부로 올려서 동시에 신청해도 넘지 않는다.
@@ -1489,6 +1494,10 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   그래서 한 달 특강 셋이 한꺼번에 열리지 않고 하나씩 열린다. 관리자 특강 목록은 `N/N 00:00 오픈 (7일 전 자정)` 으로 적는다.
 - **신청 자격은 스터디와 같다** — 그 달 반에 배정돼 지금 수강 중인 수강생 (`private.is_term_enrollee`, 2026-10-02 부터 예비등록생 제외).
   신청 즉시 확정(스태프 승인 없음), 신청 받는 중에는 본인이 취소할 수 있다. 그 뒤에는 스태프가 명단에서 취소한다.
+- **예비등록생도 특강 날짜는 미리 본다** (2026-10-02 Alan "예비등록생 내 시간표에도 특강 날짜는 미리 보여줘", 마이그레이션 20261002230000).
+  조회 정책 "special_lectures: 수강생 조회" 가 `private.is_term_assignee`(배정만 보고 개강 전 포함)를 보고, 내 시간표(`getMySchedule`)가
+  `getMyLectures({ upcoming: true })` 로 개강 전 기수의 특강까지 달력에 올린다. **신청은 그대로 개강일부터** — `lecture_signup_open` 은 `is_term_enrollee` 고,
+  내 시간표의 "신청할 특강" 줄(`signupLectures`)도 수강 중인 기수만 든다. `/my/lecture` 는 잠금 그대로.
 - **잠긴 특강 카드는 D-day 다** (2026-10-02 Alan "잠겨있는거는 카운트다운 D-day"): 분홍 네모에 `D-3`(한국 날짜로 센다, 오늘 열리면 `D-DAY` — `signupDday`) +
   `신청 시작까지 1일 03:12:08`(브라우저가 초마다) + `10/10 00:00 오픈`. `SignupOpensIn`.
 - **카드마다 강사 캐리커처와 한마디** (같은 날 Alan "강사에 맞춰서 케릭커쳐도 같이 웃기게"): `lectureCameo(강사 이름, 종류)` — 이혜영 LC특강은 헤드폰 노트 컷,

@@ -5,7 +5,7 @@ import { lectureTitle } from "@/lib/lecture";
 import { classHours, toClassHours, type ClassHour } from "@/lib/class-hours";
 import { initialDay } from "@/lib/class-day";
 import { studentTrackLabel, week5SectionIds } from "@/lib/week5";
-import { getMyLectures, getMyLectureSignupIds, getMyOrders, getMySectionIncludes, getMySessions, termLabel } from "./queries";
+import { getMyLectures, getMyLectureSignupIds, getMyOrders, getMySectionIncludes, getMySessions, getMyStudyEligibility, termLabel } from "./queries";
 
 /** 달력 한 달치 — 화면이 그대로 `MonthSchedule` 에 넘길 수 있는 모양 */
 export type ScheduleMonth = {
@@ -28,10 +28,12 @@ export async function getMySchedule() {
   const [sessionRows, lectures, mySignups, orders] = await Promise.all([
     // 개강 전(예비등록) 반의 수업일도 세운다 — 일정만이고 불라방 · 다시보기는 개강일부터다 (2026-10-02 Alan)
     getMySessions({ upcoming: true }),
-    getMyLectures(),
+    // 개강 전 배정의 특강 날짜도 미리 보여 준다 (2026-10-02 Alan). 신청 안내(signupLectures)는 아래에서 수강 중인 기수만 남긴다
+    getMyLectures({ upcoming: true }),
     getMyLectureSignupIds(),
     getMyOrders(),
   ]);
+  const { signupTerms } = await getMyStudyEligibility(orders);
 
   // 학생에게는 월수금·화목금 대신 "주5일" 로 보여 준다 (2026-09-16 Alan) — 판정은 lib/week5.ts.
   // **내가 등록한 반**으로 본다 — 스태프는 RLS 가 모든 반을 내려 줘서 남의 반까지 짝으로 잡힌다
@@ -88,9 +90,9 @@ export async function getMySchedule() {
   const today = todayKST();
   const nextId = sessions.find((s) => s.date >= today)?.id ?? null;
 
-  // 신청을 받는 특강은 위로 따로 모아 보여 준다 (지난 특강은 빼고)
+  // 신청을 받는 특강은 위로 따로 모아 보여 준다 (지난 특강은 빼고). 개강 전 기수의 특강은 날짜만 보이고 여기엔 안 든다 — 신청은 개강일부터
   const signupLectures = lectures
-    .filter((l) => l.signup && (today <= l.date || mySignups.has(l.id)))
+    .filter((l) => l.signup && signupTerms.has(l.term_id) && (today <= l.date || mySignups.has(l.id)))
     .sort((a, b) => a.date.localeCompare(b.date));
 
   // 월별 그룹 — 수업일과 특강을 같은 달력에 함께 보여 준다
