@@ -5,8 +5,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { BookCover } from "@/components/lc/BookCover";
-import { effectiveRole, getSessionProfile, isStaff } from "@/lib/auth";
-import { cn, TRACK_LABEL } from "@/lib/utils";
+import { cn, formatDate, TRACK_LABEL } from "@/lib/utils";
 import {
   BOOK_SET_LABEL,
   bookLabel,
@@ -25,29 +24,43 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
   const locked = await studentGate("lc-audio");
   if (locked) return locked;
 
-  const [sp, { profile }, { levels, books: bookRows, tracks }, orders] = await Promise.all([
+  const [sp, { levels, books: bookRows, tracks }, orders, mySections] = await Promise.all([
     searchParams,
-    getSessionProfile(),
     getMyLcAudio(),
     getMyOrders(),
+    getMyAccessibleSections(),
   ]);
-  // 테스트 등급을 켠 테스터는 학생처럼 내 반 레벨만 본다
-  const staff = isStaff(effectiveRole(profile));
   const header = (
     <PageHeader icon="headphones" title="LC 음원듣기" description="내 교재를 누르면 수업 날짜에 맞춰 음원이 열려요." />
   );
 
-  const { accessTerms } = await getMyStudyEligibility(orders);
-  if (accessTerms.size === 0 && !staff) {
+  /**
+   * **개강일부터 종강일까지만 열린다 — 스태프도 학생 모드에서는 같다** (2026-10-02 Alan "개강을 안하면 아직 LC음원을 보여주면 안되지!
+   * 뭐든 권한이 개강일에 맞춰서 오픈되고 종강일에 맞춰서 취소가 되는건데").
+   * 그전에는 스태프에게 배정이 없어도 전체 교재를 보여 줬다 — 10월 반에 배정된 관리자가 개강 전에 "반 배정이 없어 모든 교재" 를 봤다.
+   * 개강 전 배정이 있으면 그 날짜를 적어 준다. `my_section_ids()` 가 비어 있으면(RLS 와 같은 판정) 역시 닫힌 것으로 본다.
+   */
+  const { accessTerms, opensOn } = await getMyStudyEligibility(orders);
+  if (accessTerms.size === 0 || mySections.length === 0) {
+    const opens = [...opensOn.values()].sort()[0];
     return (
       <div className="space-y-8">
         {header}
-        <EmptyState
-          icon="headphones"
-          title="수강 중인 수강생만 들을 수 있어요"
-          description="등업신청이 승인되고 개강일이 되면 LC 음원이 열려요."
-          action={{ href: "/my/verify", label: "등업신청 확인하기" }}
-        />
+        {opens ? (
+          <EmptyState
+            icon="headphones"
+            title="개강일부터 들을 수 있어요"
+            description={`${formatDate(opens)} 개강부터 내 레벨 교재의 LC 음원이 열려요.`}
+            action={{ href: "/my", label: "내 등록 현황 보기" }}
+          />
+        ) : (
+          <EmptyState
+            icon="headphones"
+            title="수강 중인 수강생만 들을 수 있어요"
+            description="등업신청이 승인되고 개강일이 되면 LC 음원이 열려요."
+            action={{ href: "/my/verify", label: "등업신청 확인하기" }}
+          />
+        )}
       </div>
     );
   }
@@ -58,10 +71,9 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
 
   /**
    * 내 수업 등급에 맞는 레벨만 보여 준다 (2026-09-16 Alan 요청).
-   * 650 반이면 650 교재 두 권만 나온다. 스태프와 배정이 없는 경우에만 전체를 보여 준다.
+   * 650 반이면 650 교재 두 권만 나온다. **전체를 보여 주는 길은 없다** (2026-10-02 Alan — 위).
    * **스파르타반은 함께 듣는 레벨이 모두 열린다** (650+ 중급속성 = 650 + 850) — 접근 가능한 반은 DB 가 정한다.
    */
-  const mySections = await getMyAccessibleSections();
   const myLevels = [
     ...new Set(
       mySections
@@ -77,14 +89,15 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
    */
   const myBooks = bookSectionsByLevel(mySections);
 
-  const shownLevels = myLevels.length ? myLevels : levels;
+  const shownLevels = myLevels;
   const level = shownLevels.includes(Number(sp.level)) ? Number(sp.level) : (shownLevels[0] ?? null);
 
+  // 내 반의 레벨에 교재 칸이 아직 없다 (lc_levels 에 그 레벨이 없을 때) — 다른 레벨로 메우지 않는다
   if (level === null) {
     return (
       <div className="space-y-8">
         {header}
-        <EmptyState icon="headphones" title="아직 올라온 교재가 없어요" description="강사가 교재와 음원을 올리면 여기에서 바로 들을 수 있어요." />
+        <EmptyState icon="headphones" title="내 레벨 교재가 아직 없어요" description="강사가 내 레벨 교재와 음원을 올리면 여기에서 바로 들을 수 있어요." />
       </div>
     );
   }
@@ -132,10 +145,10 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
           </>
         ) : (
           // 까닭이 둘이다 — 그 레벨이 내 시간엔 전부 RC 이거나(스파르타), 편성에 교재가 아직 안 들어갔거나.
-          // 어느 쪽인지 단정하지 않는다. 열람 자체는 수강 중이면 열려 있다 (도메인 규칙 7)
-          <>{staff ? "반 배정이 없어 모든 교재를 보여 줘요." : "이 레벨은 내 시간에 쓰는 교재가 정해져 있지 않아 전체를 보여 줘요."}</>
+          // 어느 쪽인지 단정하지 않는다. 열람 자체는 수강 중이면 열려 있다 (도메인 규칙 7). 내 레벨 안에서만 전체다
+          <>이 레벨은 내 시간에 쓰는 교재가 정해져 있지 않아 이 레벨 교재를 모두 보여 줘요.</>
         )}
-        {myLevels.length > 0 && <span className="text-mist"> · 내 반 {level}</span>}
+        <span className="text-mist"> · 내 반 {level}</span>
       </p>
 
       <ul className="grid gap-4 sm:grid-cols-2">

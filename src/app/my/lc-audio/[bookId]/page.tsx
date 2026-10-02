@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { studentGate } from "@/components/student/StudentGate";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Icon } from "@/components/ui/Icon";
@@ -11,7 +11,7 @@ import { todayKST, TRACK_LABEL } from "@/lib/utils";
 import { studentTrackLabel } from "@/lib/week5";
 import { holidayNamesBetween } from "@/lib/holidays";
 import { BOOK_SET_LABEL, DAYS, DAY_COUNT, bookLabel, bookTimeLabel, coverSrc, explicitBookSet, lessonRangeLabel, sortTracks } from "@/lib/lc-audio";
-import { getMySessions, getMyWeek5 } from "../../_lib/queries";
+import { getMyAccessibleSections, getMySessions, getMyWeek5 } from "../../_lib/queries";
 
 export const metadata: Metadata = { title: "LC 음원듣기", robots: { index: false } };
 
@@ -24,13 +24,22 @@ export default async function LcBookPage({ params }: { params: Promise<{ bookId:
   if (!Number.isInteger(id) || id <= 0) notFound();
 
   const supabase = await createClient();
-  const [{ data: book }, { data: trackRows }, sessions, week5] = await Promise.all([
+  const [{ data: book }, { data: trackRows }, sessions, week5, mySections] = await Promise.all([
     supabase.from("lc_books").select("id, level, book_set, title, description, cover_name, lesson_offset, updated_at").eq("id", id).maybeSingle(),
     supabase.from("lc_audio_tracks").select("id, day, kind, label, file_name, sort_order").eq("book_id", id),
     getMySessions(),
     getMyWeek5(),
+    getMyAccessibleSections(),
   ]);
   if (!book) notFound();
+
+  /**
+   * **내 레벨 교재만** (2026-10-02 Alan "본인의 레벨에 맞는 교재만 나와서 들을 수 있도록"). 목록이 보여 주지 않는 교재는 주소를 직접 쳐도
+   * 목록으로 돌려보낸다. 개강 전·종강 뒤·배정 없음(`my_section_ids()` 가 빈 경우)은 목록이 "개강일부터" 안내를 보여 준다 — 스태프도 학생 모드에서는 같다.
+   * 레벨은 목록과 같은 규칙 — 접근 가능한 반의 `target_score` + 스파르타의 `includes_levels`.
+   */
+  const myLevels = new Set(mySections.flatMap((s) => [s.course?.target_score, ...(s.course?.includes_levels ?? [])]));
+  if (mySections.length === 0 || !myLevels.has(book.level)) redirect("/my/lc-audio");
 
   const offset = book.lesson_offset ?? 0;
   const tracks = sortTracks(trackRows ?? []);
