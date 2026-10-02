@@ -16,7 +16,7 @@ import { pickPhoto, profilePhotoUrl } from "@/lib/avatar";
 import { signedAvatarUrl } from "@/lib/avatar-url";
 import { orderPhase } from "@/lib/enrollment-window";
 import { heldMonth } from "@/lib/verify-decision";
-import { collapseWeek5, pairKey, studentTrackLabel, type Week5Section } from "@/lib/week5";
+import { collapseWeek5, pairKey, studentTrackLabel, week5SectionIds, type Week5Section } from "@/lib/week5";
 import { getMySchedule } from "./_lib/schedule";
 import {
   getMyVerifications,
@@ -89,7 +89,7 @@ function recordedTracksOf(
 }
 
 export default async function MyPage({ searchParams }: { searchParams: Promise<{ welcome?: string; denied?: string }> }) {
-  const [{ profile, user }, sp, verifications, week5, schedule, mergeRequests, unread, attendance] = await Promise.all([
+  const [{ profile, user }, sp, verifications, accessibleWeek5, schedule, mergeRequests, unread, attendance] = await Promise.all([
     requireUser("/my"),
     searchParams,
     getMyVerifications(),
@@ -107,6 +107,9 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
   const mergeToChoose = mergeRequests.filter((r) => r.status === "choice").length;
 
   const orders = schedule.orders;
+  // 주5일 짝 — 접근 가능한 반(수강 중) **+ 내 등록의 반(개강 전 예비등록 포함)** (2026-10-02 Alan "주5일, 월수금, 화목금 제대로 연동이 되어있는지").
+  // 접근 가능한 반만 보면 개강 전에는 비어서, 예비등록 주5일 학생의 등록 현황이 월수금 · 화목금 두 줄로 갈라졌다
+  const week5 = new Set([...accessibleWeek5, ...week5SectionIds(orders.flatMap((o) => o.enrollments.flatMap((e) => (e.section ? [e.section] : []))))]);
   const name = profile?.name || user.email || "회원";
   // 카카오·구글로 들어온 계정은 그쪽 프로필 사진이 저절로 들어온다 (없으면 이름 첫 글자 동그라미)
   // 직접 올린 사진이 있으면 그것이 먼저다 (2026-10-02 Alan — 학생이 프로필 사진을 설정)

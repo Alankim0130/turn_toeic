@@ -23,7 +23,7 @@ export default async function ClassPage() {
         <EmptyState
           icon="calendar"
           title="아직 볼 수 있는 시간표가 없어요"
-          description="등업신청이 승인되고 개강일이 되면 여기에 수업일이 표시됩니다. 개강 전이라면 개강일에 자동으로 열려요."
+          description="등업신청이 승인되면 여기에 수업일이 표시됩니다. 개강 전(예비등록)에도 미리 볼 수 있어요."
           action={{ href: "/my/verify", label: "등업신청 하러 가기" }}
         />
       </div>
