@@ -1267,6 +1267,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          avatar_path: string | null
           created_at: string
           department: string | null
           gender: string | null
@@ -1281,6 +1282,7 @@ export type Database = {
           university: string | null
         }
         Insert: {
+          avatar_path?: string | null
           created_at?: string
           department?: string | null
           gender?: string | null
@@ -1295,6 +1297,7 @@ export type Database = {
           university?: string | null
         }
         Update: {
+          avatar_path?: string | null
           created_at?: string
           department?: string | null
           gender?: string | null
@@ -2210,6 +2213,7 @@ export type Database = {
           email: string | null
           providers: string[]
           last_sign_in_at: string | null
+          avatar_url: string | null
         }[]
       }
       staff_merge_candidates: {

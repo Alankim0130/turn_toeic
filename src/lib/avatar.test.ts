@@ -18,10 +18,10 @@ describe("profilePhotoUrl", () => {
   });
 
   /** user_metadata 는 본인이 바꿀 수 있는 칸이라 아무 문자열이나 들어올 수 있다 */
-  it("https 가 아니면 쓰지 않는다", () => {
+  it("https 가 아니면 쓰지 않는다 — 단 http 는 https 로 바꿔 쓴다 (카카오가 http 주소를 준다, 2026-10-02)", () => {
     expect(profilePhotoUrl({ avatar_url: "javascript:alert(1)" })).toBeNull();
     expect(profilePhotoUrl({ avatar_url: "data:image/png;base64,AAAA" })).toBeNull();
-    expect(profilePhotoUrl({ avatar_url: "http://k.kakaocdn.net/a.jpg" })).toBeNull();
+    expect(profilePhotoUrl({ avatar_url: "http://k.kakaocdn.net/a.jpg" })).toBe("https://k.kakaocdn.net/a.jpg");
     expect(profilePhotoUrl({ avatar_url: "//k.kakaocdn.net/a.jpg" })).toBeNull();
     expect(profilePhotoUrl({ avatar_url: "https://" })).toBeNull();
     expect(profilePhotoUrl({ avatar_url: "" })).toBeNull();

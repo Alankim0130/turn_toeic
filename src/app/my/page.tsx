@@ -12,7 +12,8 @@ import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { cn, formatDate, formatTimeRange, MODE_LABEL, RECORDED_LABEL, TRACK_LABEL } from "@/lib/utils";
 import { initialMonth } from "@/lib/class-day";
-import { profilePhotoUrl } from "@/lib/avatar";
+import { pickPhoto, profilePhotoUrl } from "@/lib/avatar";
+import { signedAvatarUrl } from "@/lib/avatar-url";
 import { orderPhase } from "@/lib/enrollment-window";
 import { heldMonth } from "@/lib/verify-decision";
 import { collapseWeek5, pairKey, studentTrackLabel, type Week5Section } from "@/lib/week5";
@@ -108,7 +109,8 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
   const orders = schedule.orders;
   const name = profile?.name || user.email || "회원";
   // 카카오·구글로 들어온 계정은 그쪽 프로필 사진이 저절로 들어온다 (없으면 이름 첫 글자 동그라미)
-  const photo = profilePhotoUrl(user.user_metadata);
+  // 직접 올린 사진이 있으면 그것이 먼저다 (2026-10-02 Alan — 학생이 프로필 사진을 설정)
+  const photo = pickPhoto(await signedAvatarUrl(await createClient(), profile?.avatar_path), profilePhotoUrl(user.user_metadata));
   const latestVerification = verifications[0];
   const empty = orders.length === 0 && verifications.length === 0;
 

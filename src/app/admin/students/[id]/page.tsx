@@ -12,6 +12,10 @@ import { RoleSelect, type RoleOption } from "@/components/admin/students/RoleSel
 import { AssignSections, RemoveEnrollment } from "@/components/admin/students/EnrollmentEditor";
 import { MergeAccounts, type MergeRequestRow, type StaffMergeCandidate } from "@/components/admin/students/MergeAccounts";
 import { ProfileEditor } from "@/components/admin/students/ProfileEditor";
+import { ProfilePhoto } from "@/components/layout/ProfilePhoto";
+import { PhotoLightbox } from "@/components/layout/PhotoLightbox";
+import { pickPhoto, safePhotoUrl } from "@/lib/avatar";
+import { signedAvatarUrl } from "@/lib/avatar-url";
 import { StudentReceipts, type StudentReceipt } from "@/components/admin/students/StudentReceipts";
 import { receiptFacts, receiptNameMismatch, receiptVerdict } from "@/lib/receipt-history";
 import type { PickerSection } from "@/components/admin/SectionPicker";
@@ -44,7 +48,7 @@ export default async function StudentDetailPage({
 
   const { data: student } = await supabase
     .from("profiles")
-    .select("id, name, phone, role, test_role, university, department, gender, created_at")
+    .select("id, name, phone, role, test_role, university, department, gender, created_at, avatar_path")
     .eq("id", id)
     .maybeSingle();
   if (!student) notFound();
@@ -111,6 +115,8 @@ export default async function StudentDetailPage({
     : [{ data: null }, { data: null }];
   const studentLogin = authRows?.[0] ? { providers: authRows[0].providers ?? [], last_sign_in_at: authRows[0].last_sign_in_at ?? null } : null;
   const openMergeRequests = (openRequestRows ?? []) as MergeRequestRow[];
+  // 프로필 사진 — 올린 사진이 있으면 그것, 없으면 카카오·구글 사진. 강사·관리자만 눌러서 크게 본다 (2026-10-02 Alan)
+  const photo = pickPhoto(await signedAvatarUrl(supabase, student.avatar_path), safePhotoUrl(authRows?.[0]?.avatar_url));
 
   // 반 배정 추가의 기수 — **다음 수업이 남아 있는 기수**가 기본이다 (2026-10-02 Alan "9월달이 이미 종료가 되었고 10월달을 시작하기
   // 며칠전인데, 아직 9월달이 남아있는건 뭐지?"). 9월은 마지막 수업이 10/1 인데 종강일이 10/3 이라 "지금 기수"(개강일~종강일)로는
@@ -174,7 +180,10 @@ export default async function StudentDetailPage({
       <div className="grid items-start gap-6 lg:grid-cols-2">
         {/* 기본 정보 */}
         <section aria-labelledby="info-title" className="card p-5">
-          <h2 id="info-title" className="mb-4 text-lg font-black text-ink">기본 정보</h2>
+          <div className="mb-4 flex items-center gap-3">
+            {isStaff(me.role) ? <PhotoLightbox src={photo} size={56} name={student.name} /> : <ProfilePhoto src={photo} size={56} />}
+            <h2 id="info-title" className="text-lg font-black text-ink">기본 정보</h2>
+          </div>
           <dl className="divide-y divide-line">
             {info.map((row) => (
               <div key={row.label} className="flex items-center justify-between gap-3 py-2.5 text-sm">

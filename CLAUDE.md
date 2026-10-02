@@ -312,6 +312,12 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
     저절로 들어온다** — 우리 DB 에 저장하지 않고 본인 세션의 `auth.users.user_metadata` 를 읽는다
     (학생이 카카오에서 사진을 바꾸면 저절로 따라오고, 저장·삭제할 개인정보가 늘지 않는다).
     주소 고르기는 `src/lib/avatar.ts` 의 `profilePhotoUrl` 한곳(`avatar.test.ts`), 그리는 것은 `ProfilePhoto`.
+    **카카오는 `http://` 주소를 준다** — 2026-10-02 까지 `https://` 만 받아 카카오 사진이 한 장도 안 보였다 (Alan). `safePhotoUrl` 이 `https://` 로 바꿔 쓴다 (`avatar-photo.test.ts`).
+  - **학생이 직접 올리는 프로필 사진** (2026-10-02 Alan, 마이그레이션 20261002200000): `/my/profile` 의 `AvatarEditor` 가 private 버킷 `avatars` 의
+    본인 폴더(`{uid}/…`)에 바로 올리고 `setMyAvatar` 가 `profiles.avatar_path` 에 경로를 적는다 (옛 파일은 지운다). 5MB · 사진만.
+    **올린 사진이 카카오·구글 사진보다 앞선다** (`pickPhoto`). 서명 URL 은 보는 사람의 세션으로 만든다 (`signedAvatarUrls`, 1시간) —
+    storage 정책이 본인과 crew(강사·관리자·조교)에게만 연다. 명단(`StudentCard`)·학생 관리 기본 정보에 사진이 보이고 (카카오·구글 사진은
+    `student_auth_info.avatar_url` 로), **강사·관리자만 눌러서 크게 본다**(`PhotoLightbox`). 학생(/my)·조교에게는 눌리지 않는 `ProfilePhoto` 다.
     - **`https://` 만 받는다** — `user_metadata` 는 본인이 `auth.updateUser({ data })` 로 바꿀 수 있는 칸이라
       아무 문자열이나 들어올 수 있다. `javascript:`·`data:` 를 그대로 `<img src>` 에 넣지 않는다.
     - **사진이 없으면 빈 프로필 이미지다 — 이름 첫 글자를 쓰지 않는다** (2026-09-22 Alan — "만약 프로필이 없다면

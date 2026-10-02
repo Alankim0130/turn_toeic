@@ -4,7 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Reveal } from "@/components/ui/Reveal";
 import { loginLabel } from "@/lib/account";
+import { pickPhoto, profilePhotoUrl } from "@/lib/avatar";
+import { signedAvatarUrl } from "@/lib/avatar-url";
 import { ProfileForm } from "./ProfileForm";
+import { AvatarEditor } from "./AvatarEditor";
 
 export const metadata: Metadata = {
   title: "내 정보",
@@ -23,10 +26,22 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
   const supabase = await createClient();
   const { data: canRename } = await supabase.rpc("can_rename_self");
   const providers = (user.app_metadata as { providers?: string[] } | undefined)?.providers;
+  // 프로필 사진 — 직접 올린 사진이 먼저, 없으면 카카오·구글 사진 (2026-10-02 Alan)
+  const uploadedUrl = await signedAvatarUrl(supabase, profile?.avatar_path);
+  const socialUrl = profilePhotoUrl(user.user_metadata);
 
   return (
     <div className="space-y-8">
-      <PageHeader icon="profile" title="내 정보" description="이름 · 연락처 · 학교 정보를 확인하고 고칩니다." />
+      <PageHeader icon="profile" title="내 정보" description="프로필 사진 · 이름 · 연락처 · 학교 정보를 확인하고 고칩니다." />
+
+      <Reveal>
+        <section className="card p-5 sm:p-6">
+          <h2 className="text-base font-black text-ink">프로필 사진</h2>
+          <div className="mt-4">
+            <AvatarEditor uid={user.id} photo={pickPhoto(uploadedUrl, socialUrl)} uploaded={!!uploadedUrl} social={!!socialUrl} />
+          </div>
+        </section>
+      </Reveal>
 
       <Reveal>
         <section className="card p-5 sm:p-6">

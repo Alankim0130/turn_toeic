@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { todayKST, formatDate, MODE_LABEL } from "@/lib/utils";
 import { formatPhone } from "@/lib/phone";
 import { loginLabel, lastSeenLabel, kstDay, shortDay } from "@/lib/account";
+import { pickPhoto, safePhotoUrl } from "@/lib/avatar";
+import { signedAvatarUrls } from "@/lib/avatar-url";
 import { STUDY_KIND_LABEL, STUDY_KINDS } from "@/lib/study";
 import { week5SectionIds, collapseWeek5, pairKey } from "@/lib/week5";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -30,7 +32,7 @@ const studyShort = (kind: string) => (STUDY_KIND_LABEL[kind] ?? kind).replace("�
 
 export default async function StudentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string }> }) {
   // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
-  await requireCrew();
+  const { profile: me } = await requireCrew();
   const { tab: tabParam, q: qParam } = await searchParams;
   // 예전 주소(tab=testers)도 받는다 — 2026-10-02 에 탭 이름이 강사·조교로 바뀌었다
   const tab = tabParam === "testers" ? "staff" : TABS.some((t) => t.value === tabParam) ? (tabParam as string) : "active";
@@ -44,7 +46,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   // 합쳐진 옛 계정(merged_into)은 명단에서 뺀다 — 로그인도 못 하고 기록은 남은 계정에 있다 (2026-10-02)
   let profileQuery = supabase
     .from("profiles")
-    .select("id, name, phone, role, test_role, university, department, created_at")
+    .select("id, name, phone, role, test_role, university, department, created_at, avatar_path")
     .is("merged_into", null)
     .order("name")
     .limit(300);
@@ -77,7 +79,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
     // 함수가 막히거나(테스트 등급을 켠 스태프) 실패해도 명단은 그대로 뜬다 — 계정 칸만 비워진다
     ids.length
       ? supabase.rpc("student_auth_info", { p_ids: ids })
-      : Promise.resolve({ data: [] as { user_id: string; email: string | null; providers: string[]; last_sign_in_at: string | null }[] }),
+      : Promise.resolve({ data: [] as { user_id: string; email: string | null; providers: string[]; last_sign_in_at: string | null; avatar_url: string | null }[] }),
     // 이번(또는 곧 올) 기수의 스터디 신청 — 대면 · 비대면 · 단어
     ids.length && term
       ? supabase.from("study_signups").select("user_id, study:studies!inner(kind, term_id)").in("user_id", ids).eq("study.term_id", term.id)
@@ -97,6 +99,12 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
 
   const counts = { active: roster.activeIds.length, preliminary: roster.preliminaryIds.length };
   const rows = profiles ?? [];
+  // 프로필 사진 — 올린 사진(서명 URL)이 있으면 그것, 없으면 카카오·구글 사진 (2026-10-02 Alan).
+  // 강사·관리자만 눌러서 크게 본다 (조교는 눌리지 않는다)
+  const avatarUrls = await signedAvatarUrls(supabase, rows.map((p) => p.avatar_path));
+  const photoOf = (p: { id: string; avatar_path: string | null }) =>
+    pickPhoto(p.avatar_path ? avatarUrls.get(p.avatar_path) : null, safePhotoUrl(accountById.get(p.id)?.avatar_url));
+  const canZoom = me.role === "instructor" || me.role === "admin";
 
   return (
     <>
@@ -190,6 +198,8 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
                   name={p.name}
                   role={p.role}
                   testRoleLabel={p.test_role ? ROLE_LABEL[p.test_role] : null}
+                  photo={photoOf(p)}
+                  zoom={canZoom}
                   affiliation={[p.university, p.department].filter(Boolean).join(" · ")}
                   chip={tab === "preliminary" && prelimOrder ? `${prelimTerm?.month ?? Number(prelimOrder.activates_on.slice(5, 7))}월 예비등록생` : undefined}
                   classes={myClasses.map((e) => {

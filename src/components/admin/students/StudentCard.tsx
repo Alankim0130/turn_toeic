@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/admin/StatusBadge";
+import { ProfilePhoto } from "@/components/layout/ProfilePhoto";
+import { PhotoLightbox } from "@/components/layout/PhotoLightbox";
 import { cn } from "@/lib/utils";
 
 /**
@@ -36,6 +38,8 @@ export function StudentCard({
   affiliation,
   classes,
   metas,
+  photo = null,
+  zoom = false,
 }: {
   id: string;
   name: string | null;
@@ -50,17 +54,29 @@ export function StudentCard({
   affiliation?: string;
   classes: StudentCardClass[];
   metas: StudentCardMeta[];
+  /** 프로필 사진 (올린 사진 → 카카오·구글 사진). 없으면 이름 첫 글자 (2026-10-02) */
+  photo?: string | null;
+  /** 강사·관리자만 true — 사진을 누르면 크게 본다. 조교는 눌리지 않는다 */
+  zoom?: boolean;
 }) {
   const initial = (name ?? "").trim().charAt(0);
   return (
     <li className="relative min-w-0 rounded-2xl border border-line bg-paper p-3.5 transition hover:border-brand-200 hover:bg-brand-50/30">
       <div className="flex gap-3">
-        <span
-          aria-hidden
-          className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-lg font-black leading-none text-brand-700"
-        >
-          {initial || "·"}
-        </span>
+        {photo ? (
+          zoom ? (
+            <PhotoLightbox src={photo} size={44} name={name} className="!rounded-2xl" />
+          ) : (
+            <ProfilePhoto src={photo} size={44} className="!rounded-2xl" />
+          )
+        ) : (
+          <span
+            aria-hidden
+            className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-lg font-black leading-none text-brand-700"
+          >
+            {initial || "·"}
+          </span>
+        )}
 
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
