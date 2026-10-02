@@ -11,7 +11,7 @@ import { sectionSummary, termLabel } from "../../_lib/queries";
 import { DecisionForms, type Candidate, type OrderInfo } from "./DecisionForms";
 import { isStaff, requireCrew } from "@/lib/auth";
 import { RETENTION_LABEL } from "@/lib/receipt-retention";
-import { BLOCKER_LABEL, type AutoApproveBlocker } from "@/lib/auto-approve";
+import { blockerLines } from "@/lib/auto-approve";
 import { heldMonth as heldMonthOf } from "@/lib/verify-decision";
 import { preselectForApproval } from "@/lib/final-assignment";
 
@@ -112,7 +112,8 @@ export default async function VerificationDetailPage({
   const requestedManual = (v.requested_section_ids ?? []).filter((n): n is number => typeof n === "number");
   // OCR 이 반을 찾았는데 자동 승인 조건(이름 일치 등)에 못 미친 건 — 찾은 반을 미리 골라 둔다 (2026-09-18)
   const matchLog = v.candidates as {
-    result?: { kind?: string; sectionIds?: number[] } | null;
+    /** 반 대조 결과 — 못 맞췄으면 까닭 문장(reason)이 있다 (`MatchResult`) */
+    result?: { kind?: string; sectionIds?: number[]; reason?: string } | null;
     flags?: {
       duplicateImage?: boolean;
       staleCapture?: boolean;
@@ -192,7 +193,8 @@ export default async function VerificationDetailPage({
 
   // 기계가 왜 판정하지 않았나 — 스위치 · 받아 둔 다음 달 수강증 · 자동 승인을 막은 까닭 (2026-09-22). 위조 신호와 달리 경고가 아니라 안내다
   const heldMonthNow = heldMonthOf(matchLog?.hold);
-  const blockerLabels = (matchLog?.blockers ?? []).flatMap((b) => (b in BLOCKER_LABEL ? [BLOCKER_LABEL[b as AutoApproveBlocker]] : []));
+  // 반을 못 맞췄으면 그 까닭 문장을 적는다 — "딱 맞는 반을 못 찾음" 만으로는 반이 없어서인지 둘이라 못 고른 것인지 모른다 (2026-10-02 운영 #17)
+  const blockerLabels = blockerLines(matchLog?.blockers ?? [], typeof matchLog?.result?.reason === "string" ? matchLog.result.reason : null);
   const systemNotes = [
     matchLog?.autoOff
       ? `자동 판정이 ${matchLog.autoOff === "off" ? "멈춰" : "읽히지 않아 멈춰"} 있어 기계가 승인도 거절도 하지 않았어요.${

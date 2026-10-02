@@ -83,3 +83,18 @@ export const BLOCKER_LABEL: Record<AutoApproveBlocker, string> = {
   already_enrolled: "이미 그 달 반에 배정됨",
   decided_before: "같은 캡처를 전에 사람이 판정함",
 };
+
+/**
+ * 승인 화면의 "자동 등업하지 않은 까닭" 에 적을 말들.
+ * `no_match` 는 반 대조가 남긴 까닭 문장(`MatchResult.reason`)이 있으면 그것을 적는다 (2026-10-02 운영 #17 — "딱 맞는 반을 못 찾음" 만 떠서,
+ * 오른쪽에 850 주5일 12:30~13:40 반이 버젓이 있는데 왜 안 됐는지 알 수 없었다. 실제는 수강월을 못 읽었는데 9월 기수가 아직 종강 전이라
+ * 9월 · 10월의 같은 반이 함께 걸린 것이다). 반이 없어서인지, 여럿이라 못 고른 것인지가 그 문장에 있다.
+ * 기수 키(`2026-09`)는 `9월` 로 적는다. 모르는 까닭 값은 뺀다.
+ */
+export function blockerLines(blockers: readonly string[], matchReason?: string | null): string[] {
+  return blockers.flatMap((b) => {
+    if (!(b in BLOCKER_LABEL)) return [];
+    if (b === "no_match" && matchReason) return [matchReason.replace(/\b\d{4}-(\d{2})\b/g, (_, m: string) => `${Number(m)}월`)];
+    return [BLOCKER_LABEL[b as AutoApproveBlocker]];
+  });
+}
