@@ -18,12 +18,12 @@ const TABS = [
   { value: "active", label: "등록생" },
   { value: "preliminary", label: "예비등록생" },
   { value: "alumni", label: "졸업생" },
-  // 강사·관리자 계정 — 테스트 등급을 켜서 학생 화면을 확인한다 (2026-09-16 Alan 요청)
-  { value: "testers", label: "테스터" },
+  // 강사(이혜영·이영수)·관리자·조교 계정 (2026-10-02 Alan — "'테스터' 를 강사, 조교로 변경"). 강사·관리자는 여기서 테스트 등급을 켠다
+  { value: "staff", label: "강사·조교" },
   // 등급을 바꾸려면 아직 등록이 없는 사람(가입만 한 회원·강사)도 찾을 수 있어야 한다
   { value: "all", label: "전체" },
 ];
-const STAFF_ROLES = ["instructor", "admin"] as const;
+const CREW_ROLES = ["instructor", "admin", "assistant"] as const;
 
 /** "대면스터디" → "대면" (명단은 칸이 좁다). 신청 순서는 STUDY_KINDS 를 따른다 */
 const studyShort = (kind: string) => (STUDY_KIND_LABEL[kind] ?? kind).replace("스터디", "");
@@ -32,7 +32,8 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
   await requireCrew();
   const { tab: tabParam, q: qParam } = await searchParams;
-  const tab = TABS.some((t) => t.value === tabParam) ? (tabParam as string) : "active";
+  // 예전 주소(tab=testers)도 받는다 — 2026-10-02 에 탭 이름이 강사·조교로 바뀌었다
+  const tab = tabParam === "testers" ? "staff" : TABS.some((t) => t.value === tabParam) ? (tabParam as string) : "active";
   const q = (qParam ?? "").trim();
 
   const supabase = await createClient();
@@ -40,9 +41,15 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   const [roster, term] = await Promise.all([getRosterSets(supabase, today), getCurrentOrUpcomingTerm(supabase, today)]);
 
   // 대상 프로필
-  let profileQuery = supabase.from("profiles").select("id, name, phone, role, test_role, university, department, created_at").order("name").limit(300);
+  // 합쳐진 옛 계정(merged_into)은 명단에서 뺀다 — 로그인도 못 하고 기록은 남은 계정에 있다 (2026-10-02)
+  let profileQuery = supabase
+    .from("profiles")
+    .select("id, name, phone, role, test_role, university, department, created_at")
+    .is("merged_into", null)
+    .order("name")
+    .limit(300);
   if (tab === "alumni") profileQuery = profileQuery.eq("role", "alumni");
-  else if (tab === "testers") profileQuery = profileQuery.in("role", [...STAFF_ROLES]);
+  else if (tab === "staff") profileQuery = profileQuery.in("role", [...CREW_ROLES]);
   else if (tab === "all") {
     // 걸러내지 않는다 — 이름 검색으로 좁힌다
   } else {
@@ -65,7 +72,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
     tab === "alumni" && ids.length
       ? supabase.from("enrollment_orders").select("user_id, access_until").in("user_id", ids).order("access_until", { ascending: false })
       : Promise.resolve({ data: [] as { user_id: string; access_until: string }[] }),
-    supabase.from("profiles").select("id", { count: "exact", head: true }).in("role", [...STAFF_ROLES]),
+    supabase.from("profiles").select("id", { count: "exact", head: true }).in("role", [...CREW_ROLES]).is("merged_into", null),
     // 이메일·로그인 방식·마지막 접속은 auth 스키마에 있어 스태프 전용 함수로 읽는다 (2026-09-18 Alan 요청).
     // 함수가 막히거나(테스트 등급을 켠 스태프) 실패해도 명단은 그대로 뜬다 — 계정 칸만 비워진다
     ids.length
@@ -108,13 +115,13 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
         keep={{ q }}
         tabs={TABS.map((t) => ({
           ...t,
-          count: t.value === "active" ? counts.active : t.value === "preliminary" ? counts.preliminary : t.value === "testers" ? (testerCount ?? undefined) : undefined,
+          count: t.value === "active" ? counts.active : t.value === "preliminary" ? counts.preliminary : t.value === "staff" ? (testerCount ?? undefined) : undefined,
         }))}
       />
-      {tab === "testers" && (
+      {tab === "staff" && (
         <p className="mb-4 rounded-xl2 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          강사·관리자 계정이에요. 이름을 눌러 <b>테스트 등급</b>(회원 · 수강생 · 졸업생)을 켜고 반을 배정하면, 진짜 등급은 그대로 둔 채 학생이 보는 화면을 확인할 수 있어요.
-          테스터는 등록생 · 예비등록생 수에 세지 않습니다.
+          <b>강사</b>(이혜영 · 이영수) · <b>관리자</b> · <b>조교</b> 계정이에요. 강사·관리자는 이름을 눌러 <b>테스트 등급</b>(회원 · 수강생 · 졸업생)을 켜고 반을 배정하면,
+          진짜 등급은 그대로 둔 채 학생이 보는 화면을 확인할 수 있어요. 이 계정들은 등록생 · 예비등록생 수에 세지 않습니다.
         </p>
       )}
 
@@ -182,7 +189,6 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
                   id={p.id}
                   name={p.name}
                   role={p.role}
-                  tester={p.role === "instructor" || p.role === "admin"}
                   testRoleLabel={p.test_role ? ROLE_LABEL[p.test_role] : null}
                   affiliation={[p.university, p.department].filter(Boolean).join(" · ")}
                   chip={tab === "preliminary" && prelimOrder ? `${prelimTerm?.month ?? Number(prelimOrder.activates_on.slice(5, 7))}월 예비등록생` : undefined}

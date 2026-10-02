@@ -11,6 +11,7 @@ import { TermChips } from "@/components/admin/TermChips";
 import { RoleSelect, type RoleOption } from "@/components/admin/students/RoleSelect";
 import { AssignSections, RemoveEnrollment } from "@/components/admin/students/EnrollmentEditor";
 import { MergeAccounts, type MergeRequestRow, type StaffMergeCandidate } from "@/components/admin/students/MergeAccounts";
+import { ProfileEditor } from "@/components/admin/students/ProfileEditor";
 import { StudentReceipts, type StudentReceipt } from "@/components/admin/students/StudentReceipts";
 import { receiptFacts, receiptNameMismatch, receiptVerdict } from "@/lib/receipt-history";
 import type { PickerSection } from "@/components/admin/SectionPicker";
@@ -182,6 +183,19 @@ export default async function StudentDetailPage({
               </div>
             ))}
           </dl>
+          {/* 개인정보 수정 (2026-10-02 Alan) — 강사·관리자만. 조교는 등급 말고는 못 바꾼다 (DB 트리거) */}
+          {isStaff(me.role) && (
+            <ProfileEditor
+              profile={{
+                id: student.id,
+                name: student.name,
+                phone: student.phone,
+                university: student.university,
+                department: student.department,
+                gender: student.gender,
+              }}
+            />
+          )}
         </section>
 
         {/* 등급 */}

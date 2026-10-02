@@ -8,6 +8,7 @@ import { assignableError, orderWindow } from "@/lib/enrollment-window";
 import { promoteToStudent } from "@/lib/student-role";
 import { todayKST } from "@/lib/utils";
 import type { TablesInsert } from "@/lib/supabase/database.types";
+import { recheckAfterRename } from "@/app/my/account/recheck";
 
 export type StudentActionState = { ok?: boolean; error?: string; message?: string };
 
@@ -171,6 +172,60 @@ export async function removeEnrollment(enrollmentId: number): Promise<StudentAct
  * 옛 소셜 계정을 못 쓰는 경우가 있다. 그때는 강사가 같은 사람인지 확인하고 여기서 합친다.
  * 이동 규칙은 학생 쪽과 같은 DB 함수(`private.merge_accounts`)를 쓰고, 누가 합쳤는지 기록이 남는다.
  */
+const GENDERS = new Set(["male", "female", "other", "undisclosed"]);
+
+/**
+ * 학생 개인정보 수정 (2026-10-02 Alan — "학생이 이름을 잘못 넣어서 가입을 해서 우리 관리자가 변경을 해주고 싶은데").
+ * 강사·관리자만 (조교는 DB 트리거 guard_assistant_profile_update 가 등급 말고는 못 바꾸게 막는다).
+ * 세션으로 UPDATE 한다 — 정책 "profiles: 본인·스태프·조교 수정" 이 한 번 더 막는다. 등급은 여기서 건드리지 않는다 (등급 칸이 따로 있다).
+ * 이름이 바뀌면 이름 때문에 멈춰 있던 수강증을 다시 본다 (`recheckAfterRename` — 학생이 스스로 고칠 때와 같은 길).
+ */
+export async function updateStudentProfile(_prev: StudentActionState, formData: FormData): Promise<StudentActionState> {
+  await requireStaff();
+
+  const id = String(formData.get("id") ?? "");
+  const v = (k: string) => String(formData.get(k) ?? "").trim();
+  const name = v("name").replace(/\s+/g, " ");
+  const phone = v("phone").replace(/[^\d]/g, "");
+  const university = v("university");
+  const department = v("department");
+  const gender = v("gender") || "undisclosed";
+
+  if (!id) return { error: "학생을 찾을 수 없어요." };
+  if (name.replace(/\s/g, "").length < 2 || name.length > 20) return { error: "이름을 정확히 적어 주세요." };
+  if (phone && !/^01\d{8,9}$/.test(phone)) return { error: "휴대폰 번호를 확인해 주세요. (예: 010-1234-5678)" };
+  if (!GENDERS.has(gender)) return { error: "성별 선택이 올바르지 않습니다." };
+
+  const supabase = await createClient();
+  const { data: before } = await supabase.from("profiles").select("name").eq("id", id).maybeSingle();
+  if (!before) return { error: "학생을 찾을 수 없어요." };
+
+  const { data: saved, error } = await supabase
+    .from("profiles")
+    .update({ name, phone: phone || null, university: university || null, department: department || null, gender })
+    .eq("id", id)
+    .select("id");
+  if (error) return { error: `저장하지 못했어요. ${error.message}` };
+  if (!saved || saved.length === 0) return { error: "저장할 권한이 없어요. 강사·관리자만 개인정보를 고칠 수 있습니다." };
+
+  revalidatePath("/admin/students", "layout");
+  revalidatePath("/my", "layout");
+
+  const renamed = before.name.replace(/\s/g, "") !== name.replace(/\s/g, "");
+  if (renamed) {
+    const re = await recheckAfterRename(id, before.name, name);
+    revalidatePath("/admin/verifications");
+    if (re.approved) {
+      return {
+        ok: true,
+        message: `이름을 '${name}'(으)로 고쳤어요. 이름 때문에 멈춰 있던 수강증이 맞아 ${re.preliminary ? "예비등록" : "등업"}까지 끝냈어요${re.assigned.length ? ` — ${re.assigned.join(", ")}` : ""}.`,
+      };
+    }
+    return { ok: true, message: re.pending > 0 ? `이름을 '${name}'(으)로 고쳤어요. 검토 대기 중인 수강증 ${re.pending}건은 등업 로그에서 확인해 주세요.` : `이름을 '${name}'(으)로 고쳤어요.` };
+  }
+  return { ok: true, message: "개인정보를 저장했어요." };
+}
+
 /**
  * 학생이 남길 계정을 고르게 보낸다 (2026-10-02 Alan — "두 개의 계정이 파악되고 나면 학생이 직접 어느 계정을 남길 것인지 선택").
  * 두 계정 모두에 알림이 가고, 학생이 어느 계정에서든 고르면 그 자리에서 합쳐진다. 판정은 DB `staff_request_merge_choice`.
