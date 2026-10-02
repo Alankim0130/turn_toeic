@@ -8,7 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { cn, formatDate, formatTime, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
 import { studentTrackLabel } from "@/lib/week5";
 import { isYoutubeUrl } from "@/lib/live-links";
-import { getMyLiveCards, getMyWeek5, getNextSessionBySection, termLabel } from "../_lib/queries";
+import { getMyLiveCards, getMyStudyEligibility, getMyWeek5, getNextSessionBySection, termLabel } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "불라방",
@@ -24,18 +24,29 @@ export default async function LivePage() {
   const cards = await getMyLiveCards();
   const week5 = await getMyWeek5();
   const next = await getNextSessionBySection(cards.map((c) => c.sectionId));
+  // 개강 전 배정이 있으면 개강일을 적어 준다 (2026-10-02 Alan — 숙제업로드·LC음원과 같은 안내)
+  const opens = cards.length === 0 ? [...(await getMyStudyEligibility()).opensOn.values()].sort()[0] : undefined;
 
   return (
     <div className="space-y-8">
       <PageHeader icon="live" title="불라방" description="현장 강의를 실시간 라이브로. 수업이 시작되면 알림으로 알려 드려요." />
 
       {cards.length === 0 ? (
-        <EmptyState
-          icon="live"
-          title="입장할 수 있는 불라방이 없어요"
-          description="등업 전이거나 개강 전이면 표시되지 않아요. 개강일이 지났는데도 보이지 않으면 강사가 입장 링크를 아직 등록하지 않은 것이니 연락해 주세요."
-          action={{ href: "/my/verify", label: "등업신청 확인하기" }}
-        />
+        opens ? (
+          <EmptyState
+            icon="live"
+            title="개강일부터 입장할 수 있어요"
+            description={`${formatDate(opens)} 개강부터 불라방 입장 링크가 여기에 보여요.`}
+            action={{ href: "/my", label: "내 등록 현황 보기" }}
+          />
+        ) : (
+          <EmptyState
+            icon="live"
+            title="입장할 수 있는 불라방이 없어요"
+            description="등업 전이거나 개강 전이면 표시되지 않아요. 개강일이 지났는데도 보이지 않으면 강사가 입장 링크를 아직 등록하지 않은 것이니 연락해 주세요."
+            action={{ href: "/my/verify", label: "등업신청 확인하기" }}
+          />
+        )
       ) : (
         <ul className="grid gap-4 md:grid-cols-2">
           {cards.map((c, i) => {

@@ -6,8 +6,8 @@ import type { CalendarMark } from "@/components/my/MonthCalendar";
 import { requireUser } from "@/lib/auth";
 import { initialDay, initialMonth } from "@/lib/class-day";
 import { levelsOfDay } from "@/lib/homework";
-import { todayKST } from "@/lib/utils";
-import { getHomeworkLevels, getMyHomework, getMySessions } from "../_lib/queries";
+import { formatDate, todayKST } from "@/lib/utils";
+import { getHomeworkLevels, getMyHomework, getMySessions, getMyStudyEligibility } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "숙제업로드",
@@ -23,11 +23,12 @@ type Course = { target_score?: number | null; includes_levels?: number[] | null 
  * 넘길 수 있더라도 반·기수 전체를 실어 보낼 이유가 없다 (내 시간표와 같은 규칙).
  */
 export default async function HomeworkPage() {
-  const [{ user }, sessions, levels, mine] = await Promise.all([
+  const [{ user }, sessions, levels, mine, { opensOn }] = await Promise.all([
     requireUser("/my/homework"),
     getMySessions(),
     getHomeworkLevels(),
     getMyHomework(),
+    getMyStudyEligibility(),
   ]);
   const today = todayKST();
 
@@ -78,7 +79,19 @@ export default async function HomeworkPage() {
     .map(([, g]) => ({ year: g.year, month: g.month, marks: g.marks, initial: initialDay(g.dates, today) }));
 
   if (months.length === 0) {
-    return (
+    /**
+     * 개강 전 배정이 있으면 "반에 배정되면" 이 아니라 **개강일을 적어 준다** (2026-10-02 Alan — 10월 반에 배정된 채 개강 전에 들어와
+     * "반배정은 되어있잖아? 이런 메시지가 나오면 안되는거 아냐?"). 숙제는 개강일부터라 그 전에는 달력을 그리지 않는다 (LC음원과 같은 규칙).
+     */
+    const opens = [...opensOn.values()].sort()[0];
+    return opens ? (
+      <EmptyState
+        icon="homework"
+        title="개강일부터 올릴 수 있어요"
+        description={`${formatDate(opens)} 개강부터 여기에 내 수업 달력이 나오고, 날짜를 눌러 그 날 숙제를 올릴 수 있어요.`}
+        action={{ href: "/my/class", label: "내 시간표 보기" }}
+      />
+    ) : (
       <EmptyState
         icon="homework"
         title="아직 수업일이 없어요"

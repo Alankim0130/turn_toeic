@@ -8,7 +8,7 @@ import { VideoEmbed } from "@/components/my/VideoEmbed";
 import { formatDate, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
 import { studentTrackLabel } from "@/lib/week5";
 import { RECORDED_LABEL } from "@/lib/utils";
-import { getMyAccessibleSections, getMyReplays, getMyWeek5, termLabel, type MyReplay } from "../_lib/queries";
+import { getMyAccessibleSections, getMyReplays, getMyStudyEligibility, getMyWeek5, termLabel, type MyReplay } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "강의 다시보기",
@@ -29,15 +29,27 @@ export default async function ReplayPage() {
   const recordedTracks = new Set(mySections.filter((s) => s.recorded).map((s) => s.track));
 
   if (replays.length === 0) {
+    // 개강 전 배정이 있으면 개강일을 적어 준다 (2026-10-02 Alan — 숙제업로드·LC음원과 같은 안내)
+    const { opensOn } = await getMyStudyEligibility();
+    const opens = [...opensOn.values()].sort()[0];
     return (
       <div className="space-y-8">
         <PageHeader icon="replay" title="강의 다시보기" description="놓친 수업은 종강일까지 다시 볼 수 있어요." />
-        <EmptyState
-          icon="replay"
-          title="아직 볼 수 있는 다시보기가 없어요"
-          description="수업 녹화본이 등록되면 여기에 표시됩니다. 등업 전이거나 개강 전, 또는 종강일이 지났다면 보이지 않아요."
-          action={{ href: "/my", label: "내 등록 현황 보기" }}
-        />
+        {opens ? (
+          <EmptyState
+            icon="replay"
+            title="개강일부터 볼 수 있어요"
+            description={`${formatDate(opens)} 개강부터 수업 녹화본이 여기에 올라와요.`}
+            action={{ href: "/my", label: "내 등록 현황 보기" }}
+          />
+        ) : (
+          <EmptyState
+            icon="replay"
+            title="아직 볼 수 있는 다시보기가 없어요"
+            description="수업 녹화본이 등록되면 여기에 표시됩니다. 등업 전이거나 개강 전, 또는 종강일이 지났다면 보이지 않아요."
+            action={{ href: "/my", label: "내 등록 현황 보기" }}
+          />
+        )}
       </div>
     );
   }
