@@ -60,3 +60,27 @@ export function lastSeenLabel(at: string | null | undefined, today: string): str
   if (diff < 30) return `${diff}일 전`;
   return shortDay(day);
 }
+
+/**
+ * 계정 합치기에서 **어느 계정을 실제로 쓰는지** (2026-10-02 Alan — "어느 계정이 최근 로그인 계정인지 알 수가 없어").
+ * 마지막 접속이 가장 늦은 계정의 id. 접속 기록이 하나도 없으면 null. 같으면 앞의 것.
+ */
+export function newestLogin(accounts: readonly { id: string; lastSignInAt: string | null | undefined }[]): string | null {
+  let best: string | null = null;
+  let bestAt = -Infinity;
+  for (const a of accounts) {
+    if (!a.lastSignInAt) continue;
+    const t = new Date(a.lastSignInAt).getTime();
+    if (Number.isNaN(t) || t <= bestAt) continue;
+    best = a.id;
+    bestAt = t;
+  }
+  return best;
+}
+
+/** "카카오 · 어제 로그인" — 합치기 후보 줄에 적는 한 토막. 접속 기록이 없으면 "로그인 기록 없음" */
+export function loginLine(providers: readonly string[] | null | undefined, lastSignInAt: string | null | undefined, today: string): string {
+  const method = loginLabel(providers) || "이메일";
+  const seen = lastSeenLabel(lastSignInAt, today);
+  return seen ? `${method} · ${seen} 로그인` : `${method} · 로그인 기록 없음`;
+}

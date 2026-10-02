@@ -19,7 +19,8 @@ const TABS = [
   // 다음 달 수강증을 받아 둔 것 — 그 달 반이 열리면 저절로 다시 맞춘다 (2026-09-22). 지금 할 일이 아니라 검토 대기와 나눈다
   { value: "held", label: "반 개설 대기" },
   { value: "approved", label: "승인" },
-  { value: "rejected", label: "반려" },
+  // 닫힘(closed) = 다른 수강증이 승인돼 닫은 것 (2026-10-02) — 할 일이 아니라 반려와 함께 둔다
+  { value: "rejected", label: "반려 · 닫힘" },
 ];
 
 export default async function VerificationsPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
@@ -31,7 +32,7 @@ export default async function VerificationsPage({ searchParams }: { searchParams
 
   let query = supabase
     .from("enrollment_verifications")
-    .select("id, created_at, result, confidence, matched_section, source, hold:candidates->hold, profile:profiles(name)")
+    .select("id, created_at, result, confidence, matched_section, source, hold:candidates->hold, correction:candidates->correctionOf, profile:profiles(name)")
     .order("created_at", { ascending: false })
     .limit(200);
   query =
@@ -39,14 +40,16 @@ export default async function VerificationsPage({ searchParams }: { searchParams
       ? query.is("result", null).is("candidates->hold", null)
       : status === "held"
         ? query.is("result", null).not("candidates->hold", "is", null)
-        : query.eq("result", status);
+        : status === "rejected"
+          ? query.in("result", ["rejected", "closed"])
+          : query.eq("result", status);
 
   const [{ data: rows }, pending, held, approved, rejected, { data: flag, error: flagError }] = await Promise.all([
     query,
     supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).is("candidates->hold", null),
     supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).not("candidates->hold", "is", null),
     supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).eq("result", "approved"),
-    supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).eq("result", "rejected"),
+    supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).in("result", ["rejected", "closed"]),
     // 긴급 스위치 (2026-09-22). 조교도 상태는 본다 — 꺼져 있으면 모든 수강증이 여기로 쌓이는 까닭이다
     supabase.from("feature_flags").select("enabled, note, updated_at, updater:profiles!feature_flags_updated_by_fkey(name)").eq("key", AUTO_VERIFY_KEY).maybeSingle(),
   ]);
@@ -100,9 +103,12 @@ export default async function VerificationsPage({ searchParams }: { searchParams
                   <Td className="whitespace-nowrap text-xs">{formatDate(r.created_at, { year: "2-digit", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
                   <Td className="whitespace-nowrap font-bold">
                     {r.profile?.name ?? "-"}
-                    {/* 수동 등업신청은 학생이 반을 골라 냈다 — 승인 화면에 미리 골라져 있다 */}
+                    {/* 수동 등업신청은 학생이 반을 골라 냈다 — 승인 화면에 미리 골라져 있다.
+                        정정 요청 = 자동 승인 팝업에서 "반이 달라요" 를 누른 것 (candidates.correctionOf) — 승인이 끝난 학생이라 할 일로 보이게 따로 적는다 (2026-10-02) */}
                     {r.source === "manual" && (
-                      <span className="ml-2 rounded-full bg-brand-50 px-2 py-0.5 text-[0.65rem] font-black text-brand-700">수동</span>
+                      <span className="ml-2 rounded-full bg-brand-50 px-2 py-0.5 text-[0.65rem] font-black text-brand-700">
+                        {r.correction != null ? "정정 요청" : "수동"}
+                      </span>
                     )}
                     {r.result === null && heldMonth(r.hold) != null && (
                       <span className="ml-2 rounded-full bg-line px-2 py-0.5 text-[0.65rem] font-black text-slate">{heldMonth(r.hold)}월 반 개설 대기</span>

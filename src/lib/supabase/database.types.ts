@@ -2183,8 +2183,24 @@ export type Database = {
           has_records: boolean
           joined_at: string
           user_id: string
+          providers: string[]
+          last_sign_in_at: string | null
         }[]
       }
+      merge_choice_info: {
+        Args: { p_request: number }
+        Returns: {
+          user_id: string
+          name: string
+          email_hint: string
+          providers: string[]
+          last_sign_in_at: string | null
+          joined_at: string
+          has_records: boolean
+        }[]
+      }
+      choose_merge_account: { Args: { p_request: number; p_keep: string }; Returns: Json }
+      staff_request_merge_choice: { Args: { p_a: string; p_b: string }; Returns: number }
       request_account_merge: { Args: { p_keep: string; p_other: string }; Returns: number }
       staff_merge_accounts: { Args: { p_from: string; p_to: string }; Returns: Json }
       student_auth_info: {
@@ -2208,6 +2224,8 @@ export type Database = {
           same_name: boolean
           same_phone: boolean
           has_records: boolean
+          providers: string[]
+          last_sign_in_at: string | null
         }[]
       }
       complete_profile: {

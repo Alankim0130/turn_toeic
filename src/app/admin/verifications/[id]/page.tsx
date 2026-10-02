@@ -246,8 +246,6 @@ export default async function VerificationDetailPage({
         ["캡처 시각", typeof parsed.capturedAt === "string" ? parsed.capturedAt.replace("T", " ") : typeof parsed.capturedOn === "string" ? parsed.capturedOn : "-"],
       ]
     : [];
-  // 반 대조 기록 — { rule, result, log[], nameMatches } (2026-09-18 자동 승인). 예전 점수 배열이어도 그대로 보여 준다
-  const candidateLog = v.candidates as Record<string, unknown> | unknown[] | null;
 
   return (
     <>
@@ -361,12 +359,8 @@ export default async function VerificationDetailPage({
                 )}
               </p>
             )}
-            {candidateLog && (Array.isArray(candidateLog) ? candidateLog.length > 0 : Object.keys(candidateLog).length > 0) && (
-              <>
-                <h3 className="mb-2 mt-4 text-sm font-bold text-slate">반 대조 기록</h3>
-                <pre className="max-h-64 overflow-auto rounded-xl bg-surface p-3 text-xs leading-relaxed text-ink-soft">{JSON.stringify(candidateLog, null, 2)}</pre>
-              </>
-            )}
+            {/* 반 대조 기록(JSON 원문)은 2026-10-02 Alan 요청으로 뺐다 — 코드가 그대로 보여 스태프에게 쓸모가 없었다.
+                "왜 자동 등업이 안 됐나" 는 위의 줄들과 판정 카드가 말해 준다. 기록 자체는 candidates 에 그대로 있다 */}
           </section>
         </div>
 

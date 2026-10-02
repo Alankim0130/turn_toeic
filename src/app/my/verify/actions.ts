@@ -37,6 +37,8 @@ export type SubmitVerificationResult =
       held?: { month: number; note: string };
       /** 수강증 `수강생` 칸의 이름이 가입 실명과 다르다 — 화면이 팝업으로 알린다 (2026-09-30 Alan). 이름을 또렷이 읽었을 때만 */
       nameMismatch?: NameMismatch;
+      /** 이미 승인된 수강증을 또 올렸다 — 접수하지 않고 닫았다 (2026-10-02 Alan) */
+      alreadyApproved?: boolean;
     }
   | { ok: false; error: string }
   | { ok: false; rejected: true; reason: string };
@@ -270,6 +272,9 @@ export async function submitVerification(input: { filePath: string }): Promise<S
   const blockers = read && flags ? autoApproveBlockers({ parsed: read.parsed, nameMatches: read.nameMatches, flags, matched: !!matched }) : null;
   // 받아 두는 수강증은 지금 배정하지 않는다 — 날짜로만 달을 읽은 수강증은 대조가 다른 달 반을 고를 수 있다
   const autoApprove = auto.on && held == null && !!matched && blockers?.length === 0;
+  // 이미 승인된 수강증을 또 올렸다 (2026-10-02 Alan — 승인 뒤 같은 캡처를 다시 올려 검토 대기에 쌓이던 것):
+  // 같은 캡처가 전에 승인됐고 그 반에 이미 배정돼 있으면 검토 대기에 넣지 않고 바로 닫는다. 기록은 남긴다
+  const alreadyApproved = !rejected && !!flags && flags.decidedBefore === "approved" && flags.alreadyEnrolled.length > 0;
 
   const { data: inserted, error } = await admin
     .from("enrollment_verifications")
@@ -277,8 +282,8 @@ export async function submitVerification(input: { filePath: string }): Promise<S
       user_id: user.id,
       file_path: filePath,
       source: "auto",
-      result: rejected ? "rejected" : null,
-      reject_reason: rejected && decision.kind === "reject" ? decision.reason : null,
+      result: rejected ? "rejected" : alreadyApproved ? "closed" : null,
+      reject_reason: rejected && decision.kind === "reject" ? decision.reason : alreadyApproved ? "이미 같은 수강증으로 승인돼 있어요" : null,
       ocr_raw: outcome.ocr,
       parsed: read ? parsedSummary(read) : null,
       // OCR 이 실패해도 파일을 받았으면 남긴다 — 다음에 누가 같은 파일을 올리면 잡힌다
@@ -309,6 +314,10 @@ export async function submitVerification(input: { filePath: string }): Promise<S
   if (rejected && decision.kind === "reject") {
     done();
     return { ok: false, rejected: true, reason: decision.reason };
+  }
+  if (alreadyApproved) {
+    done();
+    return { ok: true, alreadyApproved: true };
   }
 
   if (autoApprove && read && matched) {

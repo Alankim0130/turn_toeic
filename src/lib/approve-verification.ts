@@ -114,6 +114,18 @@ export async function approveVerificationWith(admin: Admin, input: ApproveInput)
     return { ok: false, error: `승인 기록 저장에 실패했습니다. ${verErr.message}` };
   }
 
+  // 같은 학생의 다른 검토 대기 건은 닫는다 (2026-10-02 Alan — "다시 제대로 올려서 승인이 되고 나면 수동처리 목록에서 빼주면").
+  // 다음 달 수강증(hold)과 "반이 달라요" 정정 요청(correctionOf)은 그대로 둔다 — 아직 할 일이다
+  const { error: closeErr } = await admin
+    .from("enrollment_verifications")
+    .update({ result: "closed", reject_reason: "다른 수강증이 승인돼 닫았어요" })
+    .eq("user_id", input.userId)
+    .is("result", null)
+    .is("candidates->hold", null)
+    .is("candidates->correctionOf", null)
+    .neq("id", input.verificationId);
+  if (closeErr) console.error("[approve] 남은 검토 대기 건을 닫지 못했어요", closeErr.message);
+
   // 승인은 끝났다 — 체크를 뺀 같은 달 배정을 빼고, 비게 된 옛 등록을 지운다.
   // 여기서 실패해도 되돌리지 않는다: 학생은 반을 잃지 않고(옛 반이 남을 뿐) 승인은 그대로다
   if (plan.remove.length > 0) {

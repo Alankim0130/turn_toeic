@@ -1209,6 +1209,17 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   옛 소셜 로그인을 못 쓰면 스스로 합칠 수 없기 때문이다. `/admin/students/[id]` 의 **계정 합치기** 칸에서
   `public.staff_merge_candidates(학생)` 이 **이름이 같거나 전화번호가 같은** 계정을 보여 주고(학생용은 둘 다 같아야 한다 —
   번호를 잘못 적어 갈린 계정을 강사는 찾을 수 있어야 한다), `public.staff_merge_accounts(from, to)` 가 바로 합친다.
+- **어느 계정을 실제로 쓰는지 보여 준다** (2026-10-02 Alan — "어느 계정이 최근 로그인 계정인지 알 수가 없어", 마이그레이션 20261002170000).
+  후보 함수(`merge_candidates` · `staff_merge_candidates` · `merge_choice_info`)가 **로그인 방법(`providers`) · 최근 로그인(`last_sign_in_at`)** 을 함께 주고,
+  화면은 `loginLine` 으로 "카카오 · 어제 로그인" 을 적고 `newestLogin` 이 고른 계정에 `최근 로그인 계정` 표시를 둔다 (`src/lib/account.ts`, `merge-choice.test.ts`).
+  **보통 최근에 로그인한 계정을 남긴다** — 화면 문구가 그렇게 권한다.
+- **학생이 남길 계정을 고르게 보내기** (2026-10-02 Alan — "두 개의 계정이 파악되고 나면 학생이 직접 어느 계정을 남길 것인지 선택").
+  스태프가 `/admin/students/[id]` 계정 합치기 칸의 `학생이 남길 계정을 고르게 보내기` → `public.staff_request_merge_choice(a, b)` 가
+  요청을 **`status = 'choice'`** 로 만들고 두 계정 모두에 알림(`student_messages.kind = 'merge_choice'`)을 보낸다.
+  학생은 `/my` 띠 · 알림 · `/my/account` · `/my/verify` 에서 두 계정의 로그인 정보를 보고 **어느 계정에서든** `이 계정 남기기` →
+  `public.choose_merge_account(요청, 남길 계정)` 이 그 자리에서 합친다 (학생 흐름과 달리 반대쪽 로그인이 필요 없다 — 스태프가 같은 사람임을 보증했다).
+  남기지 않은 계정으로 로그인 중이었으면 `/account-merged` 로 보낸다. 학생 계정 둘일 때만 보낼 수 있고(강사 계정은 바로 합치기만),
+  취소는 당사자·스태프 모두 (`cancel_account_merge`). 열린 요청(pending · choice)은 짝마다 하나다.
   학생 확인은 받지 않는다 — 대신 화면에서 "같은 사람이 맞다"를 체크해야 버튼이 열리고,
   **누가 합쳤는지** `account_merge_requests` 에 `status = 'done'` · `requested_by = 스태프` 로 남는다.
   이동 규칙은 학생 쪽과 **같은 함수**(`private.merge_accounts`)다 — 옮길 것이 늘면 그 함수 한 곳만 고친다.
@@ -1290,6 +1301,12 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   수동신청으로 가면 서버가 그 달에 이미 승인된 수강증 id 를 `candidates.correctionOf` 에 남기고, 승인 화면이 **"기존 승인의 배정 수정에서 고치라"** 고 안내한다 —
   새로 승인하면 등록이 두 건 생긴다.
 - **반려**: 이유 + `수동 등업신청으로 내기` / `닫기`. 닫아도 폼 위에 같은 문구가 남는다.
+- **닫힘**(`result = 'closed'`, 2026-10-02 Alan — "다시 제대로 올려서 승인이 되고 나면 수동처리 목록에서 빼주면"): 반려가 아니라
+  **다른 수강증이 승인돼 더 볼 일이 없어진 것**이다. 두 군데서 닫는다 — ① `approveVerificationWith` 가 승인하면서 같은 학생의 남은 검토 대기 건을 닫는다
+  (다음 달 수강증 `hold` 와 "반이 달라요" 정정 요청 `correctionOf` 는 아직 할 일이라 둔다), ② 승인된 뒤 **같은 캡처를 또 올리면**(`decidedBefore = approved`
+  + `alreadyEnrolled`) 접수하지 않고 바로 닫으며 학생에게 `이미 승인된 수강증이에요` 를 보여 준다. 등업 로그에서는 `반려 · 닫힘` 탭에 회색 `종료` 로,
+  학생 화면에는 `닫힘` + 사유로 보인다. 정정 요청은 목록에 `정정 요청` 배지로 구분한다 (스태프가 보고 승인·반려한다).
+  승인 상세의 `반 대조 기록`(JSON 원문)은 2026-10-02 Alan 요청으로 뺐다 — 기록은 `candidates` 에 그대로 있다.
 - 강사 검토로 간 것은 팝업 없이 "접수됐어요" 안내 + 못 읽은 이유(`ocrNote`).
 - **이름 불일치**(2026-09-30 Alan — "수강증의 이름과 내 이름이 일치하지 않으면 등업신청에서 팝업 안내 … 수강증의 이름과 일치해서 넣어주세요"):
   수강증 `수강생` 칸의 이름을 **또렷이 읽었고**(한글 2~5자, `receiptStudentName`) 가입 실명과 다르면 팝업 `수강증의 이름과 내 이름이 달라요` —

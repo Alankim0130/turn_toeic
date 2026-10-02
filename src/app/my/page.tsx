@@ -101,7 +101,9 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
   ]);
 
   // 내가 신청하지 않은 통합 요청 = 이 계정에서 확인해야 합쳐진다 (2026-09-18 Alan)
-  const mergeToConfirm = mergeRequests.filter((r) => r.requested_by !== user.id).length;
+  const mergeToConfirm = mergeRequests.filter((r) => r.status === "pending" && r.requested_by !== user.id).length;
+  // 스태프가 두 계정을 확인하고 **남길 계정을 고르라** 고 보낸 것 — 어느 계정에서든 고른다 (2026-10-02 Alan)
+  const mergeToChoose = mergeRequests.filter((r) => r.status === "choice").length;
 
   const orders = schedule.orders;
   const name = profile?.name || user.email || "회원";
@@ -256,6 +258,12 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
           <Link href="/my/notifications" className="font-bold underline">알림 보기</Link> — 선생님 안내나 불라방 수업 시작 알림이 들어 있어요.
         </Alert>
       )}
+      {mergeToChoose > 0 && (
+        <Alert kind="warning" title="계정이 두 개 있어요 — 남길 계정을 골라 주세요">
+          선생님이 같은 사람의 계정 두 개를 확인했어요.{" "}
+          <Link href="/my/account" className="font-bold underline">내 계정</Link>에서 남길 계정을 고르면 숙제·수강 기록이 그 계정으로 모두 모입니다.
+        </Alert>
+      )}
       {mergeToConfirm > 0 && (
         <Alert kind="warning" title="계정 통합을 기다리고 있어요">
           다른 계정에서 이 계정과 합치자고 신청했어요.{" "}
@@ -338,6 +346,10 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
                     )}
                     {latestVerification.result === "rejected" && latestVerification.reject_reason && (
                       <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-amber-800">사유: {latestVerification.reject_reason}</p>
+                    )}
+                    {/* 닫힘 = 다른 수강증이 승인돼 닫은 것 (2026-10-02) — 반려가 아니라 회색으로 */}
+                    {latestVerification.result === "closed" && latestVerification.reject_reason && (
+                      <p className="mt-1 rounded-lg bg-surface px-2 py-1 text-slate">{latestVerification.reject_reason}</p>
                     )}
                   </div>
                 </div>

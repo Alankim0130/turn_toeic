@@ -98,7 +98,8 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rejected, setRejected] = useState<string | null>(null);
-  const [done, setDone] = useState<null | "auto" | "manual" | "approved" | "preliminary" | "held">(null);
+  // already = 이미 승인된 수강증을 또 올렸다 (2026-10-02) — 접수하지 않고 안내만 한다
+  const [done, setDone] = useState<null | "auto" | "manual" | "approved" | "preliminary" | "held" | "already">(null);
   /** 자동으로 못 읽어 강사 검토로 갔을 때의 한 줄 (서버가 준다) */
   const [ocrNote, setOcrNote] = useState<string | null>(null);
   /** 다음 달 수강증을 받아 뒀다 (2026-09-22) — 그 달 반이 열리면 저절로 배정된다 */
@@ -207,6 +208,11 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
           : await submitVerification({ filePath: path });
 
         if (res.ok) {
+          // 이미 승인된 수강증을 또 올렸다 — 접수된 것이 아니다 (2026-10-02)
+          if (res.alreadyApproved) {
+            setDone("already");
+            return;
+          }
           // OCR 이 반을 찾아 바로 등업했으면 그렇게 말한다 (2026-09-18 자동 승인)
           setOcrNote(res.ocrNote ?? null);
           setHeld(res.held ?? null);
@@ -384,6 +390,17 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
         </Alert>
         {nameNote}
       </>
+    );
+  }
+
+  // 이미 승인된 수강증 (2026-10-02 Alan — 승인 뒤 같은 수강증을 또 올려 검토 대기에 쌓이던 것). 접수하지 않았다
+  if (done === "already") {
+    return (
+      <Alert kind="info" title="이미 승인된 수강증이에요">
+        이 수강증으로 이미 반이 배정돼 있어요. 다시 올리지 않으셔도 돼요 —{" "}
+        <Link href="/my/class" className="font-bold underline">내 시간표</Link>에서 확인해 주세요. 반이 다르면{" "}
+        <button type="button" onClick={toManual} className="font-bold underline">수동 등업신청</button>으로 알려 주세요.
+      </Alert>
     );
   }
 

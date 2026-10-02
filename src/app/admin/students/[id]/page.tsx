@@ -10,7 +10,7 @@ import { StatusBadge } from "@/components/admin/StatusBadge";
 import { TermChips } from "@/components/admin/TermChips";
 import { RoleSelect, type RoleOption } from "@/components/admin/students/RoleSelect";
 import { AssignSections, RemoveEnrollment } from "@/components/admin/students/EnrollmentEditor";
-import { MergeAccounts, type StaffMergeCandidate } from "@/components/admin/students/MergeAccounts";
+import { MergeAccounts, type MergeRequestRow, type StaffMergeCandidate } from "@/components/admin/students/MergeAccounts";
 import { StudentReceipts, type StudentReceipt } from "@/components/admin/students/StudentReceipts";
 import { receiptFacts, receiptNameMismatch, receiptVerdict } from "@/lib/receipt-history";
 import type { PickerSection } from "@/components/admin/SectionPicker";
@@ -96,6 +96,20 @@ export default async function StudentDetailPage({
     ? await supabase.rpc("staff_merge_candidates", { p_user: id })
     : { data: null };
   const mergeCandidates = (mergeCandidateRows ?? []) as StaffMergeCandidate[];
+  // 이 학생 계정의 로그인 방법·최근 로그인과, 열린 통합 요청 — 어느 계정이 실제로 쓰는 계정인지 보여 준다 (2026-10-02 Alan)
+  const [{ data: authRows }, { data: openRequestRows }] = canMerge
+    ? await Promise.all([
+        supabase.rpc("student_auth_info", { p_ids: [id] }),
+        supabase
+          .from("account_merge_requests")
+          .select("id, from_user, to_user, status, created_at")
+          .in("status", ["pending", "choice"])
+          .or(`from_user.eq.${id},to_user.eq.${id}`)
+          .order("created_at", { ascending: false }),
+      ])
+    : [{ data: null }, { data: null }];
+  const studentLogin = authRows?.[0] ? { providers: authRows[0].providers ?? [], last_sign_in_at: authRows[0].last_sign_in_at ?? null } : null;
+  const openMergeRequests = (openRequestRows ?? []) as MergeRequestRow[];
 
   const term = pickTerm(terms ?? [], sp.term, today);
   const { data: termSections } = term
@@ -215,7 +229,13 @@ export default async function StudentDetailPage({
           <p className="mt-1 text-sm text-slate">
             이름이나 전화번호가 같은 다른 계정입니다. 같은 사람이면 하나로 합쳐 숙제·수강 기록을 한곳에 모읍니다.
           </p>
-          <MergeAccounts student={{ id: student.id, name: student.name }} candidates={mergeCandidates} />
+          <MergeAccounts
+            student={{ id: student.id, name: student.name }}
+            studentLogin={studentLogin}
+            candidates={mergeCandidates}
+            requests={openMergeRequests}
+            today={today}
+          />
         </section>
         )}
 

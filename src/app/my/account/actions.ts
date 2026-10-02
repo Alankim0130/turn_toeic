@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { MERGED_PATH } from "@/lib/auth";
 import { recheckAfterRename, type RenameRecheckResult } from "./recheck";
 
 /**
@@ -169,6 +171,40 @@ export async function confirmMerge(_prev: AccountState, formData: FormData): Pro
   }
 
   revalidatePath("/my", "layout");
+  return { message: "계정을 합쳤어요. 숙제·수강 기록이 이 계정으로 모두 옮겨졌습니다." };
+}
+
+/**
+ * 스태프가 보낸 "남길 계정 고르기" (2026-10-02 Alan — "학생이 직접 어느 계정을 남길 것인지 선택").
+ * 어느 계정에서든 고르면 그 자리에서 합쳐진다 (스태프가 같은 사람임을 보증했다). 판정은 DB 의 `choose_merge_account`.
+ * 지금 로그인한 계정을 남기지 않았으면 이 계정은 곧장 통합된 계정이 되므로 /account-merged 로 보낸다.
+ */
+export async function chooseMergeAccount(_prev: AccountState, formData: FormData): Promise<AccountState> {
+  const id = Number(formData.get("request_id"));
+  const keep = String(formData.get("keep") ?? "");
+  if (!id || !keep) return { error: "남길 계정을 골라 주세요." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "로그인이 필요합니다." };
+
+  const { data, error } = await supabase.rpc("choose_merge_account", { p_request: id, p_keep: keep });
+  if (error) {
+    const msg = error.message.includes("request_not_found")
+      ? "이미 처리됐거나 취소된 요청이에요."
+      : error.message.includes("forbidden")
+        ? "이 계정에서는 고를 수 없어요."
+        : error.message.includes("not_mergeable")
+          ? "합칠 수 없는 계정이에요. 강사에게 문의해 주세요."
+          : GENERIC;
+    return { error: msg };
+  }
+
+  const kept = (data as { kept?: string } | null)?.kept;
+  revalidatePath("/my", "layout");
+  if (kept && kept !== user.id) redirect(MERGED_PATH);
   return { message: "계정을 합쳤어요. 숙제·수강 기록이 이 계정으로 모두 옮겨졌습니다." };
 }
 

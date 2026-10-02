@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
-import { formatDate, cn } from "@/lib/utils";
+import { formatDate, cn, todayKST } from "@/lib/utils";
 import { getMyVerifications, getOpenEnrollSections, VERIFICATION_STATUS_LABEL } from "../_lib/queries";
 import { heldMonth } from "@/lib/verify-decision";
 import { VerifyForm } from "./VerifyForm";
@@ -11,7 +11,7 @@ import { ReceiptGuide } from "./ReceiptGuide";
 import { getSessionProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { IdentityConfirmForm } from "@/components/my/IdentityConfirmForm";
-import { MergePanel, type MergeCandidate, type MergeRequest } from "../account/MergePanel";
+import { MergePanel, type ChoiceAccount, type MeInfo, type MergeCandidate, type MergeRequest } from "../account/MergePanel";
 import { getMyMergeRequests } from "../_lib/queries";
 import { RETENTION_LABEL } from "@/lib/receipt-retention";
 
@@ -35,7 +35,7 @@ const STEPS: { icon: IconName; title: string; desc: string }[] = [
 ];
 
 export default async function VerifyPage() {
-  const [verifications, sections, { profile }, canRename] = await Promise.all([
+  const [verifications, sections, { user, profile }, canRename] = await Promise.all([
     getMyVerifications(),
     getOpenEnrollSections(),
     getSessionProfile(),
@@ -50,15 +50,19 @@ export default async function VerifyPage() {
   // 확인이 끝나면 **같은 이름·전화번호 계정을 바로 여기서** 보여 준다 (2026-09-19 Alan —
   // "수강증 업로드 → 개인정보 기입 → 이름·전화번호 일치시 계정합치기 안내 및 하나의 계정 선택").
   // 합칠 것이 없으면 아무것도 그리지 않는다 — 계정이 하나뿐인 학생에게는 없는 이야기다.
-  let candidates: MergeCandidate[] = [];
-  let requests: MergeRequest[] = [];
-  if (confirmed) {
-    const supabase = await createClient();
-    const [{ data }, pending] = await Promise.all([supabase.rpc("merge_candidates"), getMyMergeRequests()]);
-    candidates = (data ?? []) as MergeCandidate[];
-    requests = pending as MergeRequest[];
-  }
-  const showMerge = confirmed && profile != null && (candidates.length > 0 || requests.length > 0);
+  // 스태프가 보낸 "남길 계정 고르기"(choice)는 확인 전에도 보인다 (2026-10-02 Alan) — 요청은 늘 읽는다
+  const supabase = await createClient();
+  const [pending, { data: candidateRows }] = await Promise.all([
+    getMyMergeRequests(),
+    confirmed ? supabase.rpc("merge_candidates") : Promise.resolve({ data: null }),
+  ]);
+  const requests = pending as MergeRequest[];
+  const candidates: MergeCandidate[] = (candidateRows ?? []) as MergeCandidate[];
+  const choiceRequest = requests.find((r) => r.status === "choice") ?? null;
+  const { data: choiceRows } = choiceRequest ? await supabase.rpc("merge_choice_info", { p_request: choiceRequest.id }) : { data: null };
+  const choice = choiceRequest && choiceRows?.length ? { request: choiceRequest, accounts: choiceRows as ChoiceAccount[] } : null;
+  const showMerge = profile != null && (requests.length > 0 || (confirmed && candidates.length > 0));
+  const meInfo: MeInfo = { providers: ((user?.app_metadata as { providers?: string[] } | undefined)?.providers ?? []), last_sign_in_at: user?.last_sign_in_at ?? null };
 
   return (
     <div className="space-y-8">
@@ -83,11 +87,11 @@ export default async function VerifyPage() {
           <section className="card border-brand-200 p-5 sm:p-6">
             <h2 className="text-base font-black text-ink">계정이 하나 더 있어요</h2>
             <p className="mt-1 text-sm text-slate">
-              <b>이름과 전화번호가 같은 계정</b>을 찾았어요. 하나로 합치면 숙제 제출 · 스터디 · 특강 신청 · 교재주문 · 수강 등록과 반 배정이
+              {choice ? <b>선생님이 같은 사람의 계정 두 개를 확인했어요.</b> : <b>이름과 전화번호가 같은 계정을 찾았어요.</b>} 하나로 합치면 숙제 제출 · 스터디 · 특강 신청 · 교재주문 · 수강 등록과 반 배정이
               <b> 남길 계정으로 모두 옮겨집니다.</b> 남지 않는 계정은 기록을 그대로 둔 채 로그인만 막혀요.
             </p>
             <div className="mt-4">
-              <MergePanel me={profile.id} candidates={candidates} requests={requests} />
+              <MergePanel me={profile.id} meInfo={meInfo} today={todayKST()} candidates={candidates} requests={requests} choice={choice} />
             </div>
           </section>
         </Reveal>
@@ -173,6 +177,7 @@ export default async function VerifyPage() {
                     {VERIFICATION_STATUS_LABEL(v.result)}
                   </span>
                   {v.result === "rejected" && v.reject_reason && <span className="text-amber-800">사유: {v.reject_reason}</span>}
+                  {v.result === "closed" && v.reject_reason && <span className="text-mist">{v.reject_reason}</span>}
                   {v.result === null && (
                     <span className="text-mist">
                       {heldMonth(v.hold) != null ? `${heldMonth(v.hold)}월 반이 열리면 배정돼요` : "보통 1일 이내 처리"}

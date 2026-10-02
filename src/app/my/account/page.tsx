@@ -4,8 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Reveal } from "@/components/ui/Reveal";
 import { IdentityConfirmForm } from "@/components/my/IdentityConfirmForm";
-import { MergePanel, type MergeCandidate, type MergeRequest } from "./MergePanel";
-import { formatDate } from "@/lib/utils";
+import { MergePanel, type ChoiceAccount, type MeInfo, type MergeCandidate, type MergeRequest } from "./MergePanel";
+import { formatDate, todayKST } from "@/lib/utils";
 import { getMyMergeRequests } from "../_lib/queries";
 
 export const metadata: Metadata = {
@@ -19,6 +19,7 @@ export const metadata: Metadata = {
  * 같은 사람이 계정을 여러 개 만들면 숙제·수강 기록이 흩어진다. 이름·전화번호가 같은 계정을 찾아
  * **하나로 합치고**, 기록은 남길 계정으로 전부 옮긴다. 남의 기록을 가져가지 못하도록
  * **두 계정 모두에 로그인할 수 있어야** 합쳐진다 (신청한 쪽이 아닌 계정에서 확인).
+ * 스태프가 두 계정을 확인하고 보낸 것(choice)은 **어느 계정에서든** 남길 계정을 고르면 바로 합쳐진다 (2026-10-02 Alan).
  */
 export default async function AccountPage() {
   const { user, profile } = await requireUser("/my/account");
@@ -26,23 +27,38 @@ export default async function AccountPage() {
   const confirmed = Boolean(profile?.identity_confirmed_at);
 
   // 내 계정이 걸린 신청만 — 정책은 강사·관리자에게 모든 학생의 신청을 연다 (getMyMergeRequests 머리말)
-  const requests = await getMyMergeRequests();
-
-  let candidates: MergeCandidate[] = [];
-  if (confirmed) {
-    const { data } = await supabase.rpc("merge_candidates");
-    candidates = (data ?? []) as MergeCandidate[];
-  }
+  const [pending, { data: candidateRows }] = await Promise.all([
+    getMyMergeRequests(),
+    confirmed ? supabase.rpc("merge_candidates") : Promise.resolve({ data: null }),
+  ]);
+  const requests = pending as MergeRequest[];
+  const candidates: MergeCandidate[] = (candidateRows ?? []) as MergeCandidate[];
+  const choiceRequest = requests.find((r) => r.status === "choice") ?? null;
+  const { data: choiceRows } = choiceRequest ? await supabase.rpc("merge_choice_info", { p_request: choiceRequest.id }) : { data: null };
+  const choice = choiceRequest && choiceRows?.length ? { request: choiceRequest, accounts: choiceRows as ChoiceAccount[] } : null;
+  const meInfo: MeInfo = { providers: (user.app_metadata as { providers?: string[] } | undefined)?.providers ?? [], last_sign_in_at: user.last_sign_in_at ?? null };
 
   return (
     <div className="space-y-8">
       <PageHeader icon="verify" title="내 계정" description="이름·전화번호를 확인하고, 계정이 여러 개면 하나로 합칩니다." />
 
-      <Reveal>
+      {/* 스태프가 보낸 "남길 계정 고르기" 는 확인보다 먼저 — 그래서 온 사람이 많다 */}
+      {choice && (
+        <Reveal>
+          <section className="card border-brand-200 p-5 sm:p-6">
+            <h2 className="text-base font-black text-ink">계정이 두 개 있어요 — 남길 계정을 골라 주세요</h2>
+            <div className="mt-4">
+              <MergePanel me={user.id} meInfo={meInfo} today={todayKST()} candidates={[]} requests={requests} choice={choice} />
+            </div>
+          </section>
+        </Reveal>
+      )}
+
+      <Reveal delay={choice ? 60 : 0}>
         <section className="card p-5 sm:p-6">
           <h2 className="text-base font-black text-ink">이름·전화번호 확인</h2>
           <p className="mt-1 text-sm text-slate">
-            같은 이름을 쓰는 수강생이 있어서, 전화번호까지 있어야 누구의 수강증인지 정확히 가릅니다.
+            같은 이름을 쓰는 수강생이 있어서, 전화번호까지 있어야 누구의 수강증인지 정확히 가립니다.
           </p>
           {confirmed && (
             <p className="mt-3 rounded-xl bg-surface p-3 text-sm text-ink">
@@ -58,26 +74,28 @@ export default async function AccountPage() {
         </section>
       </Reveal>
 
-      <Reveal delay={60}>
-        <section className="card p-5 sm:p-6">
-          <h2 className="text-base font-black text-ink">계정 합치기</h2>
-          {!confirmed ? (
-            <p className="mt-2 text-sm text-slate">먼저 위에서 이름·전화번호를 확인해 주세요.</p>
-          ) : candidates.length === 0 && requests.length === 0 ? (
-            <p className="mt-2 text-sm text-slate">같은 이름·전화번호로 만든 다른 계정이 없어요. 합칠 것이 없습니다.</p>
-          ) : (
-            <>
-              <p className="mt-1 text-sm text-slate">
-                합치면 <b>숙제 제출, 스터디·특강 신청, 교재주문, 수강 등록과 반 배정</b>이 남길 계정으로 모두 옮겨집니다.
-                남지 않는 계정은 기록을 보존한 채 로그인만 막힙니다.
-              </p>
-              <div className="mt-4">
-                <MergePanel me={user.id} candidates={candidates} requests={requests as MergeRequest[]} />
-              </div>
-            </>
-          )}
-        </section>
-      </Reveal>
+      {!choice && (
+        <Reveal delay={60}>
+          <section className="card p-5 sm:p-6">
+            <h2 className="text-base font-black text-ink">계정 합치기</h2>
+            {!confirmed ? (
+              <p className="mt-2 text-sm text-slate">먼저 위에서 이름·전화번호를 확인해 주세요.</p>
+            ) : candidates.length === 0 && requests.length === 0 ? (
+              <p className="mt-2 text-sm text-slate">같은 이름·전화번호로 만든 다른 계정이 없어요. 합칠 것이 없습니다.</p>
+            ) : (
+              <>
+                <p className="mt-1 text-sm text-slate">
+                  합치면 <b>숙제 제출, 스터디·특강 신청, 교재주문, 수강 등록과 반 배정</b>이 남길 계정으로 모두 옮겨집니다.
+                  남지 않는 계정은 기록을 보존한 채 로그인만 막힙니다.
+                </p>
+                <div className="mt-4">
+                  <MergePanel me={user.id} meInfo={meInfo} today={todayKST()} candidates={candidates} requests={requests} choice={null} />
+                </div>
+              </>
+            )}
+          </section>
+        </Reveal>
+      )}
     </div>
   );
 }

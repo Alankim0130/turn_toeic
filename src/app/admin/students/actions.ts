@@ -171,6 +171,49 @@ export async function removeEnrollment(enrollmentId: number): Promise<StudentAct
  * 옛 소셜 계정을 못 쓰는 경우가 있다. 그때는 강사가 같은 사람인지 확인하고 여기서 합친다.
  * 이동 규칙은 학생 쪽과 같은 DB 함수(`private.merge_accounts`)를 쓰고, 누가 합쳤는지 기록이 남는다.
  */
+/**
+ * 학생이 남길 계정을 고르게 보낸다 (2026-10-02 Alan — "두 개의 계정이 파악되고 나면 학생이 직접 어느 계정을 남길 것인지 선택").
+ * 두 계정 모두에 알림이 가고, 학생이 어느 계정에서든 고르면 그 자리에서 합쳐진다. 판정은 DB `staff_request_merge_choice`.
+ */
+export async function requestMergeChoice(_prev: StudentActionState, formData: FormData): Promise<StudentActionState> {
+  await requireStaff();
+
+  const a = String(formData.get("student_id") ?? "");
+  const b = String(formData.get("other_id") ?? "");
+  if (!a || !b || a === b) return { error: "두 계정을 확인해 주세요." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("staff_request_merge_choice", { p_a: a, p_b: b });
+  if (error) {
+    const msg = error.message.includes("not_a_candidate")
+      ? "학생 계정 둘이면서 이름이나 전화번호가 같아야 보낼 수 있어요. 강사·관리자 계정은 위의 바로 합치기로만 합칩니다."
+      : error.message.includes("forbidden")
+        ? "권한이 없습니다."
+        : `보내지 못했어요. ${error.message}`;
+    return { error: msg };
+  }
+
+  revalidatePath("/admin/students", "layout");
+  revalidatePath("/my", "layout");
+  return { ok: true, message: "학생에게 보냈어요. 두 계정 모두에 알림이 갔고, 학생이 남길 계정을 고르면 바로 합쳐집니다." };
+}
+
+/** 열린 통합 요청(학생 신청 · 학생 선택 중) 취소 — 스태프도 할 수 있다 (2026-10-02) */
+export async function cancelMergeRequest(_prev: StudentActionState, formData: FormData): Promise<StudentActionState> {
+  await requireStaff();
+
+  const id = Number(formData.get("request_id"));
+  if (!id) return { error: "잘못된 요청입니다." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("cancel_account_merge", { p_request: id });
+  if (error) return { error: error.message.includes("request_not_found") ? "이미 처리된 요청이에요." : `취소하지 못했어요. ${error.message}` };
+
+  revalidatePath("/admin/students", "layout");
+  revalidatePath("/my", "layout");
+  return { ok: true, message: "요청을 취소했어요." };
+}
+
 export async function mergeStudentAccounts(_prev: StudentActionState, formData: FormData): Promise<StudentActionState> {
   await requireStaff();
 

@@ -446,8 +446,9 @@ export const ORDER_STATUS_LABEL: Record<string, string> = {
   active: "수강 중",
   expired: "만료",
 };
+// closed = 다른 수강증이 승인돼 닫힌 것 (2026-10-02) — 반려가 아니다
 export const VERIFICATION_STATUS_LABEL = (result: string | null) =>
-  result === "approved" ? "승인" : result === "rejected" ? "반려" : "확인 중";
+  result === "approved" ? "승인" : result === "rejected" ? "반려" : result === "closed" ? "닫힘" : "확인 중";
 
 export function termLabel(term: { year: number; month: number } | null | undefined) {
   return term ? `${term.year}년 ${term.month}월` : "기수 미정";
@@ -470,10 +471,11 @@ export async function getMyMergeRequests() {
   const { user } = await getSessionProfile();
   if (!user) return [];
   const supabase = await createClient();
+  // choice = 스태프가 두 계정을 확인하고 **학생이 남길 계정을 고르게** 한 것 (2026-10-02 Alan) — 어느 계정에서든 고를 수 있다
   const { data } = await supabase
     .from("account_merge_requests")
-    .select("id, from_user, to_user, requested_by, created_at")
-    .eq("status", "pending")
+    .select("id, from_user, to_user, requested_by, status, created_at")
+    .in("status", ["pending", "choice"])
     .or(`from_user.eq.${user.id},to_user.eq.${user.id}`)
     .order("created_at", { ascending: false });
   return data ?? [];

@@ -69,6 +69,12 @@ export default async function NotificationsPage() {
                       내 출석 보기
                     </Link>
                   )}
+                  {/* 계정 두 개 — 남길 계정 고르기 (2026-10-02). 어느 계정으로 로그인해도 고를 수 있다 */}
+                  {m.kind === "merge_choice" && (
+                    <Link href="/my/account" className="btn-primary mt-3 !px-4 !py-2 text-sm">
+                      남길 계정 고르기
+                    </Link>
+                  )}
                   {/* 수업 시작 알림 — 불라방 학생에게만 간다 (크론). 늦게 열어도 그 날 링크는 그대로다 */}
                   {m.kind === "live_start" && (
                     <Link href="/my/live" className="btn-primary mt-3 !px-4 !py-2 text-sm">
