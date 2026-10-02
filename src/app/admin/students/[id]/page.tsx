@@ -11,6 +11,8 @@ import { TermChips } from "@/components/admin/TermChips";
 import { RoleSelect, type RoleOption } from "@/components/admin/students/RoleSelect";
 import { AssignSections, RemoveEnrollment } from "@/components/admin/students/EnrollmentEditor";
 import { MergeAccounts, type StaffMergeCandidate } from "@/components/admin/students/MergeAccounts";
+import { StudentReceipts, type StudentReceipt } from "@/components/admin/students/StudentReceipts";
+import { receiptFacts, receiptNameMismatch, receiptVerdict } from "@/lib/receipt-history";
 import type { PickerSection } from "@/components/admin/SectionPicker";
 import { GENDER_LABEL, pickTerm, sectionSummary, termLabel, TERM_COLUMNS } from "../../_lib/queries";
 import { termParam } from "@/lib/study";
@@ -46,15 +48,45 @@ export default async function StudentDetailPage({
     .maybeSingle();
   if (!student) notFound();
 
-  const [{ data: enrollments }, { data: orders }, { data: terms }] = await Promise.all([
+  const [{ data: enrollments }, { data: orders }, { data: terms }, { data: verifications }] = await Promise.all([
     supabase
       .from("enrollments")
-      .select("id, mode, status, section:class_sections!enrollments_section_id_fkey(id, track, start_time, end_time, time_block, closes_at, term:terms(year, month), course:courses(name))")
+      .select("id, mode, status, order_id, section:class_sections!enrollments_section_id_fkey(id, track, start_time, end_time, time_block, closes_at, term:terms(year, month), course:courses(name))")
       .eq("student_id", id)
       .order("id"),
     supabase.from("enrollment_orders").select("id, status, activates_on, access_until, verification_id").eq("user_id", id).order("activates_on", { ascending: false }),
     supabase.from("terms").select(TERM_COLUMNS).order("year").order("month"),
+    // 올린 수강증 (2026-10-02 Alan) — 최근 것부터. RLS 가 crew(강사 · 관리자 · 조교)에게 연다
+    supabase
+      .from("enrollment_verifications")
+      .select("id, created_at, result, source, reject_reason, confidence, candidates, parsed, file_path, file_deleted_at")
+      .eq("user_id", id)
+      .order("created_at", { ascending: false })
+      .limit(20),
   ]);
+
+  // 수강증 그림 — 로그인한 사람의 세션으로 서명 URL (storage receipts 정책이 crew 에게 열려 있다). 지운 원본은 만들지 않는다
+  const receiptPaths = (verifications ?? []).filter((v) => !v.file_deleted_at).map((v) => v.file_path);
+  const { data: signedReceipts } = receiptPaths.length
+    ? await supabase.storage.from("receipts").createSignedUrls(receiptPaths, 600)
+    : { data: [] as { path: string | null; signedUrl: string }[] };
+  const signedByPath = new Map((signedReceipts ?? []).filter((s) => s.path && s.signedUrl).map((s) => [s.path as string, s.signedUrl]));
+  const orderByVerification = new Map((orders ?? []).filter((o) => o.verification_id != null).map((o) => [o.verification_id as number, o.id]));
+  const receipts: StudentReceipt[] = (verifications ?? []).map((v) => {
+    const orderId = orderByVerification.get(v.id);
+    const url = signedByPath.get(v.file_path);
+    return {
+      id: v.id,
+      createdAt: v.created_at,
+      manual: v.source === "manual",
+      verdict: receiptVerdict(v),
+      facts: receiptFacts(v.parsed),
+      nameMismatch: receiptNameMismatch(v.parsed),
+      assigned: orderId == null ? [] : (enrollments ?? []).filter((e) => e.order_id === orderId).map((e) => sectionSummary(e.section, e.mode, { withEnd: true })),
+      image: url ? { url, isImage: /\.(png|jpe?g|webp|gif|heic)$/i.test(v.file_path) } : null,
+      deleted: !!v.file_deleted_at,
+    };
+  });
 
   // 같은 사람으로 보이는 다른 계정 (이름 또는 전화번호가 같음). 판정·권한은 DB 함수가 본다.
   // **계정 합치기는 스태프만** — 기록을 통째로 옮기는 되돌리기 어려운 일이라 조교에게는 열지 않는다
@@ -162,6 +194,18 @@ export default async function StudentDetailPage({
               테스터 계정이에요. 진짜 등급을 학생으로 내리면 관리자 화면을 잃어요 — 테스트는 아래 <b>테스트 등급</b>으로 하세요.
             </p>
           )}
+        </section>
+
+        {/* 올린 수강증 (2026-10-02 Alan "학생이 직접올린 수강증을 볼 수 있으면") — 판정 · 승인은 등업 검토 화면에서 */}
+        <section aria-labelledby="receipts-title" className="card p-5 lg:col-span-2">
+          <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+            <h2 id="receipts-title" className="text-lg font-black text-ink">
+              올린 수강증 <span className="tabular-nums text-slate">({receipts.length})</span>
+            </h2>
+            {receipts.length > 0 && <span className="text-xs text-mist">그림을 누르면 크게 · 승인 · 반려 · 반 고치기는 등업 검토 화면에서</span>}
+          </div>
+          <p className="mb-4 text-sm text-slate">학생이 등업신청에서 올린 수강증이에요. 최근 것부터, 결과와 수강증에서 읽은 값 · 배정된 반을 함께 보여 줘요.</p>
+          <StudentReceipts receipts={receipts} />
         </section>
 
         {/* 계정 합치기 (2026-09-18 Alan 요청) — 학생이 계정을 여러 개 만들었을 때 강사가 직접 합친다. 스태프만 */}

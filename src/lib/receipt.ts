@@ -421,9 +421,14 @@ export function receiptCourseMonth(p: Pick<ParsedReceipt, "courseMonth" | "start
 /**
  * 수강요일 줄 `[4주-09/04] 월수금 (월9회)` 의 개강일 달 → 9. 배지 `NN월 과정` 을 못 읽었을 때의 수강월이다 (2026-09-22).
  * `N주-` 가 앞에 있어야 한다 — 그냥 `MM/DD` 는 다른 숫자일 수 있다. OCR 이 `/` 를 `.` 로 읽어 시각처럼 `09:04` 가 돼도 읽는다.
+ *
+ * **한 번 더 — 꺾쇠까지 읽힌 `주-MM?DD]` 꼴** (2026-10-02 운영 #17): `[4주-10/06]` 이 `나주-10706]` 으로 읽혔다 —
+ * 주 앞 숫자는 글자로, `/` 는 `7` 로. 배지(`10월 과정`)도 못 읽어 9월 · 10월 반이 함께 열린 날 수강월을 못 정하고 검토로 갔다.
+ * 그래서 또렷한 꼴이 없을 때만, **두 자리 달 + (/ 대신 읽힌 한 글자) + 두 자리 날 + `]`** 를 본다.
+ * 꺾쇠를 요구하는 까닭: 그 자리 말고는 수강증에 `주-` 뒤 숫자 다섯 개가 오는 곳이 없어야 엉뚱한 숫자를 달로 읽지 않는다.
  */
 export function parseStartMonth(compact: string): number | null {
-  const m = compact.match(/\d주[-~](\d{1,2})[/.:](\d{1,2})(?!\d)/);
+  const m = compact.match(/\d주[-~](\d{1,2})[/.:](\d{1,2})(?!\d)/) ?? compact.match(/주[-~](\d{2})[/.:17lI|]?(\d{2})\]/);
   if (!m) return null;
   const [month, day] = [Number(m[1]), Number(m[2])];
   return month >= 1 && month <= 12 && day >= 1 && day <= 31 ? month : null;
