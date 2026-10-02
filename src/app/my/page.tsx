@@ -16,6 +16,7 @@ import { pickPhoto, profilePhotoUrl } from "@/lib/avatar";
 import { signedAvatarUrl } from "@/lib/avatar-url";
 import { orderPhase } from "@/lib/enrollment-window";
 import { heldMonth } from "@/lib/verify-decision";
+import { needsVerifyCard } from "@/lib/verify-card";
 import { collapseWeek5, pairKey, studentTrackLabel, week5SectionIds, type Week5Section } from "@/lib/week5";
 import { getMySchedule } from "./_lib/schedule";
 import {
@@ -325,42 +326,44 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
             </Reveal>
           )}
 
-          {/* 등업신청 현황 */}
-          <Reveal delay={90}>
-            <section aria-labelledby="verify-title" className="card p-5 sm:p-6">
-              <div className="flex items-center justify-between">
-                <h2 id="verify-title" className="text-lg font-black text-ink">등업신청 현황</h2>
-                <Link href="/my/verify" className="text-sm font-bold text-brand-600 hover:underline">
-                  신청하기 →
-                </Link>
-              </div>
-              {!latestVerification ? (
-                <p className="mt-4 text-sm text-slate">아직 올린 수강증이 없어요.</p>
-              ) : (
-                <div className="mt-4 flex items-start gap-3">
-                  <Icon name={latestVerification.result === "rejected" ? "warning" : latestVerification.result === "approved" ? "success" : "upload"} size={32} />
-                  <div className="text-sm">
-                    <p className="font-black text-ink">{VERIFICATION_STATUS_LABEL(latestVerification.result)}</p>
-                    <p className="text-slate">{formatDate(latestVerification.created_at, { year: "numeric", month: "long", day: "numeric" })} 접수</p>
-                    {latestVerification.result === null && (
-                      <p className="mt-1 text-slate">
-                        {heldMonth(latestVerification.hold) != null
-                          ? `${heldMonth(latestVerification.hold)}월 수강증으로 받아 뒀어요. ${heldMonth(latestVerification.hold)}월 반이 열리면 배정되고, 개강일에 수강생으로 자동 전환돼요.`
-                          : "확인 후 자동으로 등업됩니다. 보통 1일 이내 처리돼요."}
-                      </p>
-                    )}
-                    {latestVerification.result === "rejected" && latestVerification.reject_reason && (
-                      <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-amber-800">사유: {latestVerification.reject_reason}</p>
-                    )}
-                    {/* 닫힘 = 다른 수강증이 승인돼 닫은 것 (2026-10-02) — 반려가 아니라 회색으로 */}
-                    {latestVerification.result === "closed" && latestVerification.reject_reason && (
-                      <p className="mt-1 rounded-lg bg-surface px-2 py-1 text-slate">{latestVerification.reject_reason}</p>
-                    )}
-                  </div>
+          {/* 등업신청 현황 — 등업이 끝났으면(유효한 등록이 있고 할 일이 없으면) 그리지 않는다 (2026-10-02 Alan, `needsVerifyCard`) */}
+          {needsVerifyCard(live, latestVerification) && (
+            <Reveal delay={90}>
+              <section aria-labelledby="verify-title" className="card p-5 sm:p-6">
+                <div className="flex items-center justify-between">
+                  <h2 id="verify-title" className="text-lg font-black text-ink">등업신청 현황</h2>
+                  <Link href="/my/verify" className="text-sm font-bold text-brand-600 hover:underline">
+                    신청하기 →
+                  </Link>
                 </div>
-              )}
-            </section>
-          </Reveal>
+                {!latestVerification ? (
+                  <p className="mt-4 text-sm text-slate">아직 올린 수강증이 없어요.</p>
+                ) : (
+                  <div className="mt-4 flex items-start gap-3">
+                    <Icon name={latestVerification.result === "rejected" ? "warning" : latestVerification.result === "approved" ? "success" : "upload"} size={32} />
+                    <div className="text-sm">
+                      <p className="font-black text-ink">{VERIFICATION_STATUS_LABEL(latestVerification.result)}</p>
+                      <p className="text-slate">{formatDate(latestVerification.created_at, { year: "numeric", month: "long", day: "numeric" })} 접수</p>
+                      {latestVerification.result === null && (
+                        <p className="mt-1 text-slate">
+                          {heldMonth(latestVerification.hold) != null
+                            ? `${heldMonth(latestVerification.hold)}월 수강증으로 받아 뒀어요. ${heldMonth(latestVerification.hold)}월 반이 열리면 배정되고, 개강일에 수강생으로 자동 전환돼요.`
+                            : "확인 후 자동으로 등업됩니다. 보통 1일 이내 처리돼요."}
+                        </p>
+                      )}
+                      {latestVerification.result === "rejected" && latestVerification.reject_reason && (
+                        <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-amber-800">사유: {latestVerification.reject_reason}</p>
+                      )}
+                      {/* 닫힘 = 다른 수강증이 승인돼 닫은 것 (2026-10-02) — 반려가 아니라 회색으로 */}
+                      {latestVerification.result === "closed" && latestVerification.reject_reason && (
+                        <p className="mt-1 rounded-lg bg-surface px-2 py-1 text-slate">{latestVerification.reject_reason}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </section>
+            </Reveal>
+          )}
         </>
       )}
 
