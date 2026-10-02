@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
-import { navAdminFor } from "@/lib/site";
+import { activeAdminHref, navAdminFor, navAdminSectionsFor } from "@/lib/site";
 import { cn } from "@/lib/utils";
 import { signOut } from "@/app/(auth)/actions";
 
@@ -12,13 +12,15 @@ export function isAdminActive(pathname: string, href: string) {
 }
 
 /**
- * 데스크톱 사이드바.
+ * 데스크톱 사이드바 — 햄버거 서랍과 같은 묶음(운영 · 학생 · 수업 편성 · 수업 자료 · 학습)으로 그린다 (2026-10-02 Alan).
  * 메뉴가 화면보다 길면 사이드바 안에서만 스크롤한다 — 휠이 메뉴 위에 있으면 메뉴가 내려가고,
  * 끝에 닿아도 본문으로 스크롤이 넘어가지 않는다(overscroll-contain).
+ * 켜 둘 메뉴는 **가장 긴 주소** 하나다 (`/admin/study/plan` 이 `/admin/study` 까지 켜지 않게).
  */
 export function AdminSidebar({ name, roleLabel, role }: { name: string; roleLabel: string; role?: string | null }) {
   const pathname = usePathname();
-  const items = navAdminFor(role);
+  const sections = navAdminSectionsFor(role);
+  const activeHref = activeAdminHref(navAdminFor(role), pathname);
   return (
     <aside className="sticky top-20 hidden max-h-[calc(100dvh-6rem)] self-start overflow-y-auto overscroll-contain md:block">
       <div className="card p-3">
@@ -32,26 +34,34 @@ export function AdminSidebar({ name, roleLabel, role }: { name: string; roleLabe
           </div>
         </div>
         <nav aria-label="관리자 메뉴">
-          <ul className="space-y-0.5">
-            {items.map((item) => {
-              const active = isAdminActive(pathname, item.href);
-              return (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(
-                      "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
-                      active ? "bg-brand-500 text-white shadow-pink" : "text-ink-soft hover:bg-brand-50 hover:text-brand-600",
-                    )}
-                  >
-                    <Icon name={item.icon} size={22} className={cn(active && "brightness-0 invert")} />
-                    {item.label}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+          {sections.map((sec) => (
+            <div key={sec.label} className="pt-2">
+              <p aria-hidden className="flex items-center gap-2 px-3 pb-1 text-[11px] font-bold tracking-wide text-mist">
+                {sec.label}
+                <span className="flex-1 border-t border-dashed border-line" />
+              </p>
+              <ul aria-label={sec.label} className="space-y-0.5">
+                {sec.items.map((item) => {
+                  const active = item.href === activeHref;
+                  return (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        aria-current={active ? "page" : undefined}
+                        className={cn(
+                          "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+                          active ? "bg-brand-500 text-white shadow-pink" : "text-ink-soft hover:bg-brand-50 hover:text-brand-600",
+                        )}
+                      >
+                        <Icon name={item.icon} size={22} className={cn(active && "brightness-0 invert")} />
+                        {item.label}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
         </nav>
         <div className="mt-3 space-y-1 border-t border-line pt-3">
           <Link href="/my" className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-ink-soft hover:bg-brand-50 hover:text-brand-600">
@@ -70,15 +80,16 @@ export function AdminSidebar({ name, roleLabel, role }: { name: string; roleLabe
   );
 }
 
-/** 모바일 상단 가로 스크롤 탭 */
+/** 모바일 상단 가로 스크롤 탭 (평평한 목록 — 좁은 화면에서는 한 줄로 넘긴다) */
 export function AdminMobileTabs({ role }: { role?: string | null }) {
   const pathname = usePathname();
   const items = navAdminFor(role);
+  const activeHref = activeAdminHref(items, pathname);
   return (
     <nav aria-label="관리자 메뉴" className="-mx-4 mb-5 overflow-x-auto px-4 md:hidden">
       <ul className="flex w-max gap-2 pb-1">
         {items.map((item) => {
-          const active = isAdminActive(pathname, item.href);
+          const active = item.href === activeHref;
           return (
             <li key={item.href}>
               <Link

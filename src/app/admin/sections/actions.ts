@@ -303,7 +303,8 @@ export async function createSection(_prev: ActionState, formData: FormData): Pro
   revalidatePath("/admin/sections");
   revalidatePath("/admin");
   revalidatePath("/");
-  redirect(`/admin/sections?term=${term.year}-${String(term.month).padStart(2, "0")}&created=${rows.length}#sections`);
+  // 만든 반은 개설 반 목록에서 본다 (2026-10-02 — 달력 화면에서 목록을 떼어 냈다)
+  redirect(`/admin/sections/classes?term=${term.year}-${String(term.month).padStart(2, "0")}&created=${rows.length}`);
 }
 
 /* ─── 반 정보 수정 ──────────────────────────────────────────────────────── */
@@ -362,7 +363,7 @@ export async function deleteSection(_prev: ActionState, formData: FormData): Pro
   revalidatePath("/admin/replays");
   revalidatePath("/");
   const t = sec?.term;
-  redirect(t ? `/admin/sections?term=${t.year}-${String(t.month).padStart(2, "0")}&deleted=1` : "/admin/sections?deleted=1");
+  redirect(t ? `/admin/sections/classes?term=${t.year}-${String(t.month).padStart(2, "0")}&deleted=1` : "/admin/sections/classes?deleted=1");
 }
 
 /* ─── 불라방 링크 ───────────────────────────────────────────────────────── */

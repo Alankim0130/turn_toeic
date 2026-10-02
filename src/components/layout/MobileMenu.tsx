@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
 import { Logo } from "@/components/ui/Logo";
-import { canUseFeature, featureHref, NAV_DRAWER, navAdminFor, site, STUDENT_FEATURES, type NavItem, type NavSection } from "@/lib/site";
+import { activeAdminHref, canUseFeature, featureHref, NAV_DRAWER, navAdminFor, navAdminSectionsFor, site, STUDENT_FEATURES, type NavItem, type NavSection } from "@/lib/site";
 import { KakaoMark } from "@/components/ui/BrandMarks";
 import { cn } from "@/lib/utils";
 import { ExternalMark, isActivePath } from "./NavLinks";
@@ -85,10 +85,10 @@ export function MobileMenu({
     };
   }, [open]);
 
-  // 관리자 모드에서는 그 등급의 관리자 메뉴 한 묶음 (2026-09-16 Alan — 조교는 쓸 수 있는 줄만)
-  const sections: NavSection[] = adminMode
-    ? [{ label: staffLabel(role), items: navAdminFor(role) }]
-    : NAV_DRAWER;
+  // 관리자 모드에서는 그 등급의 관리자 메뉴를 **묶음째로** (2026-10-02 Alan — 학생 모드처럼 카테고리별로. 조교는 쓸 수 있는 줄만)
+  const sections: NavSection[] = adminMode ? navAdminSectionsFor(role) : NAV_DRAWER;
+  // 관리자 메뉴는 주소가 겹친다(/admin/study 와 /admin/study/plan) — 가장 긴 주소 하나만 켠다
+  const adminActive = adminMode ? activeAdminHref(navAdminFor(role), pathname) : undefined;
 
   // 머리 오른쪽 날짜 배지: 수강 중이면 종강일, 개강 전이면 개강일. 둘 다 없으면(스태프·회원) 안 그린다
   const badge = access.active && until
@@ -165,7 +165,7 @@ export function MobileMenu({
         </div>
 
         {/* 메뉴 — 묶음마다 작은 제목 + 점선 */}
-        <nav aria-label={adminMode ? "관리자 메뉴" : "전체 메뉴"} className="flex-1 overflow-y-auto overscroll-contain px-3 pb-4">
+        <nav aria-label={adminMode ? staffLabel(role) : "전체 메뉴"} className="flex-1 overflow-y-auto overscroll-contain px-3 pb-4">
           {sections.map((sec) => (
             <div key={sec.label} className="pt-3">
               <p aria-hidden className="flex items-center gap-2 px-3 pb-1 text-[11px] font-bold tracking-wide text-mist">
@@ -175,7 +175,7 @@ export function MobileMenu({
               <ul aria-label={sec.label} className="space-y-0.5">
                 {sec.items.map((item) => (
                   <li key={item.href}>
-                    <Row item={item} pathname={pathname} access={access} onExternal={() => setOpen(false)} />
+                    <Row item={item} pathname={pathname} access={access} onExternal={() => setOpen(false)} activeHref={adminActive} />
                   </li>
                 ))}
               </ul>
@@ -233,11 +233,24 @@ function staffLabel(role?: string | null) {
 }
 
 /** 메뉴 한 줄. 수강생전용 기능은 못 쓰면 자물쇠를 붙이고 소개 페이지로 보낸다 (PC 드롭다운과 같은 규칙) */
-function Row({ item, pathname, access, onExternal }: { item: NavItem; pathname: string; access: NavAccess; onExternal: () => void }) {
+function Row({
+  item,
+  pathname,
+  access,
+  onExternal,
+  activeHref,
+}: {
+  item: NavItem;
+  pathname: string;
+  access: NavAccess;
+  onExternal: () => void;
+  /** 관리자 메뉴: 켜 둘 주소를 밖에서 정해 준다 (가장 긴 주소 하나). undefined 면 앞머리로 판정 */
+  activeHref?: string | null;
+}) {
   const feature = item.feature ? STUDENT_FEATURES.find((f) => f.key === item.feature) : undefined;
   const locked = feature ? !canUseFeature(feature, access) : false;
   const href = feature ? featureHref(feature, access) : item.href;
-  const active = !item.external && isActivePath(pathname, item.href);
+  const active = !item.external && (activeHref !== undefined ? activeHref === item.href : isActivePath(pathname, item.href));
   const className = cn(
     "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-bold transition",
     active ? "bg-brand-50 text-brand-700" : "text-ink hover:bg-surface",

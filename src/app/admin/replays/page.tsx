@@ -138,7 +138,7 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
         <div className="card flex flex-col items-center gap-2 p-10 text-center">
           <Icon name="calendar" size={48} />
           <p className="font-bold text-ink">아직 개설된 반이 없어요</p>
-          <Link href="/admin/sections" className="btn-primary mt-2">반 개설하러 가기</Link>
+          <Link href="/admin/sections/new" className="btn-primary mt-2">반 개설하러 가기</Link>
         </div>
       ) : (
         <>

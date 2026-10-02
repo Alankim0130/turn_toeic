@@ -329,35 +329,92 @@ export const NAV_BOTTOM: NavItem[] = [
  * 조교는 불라방 교재주문 · 스터디 신청자만). 나머지는 강사·관리자 전용이고
  * 화면마다 requireStaff() 가 한 번 더 막는다.
  */
-export const NAV_ADMIN: NavItem[] = [
-  { href: "/admin", label: "대시보드", icon: "analytics" },
-  { href: "/admin/students", label: "학생명단", icon: "students", crew: true },
-  // QR 출석 명단 · 교실 QR (2026-09-21 Alan "조교에게도 명단을 열어줘"). 학생명단 뒤에 둔다 — 조교의 첫 화면(adminHomeFor)이 바뀌지 않게
-  { href: "/admin/attendance", label: "출석", icon: "location", crew: true },
-  { href: "/admin/sections", label: "반 편성", icon: "calendar" },
-  // 평달·방학달 시간표 두 벌 — 반 일괄 개설 표와 랜딩이 읽는다 (2026-09-23 Alan "관리자모드에서 직접 설정"). 강사·관리자만
-  { href: "/admin/timetable", label: "시간표", icon: "timeslot" },
-  { href: "/admin/lectures", label: "특강 신청", icon: "bolt" },
-  { href: "/admin/verifications", label: "등업 로그", icon: "verify", crew: true },
-  { href: "/admin/textbook-orders", label: "교재주문", icon: "orders", crew: true },
-  // 불라방(Zoom) 입장 링크 — 지금 수업이 맨 위, 강사는 자기 반만 (2026-09-30 Alan). 대시보드 불라방 위젯이 여기로 온다
-  { href: "/admin/live", label: "불라방 링크", icon: "live" },
-  { href: "/admin/replays", label: "다시보기", icon: "replay" },
-  // 강사 유튜브 채널 연결 · 오늘 회차 송출 상태 (2026-09-21) — 강사·관리자만.
-  // 2026-10-01 부터 Zoom 수업을 유튜브로 함께 송출한 방송을 찾아 **다시보기**로 올린다 (불라방 입장은 Zoom 그대로 — 도메인 규칙 1)
-  { href: "/admin/live-channels", label: "유튜브 자동 연결", icon: "live" },
-  { href: "/admin/analytics", label: "마케팅 분석", icon: "analytics" },
-  { href: "/admin/study", label: "스터디 신청자", icon: "study", crew: true },
-  { href: "/admin/study-materials", label: "비대면 자료", icon: "online" },
-  { href: "/admin/homework", label: "숙제점검", icon: "homework" },
-  { href: "/admin/lc-audio", label: "LC 음원", icon: "headphones" },
-  { href: "/admin/contacts", label: "문의", icon: "contact" },
-  { href: "/admin/notifications", label: "알림 설정", icon: "bell" },
+/**
+ * 관리자 메뉴 **묶음** (2026-10-02 Alan — "관리자 햄버거 메뉴도 학생 모드와 마찬가지로 카테고리별 분리").
+ * 순서가 곧 메뉴 순서다. `NAV_ADMIN`(평평한 목록)은 여기서 만든다 — 두 곳에 적지 않는다.
+ * 묶음은 다섯: 운영 · 학생 · 수업 편성 · 수업 자료 · 학습. 대시보드가 맨 앞이고, 조교의 첫 화면(adminHomeFor)은 여전히 학생명단이다.
+ */
+export const NAV_ADMIN_SECTIONS: NavSection[] = [
+  {
+    label: "운영",
+    items: [
+      { href: "/admin", label: "대시보드", icon: "analytics" },
+      { href: "/admin/analytics", label: "마케팅 분석", icon: "analytics" },
+      { href: "/admin/contacts", label: "문의", icon: "contact" },
+      { href: "/admin/notifications", label: "알림 설정", icon: "bell" },
+    ],
+  },
+  {
+    label: "학생",
+    items: [
+      { href: "/admin/students", label: "학생명단", icon: "students", crew: true },
+      // QR 출석 명단 · 교실 QR (2026-09-21 Alan "조교에게도 명단을 열어줘"). 학생명단 뒤에 둔다 — 조교의 첫 화면(adminHomeFor)이 바뀌지 않게
+      { href: "/admin/attendance", label: "출석", icon: "location", crew: true },
+      { href: "/admin/verifications", label: "등업 로그", icon: "verify", crew: true },
+      { href: "/admin/textbook-orders", label: "교재주문", icon: "orders", crew: true },
+    ],
+  },
+  {
+    label: "수업 편성",
+    items: [
+      // 달력(일정표)만. 개설 반 · 새 반 개설 · 담당 강사는 그 아래 탭 (2026-10-02)
+      { href: "/admin/sections", label: "반 편성", icon: "calendar" },
+      // 평달·방학달 시간표 두 벌 — 반 일괄 개설 표와 랜딩이 읽는다 (2026-09-23 Alan "관리자모드에서 직접 설정"). 강사·관리자만
+      { href: "/admin/timetable", label: "시간표", icon: "timeslot" },
+      { href: "/admin/lectures", label: "특강 신청", icon: "bolt" },
+    ],
+  },
+  {
+    label: "수업 자료",
+    items: [
+      // 불라방(Zoom) 입장 링크 — 지금 수업이 맨 위, 강사는 자기 반만 (2026-09-30 Alan). 대시보드 불라방 위젯이 여기로 온다
+      { href: "/admin/live", label: "불라방 링크", icon: "live" },
+      { href: "/admin/replays", label: "다시보기", icon: "replay" },
+      // 강사 유튜브 채널 연결 · 오늘 회차 송출 상태 (2026-09-21) — 강사·관리자만.
+      // 2026-10-01 부터 Zoom 수업을 유튜브로 함께 송출한 방송을 찾아 **다시보기**로 올린다 (불라방 입장은 Zoom 그대로 — 도메인 규칙 1)
+      { href: "/admin/live-channels", label: "유튜브 자동 연결", icon: "live" },
+      { href: "/admin/lc-audio", label: "LC 음원", icon: "headphones" },
+    ],
+  },
+  {
+    label: "학습",
+    items: [
+      { href: "/admin/study", label: "스터디 신청자", icon: "study", crew: true },
+      // 스터디 시간 설정 — 반 편성 화면에서 떼어 낸 전용 화면 (2026-10-02 Alan "스터디 생성도 별도의 페이지로")
+      { href: "/admin/study/plan", label: "스터디 시간 설정", icon: "study" },
+      { href: "/admin/study-materials", label: "비대면 자료", icon: "online" },
+      { href: "/admin/homework", label: "숙제점검", icon: "homework" },
+    ],
+  },
 ];
+
+/**
+ * 관리자 메뉴 (평평한 목록). `crew: true` 인 항목은 **조교도** 쓸 수 있다 (2026-09-16 Alan:
+ * 조교는 불라방 교재주문 · 스터디 신청자만). 나머지는 강사·관리자 전용이고 화면마다 requireStaff() 가 한 번 더 막는다.
+ */
+export const NAV_ADMIN: NavItem[] = NAV_ADMIN_SECTIONS.flatMap((s) => s.items);
 
 /** 그 등급이 쓸 수 있는 관리자 메뉴. 조교는 crew 항목만 */
 export function navAdminFor(role?: string | null): NavItem[] {
   return role === "assistant" ? NAV_ADMIN.filter((n) => n.crew) : NAV_ADMIN;
+}
+
+/** 그 등급이 쓸 수 있는 관리자 메뉴를 묶음째로 — 햄버거 서랍 · 사이드바가 그린다. 빈 묶음은 뺀다 */
+export function navAdminSectionsFor(role?: string | null): NavSection[] {
+  return NAV_ADMIN_SECTIONS.map((s) => ({ ...s, items: role === "assistant" ? s.items.filter((n) => n.crew) : s.items })).filter((s) => s.items.length > 0);
+}
+
+/**
+ * 지금 주소에 켜 둘 메뉴 하나 — **가장 긴 주소**가 이긴다. `/admin/study/plan` 은 `/admin/study`(스터디 신청자)의 아래이기도 해서
+ * 앞머리만 보면 둘 다 켜진다 (2026-10-02). 대시보드(`/admin`)는 정확히 그 주소일 때만.
+ */
+export function activeAdminHref(items: readonly NavItem[], pathname: string): string | null {
+  let best: string | null = null;
+  for (const n of items) {
+    const hit = n.href === "/admin" ? pathname === "/admin" : pathname === n.href || pathname.startsWith(`${n.href}/`);
+    if (hit && (best === null || n.href.length > best.length)) best = n.href;
+  }
+  return best;
 }
 
 /**
@@ -369,7 +426,10 @@ export function navAdminFor(role?: string | null): NavItem[] {
 export function canEnterAdminPath(role: string | null | undefined, pathname: string): boolean {
   if (role === "instructor" || role === "admin") return true;
   if (role !== "assistant") return false;
-  return navAdminFor(role).some((n) => pathname === n.href || pathname.startsWith(`${n.href}/`));
+  // **가장 긴 메뉴 주소**로 판정한다 (2026-10-02) — /admin/study/plan(스태프만)은 /admin/study(조교 가능)의 아래지만 다른 화면이다.
+  // 앞머리만 보면 조교가 proxy 를 지나 requireStaff() 에서 튕긴다 — 입구에서 미리 막는다
+  const best = activeAdminHref(NAV_ADMIN, pathname);
+  return best !== null && NAV_ADMIN.some((n) => n.href === best && n.crew === true);
 }
 
 /**
@@ -396,7 +456,7 @@ const featureNav = (key: StudentFeatureKey, label?: string): NavItem => {
 
 export type NavSection = { label: string; items: NavItem[] };
 
-/** 햄버거 메뉴의 묶음 (학생 모드). 관리자 모드는 navAdminFor(role) 한 묶음이다 */
+/** 햄버거 메뉴의 묶음 (학생 모드). 관리자 모드는 navAdminSectionsFor(role) — 운영 · 학생 · 수업 편성 · 수업 자료 · 학습 (2026-10-02) */
 export const NAV_DRAWER: NavSection[] = [
   // **소개·수강생전용 안내가 맨 위다** (2026-09-19 Alan — "안내 카테고리 안에 소개랑 수강생전용은 맨 위로").
   // 아래로 내려 두면 학습 묶음까지 지나야 나와서, 처음 온 사람이 "여기가 뭐 하는 곳인가" 를 못 찾는다.
