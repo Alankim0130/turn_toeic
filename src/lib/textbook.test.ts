@@ -7,12 +7,15 @@ import {
   itemsForBooks,
   itemsForLevels,
   orderPreset,
+  orderStepIndex,
   ownedItemIds,
   textbookGuide,
   textbookNotice,
   textbookNoticeMessage,
   textbookOrderError,
   textbookQuote,
+  TEXTBOOK_ADMIN_STATUS,
+  TEXTBOOK_STATUS,
   type BookSection,
   type TextbookAccount,
   type TextbookItem,
@@ -288,5 +291,17 @@ describe("주문 화면에 골라 둘 교재", () => {
   it("정하지 못했으면 골라 두지 않는다 (예전처럼 학생이 고른다) · 등록 안 된 교재는 이름을 적는다", () => {
     expect(orderPreset(guide([], true))).toEqual({ recommended: null, note: "내 반 교재를 정하지 못했어요 — 필요한 교재를 직접 골라 주세요." });
     expect(orderPreset(guide([], false, [books[0]]))).toEqual({ recommended: [1], note: "내 반 교재 1권을 골라 뒀어요. 아직 등록되지 않은 교재: 650 RC B과정" });
+  });
+});
+
+describe("주문 단계 — 강사 금액확인 → 조교 배송완료 → 학생 배송확인 · 배송시작 (2026-10-02 Alan)", () => {
+  it("학생 화면은 주문완료 → 배송확인 → 배송시작, 취소는 단계가 없다", () => {
+    expect(["requested", "confirmed", "shipped"].map((s) => TEXTBOOK_STATUS[s].label)).toEqual(["주문완료", "배송확인", "배송시작"]);
+    expect(["requested", "confirmed", "shipped", "cancelled"].map(orderStepIndex)).toEqual([0, 1, 2, -1]);
+    expect(TEXTBOOK_STATUS.shipped.hint).toContain("배송완료");
+  });
+
+  it("강사 · 조교 화면은 하는 일의 이름으로 — 금액확인 전 · 배송 대기 · 배송완료", () => {
+    expect(TEXTBOOK_ADMIN_STATUS).toEqual({ requested: "금액확인 전", confirmed: "배송 대기", shipped: "배송완료", cancelled: "취소" });
   });
 });

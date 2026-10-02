@@ -73,3 +73,16 @@ export async function cancelTextbookOrder(formData: FormData) {
   await supabase.rpc("cancel_textbook_order", { p_id: id });
   revalidatePath("/my/textbook");
 }
+
+/**
+ * 받았어요(배송완료) — 학생이 누르면 그 주문이 내 내역에서 사라진다 (2026-10-02 Alan — "학생이 해당화면을 없애고 싶다면,
+ * 배송완료 버튼을 누르면 사라지게"). 주문 기록은 남고 강사 · 조교 화면에는 "학생 수령 확인" 으로 보인다.
+ * 내 주문 · 배송시작(shipped) 상태일 때만 — DB 함수(`receive_textbook_order`)가 auth.uid() 로 다시 본다.
+ */
+export async function receiveTextbookOrder(formData: FormData) {
+  const id = Number(formData.get("id"));
+  if (!Number.isInteger(id) || id <= 0) return;
+  const supabase = await createClient();
+  await supabase.rpc("receive_textbook_order", { p_id: id });
+  revalidatePath("/my/textbook");
+}

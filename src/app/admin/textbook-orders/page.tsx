@@ -9,19 +9,26 @@ import { Icon } from "@/components/ui/Icon";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { TableWrap, Th, Td } from "@/components/admin/Table";
 import { termLabel } from "../_lib/queries";
-import { updateTextbookOrder } from "./actions";
+import { confirmTextbookPayment, markTextbookShipped, updateTextbookOrder } from "./actions";
 import { isStaff, requireCrew } from "@/lib/auth";
-import { TEXTBOOK_STATUS } from "@/lib/textbook";
+import { TEXTBOOK_ADMIN_STATUS } from "@/lib/textbook";
 
 export const metadata: Metadata = { title: "교재주문", robots: { index: false } };
 
+// 배송 단계 (2026-10-02 Alan): 강사가 금액확인 → 조교가 배송완료. 이름은 하는 일 — 학생 화면은 같은 상태를 배송확인 · 배송시작으로 부른다
 const TABS = [
-  { value: "requested", label: "입금 확인 전" },
-  { value: "confirmed", label: "입금 확인" },
-  { value: "shipped", label: "발송" },
-  { value: "cancelled", label: "취소" },
+  { value: "requested", label: TEXTBOOK_ADMIN_STATUS.requested },
+  { value: "confirmed", label: TEXTBOOK_ADMIN_STATUS.confirmed },
+  { value: "shipped", label: TEXTBOOK_ADMIN_STATUS.shipped },
+  { value: "cancelled", label: TEXTBOOK_ADMIN_STATUS.cancelled },
   { value: "all", label: "전체" },
 ];
+
+const ERROR_TEXT: Record<string, string> = {
+  invalid: "잘못된 요청입니다.",
+  stale: "이미 처리됐거나 학생이 취소한 주문이에요. 목록을 다시 확인해 주세요.",
+  staff: "금액확인은 강사·관리자만 할 수 있어요 — 교재비가 강사님 통장으로 들어와요.",
+};
 
 const STATUS_CLASS: Record<string, string> = {
   requested: "bg-amber-100 text-amber-800",
@@ -32,11 +39,13 @@ const STATUS_CLASS: Record<string, string> = {
 
 type OrderedItem = { id: number; name: string; price: number };
 
-export default async function TextbookOrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; ok?: string; error?: string }> }) {
+export default async function TextbookOrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; ok?: string; did?: string; error?: string }> }) {
   // 조교에게도 열린 화면이다 (2026-09-16 Alan). 레이아웃이 조교를 통과시키므로 화면마다 가드를 둔다
   const { profile } = await requireCrew();
-  const { status: statusParam, ok, error } = await searchParams;
-  const status = TABS.some((t) => t.value === statusParam) ? (statusParam as string) : "requested";
+  const staff = isStaff(profile.role);
+  const { status: statusParam, ok, did, error } = await searchParams;
+  // 처음 열면 할 일부터 — 강사·관리자는 금액확인 전, 조교는 배송 대기
+  const status = TABS.some((t) => t.value === statusParam) ? (statusParam as string) : staff ? "requested" : "confirmed";
   const supabase = await createClient();
 
   let query = supabase
@@ -63,9 +72,9 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
       <PageHeader
         icon="orders"
         title="교재주문"
-        description="불라방 수강생의 교재 주문이에요. 입금자명을 통장과 대조해 '입금 확인'으로 바꾸고, 발송하면 송장번호를 남기면 학생 화면에도 보여요."
+        description="불라방 수강생의 교재 주문이에요. 강사님이 입금자명을 통장과 대조해 '금액확인'을 누르면 조교 화면의 배송 대기로 넘어가고, 보낸 뒤 '배송완료'를 누르면 학생 화면에 배송시작으로 보여요."
       />
-      {isStaff(profile.role) && (
+      {staff && (
         <div className="mb-4 flex justify-end">
           <Link href="/admin/textbook-orders/setup" className="btn-secondary !py-2 text-sm">
             <Icon name="textbook" size={18} />
@@ -73,8 +82,16 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
           </Link>
         </div>
       )}
-      {ok && <Alert kind="success" className="mb-4">주문 #{ok} 상태를 저장했습니다.</Alert>}
-      {error && <Alert kind="warning" className="mb-4">{error === "invalid" ? "잘못된 요청입니다." : "저장에 실패했습니다. 다시 시도해 주세요."}</Alert>}
+      {ok && (
+        <Alert kind="success" className="mb-4">
+          {did === "confirmed"
+            ? `주문 #${ok} 금액확인했어요 — 조교 화면의 배송 대기로 넘어갔고, 학생 화면에는 배송확인으로 보여요.`
+            : did === "shipped"
+              ? `주문 #${ok} 배송완료 — 학생 화면에 배송시작으로 보여요.`
+              : `주문 #${ok} 상태를 저장했습니다.`}
+        </Alert>
+      )}
+      {error && <Alert kind="warning" className="mb-4">{ERROR_TEXT[error] ?? "저장에 실패했습니다. 다시 시도해 주세요."}</Alert>}
 
       <FilterTabs basePath="/admin/textbook-orders" paramKey="status" current={status} tabs={TABS.map((t) => ({ ...t, count: counts[t.value] }))} />
 
@@ -137,22 +154,53 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
                   </Td>
                   <Td>
                     <span className={cn("whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-bold", STATUS_CLASS[o.status] ?? "bg-line text-slate")}>
-                      {TEXTBOOK_STATUS[o.status]?.label ?? o.status}
+                      {TEXTBOOK_ADMIN_STATUS[o.status] ?? o.status}
                     </span>
+                    {/* 학생이 받았다고 누르면(배송완료) 학생 내역에서는 사라지고 여기에 남는다 (2026-10-02) */}
+                    {o.status === "shipped" && (
+                      <p className="mt-1 whitespace-nowrap text-xs text-slate">
+                        {o.received_at ? `학생 수령 확인 · ${formatDate(o.received_at, { month: "numeric", day: "numeric" })}` : "학생 수령 확인 전"}
+                      </p>
+                    )}
                   </Td>
                   <Td>
-                    <form action={updateTextbookOrder} className="flex min-w-[15rem] flex-col gap-1.5">
-                      <input type="hidden" name="order_id" value={o.id} />
-                      <input type="hidden" name="back" value={back} />
-                      <select name="status" defaultValue={o.status} className="input !py-1.5 text-xs" aria-label="상태">
-                        <option value="requested">입금 확인 전</option>
-                        <option value="confirmed">입금 확인</option>
-                        <option value="shipped">발송</option>
-                        <option value="cancelled">취소</option>
-                      </select>
-                      <input name="tracking_no" defaultValue={o.tracking_no ?? ""} placeholder="송장번호 (발송 시)" className="input !py-1.5 text-xs" aria-label="송장번호" />
-                      <button type="submit" className="btn-secondary !py-1.5 text-xs">저장</button>
-                    </form>
+                    <div className="flex min-w-[15rem] flex-col gap-2">
+                      {/* 할 일 한 단계 — 강사·관리자는 금액확인, 조교는 배송완료 (2026-10-02 Alan) */}
+                      {o.status === "requested" &&
+                        (staff ? (
+                          <form action={confirmTextbookPayment}>
+                            <input type="hidden" name="order_id" value={o.id} />
+                            <input type="hidden" name="back" value={back} />
+                            <button type="submit" className="btn-primary w-full !py-1.5 text-xs">금액확인</button>
+                          </form>
+                        ) : (
+                          <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">강사님 금액확인을 기다려요</p>
+                        ))}
+                      {o.status === "confirmed" && (
+                        <form action={markTextbookShipped} className="flex flex-col gap-1.5">
+                          <input type="hidden" name="order_id" value={o.id} />
+                          <input type="hidden" name="back" value={back} />
+                          <input name="tracking_no" defaultValue={o.tracking_no ?? ""} maxLength={60} placeholder="송장번호 (선택)" className="input !py-1.5 text-xs" aria-label="송장번호" />
+                          <button type="submit" className="btn-primary w-full !py-1.5 text-xs">배송완료</button>
+                        </form>
+                      )}
+                      {/* 잘못 누른 것 되돌리기 · 취소 · 송장 고치기 — 평소에는 접어 둔다 */}
+                      <details className="text-xs">
+                        <summary className="cursor-pointer font-bold text-slate">상태 직접 바꾸기</summary>
+                        <form action={updateTextbookOrder} className="mt-1.5 flex flex-col gap-1.5">
+                          <input type="hidden" name="order_id" value={o.id} />
+                          <input type="hidden" name="back" value={back} />
+                          <select name="status" defaultValue={o.status} className="input !py-1.5 text-xs" aria-label="상태">
+                            {(["requested", "confirmed", "shipped", "cancelled"] as const).map((v) => (
+                              <option key={v} value={v}>{TEXTBOOK_ADMIN_STATUS[v]}</option>
+                            ))}
+                          </select>
+                          <input name="tracking_no" defaultValue={o.tracking_no ?? ""} maxLength={60} placeholder="송장번호" className="input !py-1.5 text-xs" aria-label="송장번호" />
+                          <button type="submit" className="btn-secondary !py-1.5 text-xs">저장</button>
+                          {!staff && <p className="text-mist">금액확인 전 주문을 배송 대기 · 배송완료로 넘기는 것은 강사·관리자만 할 수 있어요 (금액확인).</p>}
+                        </form>
+                      </details>
+                    </div>
                   </Td>
                 </tr>
               );

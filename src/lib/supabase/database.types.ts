@@ -1964,6 +1964,7 @@ export type Database = {
           phone: string
           postal_code: string | null
           quantity: number
+          received_at: string | null
           recipient_name: string
           section_id: number
           shipping_fee: number
@@ -1987,6 +1988,7 @@ export type Database = {
           phone: string
           postal_code?: string | null
           quantity?: number
+          received_at?: string | null
           recipient_name: string
           section_id: number
           shipping_fee?: number
@@ -2010,6 +2012,7 @@ export type Database = {
           phone?: string
           postal_code?: string | null
           quantity?: number
+          received_at?: string | null
           recipient_name?: string
           section_id?: number
           shipping_fee?: number
@@ -2302,6 +2305,10 @@ export type Database = {
       live_detect_candidates: {
         Args: never
         Returns: { instructor_id: string; label: string; section_id: number; session_date_id: number; starts_at: string }[]
+      }
+      receive_textbook_order: {
+        Args: { p_id: number }
+        Returns: boolean
       }
       register_detected_stream: {
         Args: { p_session_date_ids: number[]; p_url: string }
