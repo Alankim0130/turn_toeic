@@ -55,7 +55,8 @@ export function MonthSchedule({
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[1.1fr_1fr]">
-      <MonthCalendar year={year} month={month} marks={marks} today={today} selected={picked} onSelect={setPicked} />
+      {/* 색만 — 강좌 이름은 칸에 적지 않는다 (2026-10-02 Alan "본인이 신청한 반이라서 이런 글자 다 표시가 안되어도") */}
+      <MonthCalendar year={year} month={month} marks={marks} today={today} selected={picked} onSelect={setPicked} showLabels={false} />
 
       <section className="card overflow-hidden">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-brand-50/60 px-4 py-3">
@@ -104,7 +105,7 @@ export function MonthSchedule({
                   {!picked && <span className="font-semibold text-ink">{formatDate(s.date)}</span>}
                   {s.time && <span className="tabular-nums text-slate">{s.time}</span>}
                   <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold text-white", s.mwf ? "bg-brand-500" : "bg-ink")}>{s.track}</span>
-                  <span className="text-slate">{s.course}</span>
+                  {/* 강좌 이름은 적지 않는다 — 내가 신청한 반이라 색(월수금 분홍 · 화목금 잉크)과 시간이면 충분하다 (2026-10-02 Alan) */}
                   {/* 저녁반 화목금은 인강 — 교실에 나오지 않는다 (2026-09-17 Alan) */}
                   {s.recorded && (
                     <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-black text-violet-800" title={RECORDED_NOTE}>

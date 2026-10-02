@@ -22,6 +22,7 @@ export function MonthCalendar({
   today,
   selected,
   onSelect,
+  showLabels = true,
 }: {
   year: number;
   month: number;
@@ -29,6 +30,12 @@ export function MonthCalendar({
   today: string;
   selected?: string | null;
   onSelect?: (date: string) => void;
+  /**
+   * 넓은 화면에서 칸에 글자를 적을지. **내 시간표는 색만** 칠한다 (2026-10-02 Alan — "650+ 왕기초.. 이런글자가 다 적혀있는데,
+   * 본인이 신청한 반이라서 이런 글자 다 표시가 안되어도 될것같아. 그냥 색상만 구분해서 보여주기만 해도 깔끔할 것 같아").
+   * 숙제 달력은 칸 글자(`제출 N` · 레벨)가 정보라 그대로 둔다. 글자는 `title` 에 남는다 (마우스를 올리면 보인다)
+   */
+  showLabels?: boolean;
 }) {
   const first = new Date(Date.UTC(year, month - 1, 1));
   const firstWeekday = first.getUTCDay();
@@ -90,12 +97,13 @@ export function MonthCalendar({
                     key={j}
                     title={m.label}
                     className={cn(
-                      "block h-1.5 w-full max-w-8 rounded-full sm:h-auto sm:max-w-none sm:px-1 sm:py-0.5 sm:text-[10px] sm:font-bold sm:text-white",
+                      "block h-1.5 w-full max-w-8 rounded-full",
+                      showLabels ? "sm:h-auto sm:max-w-none sm:px-1 sm:py-0.5 sm:text-[10px] sm:font-bold sm:text-white" : "sm:h-2 sm:max-w-none",
                       m.track === "ttf" ? "bg-ink" : m.track === "lecture" ? "bg-violet-500" : "bg-brand-500",
                       past && !on && "opacity-40",
                     )}
                   >
-                    <span className="hidden truncate sm:block">{m.label}</span>
+                    {showLabels && <span className="hidden truncate sm:block">{m.label}</span>}
                   </span>
                 ))}
               </div>
