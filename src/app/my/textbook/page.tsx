@@ -18,11 +18,12 @@ import {
   type TextbookSettings,
 } from "@/lib/textbook";
 import { bookSectionsOf, TEXTBOOK_ACCOUNT_COLS, TEXTBOOK_ITEM_COLS } from "@/lib/textbook-guide";
-import { cn, formatDate, formatWon, TRACK_LABEL } from "@/lib/utils";
+import { formatDate, formatWon, TRACK_LABEL } from "@/lib/utils";
 import { collapseWeek5, studentTrackLabel, week5SectionIds } from "@/lib/week5";
 import { getMyOrders, getMyTextbookOrders, getMyTextbookTerms, termLabel, type MyTextbookTerm } from "../_lib/queries";
 import { TextbookForm, type OrderTerm } from "./TextbookForm";
-import { cancelTextbookOrder } from "./actions";
+import { cancelTextbookOrder, receiveTextbookOrder } from "./actions";
+import { OrderSteps } from "@/components/my/OrderSteps";
 
 export const metadata: Metadata = {
   title: "불라방 교재주문",
@@ -55,6 +56,8 @@ export default async function TextbookPage() {
     supabase.from("textbook_settings").select("shipping_fee, default_account_id, notice").maybeSingle(),
   ]);
 
+  // 학생이 받았다고 누른(배송완료) 주문은 내역에서 뺀다 — 지난 주문에서 받은 교재(ownedItemIds)는 그대로 센다
+  const visibleOrders = myOrders.filter((o) => !o.received_at);
   const terms = await getMyTextbookTerms(orders);
   const orderedTerms = new Set(myOrders.filter((o) => o.status !== "cancelled" && o.term_id).map((o) => o.term_id));
   // 내 반 교재 (2026-10-02 Alan — "주5일은 4권 … 주3일과 주5일 60분이면 2권") — 함께 듣는 반은 DB 가 정한다 (term_section_includes)
@@ -97,36 +100,28 @@ export default async function TextbookPage() {
       <Reveal delay={100}>
         <section aria-labelledby="orders-title" className="card p-5 sm:p-6">
           <h2 id="orders-title" className="text-base font-black text-ink">내 교재주문 내역</h2>
-          {myOrders.length === 0 ? (
-            <p className="mt-3 text-sm text-slate">아직 주문한 교재가 없어요.</p>
+          {visibleOrders.length === 0 ? (
+            <p className="mt-3 text-sm text-slate">
+              {myOrders.length === 0 ? "아직 주문한 교재가 없어요." : "주문한 교재를 모두 받았어요. 배송완료를 누른 주문은 내역에서 사라져요."}
+            </p>
           ) : (
             <ul className="mt-3 divide-y divide-line">
-              {myOrders.map((o) => {
+              {visibleOrders.map((o) => {
                 const st = TEXTBOOK_STATUS[o.status] ?? { label: o.status, hint: "" };
                 const ordered = (Array.isArray(o.items) ? o.items : []) as OrderedItem[];
                 const payTo = (Array.isArray(o.pay_to) ? o.pay_to : []) as PayTo[];
                 return (
                   <li key={o.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 text-sm">
+                    <div className="min-w-0 flex-1 text-sm">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={cn(
-                            "rounded-full px-2.5 py-0.5 text-xs font-black",
-                            o.status === "shipped"
-                              ? "bg-brand-500 text-white"
-                              : o.status === "cancelled"
-                                ? "bg-line text-slate"
-                                : o.status === "confirmed"
-                                  ? "bg-ink text-white"
-                                  : "bg-brand-100 text-brand-700",
-                          )}
-                        >
-                          {st.label}
-                        </span>
+                        {o.status === "cancelled" && <span className="rounded-full bg-line px-2.5 py-0.5 text-xs font-black text-slate">{st.label}</span>}
                         <span className="font-bold text-ink">{o.section ? `${termLabel(o.section.term)} · ${o.section.course?.name ?? "강좌"}` : "반 정보 없음"}</span>
                         {o.total_amount > 0 && <span className="font-black tabular-nums text-ink">{formatWon(o.total_amount)}</span>}
                       </div>
-                      {ordered.length > 0 && <p className="mt-1 text-ink">{ordered.map((i) => i.name).join(" · ")}</p>}
+                      {/* 주문완료 → 배송확인(강사 금액확인) → 배송시작(조교 배송완료) — 2026-10-02 Alan */}
+                      <OrderSteps status={o.status} />
+                      {o.status !== "cancelled" && st.hint && <p className="mt-2 text-xs font-bold text-brand-700">{st.hint}</p>}
+                      {ordered.length > 0 && <p className="mt-2 text-ink">{ordered.map((i) => i.name).join(" · ")}</p>}
                       {o.status === "requested" && payTo.length > 0 && (
                         <p className="mt-1 text-xs text-slate">
                           입금 안내: {payTo.map((p) => `${p.bank_name ?? ""} ${p.account_no ?? ""} (예금주 ${p.holder ?? ""}) ${formatWon(p.amount)}`).join(" · ")}
@@ -139,7 +134,7 @@ export default async function TextbookPage() {
                       </p>
                       <p className="text-xs text-mist">
                         {formatDate(o.created_at, { year: "numeric", month: "long", day: "numeric" })} 주문
-                        {o.tracking_no ? ` · 송장번호 ${o.tracking_no}` : st.hint ? ` · ${st.hint}` : ""}
+                        {o.tracking_no ? ` · 송장번호 ${o.tracking_no}` : ""}
                       </p>
                     </div>
                     {o.status === "requested" && (
@@ -149,6 +144,13 @@ export default async function TextbookPage() {
                           <Icon name="warning" size={16} />
                           주문 취소
                         </button>
+                      </form>
+                    )}
+                    {/* 받았으면 학생이 누른다 — 이 주문이 내역에서 사라진다 (기록은 남고 선생님 화면에는 '학생 수령 확인') */}
+                    {o.status === "shipped" && (
+                      <form action={receiveTextbookOrder} className="shrink-0">
+                        <input type="hidden" name="id" value={o.id} />
+                        <button type="submit" className="btn-primary w-full !px-4 !py-2 text-sm sm:w-auto">배송완료</button>
                       </form>
                     )}
                   </li>

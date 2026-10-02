@@ -272,9 +272,31 @@ export function textbookOrderError(message: string | undefined): string {
   return "주문하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 }
 
+/**
+ * 학생 화면의 주문 상태 (2026-10-02 Alan — "학생들 화면에는 배송확인 - 배송시작 이렇게 나오면 좋겠어").
+ * 상태 값은 그대로이고 부르는 이름만 학생 쪽 말로 — 강사가 금액확인 → `배송확인`, 조교가 배송완료 → `배송시작`.
+ * 강사 · 조교 화면은 `TEXTBOOK_ADMIN_STATUS` (같은 상태를 하는 일의 이름으로 부른다).
+ */
 export const TEXTBOOK_STATUS: Record<string, { label: string; hint: string }> = {
-  requested: { label: "입금 확인 중", hint: "입금하시면 강사님이 통장과 대조해 확인해요" },
-  confirmed: { label: "입금 확인", hint: "곧 발송해요" },
-  shipped: { label: "발송 완료", hint: "송장번호로 배송을 확인할 수 있어요" },
+  requested: { label: "주문완료", hint: "입금하시면 강사님이 통장과 대조해 금액을 확인해요" },
+  confirmed: { label: "배송확인", hint: "금액이 확인됐어요. 곧 교재를 보내 드려요" },
+  shipped: { label: "배송시작", hint: "교재가 출발했어요. 받으셨으면 배송완료를 눌러 주세요 — 내역에서 사라져요" },
   cancelled: { label: "취소", hint: "" },
+};
+
+/** 학생 주문 카드의 단계 — 주문완료 → 배송확인 → 배송시작. 취소는 단계가 없다(-1) */
+export const ORDER_STEPS = ["requested", "confirmed", "shipped"] as const;
+export function orderStepIndex(status: string): number {
+  return (ORDER_STEPS as readonly string[]).indexOf(status);
+}
+
+/**
+ * 강사 · 조교 화면의 상태 이름 (2026-10-02 Alan — "강사가 금액확인을 하고 금액확인 버튼을 눌러주면, 조교들이 배송을 진행 …
+ * 배송을 완료하면 배송완료 버튼"). 금액확인은 강사 · 관리자만 (DB 트리거 guard_textbook_order_update 도 본다).
+ */
+export const TEXTBOOK_ADMIN_STATUS: Record<string, string> = {
+  requested: "금액확인 전",
+  confirmed: "배송 대기",
+  shipped: "배송완료",
+  cancelled: "취소",
 };
