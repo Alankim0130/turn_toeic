@@ -5,8 +5,9 @@
  *
  * 저장 구조는 그대로다 — 주5일은 **같은 기수 · 같은 강좌 · 같은 시간대의 월수금 반 + 화목금 반**에
  * 함께 배정된 것이고 따로 저장하는 값이 없다 (도메인 규칙 1). 여기서 그 짝을 찾아 **표시만** 바꾼다.
- * 반 편성·반 배정 같은 관리자 화면은 트랙을 그대로 보여 준다 — 편성은 트랙 단위로 한다.
- * **학생명단 카드만 예외로 여기서 합친다** (2026-09-19 Alan) — 명단은 편성하는 화면이 아니라 훑어보는 화면이라,
+ * 반 편성 같은 관리자 화면은 트랙을 그대로 보여 준다 — 편성은 트랙 단위로 한다.
+ * **학생 한 명의 반을 늘어놓는 관리자 화면은 예외로 여기서 합친다** — 학생명단 카드(2026-09-19 Alan) ·
+ * 학생 관리의 반 배정 목록(2026-10-02 Alan "반배정에서 주5일반을 고르면 2개반으로 표시가 되고 있어. 주5일반으로 하나로").
  * 같은 반이 월수금·화목금 두 줄로 서면 한 사람이 두 반을 듣는 것처럼 보인다.
  */
 
@@ -70,5 +71,25 @@ export function collapseWeek5<T>(rows: T[], sectionOf: (row: T) => Week5Section 
     const s = sectionOf(row);
     if (!s || !week5.has(s.id)) return true;
     return keep.get(pairKey(s)!) === s.id;
+  });
+}
+
+/**
+ * 주5일 짝을 **한 묶음**으로 — 줄은 하나지만 두 배정을 함께 다뤄야 하는 곳 (학생 관리의 반 배정: 배정 해제도 둘 같이, 2026-10-02).
+ * 묶음은 `collapseWeek5` 가 남기는 줄의 자리에 서고, 안은 **월수금 → 화목금** 순이다. 주5일이 아닌 줄은 혼자 한 묶음이다.
+ * 짝은 넘겨준 줄 안에서만 찾는다 (`week5` 를 그 학생의 반으로 만들 것 — 명단 전체로 만들면 다른 학생의 반과 짝이 된다).
+ */
+export function groupWeek5<T>(rows: T[], sectionOf: (row: T) => Week5Section | null, week5: Set<number>): T[][] {
+  const pairs = new Map<string, T[]>();
+  for (const row of rows) {
+    const s = sectionOf(row);
+    if (!s || !week5.has(s.id)) continue;
+    const k = pairKey(s)!;
+    pairs.set(k, [...(pairs.get(k) ?? []), row]);
+  }
+  const mwfFirst = (a: T, b: T) => Number(sectionOf(a)?.track !== "mwf") - Number(sectionOf(b)?.track !== "mwf");
+  return collapseWeek5(rows, sectionOf, week5).map((row) => {
+    const s = sectionOf(row);
+    return s && week5.has(s.id) ? [...pairs.get(pairKey(s)!)!].sort(mwfFirst) : [row];
   });
 }

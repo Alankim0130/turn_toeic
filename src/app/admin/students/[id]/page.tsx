@@ -19,7 +19,7 @@ import { signedAvatarUrl } from "@/lib/avatar-url";
 import { StudentReceipts, type StudentReceipt } from "@/components/admin/students/StudentReceipts";
 import { receiptFacts, receiptNameMismatch, receiptVerdict } from "@/lib/receipt-history";
 import type { PickerSection } from "@/components/admin/SectionPicker";
-import { GENDER_LABEL, pickTerm, sectionSummary, termLabel, TERM_COLUMNS } from "../../_lib/queries";
+import { enrollmentLines, GENDER_LABEL, pickTerm, termLabel, TERM_COLUMNS } from "../../_lib/queries";
 import { termParam } from "@/lib/study";
 
 export const metadata: Metadata = { title: "학생 관리", robots: { index: false } };
@@ -56,7 +56,9 @@ export default async function StudentDetailPage({
   const [{ data: enrollments }, { data: orders }, { data: terms }, { data: verifications }] = await Promise.all([
     supabase
       .from("enrollments")
-      .select("id, mode, status, order_id, section:class_sections!enrollments_section_id_fkey(id, track, start_time, end_time, time_block, closes_at, term:terms(year, month), course:courses(name))")
+      .select(
+        "id, mode, status, order_id, section:class_sections!enrollments_section_id_fkey(id, term_id, course_id, track, start_time, end_time, time_block, closes_at, term:terms(year, month), course:courses(name))",
+      )
       .eq("student_id", id)
       .order("id"),
     supabase.from("enrollment_orders").select("id, status, activates_on, access_until, verification_id").eq("user_id", id).order("activates_on", { ascending: false }),
@@ -87,7 +89,8 @@ export default async function StudentDetailPage({
       verdict: receiptVerdict(v),
       facts: receiptFacts(v.parsed),
       nameMismatch: receiptNameMismatch(v.parsed),
-      assigned: orderId == null ? [] : (enrollments ?? []).filter((e) => e.order_id === orderId).map((e) => sectionSummary(e.section, e.mode, { withEnd: true })),
+      // 그 수강증으로 만든 등록의 반 — 주5일은 한 줄 (짝은 그 등록 안에서만 찾는다)
+      assigned: orderId == null ? [] : enrollmentLines((enrollments ?? []).filter((e) => e.order_id === orderId), { withEnd: true }).map((l) => l.label),
       image: url ? { url, isImage: /\.(png|jpe?g|webp|gif|heic)$/i.test(v.file_path) } : null,
       deleted: !!v.file_deleted_at,
     };
@@ -141,6 +144,9 @@ export default async function StudentDetailPage({
     : { data: [] };
 
   const takenIds = new Set((enrollments ?? []).map((e) => e.section?.id).filter(Boolean));
+  // 반 배정 목록 — **주5일은 한 줄** (2026-10-02 Alan "반배정에서 주5일반을 고르면 2개반으로 표시가 되고 있어. 주5일반으로 하나로").
+  // 짝은 이 학생의 배정 안에서만 찾고, 그 줄의 배정 해제는 두 반을 함께 지운다
+  const lines = enrollmentLines(enrollments ?? [], { withEnd: true });
   const sectionOptions: PickerSection[] = (termSections ?? []).map((s) => ({ ...s, taken: takenIds.has(s.id) }));
 
   // 고를 수 있는 등급은 canAssignRole 한곳이 정한다 — 조교에게는 학생 등급만 남는다
@@ -299,22 +305,24 @@ export default async function StudentDetailPage({
         {/* 반 배정 */}
         <section aria-labelledby="enroll-title" className="card p-5 lg:col-span-2">
           <h2 id="enroll-title" className="mb-4 text-lg font-black text-ink">
-            반 배정 <span className="tabular-nums text-slate">({(enrollments ?? []).length})</span>
+            반 배정 <span className="tabular-nums text-slate">({lines.length})</span>
           </h2>
 
-          {(enrollments ?? []).length === 0 ? (
+          {lines.length === 0 ? (
             <p className="rounded-xl bg-brand-50/60 px-4 py-6 text-center text-sm text-slate">아직 배정된 반이 없어요.</p>
           ) : (
             <ul className="divide-y divide-line">
-              {(enrollments ?? []).map((e) => (
-                <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
+              {lines.map((l) => (
+                <li key={l.key} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
                   <span className="min-w-0">
-                    <span className="font-bold text-ink">{sectionSummary(e.section, e.mode, { withEnd: true })}</span>
-                    {e.section?.closes_at && <span className="ml-2 text-xs text-slate">{formatDate(e.section.closes_at, { month: "long", day: "numeric" })} 종강</span>}
+                    <span className="font-bold text-ink">{l.label}</span>
+                    {l.closesAt && <span className="ml-2 text-xs text-slate">{formatDate(l.closesAt, { month: "long", day: "numeric" })} 종강</span>}
                   </span>
                   <span className="flex shrink-0 flex-wrap items-center gap-2">
-                    <StatusBadge status={e.status ?? "active"} />
-                    <RemoveEnrollment enrollmentId={e.id} label={sectionSummary(e.section, e.mode)} />
+                    {l.statuses.map((st) => (
+                      <StatusBadge key={st} status={st} />
+                    ))}
+                    <RemoveEnrollment enrollmentIds={l.ids} label={l.label} week5={l.week5} />
                   </span>
                 </li>
               ))}

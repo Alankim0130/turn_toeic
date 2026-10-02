@@ -51,8 +51,11 @@ export function AssignSections({ id, sections }: { id: string; sections: PickerS
   );
 }
 
-/** 배정 해제 버튼 (확인 한 번) */
-export function RemoveEnrollment({ enrollmentId, label }: { enrollmentId: number; label: string }) {
+/**
+ * 배정 해제 버튼 (확인 한 번). 주5일 줄은 배정이 둘이라 **둘 다** 지운다 (2026-10-02) — 확인 단계에서 그렇게 말해 준다.
+ * 주3일로 바꾸려면 해제한 뒤 남길 트랙만 아래 [반 배정 추가]에서 다시 고른다.
+ */
+export function RemoveEnrollment({ enrollmentIds, label, week5 = false }: { enrollmentIds: number[]; label: string; week5?: boolean }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [pending, start] = useTransition();
@@ -60,7 +63,7 @@ export function RemoveEnrollment({ enrollmentId, label }: { enrollmentId: number
 
   const onRemove = () =>
     start(async () => {
-      const res = await removeEnrollment(enrollmentId);
+      const res = await removeEnrollment(enrollmentIds);
       setConfirming(false);
       if (res.ok) router.refresh();
       else setError(res.error ?? "해제하지 못했어요.");
@@ -69,7 +72,8 @@ export function RemoveEnrollment({ enrollmentId, label }: { enrollmentId: number
   return (
     <>
       {confirming ? (
-        <span className="flex items-center gap-1">
+        <span className="flex flex-wrap items-center gap-1">
+          {week5 && <span className="text-xs font-semibold text-red-600">월수금·화목금 둘 다 해제돼요</span>}
           <button type="button" onClick={onRemove} disabled={pending} className="btn-dark !bg-red-600 !px-3 !py-1.5 text-xs hover:!bg-red-700">
             {pending ? "해제 중…" : "해제 확정"}
           </button>
