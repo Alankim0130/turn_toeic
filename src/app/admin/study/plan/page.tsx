@@ -34,7 +34,12 @@ export default async function StudyPlanPage({ searchParams }: { searchParams: Pr
     .order("year", { ascending: false })
     .order("month", { ascending: false });
   const terms = termRows ?? [];
-  const term = pickTerm(terms, sp.term, today);
+  // 메뉴에서 바로 들어오면 **달력의 이번 달**을 연다 (2026-10-02 Alan — "기본설정이 9월로 되어 있는데, 해당 달로 설정되도록").
+  // 날짜로 고르면(pickTerm) 9월 반이 10/3 까지 열려 있어 10월 초에도 9월이 잡힌다 — 스터디 시간은 그 달을 미리 짜는 일이라 달력 달이 맞다.
+  // 이번 달 기수가 아직 없으면 예전처럼 날짜로 고른다 (?term= 을 들고 오면 그 달)
+  const [cy, cm] = today.split("-").map(Number);
+  const thisMonth = terms.find((t) => t.year === cy && t.month === cm) ?? null;
+  const term = sp.term ? pickTerm(terms, sp.term, today) : (thisMonth ?? pickTerm(terms, undefined, today));
 
   const header = (
     <PageHeader icon="study" title="스터디 시간 설정" description="대면·단어 스터디의 시간대를 만들고, 비대면 스터디를 열어요. 신청은 수강생이 스터디 신청하기에서 합니다." />
