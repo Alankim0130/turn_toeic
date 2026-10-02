@@ -355,9 +355,11 @@ export async function getMyStudyEligibility(orders?: MyOrder[]) {
   for (const o of list) {
     for (const e of o.enrollments) {
       if (e.status !== "active" || !e.section || today > e.section.closes_at) continue;
-      signupTerms.add(e.section.term_id);
-      if (e.section.enrollment_opens_at <= today) accessTerms.add(e.section.term_id);
-      else opensOn.set(e.section.term_id, e.section.enrollment_opens_at);
+      // 신청 자격도 개강일부터다 (2026-10-02 Alan — 예비등록생 제외, DB private.is_term_enrollee 와 같다). 개강 전 배정은 opensOn 에만 남긴다
+      if (e.section.enrollment_opens_at <= today) {
+        signupTerms.add(e.section.term_id);
+        accessTerms.add(e.section.term_id);
+      } else opensOn.set(e.section.term_id, e.section.enrollment_opens_at);
     }
   }
   return { signupTerms, accessTerms, opensOn };

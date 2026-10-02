@@ -10,7 +10,7 @@ import { Icon } from "@/components/ui/Icon";
 import { TermChips } from "@/components/admin/TermChips";
 import { LectureSignupForm } from "@/components/admin/lectures/LectureSignupForm";
 import { CancelLectureSignupButton } from "@/components/admin/lectures/CancelLectureSignupButton";
-import { formatKstDateTime, LECTURE_STATE_CLASS, LECTURE_STATE_LABEL, lectureState, lectureTitle, seatsLeft } from "@/lib/lecture";
+import { formatKstDateTime, LECTURE_STATE_CLASS, LECTURE_STATE_LABEL, lectureOpensAt, lectureState, lectureTitle, seatsLeft } from "@/lib/lecture";
 import { termParam } from "@/lib/study";
 import { pickTerm, type TermLite } from "../_lib/queries";
 
@@ -126,7 +126,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
                   {l.signup && (
                     <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold", LECTURE_STATE_CLASS[state])}>
                       {LECTURE_STATE_LABEL[state]}
-                      {state === "not_open" && l.signup_opens_at && ` · ${formatKstDateTime(l.signup_opens_at)} 오픈`}
+                      {state === "not_open" && ` · ${formatKstDateTime(lectureOpensAt(l))} 오픈${l.signup_opens_at ? "" : " (7일 전 자정)"}`}
                     </span>
                   )}
                   <span className="rounded-full bg-line px-2.5 py-1 text-xs font-bold text-slate">

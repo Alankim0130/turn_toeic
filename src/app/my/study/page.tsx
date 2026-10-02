@@ -9,6 +9,7 @@ import { cn, formatDate, todayKST } from "@/lib/utils";
 import { formatBytes, isSlotKind, slotTime, STUDY_KIND_ICON, STUDY_KIND_LABEL, STUDY_STATUS_LABEL, termIndex } from "@/lib/study";
 import { getMyOrders, getMyStudyCheckins, getMyStudyEligibility, getMyStudyMaterials, getMyStudySignups, termLabel } from "../_lib/queries";
 import { getSessionProfile } from "@/lib/auth";
+import { studentGate } from "@/components/student/StudentGate";
 import { CheckinPanel } from "@/components/my/study/CheckinPanel";
 
 export const metadata: Metadata = {
@@ -17,6 +18,10 @@ export const metadata: Metadata = {
 };
 
 export default async function MyStudyPage() {
+  // 수강생전용 잠금 — 스터디는 개강일부터 (2026-10-02 Alan). 그전에는 이 화면만 잠금 없이 열렸다
+  const locked = await studentGate("study");
+  if (locked) return locked;
+
   const [orders, signups, materials, checkins, { user }] = await Promise.all([getMyOrders(), getMyStudySignups(), getMyStudyMaterials(), getMyStudyCheckins(), getSessionProfile()]);
   // 자료(날짜)마다 내 인증 — 비대면 스터디는 풀고 나서 **인증을 항상** 한다 (2026-09-18 Alan)
   const checkinByMaterial = new Map(checkins.map((c) => [c.material_id, c]));
@@ -39,7 +44,7 @@ export default async function MyStudyPage() {
         <EmptyState
           icon="study"
           title="아직 신청한 스터디가 없어요"
-          description="대면·비대면·단어 스터디 중 원하는 스터디를 골라 신청해 보세요. 그 달 수강생이면 개강 전에도 신청할 수 있어요."
+          description="대면·비대면·단어 스터디 중 원하는 스터디를 골라 신청해 보세요. 그 달 수강생은 개강일부터 신청할 수 있어요."
           action={{ href: "/study", label: "스터디 신청하러 가기" }}
         />
       </div>

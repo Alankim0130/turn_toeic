@@ -55,8 +55,10 @@ export default async function StudyPage() {
     user ? getMyStudySignups() : Promise.resolve([]),
   ]);
 
-  const { signupTerms } = await getMyStudyEligibility(orders);
+  const { signupTerms, opensOn } = await getMyStudyEligibility(orders);
   const mySignup = new Map(signups.map((s) => [s.study_id, s]));
+  // 개강 전 배정이 있으면 "N월 수강생만" 대신 개강일을 적어 준다 (2026-10-02 Alan — 신청은 개강일부터)
+  const openDay = (d: string) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일`;
 
   // 아직 끝나지 않은 기수부터 가까운 두 달 — **종강일로** 가른다 (2026-09-22). 달력의 월로 가르면 9월 기수가 10/3 까지
   // 이어지는데 10/1 부터 사라졌다 (그 사이에도 9월 수강생은 신청·변경·취소를 할 수 있다). 날짜가 없는 기수는 그 달 말일까지
@@ -140,7 +142,11 @@ export default async function StudyPage() {
                 </h2>
                 {user && (
                   <span className={cn("chip", !eligible && "!border-line !bg-surface !text-slate")}>
-                    {eligible ? "신청할 수 있어요" : `${g.term.month}월 수강생만 신청 가능`}
+                    {eligible
+                      ? "신청할 수 있어요"
+                      : opensOn.has(g.term.id)
+                        ? `${openDay(opensOn.get(g.term.id)!)} 개강부터 신청`
+                        : `${g.term.month}월 수강생만 신청 가능`}
                   </span>
                 )}
               </div>

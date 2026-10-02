@@ -43,7 +43,7 @@ export function LectureSignupForm({
             />
           </label>
           <label className="block">
-            <span className="label">신청 시작 <span className="font-semibold text-slate">(비우면 바로)</span></span>
+            <span className="label">신청 시작 <span className="font-semibold text-slate">(비우면 특강 7일 전 자정부터)</span></span>
             <input name="signup_opens_at" type="datetime-local" defaultValue={signupOpensAt} className="input !py-2 text-sm" />
           </label>
         </div>

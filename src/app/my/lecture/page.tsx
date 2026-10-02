@@ -5,7 +5,19 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Reveal } from "@/components/ui/Reveal";
 import { cn, formatDate, todayKST } from "@/lib/utils";
-import { formatKstDateTime, LECTURE_STATE_CLASS, LECTURE_STATE_LABEL, lectureState, lectureTitle, seatsLeft } from "@/lib/lecture";
+import {
+  ddayLabel,
+  formatKstDateTime,
+  LECTURE_STATE_CLASS,
+  LECTURE_STATE_LABEL,
+  lectureCameo,
+  lectureOpensAt,
+  lectureState,
+  lectureTitle,
+  seatsLeft,
+  signupDday,
+} from "@/lib/lecture";
+import { InstructorCameo } from "@/components/ui/InstructorCameo";
 import { LectureCancelButton, LectureSignupButton, SignupOpensIn } from "@/components/my/LectureSignup";
 import { getMyLectures, getMyLectureSignupIds } from "../_lib/queries";
 
@@ -45,6 +57,9 @@ export default async function MyLecturePage() {
             const applied = mySignups.has(l.id);
             const left = seatsLeft(l);
             const pct = l.capacity ? Math.min(100, Math.round((l.applied_count / l.capacity) * 100)) : 0;
+            // 강사 캐리커처 + 한마디, 잠긴 특강의 D-day (2026-10-02 Alan)
+            const cameo = lectureCameo(l.lecturer?.name, l.kinds);
+            const dday = signupDday(l, today);
             return (
               <Reveal key={l.id} delay={i * 60}>
                 <article className={cn("card flex h-full flex-col gap-3 p-4", applied && "border-brand-300 bg-brand-50/40")}>
@@ -61,25 +76,38 @@ export default async function MyLecturePage() {
                     </span>
                   </div>
 
-                  <div>
-                    <p className="flex items-baseline justify-between text-sm">
-                      <span className="font-semibold text-slate">신청 현황</span>
-                      <span className="font-black tabular-nums text-brand-600">
-                        {l.applied_count}
-                        <span className="text-ink">{l.capacity !== null ? ` / ${l.capacity}명` : "명"}</span>
-                      </span>
-                    </p>
-                    {l.capacity !== null && (
-                      <>
-                        <span className="mt-1.5 block h-2 w-full overflow-hidden rounded-full bg-line">
-                          <span className="block h-full rounded-full bg-brand-500 transition-all" style={{ width: `${pct}%` }} />
+                  {/* 신청 현황 왼쪽, 오른쪽에 강사 캐리커처 + 말풍선 — 손짓이 왼쪽을 향하므로 콘텐츠 오른쪽에 둔다 */}
+                  <div className="flex items-end gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="flex items-baseline justify-between text-sm">
+                        <span className="font-semibold text-slate">신청 현황</span>
+                        <span className="font-black tabular-nums text-brand-600">
+                          {l.applied_count}
+                          <span className="text-ink">{l.capacity !== null ? ` / ${l.capacity}명` : "명"}</span>
                         </span>
-                        {left !== null && left > 0 && <p className="mt-1 text-xs font-bold text-emerald-600">{left}자리 남았어요</p>}
-                      </>
+                      </p>
+                      {l.capacity !== null && (
+                        <>
+                          <span className="mt-1.5 block h-2 w-full overflow-hidden rounded-full bg-line">
+                            <span className="block h-full rounded-full bg-brand-500 transition-all" style={{ width: `${pct}%` }} />
+                          </span>
+                          {left !== null && left > 0 && <p className="mt-1 text-xs font-bold text-emerald-600">{left}자리 남았어요</p>}
+                        </>
+                      )}
+                    </div>
+                    {cameo && (
+                      <div className="flex shrink-0 flex-col items-end gap-1.5">
+                        <p className="relative max-w-[10.5rem] rounded-2xl border border-brand-200 bg-paper px-2.5 py-1.5 text-right text-[11px] font-bold leading-snug text-brand-700 shadow-sm after:absolute after:-bottom-1.5 after:right-5 after:h-3 after:w-3 after:rotate-45 after:border-b after:border-r after:border-brand-200 after:bg-paper">
+                          {cameo.line}
+                        </p>
+                        <InstructorCameo name={cameo.name} pose={cameo.pose} className="h-24 sm:h-28" sizes="96px" />
+                      </div>
                     )}
                   </div>
 
-                  {state === "not_open" && l.signup_opens_at && <SignupOpensIn opensAt={l.signup_opens_at} label={formatKstDateTime(l.signup_opens_at)} />}
+                  {state === "not_open" && dday !== null && (
+                    <SignupOpensIn opensAt={lectureOpensAt(l)} label={formatKstDateTime(lectureOpensAt(l))} dday={ddayLabel(dday)} />
+                  )}
 
                   <div className="mt-auto flex flex-wrap items-center justify-end gap-2">
                     {applied ? (
@@ -101,7 +129,7 @@ export default async function MyLecturePage() {
         </div>
       )}
 
-      <p className="text-xs text-mist">특강은 강사가 매달 반 편성 달력에서 정합니다. 신청 받는 기간은 신청 시작부터 특강 당일까지예요.</p>
+      <p className="text-xs text-mist">특강은 강사가 매달 반 편성 달력에서 정합니다. 신청은 특강 7일 전부터 당일까지 받아요 (강사가 따로 정한 특강은 그 시각부터).</p>
     </div>
   );
 }

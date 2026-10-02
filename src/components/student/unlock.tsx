@@ -1,15 +1,16 @@
 import Link from "next/link";
-import type { StudentAccess } from "@/lib/auth";
+import { isCrew, type StudentAccess } from "@/lib/auth";
 import type { StudentFeature } from "@/lib/site";
 import { formatDate } from "@/lib/utils";
 
-/** 수강생전용 기능이 왜 잠겼는지 */
-export type UnlockState = "open" | "guest" | "member" | "preliminary" | "alumni";
+/** 수강생전용 기능이 왜 잠겼는지. crew = 강사·관리자·조교가 학생 모드에서 반 배정 없이 들어옴 (2026-10-02 — 스태프도 배정으로 판정) */
+export type UnlockState = "open" | "guest" | "member" | "preliminary" | "alumni" | "crew";
 
 export function unlockState(access: StudentAccess): UnlockState {
   if (access.active) return "open";
   if (!access.signedIn) return "guest";
   if (access.opensOn) return "preliminary";
+  if (access.role && isCrew(access.role)) return "crew";
   if (access.role === "alumni") return "alumni";
   return "member";
 }
@@ -27,6 +28,8 @@ export function lockedHint(access: StudentAccess) {
       return `${opensOnLabel(access)} 개강일부터 열려요`;
     case "alumni":
       return "다시 등록하고 수강증을 올리면 열려요";
+    case "crew":
+      return "반에 배정되면 학생 화면 그대로 열려요";
     default:
       return "수강증을 올려 등업하면 바로 열려요";
   }
@@ -41,6 +44,8 @@ export function lockedHeadline(access: StudentAccess) {
       return `${opensOnLabel(access)} 개강일부터 열려요`;
     case "alumni":
       return "지난 수강 기간이 끝났어요";
+    case "crew":
+      return "강사·조교 계정은 반에 배정돼야 학생 화면이 열려요";
     default:
       return "수강증을 올려 등업하면 바로 열려요";
   }
@@ -69,6 +74,15 @@ export function UnlockActions({ access, feature }: { access: StudentAccess; feat
     return (
       <Link href="/my" className="btn-secondary">
         내 등록 현황 보기
+      </Link>
+    );
+  }
+
+  // 스태프·조교 — 학생명단에서 자기 계정을 반에 배정하면 그 학생과 똑같이 열린다 (테스터)
+  if (state === "crew") {
+    return (
+      <Link href="/admin/students" className="btn-secondary">
+        학생명단에서 반 배정하기
       </Link>
     );
   }

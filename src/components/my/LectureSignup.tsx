@@ -33,13 +33,18 @@ function Countdown({ opensAt }: { opensAt: string }) {
   );
 }
 
-export function SignupOpensIn({ opensAt, label }: { opensAt: string; label: string }) {
+/**
+ * 잠긴 특강의 **D-day** + 초 단위 카운트다운 (2026-10-02 Alan "잠겨있는거는 카운트다운 D-day").
+ * D-day 는 서버가 한국 날짜로 센 값(`signupDday`)이라 자정에 자연히 하나 줄고, 시:분:초는 브라우저가 센다.
+ */
+export function SignupOpensIn({ opensAt, label, dday }: { opensAt: string; label: string; dday: string }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-brand-50 px-3 py-2.5">
-      <span className="text-xs font-bold text-slate">
-        신청 시작까지 <span className="ml-1 text-base font-black text-brand-600">{<Countdown opensAt={opensAt} />}</span>
+    <div className="flex items-center gap-3 rounded-xl bg-brand-50 px-3 py-2.5">
+      <span className="shrink-0 rounded-lg bg-brand-500 px-2.5 py-1 text-lg font-black tabular-nums text-white shadow-pink">{dday}</span>
+      <span className="min-w-0 flex-1 text-xs font-bold text-slate">
+        신청 시작까지 <span className="ml-1 text-sm font-black text-brand-600">{<Countdown opensAt={opensAt} />}</span>
+        <span className="block text-[11px] font-semibold text-mist">{label} 오픈</span>
       </span>
-      <span className="text-xs font-semibold text-mist">{label} 오픈</span>
     </div>
   );
 }

@@ -139,8 +139,11 @@ export const getStudentAccess = cache(async (): Promise<StudentAccess> => {
 
   // 테스트 등급을 켠 스태프는 그 등급의 학생처럼 판정한다 (RLS 도 같은 등급으로 본다)
   const role = effectiveRole(profile);
-  // 조교도 학생 모드는 전부 열린다 (2026-09-16 Alan)
-  if (isCrew(role)) return { signedIn: true, role, active: true, enrollee: true, opensOn: null, until: null };
+  /**
+   * **스태프·조교도 배정으로 판정한다** (2026-10-02 Alan "수강생전용 페이지를 전부다 개강일에 맞춰서 오픈"). 2026-09-16~10-02 에는
+   * 크루면 무조건 열어 줬는데, 10월 반에 배정된 관리자가 개강 전 학생 모드에서 모든 것이 열려 "학생이 뭘 보는지" 를 알 수 없었다.
+   * 열어 볼 권한(RLS)은 그대로다 — 학생 모드 **화면**만 학생과 같다. 반에 배정하면(테스터) 그 학생과 똑같이 열린다.
+   */
 
   const supabase = await createClient();
   const today = todayKST();
@@ -154,8 +157,8 @@ export const getStudentAccess = cache(async (): Promise<StudentAccess> => {
   // 지금 수강 중 = 개강일 ≤ 오늘 ≤ 종강일 · 예비등록 = 오늘 < 개강일
   const current = live.filter((o) => o.activates_on <= today);
   const upcoming = live.filter((o) => today < o.activates_on);
-  // RLS(private.has_term_access) 와 같은 조건: role 이 student 이고 지금 기간 안의 등록이 있을 것
-  const active = role === "student" && current.length > 0;
+  // RLS(private.has_term_access) 와 같은 조건: role 이 student(또는 크루)이고 지금 기간 안의 등록이 있을 것
+  const active = (role === "student" || isCrew(role)) && current.length > 0;
   const opensOn = upcoming.map((o) => o.activates_on).sort()[0] ?? null;
   // 종강일은 지금 수강 중인 등록의 것 — 다음 달 예비등록의 종강일을 앞당겨 보여 주지 않는다
   const until = (current.length ? current : upcoming).map((o) => o.access_until).sort().at(-1) ?? null;
