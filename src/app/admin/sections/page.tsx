@@ -60,7 +60,8 @@ export default async function AdminSectionsPage({
       .order("target_score")
       .order("name"),
     isAdmin(profile.role)
-      ? supabase.from("profiles").select("id, name, role, subject").in("role", ["instructor", "admin"]).order("name")
+      // 합쳐진 옛 계정(merged_into)은 담당 강사 목록에서 뺀다 — 같은 이름이 둘 보이면 어느 쪽인지 알 수 없다 (2026-10-02)
+      ? supabase.from("profiles").select("id, name, role, subject").in("role", ["instructor", "admin"]).is("merged_into", null).order("name")
       : Promise.resolve({ data: null }),
     // 그 달 시간표 (2026-09-29 부터 달마다 한 벌) — 시간대 · 과정 · 트랙별 과목을 시간표 설정에서 정한다
     supabase

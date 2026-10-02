@@ -183,10 +183,12 @@ export async function mergeStudentAccounts(_prev: StudentActionState, formData: 
 
   if (error) {
     const msg = error.message.includes("not_mergeable")
-      ? "강사·관리자 계정이거나 이미 합쳐진 계정이에요."
-      : error.message.includes("forbidden")
-        ? "권한이 없습니다."
-        : `합치지 못했어요. ${error.message}`;
+      ? "이미 합쳐진 계정이에요."
+      : error.message.includes("role_mismatch")
+        ? "두 계정의 등급이 달라요. 먼저 같은 등급으로 맞춘 뒤 합쳐 주세요."
+        : error.message.includes("forbidden")
+          ? "권한이 없습니다."
+          : `합치지 못했어요. ${error.message}`;
     return { error: msg };
   }
 

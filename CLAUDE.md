@@ -1185,7 +1185,16 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   (`confirm_account_merge` 가 `auth.uid() = requested_by` 면 거부). 이름·전화번호만 알면 남의 기록을 가져갈 수 있기 때문이다.
 - 통합 뒤 비워진 계정은 **로그인만 막고 기록은 보존한다** (`profiles.merged_into`). `requireUser()` 가 `/account-merged` 로 보낸다.
   지우지 않는 이유는 잘못 합쳤을 때 되돌릴 수 있어야 하기 때문이다.
-- 스태프(강사·관리자) 계정은 통합 대상이 아니다 (`merge_candidates`·`merge_accounts` 가 막는다).
+- **학생 쪽 흐름에서는** 스태프(강사·관리자) 계정이 통합 대상이 아니다 (`merge_candidates` 가 안 보여 주고 `merge_accounts` 가 거부한다).
+  이름·전화번호만 알면 남의 기록을 가져가는 길이기 때문이다.
+- **스태프 계정끼리는 스태프가 직접 합칠 수 있다** (2026-10-02 Alan 요청 — 이혜영 강사의 이메일 계정과 카카오 계정, 마이그레이션 20261002110000).
+  `staff_merge_accounts` 만 `private.merge_accounts(from, to, p_staff := true)` 로 부르고, **두 계정의 등급이 같아야 한다**(`role_mismatch` —
+  먼저 `/admin/students/[id]` 에서 등급을 맞춘다). 스태프 계정을 볼 때는 `staff_merge_candidates` 가 스태프 계정만 후보로 보여 준다.
+  학생 기록에 더해 **강사 쪽 참조도 전부 남길 계정으로 옮긴다** — 담당 반(`class_sections.instructor_id`), 숙제 점검·문의 답변·알림 발신·출석 처리한 사람,
+  올린 음원·자료, 푸시 구독·알림 설정·유튜브 채널, 강사 이름 예약(`private.reserved_staff.claimed_by`), 담당 과목(`profiles.subject`, 남길 계정에 없을 때).
+  옛 계정의 과목은 비우고 담당 강사 자동 배정(`section_instructor_plan`)·반 편성의 강사 목록은 `merged_into` 가 찍힌 계정을 보지 않는다 —
+  안 그러면 반이 로그인도 못 하는 계정을 담당 강사로 가리킨다. **이혜영 강사의 실제 계정은 카카오(`dodo-2000@hanmail.net`)** 이고
+  이메일 계정(`dodo8961@naver.com`)은 2026-10-02 에 거기로 합쳐졌다 — 그 이메일로 들어가면 `/account-merged` 가 뜬다.
 - **강사가 직접 합칠 수도 있다** (2026-09-18 Alan 요청, 마이그레이션 20260918130000). 학생이 옛 계정 비밀번호를 잊거나
   옛 소셜 로그인을 못 쓰면 스스로 합칠 수 없기 때문이다. `/admin/students/[id]` 의 **계정 합치기** 칸에서
   `public.staff_merge_candidates(학생)` 이 **이름이 같거나 전화번호가 같은** 계정을 보여 주고(학생용은 둘 다 같아야 한다 —
