@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/admin/StatusBadge";
 import type { PickerSection } from "@/components/admin/SectionPicker";
 import { sectionSummary, termLabel } from "../../_lib/queries";
 import { DecisionForms, type Candidate, type OrderInfo } from "./DecisionForms";
-import { requireCrew } from "@/lib/auth";
+import { isStaff, requireCrew } from "@/lib/auth";
 import { RETENTION_LABEL } from "@/lib/receipt-retention";
 import { BLOCKER_LABEL, type AutoApproveBlocker } from "@/lib/auto-approve";
 import { heldMonth as heldMonthOf } from "@/lib/verify-decision";
@@ -31,7 +31,7 @@ export default async function VerificationDetailPage({
   searchParams: Promise<{ done?: string }>;
 }) {
   // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
-  await requireCrew();
+  const { profile: me } = await requireCrew();
   const { id: idParam } = await params;
   const { done } = await searchParams;
   const id = Number(idParam);
@@ -134,12 +134,28 @@ export default async function VerificationDetailPage({
   } | null;
   // 자동 승인 뒤 학생이 "반이 달라요" 로 낸 정정 요청 — 새로 승인하면 등록이 두 건 생기니 기존 승인의 배정 수정으로 보낸다 (2026-09-18)
   const correctionOf = typeof matchLog?.correctionOf === "number" ? matchLog.correctionOf : null;
+  // 같은 파일 · 같은 초 캡처를 올린 다른 계정이 **이름 · 전화번호가 같은** 계정이면 돌려쓰기가 아니라 한 학생의 계정 둘이다
+  // (2026-10-02 운영 점검 — 10월 수강증 두 건이 이렇게 막혀 있었다). 그때는 위조 경고 대신 계정 합치기를 안내한다
+  const capturedAt = typeof (v.parsed as { capturedAt?: unknown } | null)?.capturedAt === "string" ? (v.parsed as { capturedAt: string }).capturedAt : null;
+  const twinQuery = (col: "file_hash" | "parsed->>capturedAt", value: string) =>
+    supabase.from("enrollment_verifications").select("user_id, profile:profiles(name, phone, merged_into)").eq(col, value).neq("user_id", v.user_id).limit(10);
+  const [hashTwins, captureTwins] = await Promise.all([
+    matchLog?.flags?.duplicateImage && v.file_hash ? twinQuery("file_hash", v.file_hash) : Promise.resolve({ data: [] }),
+    matchLog?.flags?.sameCapture && capturedAt ? twinQuery("parsed->>capturedAt", capturedAt) : Promise.resolve({ data: [] }),
+  ]);
+  const digits = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
+  const sameName = (s: string | null | undefined) => !!s && !!v.profile?.name && s.replace(/\s/g, "") === v.profile.name.replace(/\s/g, "");
+  const twins = [...(hashTwins.data ?? []), ...(captureTwins.data ?? [])];
+  const ownTwin = twins.length > 0 && twins.every((t) => sameName(t.profile?.name) && !!digits(v.profile?.phone) && digits(t.profile?.phone) === digits(v.profile?.phone));
   // 위조·돌려쓰기 의심 — 자동 승인이 막힌 이유. 스태프가 수강증을 더 자세히 본다 (2026-09-18)
   const suspicious = [
-    matchLog?.flags?.duplicateImage ? "다른 계정이 같은 이미지 파일을 올렸어요 — 수강증을 돌려 쓰는 것일 수 있어요. 두 계정의 이름·전화번호를 확인해 주세요." : null,
+    ownTwin
+      ? `이름 · 전화번호가 같은 다른 계정이 같은 수강증을 올렸어요 — 한 학생이 계정을 둘 만든 것으로 보여요 (돌려쓰기가 아니에요). ${isStaff(me.role) ? "학생 관리의 「계정 합치기」로 두 계정을 합친 뒤 승인해 주세요." : "강사 · 관리자에게 계정 합치기를 부탁한 뒤 승인해 주세요."}`
+      : null,
+    !ownTwin && matchLog?.flags?.duplicateImage ? "다른 계정이 같은 이미지 파일을 올렸어요 — 수강증을 돌려 쓰는 것일 수 있어요. 두 계정의 이름·전화번호를 확인해 주세요." : null,
     matchLog?.flags?.staleCapture ? "수강증 캡처 시각이 45일 넘게 오래됐어요 — 지난 수강증을 다시 올린 것일 수 있어요. 이번 달 등록이 맞는지 확인해 주세요." : null,
     // 같은 초 = 같은 캡처다. 글자를 고쳐도 남으므로 "친구 수강증에 내 이름만 얹은" 경우가 여기 걸린다 (2026-09-19)
-    matchLog?.flags?.sameCapture ? "다른 계정에 같은 초에 캡처된 수강증이 있어요 — 한쪽이 상대의 그림을 받아 쓴 것일 수 있어요 (글자를 고쳐도 캡처 시각은 남아요). 두 계정을 확인해 주세요." : null,
+    !ownTwin && matchLog?.flags?.sameCapture ? "다른 계정에 같은 초에 캡처된 수강증이 있어요 — 한쪽이 상대의 그림을 받아 쓴 것일 수 있어요 (글자를 고쳐도 캡처 시각은 남아요). 두 계정을 확인해 주세요." : null,
     // 색 팔레트 — AI 로 만들었거나 손으로 그린 그림, 다른 학원 수강증이 걸린다 (2026-09-19)
     matchLog?.flags?.paletteOff
       ? `화면 색이 YBM 수강증 팔레트와 달라요 — 만들어 낸 그림이거나 다른 곳의 수강증일 수 있어요. 그림을 직접 봐 주세요.${matchLog.flags.paletteNote ? ` (${matchLog.flags.paletteNote})` : ""}`
@@ -314,6 +330,11 @@ export default async function VerificationDetailPage({
             {[...humanNotes, ...suspicious].map((s) => (
               <Alert key={s} kind="warning" className="mb-3">{s}</Alert>
             ))}
+            {ownTwin && isStaff(me.role) && (
+              <p className="-mt-1 mb-3 text-sm">
+                <Link href={`/admin/students/${v.user_id}`} className="font-black text-brand-600 hover:underline">이 학생 관리 · 계정 합치기 →</Link>
+              </p>
+            )}
             {parsed ? (
               <>
                 <dl className="mb-3 grid grid-cols-2 gap-2 text-sm">

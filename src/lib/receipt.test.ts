@@ -467,6 +467,18 @@ describe("오류 점검 (2026-09-22)", () => {
     expect(parseReceipt("12/25 모임").startMonth).toBeNull();
   });
 
+  it("`/` 가 7 · 1 로 읽히고 주 앞 숫자가 글자로 깨져도 — 꺾쇠까지 읽혔으면 개강일 달 (2026-10-02 운영 #17)", () => {
+    expect(parseReceipt("수강요일 이 나주-10706] 주5일 (월18회 라이").startMonth).toBe(10); // 실물 그대로
+    expect(parseReceipt("수강요일 [4주-10106] 주5일").startMonth).toBe(10);
+    expect(parseReceipt("수강요일 [4주-1006] 주5일").startMonth).toBe(10); // `/` 가 빠짐
+    expect(parseReceipt("수강요일 [4주-09703] 주5일").startMonth).toBe(9);
+    // 꺾쇠가 없으면 달로 읽지 않는다 — 다른 숫자일 수 있다
+    expect(parseReceipt("수강요일 나주-10706 주5일").startMonth).toBeNull();
+    // 달 · 날이 말이 안 되면 읽지 않는다
+    expect(parseReceipt("수강요일 [4주-13706] 주5일").startMonth).toBeNull();
+    expect(parseReceipt("수강요일 [4주-10745] 주5일").startMonth).toBeNull();
+  });
+
   it("수강 방식의 근거 — 온라인 강의 · 호실 · 라이브방송 · 없음", () => {
     const base = ["역전토익 [종합반]", "650 목표", "수강센터 부산 서면센터", "수강요일 [4주-09/04] 월수금 (월9회)"];
     expect(parseReceipt([...base, "강의실 온라인 강의"].join("\n")).modeEvidence).toBe("online");
