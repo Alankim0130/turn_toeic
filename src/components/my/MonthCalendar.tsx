@@ -1,3 +1,4 @@
+import { monthHolidayNames } from "@/lib/holidays";
 import { cn } from "@/lib/utils";
 
 /**
@@ -42,6 +43,8 @@ export function MonthCalendar({
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const byDate = new Map<string, CalendarMark[]>();
   for (const m of marks) byDate.set(m.date, [...(byDate.get(m.date) ?? []), m]);
+  // 공휴일 · 대체공휴일은 일요일처럼 칠하고 칸에 이름을 적는다 (2026-10-02 Alan — 반 편성 달력과 같은 규칙, `src/lib/holidays.ts`)
+  const holidays = monthHolidayNames(year, month);
 
   const cells: Array<{ day: number; date: string } | null> = [];
   for (let i = 0; i < firstWeekday; i++) cells.push(null);
@@ -81,16 +84,23 @@ export function MonthCalendar({
           const past = c ? c.date < today : false;
           const on = !!c && c.date === selected;
           const pickable = !!c && !!onSelect && ms.length > 0;
+          const names = c ? holidays.get(c.date) : undefined;
           const inner = c && (
             <>
               <span
                 className={cn(
                   "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold",
-                  isToday ? "bg-brand-500 text-white" : i % 7 === 0 ? "text-brand-500" : past ? "text-mist" : "text-ink",
+                  isToday ? "bg-brand-500 text-white" : i % 7 === 0 || names ? "text-brand-500" : past ? "text-mist" : "text-ink",
                 )}
               >
                 {c.day}
               </span>
+              {/* 무슨 날인지 적는다 — 좁은 화면은 두 줄까지(추석 / 연휴), 넓으면 한 줄 (반 편성 달력과 같다) */}
+              {names && (
+                <span className="line-clamp-2 text-[9px] font-bold leading-[1.15] text-brand-600 sm:line-clamp-1 sm:text-[10px] sm:leading-tight">
+                  {names.join("·")}
+                </span>
+              )}
               <div className="mt-0.5 flex flex-wrap gap-0.5">
                 {ms.map((m, j) => (
                   <span
@@ -120,7 +130,7 @@ export function MonthCalendar({
                 key={i}
                 type="button"
                 aria-pressed={on}
-                aria-label={`${month}월 ${c.day}일 수업 보기`}
+                aria-label={`${month}월 ${c.day}일${names ? ` ${names.join("·")}` : ""} 수업 보기`}
                 onClick={() => onSelect(c.date)}
                 className={cn(box, "transition hover:bg-brand-50/70")}
               >

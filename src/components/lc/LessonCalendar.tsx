@@ -91,6 +91,8 @@ export function LessonCalendar({
                     )}
                   >
                     {cell.day}
+                    {/* 공휴일 · 대체공휴일 이름도 칸에 (2026-10-02 Alan — 학생 달력 모두) */}
+                    {holiday && cell.inMonth && <span className="line-clamp-1 text-[9px] font-bold leading-tight text-red-400">{holiday}</span>}
                   </div>
                 );
               }

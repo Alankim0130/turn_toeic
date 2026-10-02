@@ -143,4 +143,15 @@ export function holidayNamesBetween(from: string, to: string): Map<string, strin
   return map;
 }
 
+/**
+ * 그 달(1일~말일)의 공휴일 — 학생이 보는 달력(내 시간표 · 대시보드 · 숙제 · 출석)이 칸에 이름을 적는다
+ * (2026-10-02 Alan — "학생들이 보는 일정표에 대체공휴일 표시가 안나와있어. 해당부분도 모두 보이게 해줘").
+ * 반 편성 달력(강사)은 앞뒤 달까지 그리므로 `holidayNamesBetween` 을 직접 쓴다
+ */
+export function monthHolidayNames(year: number, month: number): Map<string, string[]> {
+  const mm = String(month).padStart(2, "0");
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return holidayNamesBetween(`${year}-${mm}-01`, `${year}-${mm}-${String(last).padStart(2, "0")}`);
+}
+
 export const hasHolidayData = (year: number) => year >= HOLIDAY_YEAR_RANGE.from && year <= HOLIDAY_YEAR_RANGE.to;

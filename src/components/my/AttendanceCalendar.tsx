@@ -1,5 +1,6 @@
 import { AttendanceMark } from "@/components/ui/AttendanceMark";
 import { MARK_STYLE, monthCells, type MarkKind } from "@/lib/attendance-board";
+import { monthHolidayNames } from "@/lib/holidays";
 import { cn } from "@/lib/utils";
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -15,6 +16,8 @@ export function AttendanceCalendar({ year, month, stamps, today }: { year: numbe
   const byDate = new Map<string, CalendarStamp[]>();
   for (const s of stamps) byDate.set(s.date, [...(byDate.get(s.date) ?? []), s]);
   const cells = monthCells(year, month);
+  // 공휴일 · 대체공휴일은 일요일처럼 칠하고 이름을 적는다 (2026-10-02 Alan — 반 편성 달력과 같은 규칙)
+  const holidays = monthHolidayNames(year, month);
 
   return (
     <div className="card overflow-hidden">
@@ -34,6 +37,7 @@ export function AttendanceCalendar({ year, month, stamps, today }: { year: numbe
         {cells.map((c, i) => {
           const list = c ? byDate.get(c.date) ?? [] : [];
           const isToday = c?.date === today;
+          const names = c ? holidays.get(c.date) : undefined;
           return (
             <div key={i} className={cn("flex min-h-16 flex-col items-center border-b border-r border-line/70 px-0.5 py-1 sm:min-h-[4.75rem]", (i + 1) % 7 === 0 && "border-r-0")}>
               {c && (
@@ -41,11 +45,16 @@ export function AttendanceCalendar({ year, month, stamps, today }: { year: numbe
                   <span
                     className={cn(
                       "inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold",
-                      isToday ? "bg-ink text-white" : list.length ? "text-ink" : i % 7 === 0 ? "text-brand-400" : "text-mist",
+                      isToday ? "bg-ink text-white" : list.length ? "text-ink" : i % 7 === 0 || names ? "text-brand-400" : "text-mist",
                     )}
                   >
                     {c.day}
                   </span>
+                  {names && (
+                    <span className="line-clamp-2 text-center text-[9px] font-bold leading-[1.15] text-brand-500 sm:line-clamp-1 sm:text-[10px] sm:leading-tight">
+                      {names.join("·")}
+                    </span>
+                  )}
                   <span className="mt-1 flex flex-col items-center gap-0.5">
                     {list.map((s, j) => (
                       <span key={j} className="flex flex-col items-center">
