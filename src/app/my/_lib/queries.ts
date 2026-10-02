@@ -138,7 +138,12 @@ export type MySession = Awaited<ReturnType<typeof getMySessions>>[number];
  * 그래서 **내 등록에서 뽑은 기수**(`getMyStudyEligibility().signupTerms` — `is_term_enrollee` 와 같은 규칙)로 좁힌다.
  * 예비등록생도 특강을 신청하므로 `my_section_ids()`(수강 중만)로 좁히면 안 된다.
  */
-export async function getMyLectures() {
+/**
+ * 내 기수의 특강. 기본은 **신청 자격이 있는 기수**(개강일~종강일 — signupTerms)만.
+ * `{ upcoming: true }` 는 **개강 전 배정의 기수**까지 (내 시간표 — 2026-10-02 Alan "예비등록생 내 시간표에도 특강 날짜는 미리 보여줘").
+ * 신청은 그래도 개강일부터다 — RLS `lecture_signup_open` 이 막고, 조회는 정책 "special_lectures: 수강생 조회"(is_term_assignee)가 연다.
+ */
+export async function getMyLectures(opts: { upcoming?: boolean } = {}) {
   const supabase = await createClient();
   const [{ data }, orders] = await Promise.all([
     supabase
@@ -148,8 +153,9 @@ export async function getMyLectures() {
       .order("id", { ascending: true }),
     getMyOrders(),
   ]);
-  const { signupTerms } = await getMyStudyEligibility(orders);
-  return (data ?? []).filter((l) => signupTerms.has(l.term_id));
+  const { signupTerms, opensOn } = await getMyStudyEligibility(orders);
+  const terms = opts.upcoming ? new Set([...signupTerms, ...opensOn.keys()]) : signupTerms;
+  return (data ?? []).filter((l) => terms.has(l.term_id));
 }
 export type MyLecture = Awaited<ReturnType<typeof getMyLectures>>[number];
 

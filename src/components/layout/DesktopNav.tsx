@@ -139,17 +139,22 @@ function useDropdown(pathname: string) {
 const panelClass = (open: boolean) =>
   cn("absolute left-1/2 top-full z-50 -translate-x-1/2 pt-3 transition duration-150", open ? "visible translate-y-0 opacity-100" : "invisible -translate-y-1 opacity-0");
 
+/**
+ * 수강생전용 드롭다운. **글자 자체는 한눈에 보기 허브(`/student`)로 가는 링크**다 (2026-10-02 Alan "해당 글자를 클릭하면 바로 수강생전용
+ * 한눈에 보기 페이지로") — 연락하기와 같은 방식. 마우스를 올리면 7개 기능이 펼쳐지고, 키보드로는 링크를 따라가면 허브에 같은 카드들이 있다.
+ * (그전에는 누르면 메뉴만 토글되는 버튼이었다 — 되돌리지 말 것)
+ */
 function StudentDropdown({ access, pathname }: { access: NavAccess; pathname: string }) {
-  const { open, wrapRef, openNow, closeSoon, toggle, close } = useDropdown(pathname);
+  const { open, wrapRef, openNow, closeSoon, close } = useDropdown(pathname);
   const active = isStudentAreaPath(pathname);
 
   return (
     <div ref={wrapRef} className="relative" onMouseEnter={openNow} onMouseLeave={closeSoon}>
-      <button type="button" aria-expanded={open} aria-haspopup="true" aria-controls="student-menu" onClick={toggle} className={cn(linkClass(active), "gap-1.5")}>
+      <Link href={STUDENT_HUB.href} aria-current={active ? "page" : undefined} onClick={close} className={cn(linkClass(active), "gap-1.5")}>
         {STUDENT_HUB.label}
         <Chevron open={open} />
         {active && <ActiveBar />}
-      </button>
+      </Link>
 
       <div id="student-menu" className={cn(panelClass(open), "w-[36rem]")}>
         <div className="card p-3">
@@ -201,7 +206,7 @@ function StudentDropdown({ access, pathname }: { access: NavAccess; pathname: st
  * 연락하기 드롭다운 (2026-10-01 Alan — 연락하기 · 네이버 상담예약 두 항목을 하나로 합치고 셋 중 고른다).
  * 목록은 `CONTACT_OPTIONS` 한곳 — 카카오톡(새 창) · 이메일·전화 문의(/contact/inquiry) · 네이버 예약(새 창). 카카오 줄은 노란 타일에 카카오 심벌.
  * **글자 자체는 허브(`/contact`, 카드 세 장)로 가는 링크**다 (같은 날 Alan "연락하기 페이지를 누르면 카드 3개만") — 마우스를 올리면 빠른 메뉴가 펼쳐지고,
- * 누르면 허브로 간다. 수강생전용 메뉴(버튼 토글)와 다른 점이고, 키보드로는 링크를 따라가면 허브에 같은 세 갈래가 있다.
+ * 누르면 허브로 간다. 수강생전용 메뉴도 2026-10-02 부터 같은 방식이고, 키보드로는 링크를 따라가면 허브에 같은 세 갈래가 있다.
  */
 function ContactDropdown({ pathname }: { pathname: string }) {
   const { open, wrapRef, openNow, closeSoon, close } = useDropdown(pathname);

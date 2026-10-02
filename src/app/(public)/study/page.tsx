@@ -69,7 +69,22 @@ export default async function StudyPage() {
     g.studies.push(s);
     groups.set(s.term.id, g);
   }
-  const termGroups = [...groups.values()].sort((a, b) => termIndex(a.term) - termIndex(b.term)).slice(0, 2);
+  const nearbyGroups = [...groups.values()].sort((a, b) => termIndex(a.term) - termIndex(b.term)).slice(0, 2);
+  /**
+   * 로그인한 수강생에게는 **내 기수**를 보여 준다 (2026-10-02 Alan — 10월 예비등록생이 "이번 달 스터디 일정 보기" 를 누르니 9월이 나왔다).
+   * 수강 중인 달 + 개강 전 배정 달. 그 달 스터디가 아직 없으면 빈 그룹으로 두어 "강사님이 설정 중" 카드가 선다.
+   * 배정이 없는 방문자·회원은 예전처럼 끝나지 않은 가까운 두 달이다.
+   */
+  const myTermIds = new Set([...signupTerms, ...opensOn.keys()]);
+  const myTerms = new Map<number, { id: number; year: number; month: number }>();
+  for (const o of orders) {
+    for (const e of o.enrollments) {
+      if (e.section?.term && myTermIds.has(e.section.term_id)) myTerms.set(e.section.term_id, { id: e.section.term_id, ...e.section.term });
+    }
+  }
+  const termGroups = myTerms.size
+    ? [...myTerms.values()].sort((a, b) => termIndex(a) - termIndex(b)).map((term) => groups.get(term.id) ?? { term, studies: [] as NonNullable<typeof studyRows> })
+    : nearbyGroups;
   const eligibleSomewhere = termGroups.some((g) => signupTerms.has(g.term.id));
 
   return (
@@ -151,6 +166,16 @@ export default async function StudyPage() {
                 )}
               </div>
 
+              {/* 내 기수인데 스터디가 아직 없다 — 강사가 시간대를 정하는 중 (2026-10-02 Alan "강사님이 설정 중입니다") */}
+              {ordered.length === 0 && (
+                <div className="card flex flex-col items-center px-6 py-10 text-center">
+                  <Icon name="calendar" size={48} />
+                  <p className="mt-3 text-base font-bold text-ink">강사님이 {g.term.month}월 스터디를 설정 중이에요</p>
+                  <p className="mt-1 max-w-md text-sm text-slate">
+                    시간대가 정해지면 여기에서 바로 신청할 수 있어요{opensOn.has(g.term.id) ? ` — 신청은 ${openDay(opensOn.get(g.term.id)!)} 개강부터예요.` : "."}
+                  </p>
+                </div>
+              )}
               <div className="grid gap-4 lg:grid-cols-3">
                 {ordered.map((study, i) => {
                   const mine = mySignup.get(study.id);
