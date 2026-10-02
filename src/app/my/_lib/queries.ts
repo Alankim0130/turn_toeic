@@ -113,9 +113,12 @@ export type MyVerification = Awaited<ReturnType<typeof getMyVerifications>>[numb
  * "반에 배정되면 여기에 내 수업 달력이 나와요" 로 안내한다. 단 **조회 자체가 실패하면 예전처럼**
  * RLS 가 주는 대로 둔다 — 근거가 없을 때 화면을 비우면 진짜 학생의 시간표가 사라진다.
  */
-export async function getMySessions() {
+export async function getMySessions(opts: { upcoming?: boolean } = {}) {
   const supabase = await createClient();
-  const { data: ids, error } = await supabase.rpc("my_section_ids");
+  // 내 시간표(upcoming)는 개강 전(예비등록) 반도 세운다 — my_schedule_section_ids() (2026-10-02 Alan "10월 일정표가 학생화면에 제대로 안나오고 있어").
+  // 숙제 · LC 음원 달력은 그대로 수강 중인 반만 — my_section_ids(). 새 함수가 아직 없으면(배포 틈) 예전 함수로 돌아간다
+  let { data: ids, error } = opts.upcoming ? await supabase.rpc("my_schedule_section_ids") : await supabase.rpc("my_section_ids");
+  if (opts.upcoming && error) ({ data: ids, error } = await supabase.rpc("my_section_ids"));
   if (!error && (ids ?? []).length === 0) return [];
   let q = supabase
     .from("session_dates")

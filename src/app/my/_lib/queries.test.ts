@@ -69,6 +69,7 @@ const WIDE_OPEN_TABLES = [
 /** 좁히는 방법 */
 const NARROWERS: [RegExp, string][] = [
   [/my_section_ids/, "내 반 (public.my_section_ids)"],
+  [/my_schedule_section_ids/, "내 반 — 개강 전 예비등록 반까지 (public.my_schedule_section_ids, 내 시간표 전용)"],
   [/\.eq\("(?:user_id|student_id)"/, "내 행"],
   [/\b(?:user_id|student_id): user\.id\b/, "내 id 로 넣는 행 (신청 · 인증 — 넣고 실패하면 그 행만 지운다)"],
   [/\.eq\("id", (?:data\.)?user(?:\.id|Id)\)/, "내 프로필"],

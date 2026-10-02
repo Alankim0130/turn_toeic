@@ -26,7 +26,8 @@ export type ScheduleMonth = {
  */
 export async function getMySchedule() {
   const [sessionRows, lectures, mySignups, orders] = await Promise.all([
-    getMySessions(),
+    // 개강 전(예비등록) 반의 수업일도 세운다 — 일정만이고 불라방 · 다시보기는 개강일부터다 (2026-10-02 Alan)
+    getMySessions({ upcoming: true }),
     getMyLectures(),
     getMyLectureSignupIds(),
     getMyOrders(),

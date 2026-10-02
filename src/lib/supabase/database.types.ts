@@ -2243,6 +2243,7 @@ export type Database = {
         Returns: undefined
       }
       my_section_ids: { Args: never; Returns: number[] }
+      my_schedule_section_ids: { Args: never; Returns: number[] }
       save_term_schedule: {
         Args: {
           p_closes: string | null
