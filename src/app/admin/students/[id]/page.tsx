@@ -97,7 +97,18 @@ export default async function StudentDetailPage({
     : { data: null };
   const mergeCandidates = (mergeCandidateRows ?? []) as StaffMergeCandidate[];
 
-  const term = pickTerm(terms ?? [], sp.term, today);
+  // 반 배정 추가의 기수 — **다음 수업이 남아 있는 기수**가 기본이다 (2026-10-02 Alan "9월달이 이미 종료가 되었고 10월달을 시작하기
+  // 며칠전인데, 아직 9월달이 남아있는건 뭐지?"). 9월은 마지막 수업이 10/1 인데 종강일이 10/3 이라 "지금 기수"(개강일~종강일)로는
+  // 10/3 까지 9월이 골라졌다. 종강일은 다시보기를 여는 날짜라 그대로 두고, 새로 배정하는 이 칸만 다음 수업으로 고른다.
+  // 수업일을 못 읽으면(조회 실패) 예전처럼 "지금 기수".
+  const { data: nextClass } = await supabase.from("term_class_dates").select("term_id").gte("date", today).order("date").limit(1).maybeSingle();
+  const upcoming = (terms ?? []).find((t) => t.id === nextClass?.term_id) ?? null;
+  const term = sp.term ? pickTerm(terms ?? [], sp.term, today) : (upcoming ?? pickTerm(terms ?? [], undefined, today));
+  // 고른 기수의 수업이 다 끝났으면 칸 위에 말해 준다 — 그 달 반에 배정하면 종강일까지 다시보기만 열린다
+  const { data: lastClass } = term
+    ? await supabase.from("term_class_dates").select("date").eq("term_id", term.id).order("date", { ascending: false }).limit(1).maybeSingle()
+    : { data: null };
+  const termFinished = !!lastClass && lastClass.date < today;
   const { data: termSections } = term
     ? await supabase
         .from("class_sections")
@@ -279,6 +290,13 @@ export default async function StudentDetailPage({
             ) : (
               <>
                 <TermChips basePath={`/admin/students/${student.id}`} terms={terms ?? []} current={term ? termParam(term.year, term.month) : null} />
+                {term && termFinished && lastClass && (
+                  <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                    {termLabel(term)} 기수는 수업이 다 끝났어요 (마지막 수업 {formatDate(lastClass.date, { month: "long", day: "numeric" })}
+                    {term.closes_at ? ` · 종강 ${formatDate(term.closes_at, { month: "long", day: "numeric" })}` : ""}). 이 달 반에 배정하면 종강일까지 다시보기만 열려요 —
+                    새로 오는 학생은 {upcoming && upcoming.id !== term.id ? `${termLabel(upcoming, true)} ` : "다음 "}기수에 배정해 주세요.
+                  </p>
+                )}
                 <AssignSections id={student.id} sections={sectionOptions} />
               </>
             )}
