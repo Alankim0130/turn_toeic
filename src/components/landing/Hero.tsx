@@ -22,44 +22,22 @@ export function Hero({ reviewTotal }: { reviewTotal: number | null }) {
         />
       </div>
 
-      {/* 맨 위 한 줄 = 왼쪽 `YBM 부산 전체 1위` 배지 + 오른쪽 끝 YBM어학원 서면 로고 (2026-10-01 Alan — "YBM 로고를 1위 줄과 같은 줄로, 한 줄 아래에").
-          로고는 2026-09-30 까지 그 위에 따로 한 줄이었다. 좁은 화면에서는 로고를 줄이고(360px h-5 · 390px 부터 h-6 — 375px 에서 h-6 이면 배지 작은 줄이
-          `… 수 / 기준` 으로 쪼개진다) 배지가 `YBM 부산 / 전체 1위` 두 줄로 접혀 나란히 서며, 320px 에서만 로고가 아래 줄 오른쪽으로 내려간다(flex-wrap + ml-auto).
-          격자(제목 · 사진) 위에 두어 PC 에서도 로고가 화면 맨 오른쪽에 선다.
+      {/* 맨 위 = YBM어학원 서면 로고 + `YBM 부산 전체 1위` 배지.
+          - **휴대폰(sm 미만)은 로고가 왼쪽 위 한 줄, 그 아래 배지**다 (2026-10-03 Alan — "모바일버전에 ybm로고를 왼쪽 위로 올리고,
+            YBM부산 전체 1등 을 한줄로 펼치고"). 2026-10-01~03 에는 휴대폰에서도 로고가 배지 오른쪽에 서서, 자리가 모자란 배지가
+            `YBM 부산 / 전체 1위` 두 줄로 접혔다.
+          - sm 부터는 한 줄 = 왼쪽 배지 + 오른쪽 끝 로고 (2026-10-01 Alan "YBM 로고를 1위 줄과 같은 줄로"). 격자(제목 · 사진) 위라
+            PC 에서 로고가 화면 맨 오른쪽에 선다. 로고가 DOM 에서 먼저인 것은 휴대폰 순서에 맞춘 것이다 (sm 부터 `order-last`).
+          - **배지 문구는 어느 폭에서도 한 줄**이다 (nowrap). 320~359px 은 글자를 줄여(1.4rem) 넣는다 — 1.65rem 이면 320px 에서 넘친다.
+          - 로고와 배지 사이(gap-7)를 좁히지 말 것 — 메달이 배지 위로 14px 튀어나오고 뒤에서 금빛 고리가 퍼져서, 좁으면 로고를 덮는다.
           배지: 메달은 힉스필드 GPT Image 2.5 로 만든 투명 컷이고 빛줄기(`.rank-sweep`)가 몇 초마다 지나간다 — CLAUDE.md "1위 배지".
           로고: 외부 브랜드 표식이라 색·모양을 바꾸지 않고, 이미 줄여 둔 PNG 라 `unoptimized` — CLAUDE.md "YBM 로고" */}
       <div className="container-x pt-6 md:pt-10">
-        {/* 360px 부터는 nowrap — 줄바꿈을 허용하면 flex 가 배지를 줄이기 전에 로고를 다음 줄로 내린다. 배지는 min-content(두 줄)까지 줄어든다 */}
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-3 animate-fade-up min-[360px]:flex-nowrap sm:gap-x-4" style={{ animationDelay: "60ms" }}>
-          <p className="relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-500 py-2.5 pl-2 pr-5 text-white shadow-pink ring-2 ring-amber-300 sm:gap-3 sm:pr-7">
-              <span aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
-                <span className="rank-sweep" />
-              </span>
-              <span aria-hidden className="relative isolate -my-6 -ml-2 shrink-0 animate-pop sm:-my-7 sm:-ml-4 lg:-my-8" style={{ animationDelay: "320ms" }}>
-                <span className="absolute left-1/2 top-[36%] -z-10 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-300/70 animate-pulse-ring" />
-                <Image
-                  src="/illustrations/medal-first.webp"
-                  alt=""
-                  width={228}
-                  height={360}
-                  unoptimized
-                  priority
-                  className="h-[6.5rem] w-auto drop-shadow-[0_8px_14px_rgba(143,12,70,0.35)] sm:h-28 lg:h-32"
-                />
-              </span>
-              <span className="relative">
-                <span className="block text-[1.65rem] font-black leading-[1.1] tracking-tight sm:text-4xl lg:text-[2.5rem]">
-                  <span className="whitespace-nowrap">YBM 부산</span>{" "}
-                  <span className="whitespace-nowrap">
-                    전체{" "}
-                    <span className="bg-gradient-to-b from-yellow-100 via-amber-200 to-amber-400 bg-clip-text text-transparent drop-shadow-[0_2px_0_rgba(143,12,70,0.45)]">
-                      1위
-                    </span>
-                  </span>
-                </span>
-                <span className="mt-1 block text-xs font-bold text-white/85 sm:text-sm">22.01~현재 수강생 수 기준</span>
-              </span>
-            </p>
+        {/* sm 부터는 줄바꿈을 허용해 둔다 — 배지가 한 줄로 고정이라, 혹시 자리가 모자라면 넘치는 대신 로고가 다음 줄로 내려간다 */}
+        <div
+          className="flex animate-fade-up flex-col items-start gap-7 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-4 sm:gap-y-3"
+          style={{ animationDelay: "60ms" }}
+        >
           <Image
             src="/partners/ybm-seomyeon.png"
             alt="YBM어학원 서면"
@@ -67,8 +45,34 @@ export function Hero({ reviewTotal }: { reviewTotal: number | null }) {
             height={143}
             unoptimized
             priority
-            className="ml-auto h-5 w-auto shrink-0 min-[390px]:h-6 sm:h-9 lg:h-10"
+            className="h-7 w-auto shrink-0 sm:order-last sm:ml-auto sm:h-9 lg:h-10"
           />
+          <p className="relative inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-500 py-2.5 pl-2 pr-5 text-white shadow-pink ring-2 ring-amber-300 sm:gap-3 sm:pr-7">
+            <span aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
+              <span className="rank-sweep" />
+            </span>
+            <span aria-hidden className="relative isolate -my-6 -ml-2 shrink-0 animate-pop sm:-my-7 sm:-ml-4 lg:-my-8" style={{ animationDelay: "320ms" }}>
+              <span className="absolute left-1/2 top-[36%] -z-10 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-300/70 animate-pulse-ring" />
+              <Image
+                src="/illustrations/medal-first.webp"
+                alt=""
+                width={228}
+                height={360}
+                unoptimized
+                priority
+                className="h-[6.5rem] w-auto drop-shadow-[0_8px_14px_rgba(143,12,70,0.35)] sm:h-28 lg:h-32"
+              />
+            </span>
+            <span className="relative">
+              <span className="block whitespace-nowrap text-[1.4rem] font-black leading-[1.1] tracking-tight min-[360px]:text-[1.65rem] sm:text-4xl lg:text-[2.5rem]">
+                YBM 부산 전체{" "}
+                <span className="bg-gradient-to-b from-yellow-100 via-amber-200 to-amber-400 bg-clip-text text-transparent drop-shadow-[0_2px_0_rgba(143,12,70,0.45)]">
+                  1위
+                </span>
+              </span>
+              <span className="mt-1 block text-xs font-bold text-white/85 sm:text-sm">22.01~현재 수강생 수 기준</span>
+            </span>
+          </p>
         </div>
       </div>
 
@@ -76,8 +80,9 @@ export function Hero({ reviewTotal }: { reviewTotal: number | null }) {
         <div>
           {/* 헤드라인 — "시작 점수가 달라도, 끝은 역전!" 과 예전 "점수를 뒤집는 가장 확실한 방법, 역전토익" 이 번갈아
               글자마다 뒤집히며 바뀐다 (2026-09-30 Alan). 문구·시간은 src/lib/flip-headline.ts. 들어오는 움직임은 글자 뒤집기가 맡아 fade-up 을 뺐다.
-              360px 미만은 32px — 36px 이면 첫 줄이 `시작 점수가 / 달라도,` 로 쪼개진다 */}
-          <FlipHeadline className="text-[2rem] font-black leading-[1.15] tracking-tight text-ink min-[360px]:text-4xl sm:text-5xl lg:text-6xl" />
+              휴대폰에서는 두 문구 다 3줄이다 (2026-10-03 Alan — `시작 점수가 / 달라도, / 끝은 역전!`, flip-headline.ts 의 `phoneBreak`).
+              그래서 320px 에서도 36px 로 둔다 — 예전에는 그 줄이 쪼개지지 않게 360px 미만을 32px 로 줄였다 */}
+          <FlipHeadline className="text-4xl font-black leading-[1.15] tracking-tight text-ink sm:text-5xl lg:text-6xl" />
           <p className="mt-6 max-w-xl animate-fade-up text-base leading-relaxed text-slate sm:text-lg" style={{ animationDelay: "200ms" }}>
             귀에 꽂히는 압도적인 전달력. 족집게식 핵심 학습과 최신 토익 경향을 실시간으로 반영한 커리큘럼으로,
             부산 서면 YBM어학원에서 목표 점수까지 최단 거리로 갑니다.

@@ -15,6 +15,8 @@ function Lines({ lines, phase, seed = 0, first }: { lines: FlipLine[]; phase?: "
           {words.map((w, wi) => (
             <Fragment key={wi}>
               {wi > 0 && " "}
+              {/* 휴대폰에서만 바꾸는 줄 (flip-headline.ts 의 `phoneBreak`) — sm 부터는 빈칸 하나로 잇는다. 줄 끝의 빈칸은 브라우저가 지운다 */}
+              {w[0].phoneBreak && <br className="sm:hidden" />}
               {/* 낱말은 한 덩어리 — 글자가 inline-block 이라 그냥 두면 좁은 화면에서 낱말 가운데서 줄이 바뀐다 */}
               <span className="inline-block whitespace-nowrap">
                 {w.map((c) => {
