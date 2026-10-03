@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Icon, type IconName } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
 import { formatDate, cn, todayKST } from "@/lib/utils";
 import { getMyVerifications, getOpenEnrollSections, VERIFICATION_STATUS_LABEL } from "../_lib/queries";
 import { heldMonth } from "@/lib/verify-decision";
 import { VerifyForm } from "./VerifyForm";
 import { NoReceiptCard } from "./NoReceiptCard";
+import { ForgeryNotice } from "./ForgeryNotice";
 import { ReceiptGuide } from "./ReceiptGuide";
 import { getSessionProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -25,14 +25,6 @@ export const metadata: Metadata = {
   title: "등업신청",
   robots: { index: false },
 };
-
-const STEPS: { icon: IconName; title: string; desc: string }[] = [
-  { icon: "upload", title: "수강증 업로드", desc: "마이페이지 → 수강증에서 나오는 파란색 수강증 화면을 캡처해 올립니다. 결제 영수증·카톡 캡처는 받지 않아요." },
-  { icon: "target", title: "확인", desc: "역전토익 수강증이 맞는지, 이번 달 수강증이 맞는지 확인합니다. 아니면 이유를 적어 바로 알려드려요." },
-  // 흐름은 업로드 → 이름·전화번호 → (같은 사람 계정이 있으면) 합치기 다 (2026-09-19 Alan)
-  { icon: "profile", title: "이름·전화번호 확인", desc: "같은 이름을 쓰는 수강생이 있어서 한 번 더 확인합니다. 같은 사람의 계정이 여러 개면 여기서 하나로 합쳐요." },
-  { icon: "success", title: "등업", desc: "확인이 끝나면 수강생으로 전환되고 불라방·다시보기가 열립니다." },
-];
 
 export default async function VerifyPage() {
   const [verifications, sections, { user, profile }, canRename] = await Promise.all([
@@ -104,25 +96,9 @@ export default async function VerifyPage() {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
         <div className="space-y-4">
+          {/* 위조 수강증 법적 조치 안내 (2026-10-03 Alan) — 예전 "이렇게 진행돼요" 카드 자리. 모든 학생에게 같은 글이다 */}
           <Reveal>
-            <section className="card p-5">
-              <h2 className="text-base font-black text-ink">이렇게 진행돼요</h2>
-              <ol className="mt-3 space-y-3">
-                {STEPS.map((s, i) => (
-                  <li key={s.title} className="flex gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50">
-                      <Icon name={s.icon} size={24} />
-                    </span>
-                    <div className="text-sm">
-                      <p className="font-black text-ink">
-                        {i + 1}. {s.title}
-                      </p>
-                      <p className="text-slate">{s.desc}</p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </section>
+            <ForgeryNotice />
           </Reveal>
 
           {/* 수강증이 아예 없는 학생 (YBM 미가입) — 회원가입 → 데스크 계정 연동 안내 */}
