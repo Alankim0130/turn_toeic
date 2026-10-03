@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * 프로필 사진 — 누르면 크게 (2026-10-02 Alan — "강사는 프로필 사진을 클릭했을 때 큰 화면으로").
- * **강사·관리자 화면에서만 쓴다.** 학생(/my)·조교(명단)는 `ProfilePhoto` 그대로 — 눌리지 않는다.
+ * **강사·관리자 화면에서만 쓴다.** 학생(/my)은 `ProfilePhoto` 그대로 — 눌리지 않는다 (조교는 2026-10-03 부터 명단 자체를 못 본다).
  * 사진이 없으면 버튼도 없다 (빈 프로필 이미지만).
  */
 export function PhotoLightbox({ src, size = 56, name, className }: { src: string | null; size?: number; name?: string | null; className?: string }) {

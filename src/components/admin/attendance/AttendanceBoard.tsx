@@ -26,6 +26,7 @@ export function AttendanceBoard({
   classes,
   sectionLabel,
   dayHref,
+  linkStudents = true,
 }: {
   title: string;
   rows: (BoardRow & { counts: DayCounts })[];
@@ -36,6 +37,8 @@ export function AttendanceBoard({
   /** 반 id → 짧은 이름 (칸 설명에 쓴다) */
   sectionLabel: Record<number, string>;
   dayHref: (date: string) => string;
+  /** 이름을 학생 관리로 잇나 — 조교에게는 학생명단 · 학생 관리가 없어 글자로만 둔다 (2026-10-03) */
+  linkStudents?: boolean;
 }) {
   if (rows.length === 0) {
     return <p className="card p-6 text-center text-sm text-slate">이 기수에 출석을 찍는 현장 수강생이 없어요. 불라방·인강 학생은 출석을 찍지 않아요.</p>;
@@ -101,9 +104,13 @@ export function AttendanceBoard({
                 <tr key={r.student_id} className={tint}>
                   <th scope="row" className={cn("sticky left-0 z-10 max-w-44 px-4 py-2 text-left align-middle font-normal", tint)}>
                     <span className="flex items-center gap-1.5">
-                      <Link href={`/admin/students/${r.student_id}`} className="whitespace-nowrap font-bold text-ink hover:underline">
-                        {r.student_name || "-"}
-                      </Link>
+                      {linkStudents ? (
+                        <Link href={`/admin/students/${r.student_id}`} className="whitespace-nowrap font-bold text-ink hover:underline">
+                          {r.student_name || "-"}
+                        </Link>
+                      ) : (
+                        <span className="whitespace-nowrap font-bold text-ink">{r.student_name || "-"}</span>
+                      )}
                       {r.tester && <span className="rounded-full bg-line px-1.5 py-0.5 text-[10px] font-bold text-slate">테스터</span>}
                     </span>
                     {(classes[r.student_id] ?? []).map((c, i) => (

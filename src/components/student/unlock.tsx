@@ -78,8 +78,10 @@ export function UnlockActions({ access, feature }: { access: StudentAccess; feat
     );
   }
 
-  // 스태프·조교 — 학생명단에서 자기 계정을 반에 배정하면 그 학생과 똑같이 열린다 (테스터)
+  // 강사·관리자 — 학생명단에서 자기 계정을 반에 배정하면 그 학생과 똑같이 열린다 (테스터).
+  // 조교는 학생명단 · 반 배정이 없다 (2026-10-03 Alan — "반배정 (강사가 직접 배정를 해준다)") — 강사에게 부탁하라고만 적는다
   if (state === "crew") {
+    if (access.role === "assistant") return <p className="text-sm font-bold text-slate">반 배정은 강사님께 부탁해 주세요.</p>;
     return (
       <Link href="/admin/students" className="btn-secondary">
         학생명단에서 반 배정하기

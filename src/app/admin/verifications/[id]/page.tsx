@@ -30,7 +30,8 @@ export default async function VerificationDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ done?: string }>;
 }) {
-  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
+  // 조교도 쓴다 — 수강증을 보고 승인 · 반려 · 배정 수정 (2026-10-03 Alan "수동등업 수락을 확인 후 할 수 있다").
+  // 레이아웃이 조교를 통과시키므로 화면마다 막는다 — 그 밖의 등급은 여기서 튕긴다
   const { profile: me } = await requireCrew();
   const { id: idParam } = await params;
   const { done } = await searchParams;

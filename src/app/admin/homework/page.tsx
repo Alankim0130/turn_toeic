@@ -8,15 +8,17 @@ import { FilterTabs } from "@/components/admin/FilterTabs";
 import { HomeworkList, type HomeworkRow } from "@/components/admin/homework/HomeworkList";
 import { classDayLabel, HOMEWORK_SUBJECTS, type HomeworkSubject, homeworkLabel, isSubject, SUBJECT_LABEL } from "@/lib/homework";
 import { isImageType } from "@/lib/upload";
-import { requireStaff } from "@/lib/auth";
+import { isStaff, requireCrew } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "숙제점검", robots: { index: false } };
 
 const LIMIT = 300;
 
 export default async function HomeworkAdminPage({ searchParams }: { searchParams: Promise<{ level?: string; subject?: string; done?: string }> }) {
-  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
-  const me = await requireStaff();
+  // 조교도 점검한다 (2026-10-03 Alan "숙제점검"). 레이아웃이 조교를 통과시키므로 화면마다 막는다 — 그 밖의 등급은 여기서 튕긴다
+  const me = await requireCrew();
+  /** 조교에게는 학생 전화번호를 넘기지 않는다 — 점검에 필요 없고, 학생명단을 조교에게서 뺀 까닭이 개인정보다 (2026-10-03 Alan) */
+  const showPhone = isStaff(me.profile.role);
   const sp = await searchParams;
   const supabase = await createClient();
   /**
@@ -102,7 +104,7 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
     return {
       id: s.id,
       name: s.user?.name || "이름 없음",
-      phone: s.user?.phone ?? null,
+      phone: showPhone ? (s.user?.phone ?? null) : null,
       label: s.level != null && s.subject ? homeworkLabel(s.level, s.subject) : null,
       sub: parts.join(" · ") || "올린 파일 없음",
       at,

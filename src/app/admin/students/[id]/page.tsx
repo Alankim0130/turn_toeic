@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { canAssignRole, isAdmin, isAssistant, isStaff, requireCrew, ROLE_LABEL, TEST_ROLES, type UserRole } from "@/lib/auth";
+import { canAssignRole, isAdmin, isStaff, requireStaff, ROLE_LABEL, TEST_ROLES, type UserRole } from "@/lib/auth";
 import { TestRoleSelect, type TestRoleOption } from "@/components/admin/students/TestRoleSelect";
 import { todayKST, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -42,7 +42,8 @@ export default async function StudentDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ term?: string }>;
 }) {
-  const [{ id }, sp, { profile: me }] = await Promise.all([params, searchParams, requireCrew()]);
+  // 학생 관리는 강사·관리자만 — 개인정보 · 등급 · 반 배정이 모두 여기 있다 (2026-10-03 Alan "학생명단 · 반배정은 조교 권한 아님")
+  const [{ id }, sp, { profile: me }] = await Promise.all([params, searchParams, requireStaff()]);
   const supabase = await createClient();
   const today = todayKST();
 
@@ -63,7 +64,7 @@ export default async function StudentDetailPage({
       .order("id"),
     supabase.from("enrollment_orders").select("id, status, activates_on, access_until, verification_id").eq("user_id", id).order("activates_on", { ascending: false }),
     supabase.from("terms").select(TERM_COLUMNS).order("year").order("month"),
-    // 올린 수강증 (2026-10-02 Alan) — 최근 것부터. RLS 가 crew(강사 · 관리자 · 조교)에게 연다
+    // 올린 수강증 (2026-10-02 Alan) — 최근 것부터
     supabase
       .from("enrollment_verifications")
       .select("id, created_at, result, source, reject_reason, confidence, candidates, parsed, file_path, file_deleted_at")
@@ -97,8 +98,8 @@ export default async function StudentDetailPage({
   });
 
   // 같은 사람으로 보이는 다른 계정 (이름 또는 전화번호가 같음). 판정·권한은 DB 함수가 본다.
-  // **계정 합치기는 스태프만** — 기록을 통째로 옮기는 되돌리기 어려운 일이라 조교에게는 열지 않는다
-  // (DB 함수도 스태프만 통과시키므로, 조교일 때는 부르지 않고 칸도 그리지 않는다)
+  // **계정 합치기는 스태프만** — 기록을 통째로 옮기는 되돌리기 어려운 일이다. 이 화면이 2026-10-03 부터 강사·관리자 전용이라
+  // 늘 참이지만 두 겹으로 둔다 (DB 함수도 스태프만 통과시킨다)
   const canMerge = isStaff(me.role);
   const { data: mergeCandidateRows } = canMerge
     ? await supabase.rpc("staff_merge_candidates", { p_user: id })
@@ -149,10 +150,10 @@ export default async function StudentDetailPage({
   const lines = enrollmentLines(enrollments ?? [], { withEnd: true });
   const sectionOptions: PickerSection[] = (termSections ?? []).map((s) => ({ ...s, taken: takenIds.has(s.id) }));
 
-  // 고를 수 있는 등급은 canAssignRole 한곳이 정한다 — 조교에게는 학생 등급만 남는다
-  const roleOptions: RoleOption[] = (Object.keys(ROLE_LABEL) as UserRole[])
-    .filter((r) => canAssignRole(me.role, student.role, r))
-    .map((r) => ({ value: r, label: ROLE_LABEL[r], hint: ROLE_HINT[r] }));
+  // 등급을 바꿀 수 있는지는 canAssignRole 한곳이 정한다 (강사·관리자)
+  const roleOptions: RoleOption[] = canAssignRole(me.role)
+    ? (Object.keys(ROLE_LABEL) as UserRole[]).map((r) => ({ value: r, label: ROLE_LABEL[r], hint: ROLE_HINT[r] }))
+    : [];
   const canChangeRole = roleOptions.length > 0;
 
   // 테스터: 강사·관리자 계정은 진짜 등급을 그대로 두고 테스트 등급으로 학생 화면을 확인한다 (2026-09-16 Alan)
@@ -198,7 +199,7 @@ export default async function StudentDetailPage({
               </div>
             ))}
           </dl>
-          {/* 개인정보 수정 (2026-10-02 Alan) — 강사·관리자만. 조교는 등급 말고는 못 바꾼다 (DB 트리거) */}
+          {/* 개인정보 수정 (2026-10-02 Alan) — 강사·관리자만 */}
           {isStaff(me.role) && (
             <ProfileEditor
               profile={{
@@ -223,21 +224,7 @@ export default async function StudentDetailPage({
             <RoleSelect id={student.id} current={student.role} options={roleOptions} />
           ) : (
             <p className="rounded-xl bg-brand-50/60 px-4 py-6 text-sm text-slate">
-              {isAssistant(me.role) ? (
-                <>
-                  조교는 <strong className="text-ink">학생 등급</strong>(회원 · 수강생 · 졸업생)만 바꿀 수 있어요.
-                  이 계정은 강사·관리자라 관리자에게 요청해 주세요.
-                </>
-              ) : (
-                <>
-                  등급은 <strong className="text-ink">강사·관리자</strong>만 바꿀 수 있어요. 바꿔야 하면 관리자에게 요청해 주세요.
-                </>
-              )}
-            </p>
-          )}
-          {canChangeRole && isAssistant(me.role) && (
-            <p className="mt-2 rounded-xl bg-brand-50/60 px-3 py-2 text-xs text-slate">
-              조교는 <b>회원 · 수강생 · 졸업생</b> 사이만 바꿀 수 있어요. 강사·관리자·조교로 올리는 것은 관리자만 합니다.
+              등급은 <strong className="text-ink">강사·관리자</strong>만 바꿀 수 있어요. 바꿔야 하면 관리자에게 요청해 주세요.
             </p>
           )}
           <p className="mt-3 text-xs text-mist">

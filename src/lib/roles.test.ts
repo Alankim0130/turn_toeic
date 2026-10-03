@@ -73,34 +73,23 @@ describe("등급 판정 — 앱 안에서 어긋나지 않는다", () => {
 });
 
 /**
- * 조교의 등급 변경 (2026-09-19 Alan — "조교에게도 등급권한을 부여해주는 권한").
- * DB 정책 "profiles: 본인·스태프·조교 수정" 과 같은 집합이어야 한다 (마이그레이션 20260919130000).
+ * 등급을 누가 바꾸나 — **강사·관리자만** (2026-10-03 Alan — 조교에게서 학생명단 · 반 배정을 뺐다.
+ * 2026-09-19 ~ 10-02 에는 조교가 학생 등급끼리 바꿀 수 있었다).
+ * DB 정책 "profiles: 본인·스태프 수정" 과 같은 집합이어야 한다 (마이그레이션 20261003100000).
  */
 describe("등급을 누가 바꿀 수 있나 — canAssignRole", () => {
   const ROLES = Object.keys(ROLE_LABEL) as UserRole[];
 
-  it("강사·관리자는 무엇이든 바꾼다", () => {
-    for (const actor of ["instructor", "admin"] as UserRole[])
-      for (const target of ROLES) for (const next of ROLES) expect(canAssignRole(actor, target, next), `${actor}:${target}→${next}`).toBe(true);
+  it("강사·관리자만 바꾼다 (DB 의 private.is_admin() 과 같은 집합)", () => {
+    expect(ROLES.filter((r) => canAssignRole(r)).sort()).toEqual(ROLES.filter(isAdmin).sort());
   });
 
-  it("조교는 학생 등급인 사람만 건드린다 — 강사·관리자·조교 계정은 못 바꾼다", () => {
-    for (const target of ["instructor", "admin", "assistant"] as UserRole[])
-      expect(canAssignRole("assistant", target, "member"), target).toBe(false);
+  it("조교는 아무 등급도 못 바꾼다 — 학생 등급 사이도", () => {
+    expect(canAssignRole("assistant")).toBe(false);
   });
 
-  it("조교는 누구도 스태프 등급으로 못 올린다 (스스로 권한을 올리는 길 차단)", () => {
-    for (const next of ["instructor", "admin", "assistant"] as UserRole[])
-      expect(canAssignRole("assistant", "student", next), next).toBe(false);
-  });
-
-  it("조교는 학생 등급 사이는 바꾼다", () => {
-    for (const target of STUDENT_GRADES) for (const next of STUDENT_GRADES) expect(canAssignRole("assistant", target, next)).toBe(true);
-  });
-
-  it("학생·회원·졸업생·비회원은 아무것도 못 바꾼다", () => {
-    for (const actor of [...STUDENT_GRADES, null] as (UserRole | null)[])
-      expect(canAssignRole(actor, "member", "student"), String(actor)).toBe(false);
+  it("학생·회원·졸업생·비회원·등급 없음은 아무것도 못 바꾼다", () => {
+    for (const actor of [...STUDENT_GRADES, null, undefined] as (UserRole | null | undefined)[]) expect(canAssignRole(actor), String(actor)).toBe(false);
   });
 });
 

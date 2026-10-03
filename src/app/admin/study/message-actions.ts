@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireStaff } from "@/lib/auth";
+import { isStaff, requireCrew } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 export type SendResult = { ok: boolean; error?: string; sent?: number };
@@ -9,6 +9,9 @@ export type SendResult = { ok: boolean; error?: string; sent?: number };
 /**
  * 스태프 → 학생 알림 (2026-09-18 Alan — 미인증 학생에게 메시지). 학생의 알림함(/my/notifications)에 쌓인다.
  * 로그인한 스태프 세션으로 넣는다 — RLS "student_messages: 스태프 발송" 이 한 번 더 막는다. 문자·알림톡·푸시는 보내지 않는다.
+ *
+ * **조교는 비대면 인증 독촉(`study_checkin`)만 보낸다** (2026-10-03 Alan "스터디를 조교가 운영한다"). DB 정책
+ * "student_messages: 조교 발송" 이 같은 집합이다 (종류 · 보낸 이 = 자기 이름).
  */
 export async function sendStudentMessages(input: {
   userIds: string[];
@@ -17,12 +20,13 @@ export async function sendStudentMessages(input: {
   kind?: "general" | "study_checkin";
   related?: { materialId?: number; date?: string } | null;
 }): Promise<SendResult> {
-  const { user, profile } = await requireStaff();
+  const { user, profile } = await requireCrew();
 
   const userIds = [...new Set((Array.isArray(input.userIds) ? input.userIds : []).filter((v): v is string => typeof v === "string" && v.length > 0))];
   const title = String(input.title ?? "").trim();
   const body = String(input.body ?? "").trim();
   const kind = input.kind === "study_checkin" ? "study_checkin" : "general";
+  if (kind !== "study_checkin" && !isStaff(profile.role)) return { ok: false, error: "조교는 비대면 인증 알림만 보낼 수 있어요." };
   if (userIds.length === 0) return { ok: false, error: "받을 학생을 골라 주세요." };
   if (userIds.length > 200) return { ok: false, error: "한 번에 200명까지 보낼 수 있어요." };
   if (title.length < 1 || title.length > 80) return { ok: false, error: "제목은 1~80자로 적어 주세요." };
