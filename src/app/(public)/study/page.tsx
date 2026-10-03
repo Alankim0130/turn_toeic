@@ -86,6 +86,8 @@ export default async function StudyPage() {
     ? [...myTerms.values()].sort((a, b) => termIndex(a) - termIndex(b)).map((term) => groups.get(term.id) ?? { term, studies: [] as NonNullable<typeof studyRows> })
     : nearbyGroups;
   const eligibleSomewhere = termGroups.some((g) => signupTerms.has(g.term.id));
+  // 예비등록생의 가장 이른 개강일 — 신청은 그날부터다 (2026-10-02). 기수마다의 날짜는 아래 칩에도 적힌다
+  const firstOpen = [...opensOn.values()].sort()[0];
 
   return (
     <section className="container-x py-10 sm:py-14">
@@ -125,10 +127,16 @@ export default async function StudyPage() {
             <Link href="/login?next=/study" className="font-bold text-brand-600 hover:underline">로그인하기 →</Link>
           </Alert>
         ) : termGroups.length > 0 && !eligibleSomewhere ? (
-          <Alert kind="warning" title="그 달 수강생으로 등록된 뒤에 신청할 수 있어요">
-            수강증을 올려 등업하면 개강 전(예비등록생)에도 신청할 수 있어요.{" "}
-            <Link href="/my/verify" className="font-bold text-brand-600 hover:underline">등업신청 하러 가기 →</Link>
-          </Alert>
+          firstOpen ? (
+            <Alert kind="info" title={`${openDay(firstOpen)} 개강일부터 신청할 수 있어요`}>
+              예비등록생은 개강일이 되면 이 화면에서 바로 신청할 수 있어요.
+            </Alert>
+          ) : (
+            <Alert kind="warning" title="그 달 수강생으로 등록된 뒤에 신청할 수 있어요">
+              수강증을 올려 등업하면 개강일부터 신청할 수 있어요.{" "}
+              <Link href="/my/verify" className="font-bold text-brand-600 hover:underline">등업신청 하러 가기 →</Link>
+            </Alert>
+          )
         ) : signups.length > 0 ? (
           <Alert kind="success" title="신청한 스터디는 내 스터디에서 확인할 수 있어요">
             비대면스터디 자료 받기와 풀이 인증도 그곳에서 해요.{" "}
