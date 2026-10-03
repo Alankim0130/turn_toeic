@@ -9,6 +9,7 @@ import { Icon } from "@/components/ui/Icon";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { TableWrap, Th, Td } from "@/components/admin/Table";
 import { termLabel } from "../_lib/queries";
+import { getProfileNames } from "../_lib/profile-names";
 import { confirmTextbookPayment, markTextbookShipped, updateTextbookOrder } from "./actions";
 import { isStaff, requireCrew } from "@/lib/auth";
 import { TEXTBOOK_ADMIN_STATUS } from "@/lib/textbook";
@@ -50,7 +51,7 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
 
   let query = supabase
     .from("textbook_orders")
-    .select("*, user:profiles(name, phone), section:class_sections(track, time_block, course:courses(name), term:terms(year, month))")
+    .select("*, section:class_sections(track, time_block, course:courses(name), term:terms(year, month))")
     .order("created_at", { ascending: false })
     .limit(300);
   if (status !== "all") query = query.eq("status", status);
@@ -59,6 +60,9 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
     query,
     ...["requested", "confirmed", "shipped", "cancelled"].map((s) => supabase.from("textbook_orders").select("id", { count: "exact", head: true }).eq("status", s)),
   ]);
+  // 주문한 학생의 가입 이름 — 이름 · 등급만 주는 함수로 (조교는 profiles 를 못 읽는다, 2026-10-03 `profile-names.ts`).
+  // 배송에 쓰는 받는 사람 · 연락처 · 주소는 주문에 따로 적혀 있다 (Alan — 교재 배송은 번호가 필요하다)
+  const names = await getProfileNames(supabase, (rows ?? []).map((o) => o.user_id));
   const counts: Record<string, number | undefined> = {
     requested: countRes[0].count ?? 0,
     confirmed: countRes[1].count ?? 0,
@@ -117,7 +121,7 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
               return (
                 <tr key={o.id} className="align-top hover:bg-brand-50/40">
                   <Td className="whitespace-nowrap text-xs">{formatDate(o.created_at, { year: "2-digit", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
-                  <Td className="whitespace-nowrap font-bold">{o.user?.name ?? "-"}</Td>
+                  <Td className="whitespace-nowrap font-bold">{names.get(o.user_id)?.name ?? "-"}</Td>
                   <Td className="text-xs">
                     {termLabel(o.section?.term, true)} · {o.section?.course?.name ?? "강좌"}
                     <br />
