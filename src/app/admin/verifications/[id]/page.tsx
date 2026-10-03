@@ -33,6 +33,9 @@ export default async function VerificationDetailPage({
   // 조교도 쓴다 — 수강증을 보고 승인 · 반려 · 배정 수정 (2026-10-03 Alan "수동등업 수락을 확인 후 할 수 있다").
   // 레이아웃이 조교를 통과시키므로 화면마다 막는다 — 그 밖의 등급은 여기서 튕긴다
   const { profile: me } = await requireCrew();
+  // 학생 전화번호는 강사 · 관리자에게만 (2026-10-03 Alan "등업화면은 전화번호 안보이게 해줘" — 조교에게서 학생명단을 뺀 까닭이 개인정보다).
+  // 같은 학생의 계정 둘을 가리는 대조(ownTwin)는 서버에서만 번호를 쓰고 화면에는 내보내지 않는다
+  const showPhone = isStaff(me.role);
   const { id: idParam } = await params;
   const { done } = await searchParams;
   const id = Number(idParam);
@@ -154,10 +157,14 @@ export default async function VerificationDetailPage({
     ownTwin
       ? `이름 · 전화번호가 같은 다른 계정이 같은 수강증을 올렸어요 — 한 학생이 계정을 둘 만든 것으로 보여요 (돌려쓰기가 아니에요). ${isStaff(me.role) ? "학생 관리의 「계정 합치기」로 두 계정을 합친 뒤 승인해 주세요." : "강사 · 관리자에게 계정 합치기를 부탁한 뒤 승인해 주세요."}`
       : null,
-    !ownTwin && matchLog?.flags?.duplicateImage ? "다른 계정이 같은 이미지 파일을 올렸어요 — 수강증을 돌려 쓰는 것일 수 있어요. 두 계정의 이름·전화번호를 확인해 주세요." : null,
+    !ownTwin && matchLog?.flags?.duplicateImage
+      ? `다른 계정이 같은 이미지 파일을 올렸어요 — 수강증을 돌려 쓰는 것일 수 있어요. ${showPhone ? "두 계정의 이름·전화번호를 확인해 주세요." : "강사 · 관리자에게 두 계정 확인을 부탁해 주세요."}`
+      : null,
     matchLog?.flags?.staleCapture ? "수강증 캡처 시각이 45일 넘게 오래됐어요 — 지난 수강증을 다시 올린 것일 수 있어요. 이번 달 등록이 맞는지 확인해 주세요." : null,
     // 같은 초 = 같은 캡처다. 글자를 고쳐도 남으므로 "친구 수강증에 내 이름만 얹은" 경우가 여기 걸린다 (2026-09-19)
-    !ownTwin && matchLog?.flags?.sameCapture ? "다른 계정에 같은 초에 캡처된 수강증이 있어요 — 한쪽이 상대의 그림을 받아 쓴 것일 수 있어요 (글자를 고쳐도 캡처 시각은 남아요). 두 계정을 확인해 주세요." : null,
+    !ownTwin && matchLog?.flags?.sameCapture
+      ? `다른 계정에 같은 초에 캡처된 수강증이 있어요 — 한쪽이 상대의 그림을 받아 쓴 것일 수 있어요 (글자를 고쳐도 캡처 시각은 남아요). ${showPhone ? "두 계정을 확인해 주세요." : "강사 · 관리자에게 두 계정 확인을 부탁해 주세요."}`
+      : null,
     // 색 팔레트 — AI 로 만들었거나 손으로 그린 그림, 다른 학원 수강증이 걸린다 (2026-09-19)
     matchLog?.flags?.paletteOff
       ? `화면 색이 YBM 수강증 팔레트와 달라요 — 만들어 낸 그림이거나 다른 곳의 수강증일 수 있어요. 그림을 직접 봐 주세요.${matchLog.flags.paletteNote ? ` (${matchLog.flags.paletteNote})` : ""}`
@@ -302,7 +309,7 @@ export default async function VerificationDetailPage({
 
             <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
               <dt className="text-slate">가입 실명</dt><dd className="font-bold">{v.profile?.name ?? "-"}</dd>
-              <dt className="text-slate">연락처</dt><dd>{v.profile?.phone ?? "-"}</dd>
+              {showPhone && (<><dt className="text-slate">연락처</dt><dd>{v.profile?.phone ?? "-"}</dd></>)}
               <dt className="text-slate">현재 등급</dt><dd><StatusBadge status={v.profile?.role} /></dd>
               <dt className="text-slate">신뢰도</dt><dd>{v.confidence != null ? `${Math.round(Number(v.confidence))}점` : "-"}</dd>
               {v.reject_reason && (<><dt className="text-slate">반려 사유</dt><dd className="text-red-700">{v.reject_reason}</dd></>)}
