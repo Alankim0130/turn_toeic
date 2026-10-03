@@ -20,7 +20,7 @@ describe("layoutHeadline — 줄 · 낱말 · 글자", () => {
   const { lines, count } = layoutHeadline(HEADLINES[1]);
 
   it("빈칸은 낱말 사이로만 남고 글자로 세지 않는다", () => {
-    expect(lines.map((l) => l.map((w) => w.map((c) => c.ch).join("")))).toEqual([["시작", "점수가", "달라도,"], ["끝은", "역전!"]]);
+    expect(lines.map((l) => l.map((w) => w.map((c) => c.ch).join("")))).toEqual([["시작", "점수가"], ["달라도,"], ["끝은", "역전!"]]);
     expect(count).toBe(14);
   });
 
@@ -38,38 +38,16 @@ describe("layoutHeadline — 줄 · 낱말 · 글자", () => {
   });
 
   it("조각 경계에서 낱말이 붙지 않는다 (\"끝은 \" + \"역전!\")", () => {
-    expect(lines[1]).toHaveLength(2);
+    expect(lines[2]).toHaveLength(2);
   });
 });
 
-describe("휴대폰에서는 두 문구 다 3줄 (2026-10-03 Alan — \"시작점수가 / 달라도 / 끝은 역전 이렇게 똑같이 3줄로\")", () => {
-  // 휴대폰에 보이는 줄 = 데이터의 줄을 `phoneBreak` 낱말 앞에서 한 번 더 자른 것 (FlipHeadline 의 `<br className="sm:hidden">`)
-  const phoneLines = (h: Headline) =>
-    layoutHeadline(h).lines.flatMap((words) => {
-      const out: string[][] = [[]];
-      for (const w of words) {
-        if (w[0].phoneBreak && out[out.length - 1].length) out.push([]);
-        out[out.length - 1].push(w.map((c) => c.ch).join(""));
-      }
-      return out.map((ws) => ws.join(" "));
-    });
+describe("두 문구 다 3줄 — 휴대폰 · PC 모두 (2026-10-03 Alan \"똑같이 3줄로\" · \"pc에서도 3줄로\")", () => {
+  const lineText = (h: Headline) => layoutHeadline(h).lines.map((words) => words.map((w) => w.map((c) => c.ch).join("")).join(" "));
 
-  it("`시작 점수가 / 달라도, / 끝은 역전!` — 예전 문구와 같은 3줄", () => {
-    expect(phoneLines(HEADLINES[0])).toEqual(["점수를 뒤집는", "가장 확실한 방법,", "역전토익"]);
-    expect(phoneLines(HEADLINES[1])).toEqual(["시작 점수가", "달라도,", "끝은 역전!"]);
-  });
-
-  it("넓은 화면은 그대로 — 데이터는 2줄이고, 줄 바꿈 표시는 `달라도,` 첫 글자 하나에만", () => {
-    const { lines } = layoutHeadline(HEADLINES[1]);
-    expect(lines).toHaveLength(2);
-    expect(lines.flat(2).filter((c) => c.phoneBreak).map((c) => c.ch)).toEqual(["달"]);
-    expect(headlineText(HEADLINES[1])).toBe("시작 점수가 달라도, 끝은 역전!");
-  });
-
-  it("빈칸 없이 이어 적은 조각도 새 낱말로 시작하고, 글로는 빈칸 하나로 읽힌다", () => {
-    const h: Headline = [[{ t: "가나" }, { t: "다라", phoneBreak: true }]];
-    expect(layoutHeadline(h).lines[0].map((w) => w.map((c) => c.ch).join(""))).toEqual(["가나", "다라"]);
-    expect(headlineText(h)).toBe("가나 다라");
+  it("`점수를 뒤집는 / 가장 확실한 방법, / 역전토익` ↔ `시작 점수가 / 달라도, / 끝은 역전!`", () => {
+    expect(lineText(HEADLINES[0])).toEqual(["점수를 뒤집는", "가장 확실한 방법,", "역전토익"]);
+    expect(lineText(HEADLINES[1])).toEqual(["시작 점수가", "달라도,", "끝은 역전!"]);
   });
 });
 

@@ -10,12 +10,7 @@
  * 그리는 것은 `FlipHeadline`, 움직임은 globals.css 의 `.fly-ch`. 순수 함수 (`flip-headline.test.ts`).
  */
 
-export type HeadlineRun = {
-  t: string;
-  em?: boolean;
-  /** **휴대폰(sm 미만)에서만** 이 조각 앞에서 줄을 바꾼다 — 넓은 화면에서는 앞 조각과 빈칸 하나로 잇는다 (2026-10-03 Alan) */
-  phoneBreak?: boolean;
-};
+export type HeadlineRun = { t: string; em?: boolean };
 /** 한 줄 = 조각들. `em` 조각은 브랜드 그라데이션 */
 export type Headline = HeadlineRun[][];
 
@@ -23,20 +18,16 @@ export type Headline = HeadlineRun[][];
  * 번갈아 서는 헤드라인. **첫 번째가 서버가 그리는 것**이다 (자바스크립트가 돌기 전 · 움직임 줄이기 · 검색에 먼저 잡히는 것).
  * 예전 문구가 먼저다 (2026-09-30 Alan). 문구는 여기 한곳 — 둘 다 h1 안에 글자로 들어 있어 화면 낭독기와 검색이 읽는다.
  *
- * **휴대폰에서는 두 문구 다 3줄**이다 (2026-10-03 Alan — "시작점수가 / 달라도 / 끝은 역전 이렇게 똑같이 3줄로").
- * 휴대폰 폭에는 `시작 점수가 달라도,` 가 한 줄에 들어가서 저절로는 안 쪼개진다 — 그래서 `달라도,` 앞에서 줄을 바꾼다(`phoneBreak`).
- * sm 부터는 예전처럼 한 줄로 잇는다 (넓은 화면은 그대로 두라는 요청이었다).
+ * **두 문구 다 3줄**이다 — 휴대폰 · PC 모두 (2026-10-03 Alan — "시작점수가 / 달라도 / 끝은 역전 이렇게 똑같이 3줄로" → 같은 날 "pc에서도 3줄로").
+ * `시작 점수가 달라도,` 는 대부분의 폭에서 한 줄에 들어가 저절로는 안 쪼개지므로 줄을 데이터에서 나눈다.
  */
 export const HEADLINES: Headline[] = [
   [[{ t: "점수를 뒤집는" }], [{ t: "가장 확실한 방법," }], [{ t: "역전토익", em: true }]],
-  [[{ t: "시작 점수가" }, { t: "달라도,", phoneBreak: true }], [{ t: "끝은 " }, { t: "역전!", em: true }]],
+  [[{ t: "시작 점수가" }], [{ t: "달라도," }], [{ t: "끝은 " }, { t: "역전!", em: true }]],
 ];
 
-/**
- * 글자 하나. `i` 는 문구 전체에서의 차례(왼쪽 위부터). `emPos`·`emLen` 은 분홍 낱말 안의 자리.
- * `phoneBreak` 는 `phoneBreak` 조각의 첫 글자에만 붙는다 — 그 글자로 시작하는 낱말 앞에서 휴대폰은 줄을 바꾼다
- */
-export type FlipChar = { ch: string; i: number; em: boolean; emPos: number; emLen: number; phoneBreak?: true };
+/** 글자 하나. `i` 는 문구 전체에서의 차례(왼쪽 위부터). `emPos`·`emLen` 은 분홍 낱말 안의 자리 */
+export type FlipChar = { ch: string; i: number; em: boolean; emPos: number; emLen: number };
 /** 한 줄 = 낱말들, 낱말 = 글자들. 낱말은 줄 안에서 쪼개지지 않는다 (좁은 화면에서 `달라` / `도,` 로 갈리지 않게) */
 export type FlipLine = FlipChar[][];
 
@@ -49,16 +40,12 @@ export function layoutHeadline(h: Headline): { lines: FlipLine[]; count: number 
       const chars = [...r.t];
       const emLen = r.em ? chars.filter((c) => c !== " ").length : 0;
       let emPos = 0;
-      // 줄을 바꾸는 조각은 늘 새 낱말이다 (앞 조각과 빈칸 없이 이어 적어도)
-      if (r.phoneBreak && words[words.length - 1].length) words.push([]);
-      let brk = !!r.phoneBreak;
       for (const ch of chars) {
         if (ch === " ") {
           if (words[words.length - 1].length) words.push([]);
           continue;
         }
-        words[words.length - 1].push({ ch, i: i++, em: !!r.em, emPos: r.em ? emPos++ : 0, emLen, ...(brk ? { phoneBreak: true as const } : null) });
-        brk = false;
+        words[words.length - 1].push({ ch, i: i++, em: !!r.em, emPos: r.em ? emPos++ : 0, emLen });
       }
     }
     return words.filter((w) => w.length > 0);
@@ -66,9 +53,8 @@ export function layoutHeadline(h: Headline): { lines: FlipLine[]; count: number 
   return { lines, count: i };
 }
 
-/** 화면에 보이는 그대로의 글 (줄은 빈칸으로 잇는다 — 휴대폰에서만 바꾸는 줄도 넓은 화면처럼 빈칸 하나) */
-export const headlineText = (h: Headline) =>
-  h.map((line) => line.map((r) => (r.phoneBreak ? ` ${r.t}` : r.t)).join("").replace(/\s+/g, " ").trim()).join(" ");
+/** 화면에 보이는 그대로의 글 (줄은 빈칸으로 잇는다) */
+export const headlineText = (h: Headline) => h.map((line) => line.map((r) => r.t).join("").trim()).join(" ");
 
 /**
  * 분홍 낱말의 그라데이션을 글자마다 나눠 칠한다 — 글자마다 따로 날아서 낱말 하나에 칠할 수 없다.

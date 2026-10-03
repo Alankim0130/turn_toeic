@@ -80,8 +80,8 @@ export function Hero({ reviewTotal }: { reviewTotal: number | null }) {
         <div>
           {/* 헤드라인 — "시작 점수가 달라도, 끝은 역전!" 과 예전 "점수를 뒤집는 가장 확실한 방법, 역전토익" 이 번갈아
               글자마다 뒤집히며 바뀐다 (2026-09-30 Alan). 문구·시간은 src/lib/flip-headline.ts. 들어오는 움직임은 글자 뒤집기가 맡아 fade-up 을 뺐다.
-              휴대폰에서는 두 문구 다 3줄이다 (2026-10-03 Alan — `시작 점수가 / 달라도, / 끝은 역전!`, flip-headline.ts 의 `phoneBreak`).
-              그래서 320px 에서도 36px 로 둔다 — 예전에는 그 줄이 쪼개지지 않게 360px 미만을 32px 로 줄였다 */}
+              두 문구 다 3줄이다 — 휴대폰 · PC 모두 (2026-10-03 Alan — `시작 점수가 / 달라도, / 끝은 역전!`).
+              그래서 320px 에서도 36px 로 둔다 — 예전에는 `시작 점수가 달라도,` 가 쪼개지지 않게 360px 미만을 32px 로 줄였다 */}
           <FlipHeadline className="text-4xl font-black leading-[1.15] tracking-tight text-ink sm:text-5xl lg:text-6xl" />
           <p className="mt-6 max-w-xl animate-fade-up text-base leading-relaxed text-slate sm:text-lg" style={{ animationDelay: "200ms" }}>
             귀에 꽂히는 압도적인 전달력. 족집게식 핵심 학습과 최신 토익 경향을 실시간으로 반영한 커리큘럼으로,
