@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { todayKST, TRACK_LABEL } from "@/lib/utils";
 import { studentTrackLabel } from "@/lib/week5";
 import { holidayNamesBetween } from "@/lib/holidays";
-import { BOOK_SET_LABEL, DAYS, DAY_COUNT, bookLabel, bookTimeLabel, coverSrc, explicitBookSet, lessonRangeLabel, sortTracks } from "@/lib/lc-audio";
+import { BOOK_SET_LABEL, DAYS, DAY_COUNT, bookLabel, bookTimeLabel, coverSrc, explicitBookSet, lcLevelsOf, lessonRangeLabel, sortTracks } from "@/lib/lc-audio";
 import { getMyAccessibleSections, getMySessions, getMyWeek5 } from "../../_lib/queries";
 
 export const metadata: Metadata = { title: "LC 음원듣기", robots: { index: false } };
@@ -36,9 +36,10 @@ export default async function LcBookPage({ params }: { params: Promise<{ bookId:
   /**
    * **내 레벨 교재만** (2026-10-02 Alan "본인의 레벨에 맞는 교재만 나와서 들을 수 있도록"). 목록이 보여 주지 않는 교재는 주소를 직접 쳐도
    * 목록으로 돌려보낸다. 개강 전·종강 뒤·배정 없음(`my_section_ids()` 가 빈 경우)은 목록이 "개강일부터" 안내를 보여 준다 — 스태프도 학생 모드에서는 같다.
-   * 레벨은 목록과 같은 규칙 — 접근 가능한 반의 `target_score` + 스파르타의 `includes_levels`.
+   * 레벨은 목록과 같은 규칙 — 접근 가능한 반의 `target_score` + 스파르타의 `includes_levels` (`lcLevelsOf`).
+   * 학생에게는 DB 도 같은 레벨만 연다 (2026-10-03) — 강사 · 관리자는 정책이 전부 열어 주므로 여기서 돌려보내는 것이 학생 모드의 막이다.
    */
-  const myLevels = new Set(mySections.flatMap((s) => [s.course?.target_score, ...(s.course?.includes_levels ?? [])]));
+  const myLevels = new Set(lcLevelsOf(mySections));
   if (mySections.length === 0 || !myLevels.has(book.level)) redirect("/my/lc-audio");
 
   const offset = book.lesson_offset ?? 0;

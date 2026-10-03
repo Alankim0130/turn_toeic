@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bookSectionsByLevel, bookTimeLabel, bookTimesLabel, explicitBookSet } from "./lc-audio";
+import { bookSectionsByLevel, bookTimeLabel, bookTimesLabel, explicitBookSet, lcLevelsOf } from "./lc-audio";
 
 const TRACK = { mwf: "월수금", ttf: "화목금" };
 
@@ -79,5 +79,27 @@ describe("bookTimeLabel — 왜 이 교재인지 적는다", () => {
   it("시간대를 모르면 트랙만 적는다 — 없는 시간을 지어내지 않는다", () => {
     expect(bookTimeLabel({ track: "mwf", time_block: null, book_set: "A" }, TRACK)).toBe("월수금");
     expect(bookTimesLabel([], TRACK)).toBe("");
+  });
+});
+
+/**
+ * 내 LC 레벨 — 학생에게는 DB 도 이 레벨의 교재 · 음원만 연다 (2026-10-03, 마이그레이션 20261003120000 `private.my_lc_levels`).
+ * 두 규칙이 어긋나 DB 쪽이 좁아지면 학생이 제 음원을 잃는다 — 바꾸면 둘 다.
+ */
+describe("lcLevelsOf — 접근 가능한 반의 강좌 레벨 + 속성반이 함께 듣는 레벨", () => {
+  it("점수보장반은 그 레벨 하나 — 120분 반이 품는 60분 반도 같은 레벨이라 한 번만", () => {
+    expect(lcLevelsOf([bundle, mwf1000, mwf1110])).toEqual([650]);
+  });
+  it("중급속성(650 + 850) — 속성반 강좌의 함께 듣는 레벨까지 (850 시간 반이 아직 없어도)", () => {
+    const sparta650 = { course: { target_score: 650, includes_levels: [850] } };
+    expect(lcLevelsOf([sparta650])).toEqual([650, 850]);
+    expect(lcLevelsOf([sparta650, mwf1000, { course: { target_score: 850, includes_levels: [] } }])).toEqual([650, 850]);
+  });
+  it("다른 레벨 반이 섞이지 않으면 다른 레벨은 없다 — 750 학생에게 650 · 850 이 나오지 않는다", () => {
+    expect(lcLevelsOf([{ course: { target_score: 750, includes_levels: [] } }])).toEqual([750]);
+  });
+  it("반이 없거나 강좌를 못 읽으면 빈 목록 — 짐작해서 레벨을 채우지 않는다", () => {
+    expect(lcLevelsOf([])).toEqual([]);
+    expect(lcLevelsOf([{ course: null }, {}])).toEqual([]);
   });
 });
