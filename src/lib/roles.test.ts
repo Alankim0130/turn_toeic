@@ -215,3 +215,86 @@ describe("새 enum 값은 자기 파일에만 둔다 (Postgres 55P04)", () => {
     expect(body.split(";").filter((s) => s.trim()).length, `${f} 에 다른 문장이 섞였다`).toBe(1);
   });
 });
+
+/**
+ * 조교에게는 학생 정보 중 **이름만** (2026-10-03 Alan — "등업화면은 전화번호 안보이게 해줘" → "응 이것도 막아줘").
+ * 화면에서 번호를 숨겨도 조교가 화면을 거치지 않고 자기 로그인으로 데이터베이스에 바로 물으면(API) 그대로 왔다 — 막는 곳은 DB 다.
+ * profiles 는 칸 단위로 못 막아(grant 는 authenticated 전체에 걸린다) 남의 행을 닫았고, 조교 화면의 이름은 `public.profile_names` 로 읽는다.
+ * 규칙과 이유는 CLAUDE.md 등급 체계 "바꿀 때 지킬 것" · 마이그레이션 20261003110000.
+ */
+describe("조교에게는 학생 이름만 — 전화번호 · 대학 · 학과 · 성별이 나가는 길이 없다", () => {
+  const DIR = "supabase/migrations";
+  const files = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
+  /** 주석(-- …)을 뺀 본문 — 주석 속 문장에 속지 않는다 */
+  const sqlOf = (f: string) =>
+    readFileSync(join(DIR, f), "utf8")
+      .split("\n")
+      .map((l) => (l.trim().startsWith("--") ? "" : l))
+      .join("\n");
+  const CREW = /private\.is_crew\(\)|private\.is_assistant\(\)/;
+  const PERSONAL = /\b(phone|university|department|gender)\b/;
+
+  it("profiles 조회 정책에 조교 갈래가 없다 (마이그레이션을 순서대로 재생한 마지막 모양)", () => {
+    const live = new Map<string, string>();
+    for (const f of files) {
+      for (const [, verb, name, body] of sqlOf(f).matchAll(/(create|drop) policy (?:if exists )?"([^"]+)" on public\.profiles([^;]*);/g)) {
+        if (verb === "create") live.set(name, body);
+        else live.delete(name);
+      }
+    }
+    const selects = [...live].filter(([, body]) => /for select/.test(body));
+    expect(selects.length, "profiles 조회 정책을 못 찾았다 (문장 모양이 바뀌면 이 테스트가 헛돈다)").toBeGreaterThan(0);
+    const open = selects.filter(([, body]) => CREW.test(body)).map(([name]) => name);
+    // 남의 행을 열면 모든 칸(전화번호 · 대학 · 학과 · 성별)이 같이 열린다 — 이름이 필요하면 profile_names 를 쓴다
+    expect(open, `조교에게 profiles 행을 여는 정책:\n${open.join("\n")}`).toEqual([]);
+  });
+
+  it("조교가 부를 수 있는 함수가 개인정보 칸을 돌려주지 않는다", () => {
+    // 함수마다 마지막 정의를 남긴다 (create or replace · drop 을 파일 순서 · 파일 안 순서대로 따라간다)
+    const defs = new Map<string, string>();
+    for (const f of files) {
+      const sql = sqlOf(f);
+      const events = [
+        ...[...sql.matchAll(/create\s+(?:or\s+replace\s+)?function\s+public\.(\w+)\s*\(/gi)].map((m) => ({ at: m.index, name: m[1], drop: false })),
+        ...[...sql.matchAll(/drop\s+function\s+(?:if\s+exists\s+)?public\.(\w+)/gi)].map((m) => ({ at: m.index, name: m[1], drop: true })),
+      ].sort((a, b) => a.at - b.at);
+      for (const e of events) {
+        if (e.drop) {
+          defs.delete(e.name);
+          continue;
+        }
+        const rest = sql.slice(e.at);
+        const tag = rest.match(/\bas\s+(\$\w*\$)/i);
+        if (!tag || tag.index == null) continue;
+        const body = rest.indexOf(tag[1], tag.index) + tag[1].length;
+        const end = rest.indexOf(tag[1], body);
+        defs.set(e.name, rest.slice(0, end < 0 ? undefined : end));
+      }
+    }
+    expect(defs.has("profile_names"), "public.profile_names 를 못 찾았다 (조교 화면의 이름 길)").toBe(true);
+    const leaks = [...defs]
+      .filter(([, def]) => CREW.test(def))
+      .filter(([, def]) => PERSONAL.test(def.match(/returns\s+table\s*\(([\s\S]*?)\blanguage\b/i)?.[1] ?? ""))
+      .map(([name]) => name);
+    expect(leaks, `조교가 부를 수 있는 함수가 개인정보 칸을 돌려준다:\n${leaks.join("\n")}`).toEqual([]);
+  });
+
+  it("조교에게 열린 화면 · 액션은 profiles 를 직접 읽지 않는다 — 이름은 getProfileNames 로", () => {
+    // 조교 세션으로 profiles 를 임베드하면 이름이 **조용히 비어** 온다 — 강사 · 관리자로만 확인하면 못 본다.
+    // 강사 · 관리자 화면에서만 쓰는 번호는 getStaffPhones 한곳이다 (_lib/profile-names.ts).
+    // 불라방 링크(조교 화면)의 회차 목록은 _lib/live-links.ts 가 만들어 파일째 본다
+    const READ = /profiles(?:!\w+)?\(|from\("profiles"\)/;
+    const hits: string[] = [];
+    for (const p of walk(ADMIN_DIR, (f) => /\.tsx?$/.test(f) && !f.endsWith(".test.ts"))) {
+      const src = readFileSync(p, "utf8");
+      const chunks = p.endsWith(join("_lib", "live-links.ts"))
+        ? [src]
+        : src
+            .split(/export (?:default )?async function /)
+            .slice(1)
+            .filter((c) => c.includes("requireCrew("));
+      for (const c of chunks) if (READ.test(c)) hits.push(`${p} → ${c.slice(0, c.indexOf("("))}`);
+    }
+    expect(hits, `조교에게 열린 곳이 profiles 를 직접 읽는다:\n${hits.join("\n")}`).toEqual([]);
+  });
+});

@@ -9,6 +9,7 @@ import { HomeworkList, type HomeworkRow } from "@/components/admin/homework/Home
 import { classDayLabel, HOMEWORK_SUBJECTS, type HomeworkSubject, homeworkLabel, isSubject, SUBJECT_LABEL } from "@/lib/homework";
 import { isImageType } from "@/lib/upload";
 import { isStaff, requireCrew } from "@/lib/auth";
+import { getProfileNames, getStaffPhones } from "../_lib/profile-names";
 
 export const metadata: Metadata = { title: "숙제점검", robots: { index: false } };
 
@@ -68,7 +69,7 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
     supabase
       .from("homework_submissions")
       .select(
-        "id, level, subject, class_date, question, feedback, status, created_at, checked_at, user:profiles!homework_submissions_user_id_fkey(name, phone), checker:profiles!homework_submissions_checked_by_fkey(name), homework_files(id, file_name, content_type, created_at)",
+        "id, user_id, level, subject, class_date, question, feedback, status, created_at, checked_at, checked_by, homework_files(id, file_name, content_type, created_at)",
       ),
   );
   if (!done) listQuery = listQuery.eq("status", "submitted");
@@ -76,9 +77,15 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
   const [{ data: subs }, checkedCount, { data: instructors }, levelCounts, subjectCounts] = await Promise.all([
     listQuery.order("created_at", { ascending: false }).limit(LIMIT),
     scoped(supabase.from("homework_submissions").select("id", { count: "exact", head: true }).eq("status", "checked")),
-    supabase.from("profiles").select("name, subject").in("subject", [...HOMEWORK_SUBJECTS]),
+    // 과목 탭의 강사 이름 — 이름 · 과목만 주는 함수로 (조교는 profiles 를 못 읽는다, 2026-10-03)
+    supabase.rpc("subject_instructors"),
     Promise.all(levels.map(async (l) => [l, (await pending({ subject, level: l })).count ?? 0] as const)),
     Promise.all(HOMEWORK_SUBJECTS.map(async (s) => [s, (await pending({ subject: s, level })).count ?? 0] as const)),
+  ]);
+  // 제출한 학생 · 점검한 사람의 이름은 이름 · 등급만 주는 함수로 (`profile-names.ts`). 번호는 강사 · 관리자 화면에서만 읽는다
+  const [names, phones] = await Promise.all([
+    getProfileNames(supabase, (subs ?? []).flatMap((s) => [s.user_id, s.checked_by])),
+    showPhone ? getStaffPhones(supabase, (subs ?? []).map((s) => s.user_id)) : Promise.resolve(new Map<string, string>()),
   ]);
   const byLevel = new Map(levelCounts);
   const bySubject = new Map(subjectCounts);
@@ -101,17 +108,18 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
       others.length ? `첨부 ${others.length}개` : null,
     ].filter(Boolean) as string[];
     const checked = s.status === "checked";
+    const checker = s.checked_by ? names.get(s.checked_by)?.name : undefined;
     return {
       id: s.id,
-      name: s.user?.name || "이름 없음",
-      phone: showPhone ? (s.user?.phone ?? null) : null,
+      name: names.get(s.user_id)?.name || "이름 없음",
+      phone: showPhone ? (phones.get(s.user_id) ?? null) : null,
       label: s.level != null && s.subject ? homeworkLabel(s.level, s.subject) : null,
       sub: parts.join(" · ") || "올린 파일 없음",
       at,
       meta: [
         ...parts,
         `${at} 제출`,
-        checked ? `점검완료${s.checker?.name ? ` · ${s.checker.name}` : ""}${s.checked_at ? ` · ${formatDate(s.checked_at, { month: "numeric", day: "numeric" })}` : ""}` : null,
+        checked ? `점검완료${checker ? ` · ${checker}` : ""}${s.checked_at ? ` · ${formatDate(s.checked_at, { month: "numeric", day: "numeric" })}` : ""}` : null,
       ]
         .filter(Boolean)
         .join(" · "),

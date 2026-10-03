@@ -12,6 +12,7 @@ import { CancelSignupButton } from "@/components/admin/studies/CancelSignupButto
 import { CheckinRoster } from "@/components/admin/studies/CheckinRoster";
 import { isSlotKind, slotTime, sortSlots, STUDY_KIND_LABEL, STUDY_STATUS_LABEL, termParam } from "@/lib/study";
 import { pickTerm, termLabel, sectionChip, type TermLite } from "../_lib/queries";
+import { getProfileNames } from "../_lib/profile-names";
 import { week5SectionIds, collapseWeek5 } from "@/lib/week5";
 import { isStaff, requireCrew } from "@/lib/auth";
 
@@ -63,17 +64,19 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
   const { data: signups } = await supabase
     .from("study_signups")
     // 연락처는 읽지 않는다 (2026-09-23 Alan — 스터디 신청자 화면에는 전화번호가 필요 없다)
-    .select("id, slot_id, created_at, user:profiles!study_signups_user_id_fkey(id, name)")
+    .select("id, slot_id, user_id, created_at")
     .eq("study_id", study.id)
     .order("created_at");
+  // 이름은 이름 · 등급만 주는 함수로 — 조교는 profiles 를 못 읽는다 (2026-10-03, `profile-names.ts`)
+  const names = await getProfileNames(supabase, (signups ?? []).map((r) => r.user_id));
 
-  const rows = signups ?? [];
+  const rows = (signups ?? []).map((r) => ({ ...r, user: { id: r.user_id, name: names.get(r.user_id)?.name ?? "" } }));
   const slots = sortSlots(study.study_slots ?? []);
 
   // 비대면: 자료(날짜)마다 누가 인증했는지 (2026-09-18 Alan — 미인증 학생에게 알림)
   // 세 번째는 신청자의 **반 배정** — 인증 표의 이름 옆에 적는다 (2026-09-19 Alan)
   const online = kind === "online";
-  const signupIds = rows.filter((r) => r.user).map((r) => r.user!.id);
+  const signupIds = rows.map((r) => r.user.id);
   const [{ data: materialRows }, { data: checkinRows }, { data: enrollRows }] = await Promise.all([
     online ? supabase.from("study_materials").select("id, seq, date, title").eq("study_id", study.id).order("date", { ascending: false }) : Promise.resolve({ data: null }),
     online ? supabase.from("study_checkins").select("material_id, user_id, created_at, study_checkin_files(count)") : Promise.resolve({ data: null }),
@@ -99,20 +102,18 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
     if (e.section?.term_id !== term.id) continue;
     enrollByUser.set(e.student_id, [...(enrollByUser.get(e.student_id) ?? []), e]);
   }
-  const rosterStudents = rows
-    .filter((r) => r.user)
-    .map((r) => {
-      const mine = enrollByUser.get(r.user!.id) ?? [];
-      // 주5일은 한 줄로 합친다 (도메인 규칙 1). 짝은 **그 학생이 듣는 반 안에서만** 찾는다 —
-      // 명단 전체로 찾으면 다른 학생의 반과 짝이 된다
-      const week5 = week5SectionIds(mine.map((e) => e.section).filter((x) => !!x));
-      return {
-        id: r.user!.id,
-        name: r.user!.name,
-        // 달(`9월`)은 뺀다 — 화면 전체가 이미 한 기수라 줄마다 되풀이하면 레벨·시간이 뒤로 밀린다
-        classes: collapseWeek5(mine, (e) => e.section, week5).map((e) => sectionChip(e.section, week5, { withTerm: false })),
-      };
-    });
+  const rosterStudents = rows.map((r) => {
+    const mine = enrollByUser.get(r.user.id) ?? [];
+    // 주5일은 한 줄로 합친다 (도메인 규칙 1). 짝은 **그 학생이 듣는 반 안에서만** 찾는다 —
+    // 명단 전체로 찾으면 다른 학생의 반과 짝이 된다
+    const week5 = week5SectionIds(mine.map((e) => e.section).filter((x) => !!x));
+    return {
+      id: r.user.id,
+      name: r.user.name,
+      // 달(`9월`)은 뺀다 — 화면 전체가 이미 한 기수라 줄마다 되풀이하면 레벨·시간이 뒤로 밀린다
+      classes: collapseWeek5(mine, (e) => e.section, week5).map((e) => sectionChip(e.section, week5, { withTerm: false })),
+    };
+  });
 
   return (
     <>
@@ -182,9 +183,9 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
                           {list.map((r, n) => (
                             <tr key={r.id} className="hover:bg-brand-50/40">
                               <Td className="text-xs text-mist">{n + 1}</Td>
-                              <Td className="font-bold">{r.user?.name || "-"}</Td>
+                              <Td className="font-bold">{r.user.name || "-"}</Td>
                               <Td className="whitespace-nowrap text-xs text-slate">{formatDate(r.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
-                              <Td className="text-right"><CancelSignupButton id={r.id} name={r.user?.name ?? "수강생"} /></Td>
+                              <Td className="text-right"><CancelSignupButton id={r.id} name={r.user.name || "수강생"} /></Td>
                             </tr>
                           ))}
                         </tbody>
@@ -220,9 +221,9 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
               return (
                 <tr key={r.id} className="hover:bg-brand-50/40">
                   <Td className="text-xs text-mist">{n + 1}</Td>
-                  <Td className="font-bold">{r.user?.name || "-"}</Td>
+                  <Td className="font-bold">{r.user.name || "-"}</Td>
                   <Td className="whitespace-nowrap text-xs text-slate">{formatDate(r.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
-                  <Td className="text-right"><CancelSignupButton id={r.id} name={r.user?.name ?? "수강생"} /></Td>
+                  <Td className="text-right"><CancelSignupButton id={r.id} name={r.user.name || "수강생"} /></Td>
                 </tr>
               );
             })}

@@ -14,6 +14,7 @@ import { RETENTION_LABEL } from "@/lib/receipt-retention";
 import { blockerLines } from "@/lib/auto-approve";
 import { heldMonth as heldMonthOf } from "@/lib/verify-decision";
 import { preselectForApproval } from "@/lib/final-assignment";
+import { getProfileNames, getStaffPhones } from "../../_lib/profile-names";
 
 export const metadata: Metadata = { title: "등업 검토", robots: { index: false } };
 
@@ -34,7 +35,8 @@ export default async function VerificationDetailPage({
   // 레이아웃이 조교를 통과시키므로 화면마다 막는다 — 그 밖의 등급은 여기서 튕긴다
   const { profile: me } = await requireCrew();
   // 학생 전화번호는 강사 · 관리자에게만 (2026-10-03 Alan "등업화면은 전화번호 안보이게 해줘" — 조교에게서 학생명단을 뺀 까닭이 개인정보다).
-  // 같은 학생의 계정 둘을 가리는 대조(ownTwin)는 서버에서만 번호를 쓰고 화면에는 내보내지 않는다
+  // 조교 화면에서는 번호를 아예 읽지 않는다 — 조교는 DB 에서도 profiles 를 못 읽는다(같은 날 "응 이것도 막아줘", 20261003110000).
+  // 같은 학생의 계정 둘을 가리는 대조(ownTwin)는 DB 함수(verification_twins)가 안에서 하고 번호는 돌려주지 않는다
   const showPhone = isStaff(me.role);
   const { id: idParam } = await params;
   const { done } = await searchParams;
@@ -44,14 +46,10 @@ export default async function VerificationDetailPage({
   const supabase = await createClient();
   const today = todayKST();
 
-  const { data: v } = await supabase
-    .from("enrollment_verifications")
-    .select("*, profile:profiles(name, phone, role)")
-    .eq("id", id)
-    .maybeSingle();
+  const { data: v } = await supabase.from("enrollment_verifications").select("*").eq("id", id).maybeSingle();
   if (!v) notFound();
 
-  const [{ data: signed }, { data: sections }, { data: order }, { data: myEnrollments }] = await Promise.all([
+  const [{ data: signed }, { data: sections }, { data: order }, { data: myEnrollments }, names, phones, { data: twinRows }] = await Promise.all([
     // 보관 기간이 지나 지운 파일은 서명 URL 을 만들 이유가 없다 (2026-09-20)
     v.file_deleted_at
       ? Promise.resolve({ data: null as { signedUrl: string } | null })
@@ -73,7 +71,14 @@ export default async function VerificationDetailPage({
       .from("enrollments")
       .select("id, mode, section:class_sections!enrollments_section_id_fkey(id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(name))")
       .eq("student_id", v.user_id),
+    // 학생 이름 · 등급 — 이름 · 등급만 주는 함수로 (`profile-names.ts`)
+    getProfileNames(supabase, [v.user_id]),
+    showPhone ? getStaffPhones(supabase, [v.user_id]) : Promise.resolve(new Map<string, string>()),
+    // 같은 파일 · 같은 초 캡처를 올린 다른 계정과, 그 계정이 이름 · 전화번호가 같은 사람인지 (업로드 때 남긴 신호가 있을 때만 찾는다)
+    supabase.rpc("verification_twins", { p_id: id }),
   ]);
+  const student = names.get(v.user_id);
+  const phone = phones.get(v.user_id);
 
   const candidates: Candidate[] = (sections ?? []).map((s) => ({
     id: s.id,
@@ -141,17 +146,9 @@ export default async function VerificationDetailPage({
   const correctionOf = typeof matchLog?.correctionOf === "number" ? matchLog.correctionOf : null;
   // 같은 파일 · 같은 초 캡처를 올린 다른 계정이 **이름 · 전화번호가 같은** 계정이면 돌려쓰기가 아니라 한 학생의 계정 둘이다
   // (2026-10-02 운영 점검 — 10월 수강증 두 건이 이렇게 막혀 있었다). 그때는 위조 경고 대신 계정 합치기를 안내한다
-  const capturedAt = typeof (v.parsed as { capturedAt?: unknown } | null)?.capturedAt === "string" ? (v.parsed as { capturedAt: string }).capturedAt : null;
-  const twinQuery = (col: "file_hash" | "parsed->>capturedAt", value: string) =>
-    supabase.from("enrollment_verifications").select("user_id, profile:profiles(name, phone, merged_into)").eq(col, value).neq("user_id", v.user_id).limit(10);
-  const [hashTwins, captureTwins] = await Promise.all([
-    matchLog?.flags?.duplicateImage && v.file_hash ? twinQuery("file_hash", v.file_hash) : Promise.resolve({ data: [] }),
-    matchLog?.flags?.sameCapture && capturedAt ? twinQuery("parsed->>capturedAt", capturedAt) : Promise.resolve({ data: [] }),
-  ]);
-  const digits = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
-  const sameName = (s: string | null | undefined) => !!s && !!v.profile?.name && s.replace(/\s/g, "") === v.profile.name.replace(/\s/g, "");
-  const twins = [...(hashTwins.data ?? []), ...(captureTwins.data ?? [])];
-  const ownTwin = twins.length > 0 && twins.every((t) => sameName(t.profile?.name) && !!digits(v.profile?.phone) && digits(t.profile?.phone) === digits(v.profile?.phone));
+  // 대조는 DB 함수가 한다(위 verification_twins) — 화면이 번호를 읽어 견주면 조교 화면에도 번호가 지나간다 (2026-10-03)
+  const twins = twinRows ?? [];
+  const ownTwin = twins.length > 0 && twins.every((t) => t.same_person);
   // 위조·돌려쓰기 의심 — 자동 승인이 막힌 이유. 스태프가 수강증을 더 자세히 본다 (2026-09-18)
   const suspicious = [
     ownTwin
@@ -259,7 +256,7 @@ export default async function VerificationDetailPage({
 
   return (
     <>
-      <PageHeader icon="verify" title={`등업 검토 #${v.id}`} description={`${v.profile?.name ?? "이름 없음"} · ${formatDate(v.created_at, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })} 신청`}>
+      <PageHeader icon="verify" title={`등업 검토 #${v.id}`} description={`${student?.name ?? "이름 없음"} · ${formatDate(v.created_at, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })} 신청`}>
         <Link href="/admin/verifications" className="btn-secondary !py-2">목록으로</Link>
       </PageHeader>
 
@@ -308,9 +305,9 @@ export default async function VerificationDetailPage({
             )}
 
             <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
-              <dt className="text-slate">가입 실명</dt><dd className="font-bold">{v.profile?.name ?? "-"}</dd>
-              {showPhone && (<><dt className="text-slate">연락처</dt><dd>{v.profile?.phone ?? "-"}</dd></>)}
-              <dt className="text-slate">현재 등급</dt><dd><StatusBadge status={v.profile?.role} /></dd>
+              <dt className="text-slate">가입 실명</dt><dd className="font-bold">{student?.name ?? "-"}</dd>
+              {showPhone && (<><dt className="text-slate">연락처</dt><dd>{phone ?? "-"}</dd></>)}
+              <dt className="text-slate">현재 등급</dt><dd><StatusBadge status={student?.role} /></dd>
               <dt className="text-slate">신뢰도</dt><dd>{v.confidence != null ? `${Math.round(Number(v.confidence))}점` : "-"}</dd>
               {v.reject_reason && (<><dt className="text-slate">반려 사유</dt><dd className="text-red-700">{v.reject_reason}</dd></>)}
             </dl>

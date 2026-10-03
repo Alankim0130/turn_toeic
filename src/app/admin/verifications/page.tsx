@@ -11,6 +11,7 @@ import { AutoVerifySwitch, RematchHeldButton, type AutoVerifyView } from "@/comp
 import { isStaff, requireCrew } from "@/lib/auth";
 import { AUTO_VERIFY_KEY } from "@/lib/auto-verify";
 import { heldMonth } from "@/lib/verify-decision";
+import { getProfileNames } from "../_lib/profile-names";
 
 export const metadata: Metadata = { title: "등업 로그", robots: { index: false } };
 
@@ -32,7 +33,7 @@ export default async function VerificationsPage({ searchParams }: { searchParams
 
   let query = supabase
     .from("enrollment_verifications")
-    .select("id, created_at, result, confidence, matched_section, source, hold:candidates->hold, correction:candidates->correctionOf, profile:profiles(name)")
+    .select("id, user_id, created_at, result, confidence, matched_section, source, hold:candidates->hold, correction:candidates->correctionOf")
     .order("created_at", { ascending: false })
     .limit(200);
   query =
@@ -51,8 +52,11 @@ export default async function VerificationsPage({ searchParams }: { searchParams
     supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).eq("result", "approved"),
     supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).in("result", ["rejected", "closed"]),
     // 긴급 스위치 (2026-09-22). 조교도 상태는 본다 — 꺼져 있으면 모든 수강증이 여기로 쌓이는 까닭이다
-    supabase.from("feature_flags").select("enabled, note, updated_at, updater:profiles!feature_flags_updated_by_fkey(name)").eq("key", AUTO_VERIFY_KEY).maybeSingle(),
+    supabase.from("feature_flags").select("enabled, note, updated_at, updated_by").eq("key", AUTO_VERIFY_KEY).maybeSingle(),
   ]);
+  // 이름은 이름 · 등급만 주는 함수로 — 조교는 profiles 를 못 읽는다 (2026-10-03, `profile-names.ts`)
+  const names = await getProfileNames(supabase, [...(rows ?? []).map((r) => r.user_id), flag?.updated_by]);
+  const updater = flag?.updated_by ? names.get(flag.updated_by)?.name : undefined;
   const counts: Record<string, number> = { pending: pending.count ?? 0, held: held.count ?? 0, approved: approved.count ?? 0, rejected: rejected.count ?? 0 };
   // 서버(`readAutoVerify`)와 같은 규칙 — 읽지 못하면 멈춘 것이다.
   // 테스트 등급을 켠 스태프는 RLS 가 학생으로 보아 스위치를 못 읽는다 — 멈춘 것처럼 보이지 않게 따로 말한다
@@ -65,7 +69,7 @@ export default async function VerificationsPage({ searchParams }: { searchParams
         : {
             kind: "off",
             note: flag.note,
-            changed: `${flag.updater?.name ? `${flag.updater.name} · ` : ""}${formatDate(flag.updated_at, { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })} 멈춤`,
+            changed: `${updater ? `${updater} · ` : ""}${formatDate(flag.updated_at, { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })} 멈춤`,
           };
 
   return (
@@ -102,7 +106,7 @@ export default async function VerificationsPage({ searchParams }: { searchParams
                 <tr key={r.id} className="hover:bg-brand-50/40">
                   <Td className="whitespace-nowrap text-xs">{formatDate(r.created_at, { year: "2-digit", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
                   <Td className="whitespace-nowrap font-bold">
-                    {r.profile?.name ?? "-"}
+                    {names.get(r.user_id)?.name ?? "-"}
                     {/* 수동 등업신청은 학생이 반을 골라 냈다 — 승인 화면에 미리 골라져 있다.
                         정정 요청 = 자동 승인 팝업에서 "반이 달라요" 를 누른 것 (candidates.correctionOf) — 승인이 끝난 학생이라 할 일로 보이게 따로 적는다 (2026-10-02) */}
                     {r.source === "manual" && (
