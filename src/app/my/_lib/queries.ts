@@ -5,6 +5,7 @@ import { todayKST } from "@/lib/utils";
 import { week5SectionIds } from "@/lib/week5";
 import type { EnrollSection } from "@/lib/enroll-options";
 import { fetchOpenEnrollSections } from "@/lib/open-sections";
+import { lcLevelsOf } from "@/lib/lc-audio";
 
 /**
  * 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다.
@@ -440,15 +441,28 @@ export async function getHomeworkLevels() {
   return (data ?? []).map((l) => l.level);
 }
 
-/** LC 음원듣기: 레벨 목록 + 교재(A·B반 권별) + 들을 수 있는 음원 (RLS: 지금 수강 중인 수강생) */
+/**
+ * LC 음원듣기: 레벨 목록 + **내 레벨**의 교재(A·B반 권별) + 그 음원.
+ * 정책은 학생에게 내 레벨만 열지만 **강사·관리자에게는 모든 레벨**을 연다 (관리자 LC 음원 화면) — 그래서 여기서 한 번 더 좁힌다 (머리말).
+ * 내 레벨은 `lcLevelsOf` 한곳 — DB 정책(`private.my_lc_levels`)과 같은 규칙이다.
+ */
 export async function getMyLcAudio() {
   const supabase = await createClient();
-  const [{ data: levels }, { data: books }, { data: tracks }] = await Promise.all([
+  const [{ data: levels }, sections] = await Promise.all([
     supabase.from("lc_levels").select("level").order("sort_order").order("level"),
-    supabase.from("lc_books").select("id, level, book_set, title, description, cover_name, lesson_offset, updated_at"),
-    supabase.from("lc_audio_tracks").select("id, day, kind, label, sort_order, book_id"),
+    getMyAccessibleSections(),
   ]);
-  return { levels: (levels ?? []).map((l) => l.level), books: books ?? [], tracks: tracks ?? [] };
+  const mine = lcLevelsOf(sections);
+  const empty = { levels: (levels ?? []).map((l) => l.level), books: [], tracks: [] };
+  if (mine.length === 0) return empty;
+  const { data: books } = await supabase
+    .from("lc_books")
+    .select("id, level, book_set, title, description, cover_name, lesson_offset, updated_at")
+    .in("level", mine);
+  const bookIds = (books ?? []).map((b) => b.id);
+  if (bookIds.length === 0) return empty;
+  const { data: tracks } = await supabase.from("lc_audio_tracks").select("id, day, kind, label, sort_order, book_id").in("book_id", bookIds);
+  return { ...empty, books: books ?? [], tracks: tracks ?? [] };
 }
 
 /** 라벨 */

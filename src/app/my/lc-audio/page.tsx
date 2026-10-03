@@ -12,6 +12,7 @@ import {
   bookSectionsByLevel,
   bookTimesLabel,
   coverSrc,
+  lcLevelsOf,
   lessonRangeLabel,
   sortBooks,
 } from "@/lib/lc-audio";
@@ -73,14 +74,10 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
    * 내 수업 등급에 맞는 레벨만 보여 준다 (2026-09-16 Alan 요청).
    * 650 반이면 650 교재 두 권만 나온다. **전체를 보여 주는 길은 없다** (2026-10-02 Alan — 위).
    * **스파르타반은 함께 듣는 레벨이 모두 열린다** (650+ 중급속성 = 650 + 850) — 접근 가능한 반은 DB 가 정한다.
+   * 2026-10-03 부터는 DB 도 학생에게 이 레벨의 교재 · 음원만 연다 (`lcLevelsOf` 머리말) — 순서는 교재 레벨 목록(lc_levels) 그대로.
    */
-  const myLevels = [
-    ...new Set(
-      mySections
-        .flatMap((s) => [s.course?.target_score, ...(s.course?.includes_levels ?? [])])
-        .filter((l): l is number => typeof l === "number" && levels.includes(l)),
-    ),
-  ];
+  const mine = lcLevelsOf(mySections);
+  const myLevels = levels.filter((l) => mine.includes(l));
   /**
    * 내가 **LC 를 듣는 시간**과 거기서 쓰는 교재(A/B). 교재는 달이 아니라 시간대 · 트랙으로 정해진다
    * (2026-09-16 편성표, 2026-09-19 Alan 재지적) — 같은 9월에도 650 화목금 10:00 은 A, 월수금 11:10 은 B 다.
@@ -105,8 +102,8 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
   /**
    * **내 시간에 쓰는 교재만 보여 준다** (2026-09-19 Alan "학생 권한에 맞는 책을 보여주면 좋겠어").
    * 주5일 120분 학생은 두 권이 다 나오는 것이 맞다 — 한 시간은 A, 다음 시간은 B 를 쓴다.
-   * 이 레벨에 내 교재가 하나도 없으면(전부 RC 시간이거나 편성에 교재가 안 들어간 반) 막지 않고 전체를 보여 준다 —
-   * 열람 자체는 수강 중이면 열려 있다 (도메인 규칙 7). 그때는 왜 전체인지 한 줄로 밝힌다.
+   * 이 레벨에 내 교재가 하나도 없으면(전부 RC 시간이거나 편성에 교재가 안 들어간 반) 막지 않고 이 레벨 두 권을 다 보여 준다 —
+   * 내 레벨 안에서는 DB 도 A · B 두 권을 다 연다 (도메인 규칙 7). 그때는 왜 두 권인지 한 줄로 밝힌다.
    */
   const mySetsHere = myBooks.get(level);
   const allBooks = books.filter((b) => b.level === level);
@@ -145,7 +142,7 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
           </>
         ) : (
           // 까닭이 둘이다 — 그 레벨이 내 시간엔 전부 RC 이거나(스파르타), 편성에 교재가 아직 안 들어갔거나.
-          // 어느 쪽인지 단정하지 않는다. 열람 자체는 수강 중이면 열려 있다 (도메인 규칙 7). 내 레벨 안에서만 전체다
+          // 어느 쪽인지 단정하지 않는다. 내 레벨 안에서는 DB 도 두 권을 다 연다 (도메인 규칙 7) — 다른 레벨은 열리지 않는다
           <>이 레벨은 내 시간에 쓰는 교재가 정해져 있지 않아 이 레벨 교재를 모두 보여 줘요.</>
         )}
         <span className="text-mist"> · 내 반 {level}</span>

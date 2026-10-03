@@ -26,6 +26,19 @@ export const BOOK_SET_LABEL: Record<string, string> = { A: "A반", B: "B반" };
 export const explicitBookSet = (s?: { book_set?: string | null; subject?: string | null } | null): BookSet | null =>
   s?.subject === "rc" ? null : s?.book_set === "A" || s?.book_set === "B" ? s.book_set : null;
 
+/**
+ * **내 LC 레벨** — 접근할 수 있는 반(`my_section_ids()`)의 강좌 레벨 + 속성반이 함께 듣는 레벨 (650+ 중급속성 = 650 · 850).
+ *
+ * 학생에게는 **이 레벨의 교재 · 음원만 열린다 — DB 가 막는다** (2026-10-03 권한 재점검, 마이그레이션 20261003120000).
+ * 그전에는 화면만 내 레벨로 거르고 조회 정책은 수강 중이면 모든 레벨이라, 음원 주소의 숫자만 바꾸면 다른 레벨 음원이 재생됐다.
+ * DB 정책(`private.my_lc_levels`)과 **같은 규칙**이다 — 바꾸면 둘 다. DB 쪽이 더 좁으면 학생이 제 음원을 잃는다.
+ * 강사 · 관리자는 정책이 모든 레벨을 열어 주므로(관리자 LC 음원 화면) 학생 화면은 늘 이것으로 한 번 더 좁힌다 (CLAUDE.md 등급 체계 10).
+ */
+export function lcLevelsOf(sections: readonly { course?: { target_score?: number | null; includes_levels?: number[] | null } | null }[]): number[] {
+  const levels = sections.flatMap((s) => [s.course?.target_score, ...(s.course?.includes_levels ?? [])]);
+  return [...new Set(levels.filter((l): l is number => typeof l === "number"))].sort((a, b) => a - b);
+}
+
 /** 교재를 가릴 때 보는 반의 칸들 */
 export type BookSection = {
   track?: string | null;
