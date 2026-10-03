@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { charDelay, emSlice, FLIP, flipInMs, flipOutMs, hash01, headlineText, HEADLINES, layoutHeadline, scatter } from "./flip-headline";
+import { charDelay, emSlice, FLIP, flipInMs, flipOutMs, hash01, headlineText, HEADLINES, layoutHeadline, scatter, type Headline } from "./flip-headline";
 
 describe("HEADLINES — 번갈아 서는 두 문구", () => {
   it("예전 문구가 먼저, 지금 문구가 다음 (서버가 그리는 것은 첫 번째 — 2026-09-30 Alan)", () => {
@@ -39,6 +39,37 @@ describe("layoutHeadline — 줄 · 낱말 · 글자", () => {
 
   it("조각 경계에서 낱말이 붙지 않는다 (\"끝은 \" + \"역전!\")", () => {
     expect(lines[1]).toHaveLength(2);
+  });
+});
+
+describe("휴대폰에서는 두 문구 다 3줄 (2026-10-03 Alan — \"시작점수가 / 달라도 / 끝은 역전 이렇게 똑같이 3줄로\")", () => {
+  // 휴대폰에 보이는 줄 = 데이터의 줄을 `phoneBreak` 낱말 앞에서 한 번 더 자른 것 (FlipHeadline 의 `<br className="sm:hidden">`)
+  const phoneLines = (h: Headline) =>
+    layoutHeadline(h).lines.flatMap((words) => {
+      const out: string[][] = [[]];
+      for (const w of words) {
+        if (w[0].phoneBreak && out[out.length - 1].length) out.push([]);
+        out[out.length - 1].push(w.map((c) => c.ch).join(""));
+      }
+      return out.map((ws) => ws.join(" "));
+    });
+
+  it("`시작 점수가 / 달라도, / 끝은 역전!` — 예전 문구와 같은 3줄", () => {
+    expect(phoneLines(HEADLINES[0])).toEqual(["점수를 뒤집는", "가장 확실한 방법,", "역전토익"]);
+    expect(phoneLines(HEADLINES[1])).toEqual(["시작 점수가", "달라도,", "끝은 역전!"]);
+  });
+
+  it("넓은 화면은 그대로 — 데이터는 2줄이고, 줄 바꿈 표시는 `달라도,` 첫 글자 하나에만", () => {
+    const { lines } = layoutHeadline(HEADLINES[1]);
+    expect(lines).toHaveLength(2);
+    expect(lines.flat(2).filter((c) => c.phoneBreak).map((c) => c.ch)).toEqual(["달"]);
+    expect(headlineText(HEADLINES[1])).toBe("시작 점수가 달라도, 끝은 역전!");
+  });
+
+  it("빈칸 없이 이어 적은 조각도 새 낱말로 시작하고, 글로는 빈칸 하나로 읽힌다", () => {
+    const h: Headline = [[{ t: "가나" }, { t: "다라", phoneBreak: true }]];
+    expect(layoutHeadline(h).lines[0].map((w) => w.map((c) => c.ch).join(""))).toEqual(["가나", "다라"]);
+    expect(headlineText(h)).toBe("가나 다라");
   });
 });
 
