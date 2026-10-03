@@ -8,13 +8,19 @@ import { cn } from "@/lib/utils";
 import { isAdminActive } from "./AdminNav";
 
 const BOTTOM_HREFS = ["/admin", "/admin/students", "/admin/sections", "/admin/verifications", "/admin/textbook-orders"];
+/**
+ * 조교의 하단 바 (2026-10-03 Alan 조교 권한) — 조교가 쓰는 여섯 화면 중 휴대폰에서 자주 여는 다섯.
+ * 스터디 신청자는 햄버거 서랍에 있다. 위 줄은 대부분 조교가 못 여는 화면이라 그대로 거르면 두 칸만 남는다
+ */
+const ASSISTANT_BOTTOM_HREFS = ["/admin/attendance", "/admin/verifications", "/admin/live", "/admin/homework", "/admin/textbook-orders"];
 
 /** 관리자 모바일 하단 네비 (5개) */
 export function AdminBottomNav({ role }: { role?: string | null }) {
   const pathname = usePathname();
-  // 조교는 쓸 수 있는 메뉴만 (2026-09-16 Alan)
+  // 조교는 쓸 수 있는 메뉴만 (2026-09-16 Alan) — 목록을 따로 두어도 메뉴 권한(navAdminFor)으로 한 번 더 거른다
   const allowed = navAdminFor(role);
-  const items = BOTTOM_HREFS.map((h) => allowed.find((n) => n.href === h)).filter((n) => !!n);
+  const hrefs = role === "assistant" ? ASSISTANT_BOTTOM_HREFS : BOTTOM_HREFS;
+  const items = hrefs.map((h) => allowed.find((n) => n.href === h)).filter((n) => !!n);
 
   return (
     <nav

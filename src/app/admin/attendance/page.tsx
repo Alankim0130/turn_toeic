@@ -64,6 +64,8 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   // 조교에게도 열린 화면이다 — 레이아웃이 조교를 통과시키므로 화면마다 가드를 둔다
   const { profile } = await requireCrew();
   const canSend = isStaff(profile.role);
+  // 학생 이름 → 학생 관리 링크는 강사 · 관리자만 — 조교에게는 학생명단 · 학생 관리가 없다 (2026-10-03 Alan, 개인정보)
+  const linkStudents = isStaff(profile.role);
   const { date: dateParam, term: termParam, view: viewParam, ok, error } = await searchParams;
   const view = viewParam === "board" ? "board" : "day";
   const today = todayKST();
@@ -168,7 +170,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         {termCard}
         {tabs}
         {boardError && <Alert kind="warning" className="mb-4">출석 현황을 불러오지 못했어요.</Alert>}
-        <AttendanceBoard title={`${term.month}월 출석 한눈에 보기`} rows={rows} dates={boardDates(rows)} today={today} classes={classes} sectionLabel={sectionLabel} dayHref={dayHref} />
+        <AttendanceBoard title={`${term.month}월 출석 한눈에 보기`} rows={rows} dates={boardDates(rows)} today={today} classes={classes} sectionLabel={sectionLabel} dayHref={dayHref} linkStudents={linkStudents} />
       </>
     );
   }
@@ -240,6 +242,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         dateLabel={formatDate(date, { month: "long", day: "numeric", weekday: "short" })}
         absentees={absentees}
         canSend={canSend}
+        linkStudents={linkStudents}
         defaultMessage={absenceNoticeMessage(date)}
       />
 
@@ -264,7 +267,11 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
                     <li key={r.student_id} className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 py-2.5">
                       <div className="min-w-0 flex-1 text-sm">
                         <p className="flex flex-wrap items-center gap-1.5">
-                          <Link href={`/admin/students/${r.student_id}`} className="font-bold text-ink hover:underline">{r.student_name}</Link>
+                          {linkStudents ? (
+                            <Link href={`/admin/students/${r.student_id}`} className="font-bold text-ink hover:underline">{r.student_name}</Link>
+                          ) : (
+                            <span className="font-bold text-ink">{r.student_name}</span>
+                          )}
                           {r.tester && <span className="rounded-full bg-line px-1.5 py-0.5 text-[10px] font-bold text-slate">테스터</span>}
                           <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold", st.className)}>{st.label}</span>
                           {r.late && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-800">지각</span>}

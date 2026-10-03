@@ -12,7 +12,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { StudentCard, type StudentCardMeta } from "@/components/admin/students/StudentCard";
 import { getRosterSets, getCurrentOrUpcomingTerm, sectionChip } from "../_lib/queries";
-import { ROLE_LABEL, requireCrew } from "@/lib/auth";
+import { ROLE_LABEL, requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "학생명단", robots: { index: false } };
 
@@ -31,8 +31,9 @@ const CREW_ROLES = ["instructor", "admin", "assistant"] as const;
 const studyShort = (kind: string) => (STUDY_KIND_LABEL[kind] ?? kind).replace("스터디", "");
 
 export default async function StudentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string }> }) {
-  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
-  const { profile: me } = await requireCrew();
+  // 조교는 이 화면을 쓸 수 없다 — 학생명단은 개인정보가 있어 강사 · 관리자만 (2026-10-03 Alan. 그전에는 조교도 봤다).
+  // 레이아웃이 조교를 통과시키므로 화면마다 막는다
+  const { profile: me } = await requireStaff();
   const { tab: tabParam, q: qParam } = await searchParams;
   // 예전 주소(tab=testers)도 받는다 — 2026-10-02 에 탭 이름이 강사·조교로 바뀌었다
   const tab = tabParam === "testers" ? "staff" : TABS.some((t) => t.value === tabParam) ? (tabParam as string) : "active";
@@ -100,7 +101,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   const counts = { active: roster.activeIds.length, preliminary: roster.preliminaryIds.length };
   const rows = profiles ?? [];
   // 프로필 사진 — 올린 사진(서명 URL)이 있으면 그것, 없으면 카카오·구글 사진 (2026-10-02 Alan).
-  // 강사·관리자만 눌러서 크게 본다 (조교는 눌리지 않는다)
+  // 강사·관리자만 눌러서 크게 본다
   const avatarUrls = await signedAvatarUrls(supabase, rows.map((p) => p.avatar_path));
   const photoOf = (p: { id: string; avatar_path: string | null }) =>
     pickPhoto(p.avatar_path ? avatarUrls.get(p.avatar_path) : null, safePhotoUrl(accountById.get(p.id)?.avatar_url));

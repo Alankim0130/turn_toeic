@@ -5,7 +5,8 @@ import type { ReceiptVerdict } from "@/lib/receipt-history";
 
 /**
  * 학생 관리 — 그 학생이 올린 수강증 (2026-10-02 Alan). 그림 · 결과 · 읽은 값 · 배정된 반을 한 장씩.
- * 그림은 **로그인한 스태프 · 조교의 세션으로 만든 서명 URL**(10분)이다 — storage `receipts` 정책이 crew 에게 열려 있다.
+ * 그림은 **로그인한 강사·관리자의 세션으로 만든 서명 URL**(10분)이다 — storage `receipts` 정책이 본인 · crew 에게 열려 있다
+ * (조교는 학생 관리를 못 열지만 등업 로그에서 같은 그림을 본다).
  * 자세한 판독 · 승인 · 반려는 등업 검토 화면에서 한다 (같은 일을 두 군데서 하지 않는다).
  */
 export type StudentReceipt = {

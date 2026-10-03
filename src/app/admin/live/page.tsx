@@ -3,7 +3,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Icon } from "@/components/ui/Icon";
 import { LiveLinkField } from "@/components/admin/live/LiveLinkField";
-import { requireStaff } from "@/lib/auth";
+import { isStaff, requireCrew } from "@/lib/auth";
 import { compareSessions, forInstructor, nowKst, pickFocus, sessionState } from "@/lib/live-links";
 import { createClient } from "@/lib/supabase/server";
 import { shiftDate } from "@/lib/term-window";
@@ -31,12 +31,15 @@ function sessionName(s: LiveLinkSession) {
  *
  * - 맨 위는 **지금 하는 수업**(시작 30분 전 ~ 끝) 또는 앞으로 올 가장 가까운 수업이다 (`pickFocus`).
  * - 강사는 **자기 반 + 담당이 빈 반**만 본다 (`forInstructor`). 관리자는 수업을 맡지 않으므로 전부 본다.
+ * - **조교도 올린다** (2026-10-03 Alan "불라방 링크 올리기") — 강사 두 분의 수업 전부를 본다 (관리자와 같은 목록).
+ *   조교에게는 강사 · 관리자 전용 화면(시간표 · 반 편성 · 유튜브 자동 연결 · 다시보기)으로 가는 링크를 그리지 않는다.
  * - 저장은 반 상세의 회차 표와 같은 액션이다 → 회차 링크(`session_live_links`). 누가 보는지는 RLS(`has_section_access`)가 정한다:
  *   그 반에 배정된 수강생(현장·불라방 모두) + 그 시간을 품는 120분·속성반 수강생. 불라방 수강생에게는 수업 시작 알림이 간다.
  */
 export default async function LiveLinksPage() {
-  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
-  const { user, profile } = await requireStaff();
+  // 조교도 쓴다 (2026-10-03). 레이아웃이 조교를 통과시키므로 화면마다 막는다 — 그 밖의 등급은 여기서 튕긴다
+  const { user, profile } = await requireCrew();
+  const staff = isStaff(profile.role);
   const supabase = await createClient();
   const { date: today, minutes } = nowKst();
   const all = await getLiveLinkSessions(supabase, { from: today, to: shiftDate(today, 13) });
@@ -71,10 +74,12 @@ export default async function LiveLinksPage() {
           <p className="max-w-md text-sm text-slate">
             담당 강사는 시간표 설정의 과목(LC · RC)으로 저절로 정해져요. 수업일은 반 편성 달력에서 정합니다.
           </p>
-          <div className="mt-2 flex flex-wrap justify-center gap-2">
-            <Link href="/admin/timetable" className="btn-secondary !py-2 text-sm">시간표 설정 →</Link>
-            <Link href="/admin/sections" className="btn-ghost !py-2 text-sm">반 편성 →</Link>
-          </div>
+          {staff && (
+            <div className="mt-2 flex flex-wrap justify-center gap-2">
+              <Link href="/admin/timetable" className="btn-secondary !py-2 text-sm">시간표 설정 →</Link>
+              <Link href="/admin/sections" className="btn-ghost !py-2 text-sm">반 편성 →</Link>
+            </div>
+          )}
         </section>
       ) : (
         <div className="space-y-6">
@@ -112,9 +117,15 @@ export default async function LiveLinksPage() {
               <li>
                 {/* 2026-10-01 Alan — "불라방도 유튜브 링크를 가져와서 바로 연결" */}
                 <b className="text-ink">비워 두면</b> Zoom 의 유튜브 송출이 잡힐 때 그 주소가 저절로 들어가고(
-                <Link href="/admin/live-channels" className="font-bold text-brand-600 hover:underline">유튜브 자동 연결</Link>), 수업이 끝나면 다시보기로 올라가요.
+                {staff ? <Link href="/admin/live-channels" className="font-bold text-brand-600 hover:underline">유튜브 자동 연결</Link> : <b className="text-ink">유튜브 자동 연결</b>}), 수업이 끝나면 다시보기로 올라가요.
                 Zoom 링크를 직접 넣어 두면 그대로 두고 덮어쓰지 않아요 — Zoom 링크는 다시보기로 올라가지 않으니 녹화본은{" "}
-                <Link href="/admin/replays" className="font-bold text-brand-600 hover:underline">다시보기 등록</Link>에서 붙여 주세요.
+                {staff ? (
+                  <>
+                    <Link href="/admin/replays" className="font-bold text-brand-600 hover:underline">다시보기 등록</Link>에서 붙여 주세요.
+                  </>
+                ) : (
+                  "강사님이 다시보기 등록에서 붙여요."
+                )}
               </li>
             </ul>
           </aside>

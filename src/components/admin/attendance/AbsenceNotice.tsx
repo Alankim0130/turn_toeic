@@ -22,12 +22,15 @@ export function AbsenceNotice({
   dateLabel,
   absentees,
   canSend,
+  linkStudents = true,
   defaultMessage,
 }: {
   date: string;
   dateLabel: string;
   absentees: AbsenteeView[];
   canSend: boolean;
+  /** 이름을 학생 관리로 잇나 — 조교에게는 학생명단 · 학생 관리가 없어 글자로만 둔다 (2026-10-03) */
+  linkStudents?: boolean;
   defaultMessage: { title: string; body: string };
 }) {
   const router = useRouter();
@@ -98,7 +101,11 @@ export function AbsenceNotice({
             )}
             <div className="min-w-0 flex-1">
               <p className="flex flex-wrap items-center gap-1.5">
-                <Link href={`/admin/students/${a.id}`} className="font-bold text-ink hover:underline">{a.name || "-"}</Link>
+                {linkStudents ? (
+                  <Link href={`/admin/students/${a.id}`} className="font-bold text-ink hover:underline">{a.name || "-"}</Link>
+                ) : (
+                  <span className="font-bold text-ink">{a.name || "-"}</span>
+                )}
                 {a.tester && <span className="rounded-full bg-line px-1.5 py-0.5 text-[10px] font-bold text-slate">테스터</span>}
                 <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold", a.absent ? "bg-red-100 text-red-700" : "bg-red-50 text-red-700 ring-1 ring-red-200")}>{a.absent ? "결석" : "미출석"}</span>
                 {a.sentAt && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-bold text-brand-700">알림 보냄 {a.sentAt}</span>}

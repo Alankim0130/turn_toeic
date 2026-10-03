@@ -6,7 +6,7 @@ import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rematchHeldVerifications } from "@/lib/rematch-held";
-import { requireStaff, isAdmin } from "@/lib/auth";
+import { requireCrew, requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import { isYmd, labelKo } from "@/components/admin/sections/dates";
 import { isLectureKind, sortLectureKinds } from "@/lib/utils";
@@ -412,7 +412,9 @@ function revalidateLive(sectionId: number) {
 }
 
 export async function upsertSessionLiveLink(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  await requireStaff();
+  // 조교도 올린다 (2026-10-03 Alan "불라방 링크 올리기" — /admin/live). DB 정책 "session_live_links: 조교 등록·수정·삭제" 가 같은 집합이다.
+  // 이 파일의 나머지 액션(반 편성 · 상시 링크 · 다시보기 스위치 · 담당 강사)은 강사 · 관리자만이다
+  await requireCrew();
   const sessionDateId = toInt(str(formData, "session_date_id"));
   const sectionId = toInt(str(formData, "section_id"));
   const url = str(formData, "live_url");

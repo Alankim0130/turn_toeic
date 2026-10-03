@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireStaff } from "@/lib/auth";
+import { requireCrew } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { homeworkCheckedMessage, MAX_FEEDBACK } from "@/lib/homework";
 
@@ -22,9 +22,12 @@ function revalidateAll() {
  * 코멘트는 **선택**이다 — 비워 두면 기본 안내 문구로 알림만 간다.
  * 알림은 **앱 안 알림함**(`student_messages`)뿐이다. 문자·알림톡·학생 푸시는 여전히 없다.
  * 알림을 못 보내도 점검은 그대로 남긴다 — 점검이 통째로 실패하는 편이 더 나쁘다.
+ *
+ * **조교도 점검한다** (2026-10-03 Alan "숙제점검"). DB 정책 "homework_submissions: 스태프·조교 점검" ·
+ * "student_messages: 조교 발송"(점검완료 알림 · 보낸 이 = 자기 이름)이 같은 집합이다.
  */
 export async function checkHomework(input: { id: number; feedback?: string }): Promise<HomeworkCheckResult> {
-  const { user, profile } = await requireStaff();
+  const { user, profile } = await requireCrew();
   const id = Number(input.id);
   if (!Number.isInteger(id)) return { ok: false, error: "잘못된 요청이에요." };
   const feedback = String(input.feedback ?? "").trim();
@@ -57,7 +60,7 @@ export async function checkHomework(input: { id: number; feedback?: string }): P
 
 /** 점검 취소 — 코멘트도 지운다. 이미 보낸 알림은 그대로 둔다 (학생이 본 것을 없애지 않는다) */
 export async function undoHomeworkCheck(id: number): Promise<HomeworkCheckResult> {
-  await requireStaff();
+  await requireCrew();
   if (!Number.isInteger(id)) return { ok: false, error: "잘못된 요청이에요." };
 
   const supabase = await createClient();

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { canAssignRole, isAssistant, requireCrew, requireStaff, ROLE_LABEL, type UserRole } from "@/lib/auth";
+import { canAssignRole, requireStaff, ROLE_LABEL, type UserRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { assignableError, orderWindow } from "@/lib/enrollment-window";
@@ -23,17 +23,15 @@ function revalidateStudent(id: string) {
 }
 
 /**
- * 등급(profiles.role) 변경 — 강사·관리자는 전부, **조교는 학생 등급만**
- * (2026-09-16 Alan 요청 / 2026-09-19 Alan "조교에게도 등급권한을 부여해주는 권한").
+ * 등급(profiles.role) 변경 — **강사·관리자만** (2026-09-16 Alan 요청. 2026-09-19 ~ 10-02 에는 조교도 학생 등급끼리 바꿨는데
+ * 2026-10-03 Alan 이 조교에게서 학생명단 · 반 배정을 빼며 함께 빠졌다).
  *
- * 누가 누구를 어디까지 바꿀 수 있나는 `canAssignRole()` 한곳이 정하고, DB 정책
- * "profiles: 본인·스태프·조교 수정" 이 같은 집합을 한 번 더 본다.
+ * 누가 바꿀 수 있나는 `canAssignRole()` 한곳이 정하고, DB 정책 "profiles: 본인·스태프 수정" 이 같은 집합을 한 번 더 본다.
  *
- * 일부러 서비스 롤을 쓰지 않고 **로그인한 사람의 세션으로** 쓴다. 그래야 RLS 가 한 번 더 막아 준다 —
- * 화면 판정이 틀려도 조교는 스태프 계정을 건드리거나 누군가를 관리자로 올릴 수 없다.
+ * 일부러 서비스 롤을 쓰지 않고 **로그인한 사람의 세션으로** 쓴다. 그래야 RLS 가 한 번 더 막아 준다.
  */
 export async function updateStudentRole(_prev: StudentActionState, formData: FormData): Promise<StudentActionState> {
-  const { profile } = await requireCrew();
+  const { profile } = await requireStaff();
   // 테스트 중에는 RLS 가 이 관리자를 학생으로 보므로 세션 UPDATE 가 막힌다 — 먼저 끄게 안내한다
   if (profile.test_role) return { error: "테스트 중에는 등급을 바꿀 수 없어요. 화면 위 띠에서 테스트를 먼저 끝내 주세요." };
 
@@ -45,14 +43,8 @@ export async function updateStudentRole(_prev: StudentActionState, formData: For
   const { data: target } = await supabase.from("profiles").select("id, name, role, test_role").eq("id", id).maybeSingle();
   if (!target) return { error: "학생을 찾을 수 없어요." };
 
-  // 누가 누구를 어디까지 바꿀 수 있나는 canAssignRole 한곳이 정한다 (DB 정책과 같은 집합)
-  if (!canAssignRole(profile.role, target.role, role)) {
-    return {
-      error: isAssistant(profile.role)
-        ? "조교는 학생 등급(회원 · 수강생 · 졸업생)만 바꿀 수 있어요. 강사·관리자 계정이나 스태프 등급은 관리자에게 요청해 주세요."
-        : "등급 변경은 강사·관리자만 할 수 있어요.",
-    };
-  }
+  // 누가 바꿀 수 있나는 canAssignRole 한곳이 정한다 (DB 정책과 같은 집합)
+  if (!canAssignRole(profile.role)) return { error: "등급 변경은 강사·관리자만 할 수 있어요." };
   if (target.role === role) return { ok: true, message: `이미 ${ROLE_LABEL[role]}이에요.` };
 
   // 마지막 관리자를 내리면 아무도 등급을 되돌릴 수 없다
@@ -71,13 +63,7 @@ export async function updateStudentRole(_prev: StudentActionState, formData: For
 
   const { data, error } = await supabase.from("profiles").update({ role }).eq("id", id).select("id");
   if (error) {
-    // RLS 정책과 조교 가드 트리거(assistant_role_only)가 같은 코드로 막는다
-    if (error.code === "42501")
-      return {
-        error: isAssistant(profile.role)
-          ? "권한이 없어요. 조교는 학생 등급만 바꿀 수 있어요."
-          : "권한이 없어요. 강사·관리자만 등급을 바꿀 수 있어요.",
-      };
+    if (error.code === "42501") return { error: "권한이 없어요. 강사·관리자만 등급을 바꿀 수 있어요." };
     // 새 등급(조교)을 넣었는데 DB 마이그레이션이 아직 안 올라간 동안 — 무슨 일인지 알려 준다
     if (error.code === "22P02") return { error: `${ROLE_LABEL[role]} 등급이 아직 서버에 올라가지 않았어요. 잠시 뒤 다시 해 주세요.` };
     if (error.code === "23514") return { error: "테스트 중인 계정이라 등급을 바꾸지 못했어요. 그 계정의 테스트를 먼저 끝내 주세요." };
@@ -98,9 +84,11 @@ export async function updateStudentRole(_prev: StudentActionState, formData: For
  * 수강증 승인(approveVerification)과 같은 규칙으로 등록 1건을 만든다 — 매달 등록이라 months 는 1,
  * 개강일은 고른 반 중 가장 이른 날, 시청 만료일은 가장 늦은 종강일. 수강증이 없으므로 verification_id 는 비운다.
  * enrollment_orders 에는 authenticated INSERT 권한이 없어 서비스 롤로 쓰고, 권한은 requireStaff 가 본다.
+ * **강사·관리자만** — 반 배정은 강사가 직접 한다 (2026-10-03 Alan. 2026-09-19 ~ 10-02 에는 조교도 했다).
+ * 조교가 하는 배정은 수강증 승인(등업 로그)뿐이다 — 그쪽은 수강증이 근거다.
  */
 export async function assignSections(_prev: StudentActionState, formData: FormData): Promise<StudentActionState> {
-  await requireCrew();
+  await requireStaff();
 
   const id = String(formData.get("id") ?? "");
   const sectionIds = [...new Set(formData.getAll("section_ids").map(Number).filter((n) => Number.isInteger(n) && n > 0))];
@@ -151,7 +139,8 @@ export async function assignSections(_prev: StudentActionState, formData: FormDa
  * 주5일을 주3일로 바꾸려면 해제한 뒤 남길 트랙만 다시 배정한다. 한 번에 **한 학생의 배정만** 지운다 — 섞여 오면 아무것도 지우지 않는다.
  */
 export async function removeEnrollment(enrollmentIds: number[]): Promise<StudentActionState> {
-  await requireCrew();
+  // 강사·관리자만 — 반 배정과 같은 일이다 (2026-10-03 Alan)
+  await requireStaff();
   const ids = [...new Set(Array.isArray(enrollmentIds) ? enrollmentIds : [])];
   if (ids.length === 0 || ids.length > 4 || !ids.every((n) => Number.isInteger(n) && n > 0)) return { error: "잘못된 요청이에요." };
 
@@ -186,8 +175,8 @@ const GENDERS = new Set(["male", "female", "other", "undisclosed"]);
 
 /**
  * 학생 개인정보 수정 (2026-10-02 Alan — "학생이 이름을 잘못 넣어서 가입을 해서 우리 관리자가 변경을 해주고 싶은데").
- * 강사·관리자만 (조교는 DB 트리거 guard_assistant_profile_update 가 등급 말고는 못 바꾸게 막는다).
- * 세션으로 UPDATE 한다 — 정책 "profiles: 본인·스태프·조교 수정" 이 한 번 더 막는다. 등급은 여기서 건드리지 않는다 (등급 칸이 따로 있다).
+ * 강사·관리자만. 세션으로 UPDATE 한다 — 정책 "profiles: 본인·스태프 수정"(2026-10-03 — 조교 갈래를 뺐다)이 한 번 더 막는다.
+ * 등급은 여기서 건드리지 않는다 (등급 칸이 따로 있다).
  * 이름이 바뀌면 이름 때문에 멈춰 있던 수강증을 다시 본다 (`recheckAfterRename` — 학생이 스스로 고칠 때와 같은 길).
  */
 export async function updateStudentProfile(_prev: StudentActionState, formData: FormData): Promise<StudentActionState> {

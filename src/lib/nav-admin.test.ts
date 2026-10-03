@@ -26,13 +26,25 @@ describe("관리자 메뉴 묶음 (NAV_ADMIN_SECTIONS)", () => {
     expect(plan.items.map((i) => i.href)).toContain("/admin/sections");
   });
 
-  it("조교는 crew 항목만 보고 빈 묶음은 사라진다 — 첫 화면은 여전히 학생명단", () => {
+  it("조교는 crew 항목만 보고 빈 묶음은 사라진다 — 첫 화면은 출석", () => {
     const crew = navAdminSectionsFor("assistant");
     for (const s of crew) for (const i of s.items) expect(i.crew, i.href).toBe(true);
-    expect(crew.map((s) => s.label)).toEqual(["학생", "학습"]);
+    expect(crew.map((s) => s.label)).toEqual(["학생", "수업 자료", "학습"]);
     expect(navAdminFor("assistant").map((i) => i.href)).toEqual(crew.flatMap((s) => s.items.map((i) => i.href)));
-    expect(adminHomeFor("assistant")).toBe("/admin/students");
+    expect(adminHomeFor("assistant")).toBe("/admin/attendance");
     expect(navAdminSectionsFor("instructor")).toEqual(NAV_ADMIN_SECTIONS);
+  });
+
+  /**
+   * 조교가 쓰는 화면은 여섯 (2026-10-03 Alan — "조교의 권한 1. 수동등업 수락 2. 불라방 교재주문 3. 스터디 신청자
+   * 4. 불라방 링크 올리기 5. 숙제점검 6. 출석확인 / 없는 권한 1. 학생명단(개인정보) 2. 반배정 3. 이하 다른 관리자페이지").
+   * 여기에 하나를 더하면 proxy 입구(canEnterAdminPath)와 화면 가드까지 같이 열린다 — Alan 에게 확인하고 더할 것.
+   * DB 쪽 같은 집합은 마이그레이션 20261003100000.
+   */
+  it("조교 화면은 Alan 이 정한 여섯 개뿐이다 — 학생명단은 없다", () => {
+    expect(navAdminFor("assistant").map((i) => i.href).sort()).toEqual(
+      ["/admin/attendance", "/admin/homework", "/admin/live", "/admin/study", "/admin/textbook-orders", "/admin/verifications"].sort(),
+    );
   });
 
   it("켜 둘 메뉴는 가장 긴 주소 하나 — /admin/study/plan 은 스터디 신청자(/admin/study)를 켜지 않는다", () => {

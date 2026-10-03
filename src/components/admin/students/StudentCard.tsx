@@ -56,7 +56,7 @@ export function StudentCard({
   metas: StudentCardMeta[];
   /** 프로필 사진 (올린 사진 → 카카오·구글 사진). 없으면 이름 첫 글자 (2026-10-02) */
   photo?: string | null;
-  /** 강사·관리자만 true — 사진을 누르면 크게 본다. 조교는 눌리지 않는다 */
+  /** 강사·관리자만 true — 사진을 누르면 크게 본다 (명단은 2026-10-03 부터 강사·관리자 화면이다) */
   zoom?: boolean;
 }) {
   const initial = (name ?? "").trim().charAt(0);

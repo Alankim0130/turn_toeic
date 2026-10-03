@@ -14,38 +14,33 @@ export const isStaff = (role?: UserRole | null) => role === "instructor" || role
  * DB 의 private.is_admin() 과 같은 집합이어야 한다.
  */
 export const isAdmin = (role?: UserRole | null) => isStaff(role);
-/** 조교. 학생 모드는 전부, 관리자 모드는 교재주문·스터디 신청자만 */
+/**
+ * 조교. 학생 모드는 반 배정으로(학생과 같다), 관리자 모드는 메뉴의 crew 화면만 —
+ * 출석 · 등업 로그 · 교재주문 · 불라방 링크 · 스터디 신청자 · 숙제점검 (2026-10-03 Alan)
+ */
 export const isAssistant = (role?: UserRole | null) => role === "assistant";
 /** 스태프 + 조교. 조교에게 열어 준 곳에만 쓴다 (DB 의 private.is_crew()) */
 export const isCrew = (role?: UserRole | null) => isStaff(role) || isAssistant(role);
 /** student 이상 = student · 조교 · instructor · admin (alumni 는 아님) */
 export const isStudentPlus = (role?: UserRole | null) => role === "student" || isCrew(role);
 
-/**
- * 학생 등급 — 관리자 화면을 하나도 쓰지 못하는 등급들 (DB 의 private.is_student_grade()).
- * 조교가 바꿀 수 있는 범위를 이 집합으로 못박는다.
- */
+/** 학생 등급 — 관리자 화면을 하나도 쓰지 못하는 등급들 (DB 의 private.is_student_grade()) */
 export const STUDENT_GRADES = ["guest", "member", "student", "alumni"] as const satisfies readonly UserRole[];
 export const isStudentGrade = (role?: UserRole | null) =>
   (STUDENT_GRADES as readonly (UserRole | null | undefined)[]).includes(role);
 
 /**
- * 등급을 바꿀 수 있나 — **한곳 판정** (2026-09-19 Alan: "조교가 등업관리를 다 하기 때문에
- * 등업신청을 보고 수락하거나 등급권한을 부여해주는 권한이 있으면 좋겠어").
+ * 등급을 바꿀 수 있나 — **한곳 판정**. **강사·관리자만** 바꾼다.
  *
- * - 강사·관리자: 전부
- * - **조교: 학생 등급인 사람을 학생 등급으로만.** 스태프 계정은 손대지 못하고(관리자를 졸업생으로
- *   내려 서비스를 멈추는 길을 막는다), 누구도 강사·관리자·조교로 **올리지 못한다**(스스로 권한을
- *   올리는 길을 막는다). 본인 등급도 못 바꾼다.
- * - 그 밖: 아무도 못 바꾼다
+ * 2026-09-19 ~ 10-02 에는 조교도 학생 등급끼리(회원 · 수강생 · 졸업생) 바꿨는데, 2026-10-03 Alan 이 조교에게서
+ * 학생명단 · 반 배정을 뺐다 ("학생명단 (개인정보가 있기때문에)" · "반배정 (강사가 직접 배정를 해준다)") — 등급은 학생 관리 화면에서
+ * 바꾸므로 함께 빠졌다. 조교의 등업 수락으로 수강생이 되는 것은 서버(서비스 롤)가 하므로 이 판정과 상관없다.
  *
- * DB 정책 "profiles: 본인·스태프·조교 수정" 과 같은 집합이어야 한다 — 한쪽만 고치면
- * 화면은 열리는데 RLS 가 막거나, 그 반대가 된다 (마이그레이션 20260919130000).
+ * DB 정책 "profiles: 본인·스태프 수정" 과 같은 집합이어야 한다 — 한쪽만 고치면
+ * 화면은 열리는데 RLS 가 막거나, 그 반대가 된다 (마이그레이션 20261003100000).
  */
-export function canAssignRole(actor: UserRole | null | undefined, target: UserRole, next: UserRole) {
-  if (isAdmin(actor)) return true;
-  if (isAssistant(actor)) return isStudentGrade(target) && isStudentGrade(next);
-  return false;
+export function canAssignRole(actor: UserRole | null | undefined) {
+  return isAdmin(actor);
 }
 
 /**
@@ -101,8 +96,8 @@ export async function requireStaff() {
 }
 
 /**
- * 조교에게도 열린 관리자 화면 (교재주문 · 스터디 신청자) 전용.
- * 나머지 관리자 화면은 그대로 requireStaff() 를 쓴다 — 조교가 주소로 들어와도 막힌다.
+ * 조교에게도 열린 관리자 화면 전용 — 메뉴의 crew 항목(출석 · 등업 로그 · 교재주문 · 불라방 링크 · 스터디 신청자 · 숙제점검)과
+ * 그 화면이 부르는 서버 액션. 나머지 관리자 화면은 그대로 requireStaff() 를 쓴다 — 조교가 주소로 들어와도 막힌다.
  * 진짜 등급으로 본다 (테스트 등급 중에도 관리자 화면에는 들어올 수 있어야 끌 수 있다).
  */
 export async function requireCrew() {
