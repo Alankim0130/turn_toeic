@@ -43,7 +43,7 @@ function StatusBanner({ access }: { access: StudentAccess }) {
 
   const text =
     state === "preliminary"
-      ? `예비등록생이에요. ${formatDate(access.opensOn!, { month: "long", day: "numeric" })} 개강일부터 모든 기능이 열리고, 스터디는 지금 신청할 수 있어요.`
+      ? `예비등록생이에요. ${formatDate(access.opensOn!, { month: "long", day: "numeric" })} 개강일부터 모든 기능이 열려요.`
       : state === "alumni"
         ? "지난 수강 기간이 끝났어요. 다시 등록하고 수강증을 올리면 바로 열려요."
         : state === "member"
