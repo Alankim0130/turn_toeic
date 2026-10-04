@@ -345,6 +345,9 @@ export const NAV_ADMIN_SECTIONS: NavSection[] = [
       { href: "/admin/analytics", label: "마케팅 분석", icon: "analytics" },
       { href: "/admin/contacts", label: "문의", icon: "contact" },
       { href: "/admin/notifications", label: "알림 설정", icon: "bell" },
+      // 인수인계 체크리스트 — docs/HANDOVER.md 를 그대로 그리고 체크는 DB(handover_checks)에 (2026-10-04 Alan "햄버거 메뉴에서 인수인계 안보여").
+      // 강사·관리자만 — 조교 화면이 아니다 (crew 를 붙이지 말 것)
+      { href: "/admin/handover", label: "인수인계", icon: "admin" },
     ],
   },
   {

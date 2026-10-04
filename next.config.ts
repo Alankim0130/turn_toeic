@@ -50,6 +50,11 @@ const nextConfig: NextConfig = {
       // 강사 캐리커처 (2026-09-30 — 그전에는 public/instructors/casual/*.png 실사 컷). 포스터는 site.instructors[].caricatures[0]
       "./public/instructors/caricature/*.webp",
     ],
+    /**
+     * 인수인계 체크리스트 (2026-10-04) — 관리자 화면 `운영 → 인수인계` 가 저장소의 docs/HANDOVER.md 를 서버에서 읽어 그린다
+     * (`src/app/admin/_lib/handover-doc.ts`). `docs/` 는 함수에 실리지 않으므로 여기 적는다. 서버 액션도 이 화면 함수에서 돈다.
+     */
+    "/admin/handover": ["./docs/HANDOVER.md"],
   },
 
   /**
