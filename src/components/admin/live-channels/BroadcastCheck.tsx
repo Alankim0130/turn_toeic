@@ -46,7 +46,7 @@ export function BroadcastCheck() {
                 </li>
               );
             })}
-            <li className="text-slate">잡혔어요. 수업 시간에 이렇게 켜면 그 회차에 걸리고, 끝나면 다시보기로 올라가요.</li>
+            <li className="text-slate">잡혔어요. 수업 시간에 이렇게 켜면 그 회차 불라방에 걸리고, 오전 · 주간 수업은 끝나면 다시보기로 올라가요.</li>
           </ul>
         )
       )}

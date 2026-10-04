@@ -2,9 +2,11 @@
  * 유튜브 방송 → 회차 매칭 (2026-09-21 Alan — "두 강사가 각자 유튜브 채널에서 일부공개로 새 방송을 킬꺼야.
  * 해당시간 5~10분 전후로 방송이 올라오면 그 시간대에 불라방 링크가 들어가면 되고").
  *
- * **2026-10-01 부터 잡은 방송은 불라방 링크가 아니라 다시보기로 간다** (Alan — "쌤들이 Zoom으로 수업을 하되, 유튜브 자동연결을 통해서
- * 미공개로 송출 … 해당 유튜브 링크를 자동으로 다시보기란으로"). 불라방 입장은 Zoom 링크 그대로이고, Zoom 이 유튜브로 함께 송출한 방송을
- * 회차에 걸어 뒀다가(`session_streams`) 수업이 끝나면 그 회차 다시보기로 만든다 (DB `promote_live_replays`). 매칭 규칙은 그대로다.
+ * **2026-10-01 부터 잡은 방송은 회차에 걸어 두고(`session_streams`) 수업이 끝나면 다시보기로 간다** (Alan — "쌤들이 Zoom으로 수업을 하되,
+ * 유튜브 자동연결을 통해서 미공개로 송출 … 해당 유튜브 링크를 자동으로 다시보기란으로"). 같은 날 저녁부터는 **불라방 링크가 비어 있는 회차에
+ * 불라방 링크로도** 넣는다 (DB `register_detected_stream`, 손으로 넣은 Zoom 링크는 그대로).
+ * **2026-10-04 부터 저녁 반도 잡는다** (Alan "불라방은 우리가 설정한 매시간 진행되어야해") — 다시보기를 만들지 않는 반(`live_to_replay` 꺼짐)도
+ * 불라방 링크는 넣고, 다시보기 승격만 없다 (저녁 학생은 오전 짝 반의 녹화본을 본다 — DB `promote_live_replays` 가 그 칸을 본다). 매칭 규칙은 그대로다.
  *
  * 규칙 (순수 함수 — `live-detect.test.ts`):
  * - **방송이 시작한 시각** 이 수업 시작 ±`LIVE_MATCH_MINUTES` 분이면 그 회차다. 감지한 시각이 아니라 시작 시각으로 본다 —
@@ -15,7 +17,15 @@
 
 export const LIVE_MATCH_MINUTES = 10;
 
-export type LiveCandidate = { session_date_id: number; section_id: number; instructor_id: string; starts_at: string; label: string };
+export type LiveCandidate = {
+  session_date_id: number;
+  section_id: number;
+  instructor_id: string;
+  starts_at: string;
+  label: string;
+  /** 끝나면 다시보기로 만드는 반인가 (오전 · 주간). 저녁 반은 꺼져 있다 — 불라방 링크만 들어간다 (2026-10-04) */
+  live_to_replay: boolean;
+};
 export type Broadcast = {
   id: string;
   startedAt: string | null;
@@ -89,8 +99,21 @@ export const PRIVACY_LABEL: Record<string, string> = { unlisted: "일부 공개"
 export type StreamTone = "muted" | "wait" | "caught" | "done" | "manual" | "recorded";
 
 /**
+ * 송출을 잡았을 때 강사에게 가는 알림 본문의 뒷부분 (`/api/cron/live-detect`). 앞에는 회차 이름이 붙는다.
+ * 다시보기를 만들지 않는 반(저녁)에는 "끝나면 다시보기로" 라고 말하지 않는다 — 그 송출은 불라방 링크로만 쓴다 (2026-10-04).
+ */
+export function detectedNote(o: { liveLinked: boolean; replay: boolean; privacy: string | null }): string {
+  const live = o.liveLinked ? "불라방 링크로 들어가 학생에게 알림이 갔고, " : "불라방 링크는 직접 넣어 둔 것이 그대로이고, ";
+  const after = o.replay ? "수업이 끝나면 다시보기로 올라가요." : "다시보기는 만들지 않는 반이에요 (저녁 반 학생은 오전 녹화본을 봐요).";
+  // 수업 영상은 일부 공개여야 한다 — 공개로 켰으면 강사가 바로 알게 한 줄 덧붙인다
+  const privacy = o.privacy === "public" ? " ⚠ 공개로 켜져 있어요 — 유튜브에서 일부 공개로 바꿔 주세요." : "";
+  return live + after + privacy;
+}
+
+/**
  * 오늘 회차 한 줄의 상태 칩 (`/admin/live-channels`). 순서가 뜻이다 —
- * 인강(방송 없음) → 다시보기를 만들지 않는 반(저녁) → 다시보기 올라감 → 송출 잡힘 → 다시보기 직접 등록됨 → 방송 기다림 → 채널 미연결.
+ * 인강(방송 없음) → 다시보기 올라감 → 송출 잡힘 → 다시보기 직접 등록됨 → 방송 기다림 → 채널 미연결.
+ * **다시보기를 만들지 않는 반(저녁)도 송출을 기다린다** (2026-10-04 — 불라방 링크로 넣는다). 칩 끝에 다시보기가 없다고만 덧붙인다.
  */
 export function streamState(s: {
   recorded: boolean;
@@ -102,10 +125,10 @@ export function streamState(s: {
   liveLinked?: boolean;
 }): { text: string; tone: StreamTone; at?: string } {
   if (s.recorded) return { text: "인강 — 방송 없음", tone: "recorded" };
-  if (!s.liveToReplay) return { text: "다시보기를 만들지 않는 반", tone: "muted" };
   if (s.stream?.promoted_at) return { text: "다시보기 올라감", tone: "done", at: s.stream.promoted_at };
-  if (s.stream) return { text: s.liveLinked ? "송출 잡힘 · 불라방 연결 — 끝나면 다시보기로" : "송출 잡힘 — 끝나면 다시보기로", tone: "caught", at: s.stream.detected_at };
+  const after = s.liveToReplay ? " — 끝나면 다시보기로" : " · 다시보기 없음";
+  if (s.stream) return { text: (s.liveLinked ? "송출 잡힘 · 불라방 연결" : "송출 잡힘") + after, tone: "caught", at: s.stream.detected_at };
   if (s.hasReplay) return { text: "다시보기 직접 등록됨", tone: "manual" };
-  if (s.connected) return { text: "방송을 기다리는 중", tone: "wait" };
+  if (s.connected) return { text: s.liveToReplay ? "방송을 기다리는 중" : "방송을 기다리는 중 · 불라방만", tone: "wait" };
   return { text: "채널 미연결", tone: "muted" };
 }
