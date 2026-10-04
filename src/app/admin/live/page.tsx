@@ -117,7 +117,8 @@ export default async function LiveLinksPage() {
               <li>
                 {/* 2026-10-01 Alan — "불라방도 유튜브 링크를 가져와서 바로 연결" */}
                 <b className="text-ink">비워 두면</b> Zoom 의 유튜브 송출이 잡힐 때 그 주소가 저절로 들어가고(
-                {staff ? <Link href="/admin/live-channels" className="font-bold text-brand-600 hover:underline">유튜브 자동 연결</Link> : <b className="text-ink">유튜브 자동 연결</b>}), 수업이 끝나면 다시보기로 올라가요.
+                {staff ? <Link href="/admin/live-channels" className="font-bold text-brand-600 hover:underline">유튜브 자동 연결</Link> : <b className="text-ink">유튜브 자동 연결</b>}) 오전 · 주간 수업은 끝나면 다시보기로 올라가요.
+                저녁 수업도 저절로 들어가지만 다시보기로는 올리지 않아요 — 저녁 학생은 오전 녹화본을 봐요.
                 Zoom 링크를 직접 넣어 두면 그대로 두고 덮어쓰지 않아요 — Zoom 링크는 다시보기로 올라가지 않으니 녹화본은{" "}
                 {staff ? (
                   <>

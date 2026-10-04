@@ -2304,7 +2304,7 @@ export type Database = {
       }
       live_detect_candidates: {
         Args: never
-        Returns: { instructor_id: string; label: string; section_id: number; session_date_id: number; starts_at: string }[]
+        Returns: { instructor_id: string; label: string; live_to_replay: boolean; section_id: number; session_date_id: number; starts_at: string }[]
       }
       receive_textbook_order: {
         Args: { p_id: number }

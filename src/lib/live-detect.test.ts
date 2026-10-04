@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchBroadcasts, streamState, toBroadcasts, watchUrl, type LiveCandidate } from "./live-detect";
+import { detectedNote, matchBroadcasts, streamState, toBroadcasts, watchUrl, type LiveCandidate } from "./live-detect";
 
 // 한국 시각 → ISO (UTC)
 const kst = (hhmm: string) => new Date(`2026-10-07T${hhmm}:00+09:00`).toISOString();
@@ -9,6 +9,7 @@ const cand = (id: number, hhmm: string, instructor = "hy"): LiveCandidate => ({
   instructor_id: instructor,
   starts_at: kst(hhmm),
   label: `${hhmm} 반`,
+  live_to_replay: true,
 });
 const live = (id: string, started: string | null) => ({ id, startedAt: started, lifeCycleStatus: "live", title: "", privacy: null });
 const NOW = new Date(kst("10:05"));
@@ -78,15 +79,25 @@ describe("유튜브 응답 읽기", () => {
   });
 });
 
-describe("오늘 회차 상태 칩 (유튜브 자동 연결 화면) — 2026-10-01 송출은 불라방 링크가 아니라 다시보기로", () => {
+describe("오늘 회차 상태 칩 (유튜브 자동 연결 화면) — 송출은 불라방 링크 · 다시보기로, 저녁 반은 불라방만 (2026-10-04)", () => {
   const base = { recorded: false, liveToReplay: true, stream: null, hasReplay: false, connected: true };
   const stream = { detected_at: "2026-10-07T01:02:00Z", promoted_at: null };
 
   it("인강 반은 방송이 없다 — 다른 무엇보다 먼저", () => {
     expect(streamState({ ...base, recorded: true, stream }).tone).toBe("recorded");
   });
-  it("다시보기를 만들지 않는 반(저녁)은 채널이 연결돼 있어도 기다리지 않는다", () => {
-    expect(streamState({ ...base, liveToReplay: false })).toMatchObject({ tone: "muted", text: "다시보기를 만들지 않는 반" });
+  // 2026-10-04 Alan "불라방은 우리가 설정한 매시간 진행되어야해" — 저녁 반도 송출을 잡아 불라방 링크로 넣는다. 다시보기만 없다
+  it("다시보기를 만들지 않는 반(저녁)도 송출을 기다린다 — 불라방만이라고 적는다", () => {
+    expect(streamState({ ...base, liveToReplay: false })).toMatchObject({ tone: "wait", text: "방송을 기다리는 중 · 불라방만" });
+    expect(streamState({ ...base, liveToReplay: false, connected: false })).toMatchObject({ tone: "muted", text: "채널 미연결" });
+  });
+  it("저녁 반의 송출이 잡히면 '끝나면 다시보기로' 라고 하지 않는다", () => {
+    expect(streamState({ ...base, liveToReplay: false, stream, liveLinked: true })).toMatchObject({
+      tone: "caught",
+      at: stream.detected_at,
+      text: "송출 잡힘 · 불라방 연결 · 다시보기 없음",
+    });
+    expect(streamState({ ...base, liveToReplay: false, stream }).text).toBe("송출 잡힘 · 다시보기 없음");
   });
   it("송출이 잡히면 끝나면 다시보기로 — 잡힌 시각을 함께", () => {
     expect(streamState({ ...base, stream })).toMatchObject({ tone: "caught", at: stream.detected_at, text: "송출 잡힘 — 끝나면 다시보기로" });
@@ -104,5 +115,26 @@ describe("오늘 회차 상태 칩 (유튜브 자동 연결 화면) — 2026-10-
   it("채널이 연결돼 있으면 기다리는 중, 아니면 미연결", () => {
     expect(streamState(base).tone).toBe("wait");
     expect(streamState({ ...base, connected: false })).toMatchObject({ tone: "muted", text: "채널 미연결" });
+  });
+});
+
+describe("송출을 잡았을 때 강사 알림 — 저녁 반은 다시보기로 올린다고 말하지 않는다 (2026-10-04)", () => {
+  it("오전 반 · 비어 있던 불라방 링크에 들어감", () => {
+    expect(detectedNote({ liveLinked: true, replay: true, privacy: "unlisted" })).toBe(
+      "불라방 링크로 들어가 학생에게 알림이 갔고, 수업이 끝나면 다시보기로 올라가요.",
+    );
+  });
+  it("저녁 반 — 불라방만", () => {
+    const note = detectedNote({ liveLinked: true, replay: false, privacy: "unlisted" });
+    expect(note).toContain("불라방 링크로 들어가");
+    expect(note).not.toContain("다시보기로 올라가요");
+    expect(note).toContain("다시보기는 만들지 않는 반");
+  });
+  it("Zoom 링크를 넣어 둔 회차는 그대로라고 적는다", () => {
+    expect(detectedNote({ liveLinked: false, replay: true, privacy: "unlisted" })).toContain("직접 넣어 둔 것이 그대로");
+  });
+  it("공개로 켰으면 ⚠ 를 붙인다 — 일부 공개면 붙이지 않는다", () => {
+    expect(detectedNote({ liveLinked: true, replay: true, privacy: "public" })).toContain("⚠ 공개로 켜져 있어요");
+    expect(detectedNote({ liveLinked: true, replay: true, privacy: "unlisted" })).not.toContain("⚠");
   });
 });
