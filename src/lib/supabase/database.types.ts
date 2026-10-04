@@ -789,6 +789,35 @@ export type Database = {
         }
         Relationships: []
       }
+      handover_checks: {
+        Row: {
+          checked_at: string
+          checked_by: string | null
+          checked_name: string | null
+          item: string
+        }
+        Insert: {
+          checked_at?: string
+          checked_by?: string | null
+          checked_name?: string | null
+          item: string
+        }
+        Update: {
+          checked_at?: string
+          checked_by?: string | null
+          checked_name?: string | null
+          item?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "handover_checks_checked_by_fkey"
+            columns: ["checked_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       homework_files: {
         Row: {
           content_type: string | null
