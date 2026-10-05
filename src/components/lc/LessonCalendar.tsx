@@ -8,11 +8,14 @@ import { AUDIO_KIND_HINT, AUDIO_KIND_LABEL } from "@/lib/lc-audio";
 import { WEEKDAY_KO, coveringGrid, labelKo, parseYmd } from "@/components/admin/sections/dates";
 
 export type LessonTrack = { id: number; kind: string; label: string | null; file_name: string };
-export type LessonSlot = { day: number; lessonNo: number; date: string | null; lesson: LessonTrack[]; homework: LessonTrack[] };
+/** locked = 그 강의 수업일 전(또는 수업일이 없다) — 음원을 싣지 않고 여는 날만 적는다 */
+export type LessonSlot = { day: number; lessonNo: number; date: string | null; locked: boolean; lesson: LessonTrack[]; homework: LessonTrack[] };
 
 /**
  * 수업일 달력에서 날짜를 고르면 그 강의 수업 음원·숙제 음원을 보여 준다 (2026-09-16 Alan 요청).
  * 학생은 "몇 강" 보다 "무슨 요일 수업" 으로 기억하므로 달력이 찾기 쉽다.
+ * **수업일 전 강의는 잠겨 있다** (2026-10-05 Alan — "해당 날짜가 안되면 잠금이고, 해당날짜 수업이 진행되면 하나씩 오픈") —
+ * 달력 칸에 자물쇠를 그리고, 누르면 "그 수업일에 열려요" 를 적는다. 음원은 서버가 싣지 않는다.
  * 날짜가 아직 없는 경우(반 배정 전·강사 미리보기)에는 강 버튼으로 고른다.
  */
 export function LessonCalendar({
@@ -33,7 +36,7 @@ export function LessonCalendar({
   const byDate = useMemo(() => new Map(slots.filter((s) => s.date).map((s) => [s.date!, s])), [slots]);
   const hasCalendar = year != null && month != null && byDate.size > 0;
 
-  // 기본 선택: 오늘 수업 → 지난 수업 중 마지막 → 음원이 있는 첫 강
+  // 기본 선택: 오늘 수업 → 지난 수업 중 마지막(= 가장 최근에 열린 강) → 첫 수업일 → 음원이 있는 첫 강
   const initial = useMemo(() => {
     const dated = slots.filter((s) => s.date).sort((a, b) => a.date!.localeCompare(b.date!));
     return (
@@ -65,7 +68,7 @@ export function LessonCalendar({
               {year}년 {month}월 수업일
             </h3>
             {trackLabel && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand-700">{trackLabel}</span>}
-            <span className="ml-auto text-xs text-mist">날짜를 누르면 그날 음원이 열려요</span>
+            <span className="ml-auto text-xs text-mist">수업일이 지난 강부터 열려요</span>
           </div>
 
           <div className="grid grid-cols-7 gap-1">
@@ -103,15 +106,29 @@ export function LessonCalendar({
                   type="button"
                   onClick={() => setPicked(slot.day)}
                   aria-pressed={on}
-                  aria-label={`${labelKo(cell.date)} ${slot.lessonNo}강 음원 ${count(slot)}개`}
+                  aria-label={slot.locked ? `${labelKo(cell.date)} ${slot.lessonNo}강 — 수업일에 열려요` : `${labelKo(cell.date)} ${slot.lessonNo}강 음원 ${count(slot)}개`}
                   className={cn(
                     "flex min-h-11 flex-col items-center justify-center rounded-lg p-0.5 leading-tight transition",
-                    on ? "bg-brand-500 text-white shadow-pink" : "bg-brand-50 text-brand-700 hover:bg-brand-100",
+                    slot.locked
+                      ? on
+                        ? "bg-ink-soft text-white"
+                        : "border border-dashed border-line bg-surface text-mist hover:border-brand-200"
+                      : on
+                        ? "bg-brand-500 text-white shadow-pink"
+                        : "bg-brand-50 text-brand-700 hover:bg-brand-100",
                     isToday && !on && "ring-2 ring-brand-400",
                   )}
                 >
                   <span className="text-xs font-black tabular-nums">{cell.day}</span>
-                  <span className={cn("text-[10px] font-bold tabular-nums", on ? "text-white/90" : "text-brand-600")}>{slot.lessonNo}강</span>
+                  {slot.locked ? (
+                    // 잠긴 강 — 자물쇠 (도형이 아니라 아이콘. 칸이 작아 강 번호 대신 둔다)
+                    <span className="flex items-center gap-0.5 text-[10px] font-bold tabular-nums">
+                      <Icon name="lock" size={10} className={on ? "brightness-0 invert" : "opacity-60"} />
+                      {slot.lessonNo}
+                    </span>
+                  ) : (
+                    <span className={cn("text-[10px] font-bold tabular-nums", on ? "text-white/90" : "text-brand-600")}>{slot.lessonNo}강</span>
+                  )}
                 </button>
               );
             })}
@@ -136,7 +153,7 @@ export function LessonCalendar({
               </button>
             ))}
           </div>
-          <p className="mt-2 text-xs text-mist">반 배정이 되면 수업 날짜에 맞춰 달력으로 보여 드려요.</p>
+          <p className="mt-2 text-xs text-mist">내 반 수업일이 정해지면 수업 날짜에 맞춰 강마다 열려요.</p>
         </section>
       )}
 
@@ -151,7 +168,19 @@ export function LessonCalendar({
             {current.date && holidays[current.date] && <span className="text-xs font-bold text-red-500">{holidays[current.date]}</span>}
           </div>
 
-          {count(current) === 0 ? (
+          {current.locked ? (
+            // 수업일 전 — 날짜가 있으면 그날 열린다고, 없으면(내 반 수업일이 이만큼 없다) 열리지 않는다고 적는다
+            <p className="flex flex-col items-center gap-2 rounded-xl2 border border-dashed border-line bg-surface px-4 py-8 text-center text-sm text-slate">
+              <Icon name="lock" size={28} />
+              {current.date ? (
+                <span>
+                  <strong className="text-ink">{labelKo(current.date)}</strong> 수업일에 열려요.
+                </span>
+              ) : (
+                <span>이 강은 이번 달 내 수업일이 없어 열리지 않아요.</span>
+              )}
+            </p>
+          ) : count(current) === 0 ? (
             <p className="rounded-xl2 border border-dashed border-line bg-surface px-4 py-8 text-center text-sm text-mist">
               이 강의 음원은 아직 올라오지 않았어요.
             </p>

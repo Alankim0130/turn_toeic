@@ -342,6 +342,7 @@ export type Database = {
       }
       class_materials: {
         Row: {
+          book_set: string | null
           content_type: string | null
           created_at: string
           file_name: string
@@ -350,12 +351,14 @@ export type Database = {
           id: number
           level: number
           note: string | null
+          seq: number | null
           subject: string
           title: string
           updated_at: string
           uploaded_by: string | null
         }
         Insert: {
+          book_set?: string | null
           content_type?: string | null
           created_at?: string
           file_name: string
@@ -364,12 +367,14 @@ export type Database = {
           id?: number
           level: number
           note?: string | null
+          seq?: number | null
           subject: string
           title: string
           updated_at?: string
           uploaded_by?: string | null
         }
         Update: {
+          book_set?: string | null
           content_type?: string | null
           created_at?: string
           file_name?: string
@@ -378,6 +383,7 @@ export type Database = {
           id?: number
           level?: number
           note?: string | null
+          seq?: number | null
           subject?: string
           title?: string
           updated_at?: string

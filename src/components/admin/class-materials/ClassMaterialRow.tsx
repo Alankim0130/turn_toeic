@@ -16,6 +16,7 @@ import {
   materialObjectPath,
   type MaterialSubject,
 } from "@/lib/class-materials";
+import { isRoundSet, ROUND_MAX, ROUND_SET_LABEL, ROUND_SETS } from "@/lib/class-rounds";
 import { formatBytes, shortDateTimeKST } from "@/lib/study";
 import type { UploadedFile } from "@/lib/upload";
 import { removeUploaded, uploadFile } from "@/lib/upload-client";
@@ -25,6 +26,9 @@ export type ClassMaterialLite = {
   id: number;
   level: number;
   subject: string;
+  /** 과정 A|B · 회차 — 둘 다 비었으면 칸이 생기기 전에 올린 자료 (학생에게 보이지 않는다) */
+  book_set: string | null;
+  seq: number | null;
   title: string;
   note: string | null;
   file_name: string;
@@ -36,10 +40,11 @@ export type ClassMaterialLite = {
 
 /**
  * 수업자료실 자료 한 줄 (2026-10-05) — 받기 · 수정 · 삭제.
- * 수정에서는 제목 · 안내 · 파일 교체에 더해 **레벨 · 과목을 옮길 수 있다** — 다른 칸에 잘못 올렸을 때 지우고 다시 올리지 않게.
- * 옮기면 이 칸 목록에서 빠지고 옮긴 칸에 선다.
+ * 수정에서는 제목 · 안내 · 파일 교체에 더해 **레벨 · 과목 · 과정 · 회차를 옮길 수 있다** — 다른 칸에 잘못 올렸을 때 지우고 다시 올리지 않게.
+ * 옮기면 이 칸 목록에서 빠지고 옮긴 칸에 선다. 과정 · 회차가 없는 옛 자료는 수정에서 둘을 골라야 저장된다 (그래야 학생에게 열린다).
+ * `plain` = 회차 카드 안에 놓일 때 (카드 안에 카드를 겹치지 않게 테두리만).
  */
-export function ClassMaterialRow({ item, levels, disabled }: { item: ClassMaterialLite; levels: number[]; disabled: boolean }) {
+export function ClassMaterialRow({ item, levels, disabled, plain = false }: { item: ClassMaterialLite; levels: number[]; disabled: boolean; plain?: boolean }) {
   const router = useRouter();
   const [mode, setMode] = useState<"view" | "edit" | "confirm">("view");
   const [busy, setBusy] = useState(false);
@@ -47,6 +52,8 @@ export function ClassMaterialRow({ item, levels, disabled }: { item: ClassMateri
   const [pending, startTransition] = useTransition();
   const levelRef = useRef<HTMLSelectElement>(null);
   const subjectRef = useRef<HTMLSelectElement>(null);
+  const setRef = useRef<HTMLSelectElement>(null);
+  const seqRef = useRef<HTMLSelectElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -61,6 +68,9 @@ export function ClassMaterialRow({ item, levels, disabled }: { item: ClassMateri
     const subjectValue = subjectRef.current?.value;
     if (!isMaterialSubject(subjectValue)) return setError("RC · LC 를 다시 골라 주세요.");
     const subject: MaterialSubject = subjectValue;
+    const bookSet = setRef.current?.value;
+    const seq = Number(seqRef.current?.value);
+    if (!isRoundSet(bookSet) || !Number.isInteger(seq) || seq < 1) return setError("과정과 회차를 골라 주세요.");
     const file = fileRef.current?.files?.[0] ?? null;
     if (file && file.size > CLASS_MATERIAL_MAX_BYTES) return setError("파일은 50MB 이하만 올릴 수 있어요.");
 
@@ -73,6 +83,8 @@ export function ClassMaterialRow({ item, levels, disabled }: { item: ClassMateri
         id: item.id,
         level,
         subject,
+        bookSet,
+        seq,
         title: titleRef.current?.value ?? "",
         note: noteRef.current?.value ?? "",
         file: uploaded,
@@ -101,7 +113,7 @@ export function ClassMaterialRow({ item, levels, disabled }: { item: ClassMateri
     });
 
   return (
-    <li className="card p-4">
+    <li className={plain ? "rounded-xl border border-line bg-paper p-3" : "card p-4"}>
       {/* 휴대폰: 제목 → 안내 → 버튼. 넓은 화면: 제목 줄 오른쪽에 버튼, 안내는 그 아래 한 줄 전체 */}
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div className="flex min-w-0 items-start gap-3 sm:col-start-1 sm:row-start-1">
@@ -113,6 +125,7 @@ export function ClassMaterialRow({ item, levels, disabled }: { item: ClassMateri
             <p className="mt-0.5 text-xs text-slate [overflow-wrap:anywhere]">
               {item.file_name} · {formatBytes(item.file_size)} · {shortDateTimeKST(item.created_at)} 올림{edited && <> · {shortDateTimeKST(item.updated_at)} 고침</>}
             </p>
+            {!isRoundSet(item.book_set) && <p className="mt-1 text-xs font-bold text-amber-700">과정 · 회차 미정 — 학생에게 보이지 않아요</p>}
           </div>
         </div>
 
@@ -145,7 +158,7 @@ export function ClassMaterialRow({ item, levels, disabled }: { item: ClassMateri
 
       {mode === "edit" && (
         <form onSubmit={onSave} className="mt-3 grid gap-2 rounded-xl border border-line bg-surface p-3">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div>
               <label htmlFor={`cm-level-${item.id}`} className="label !mb-1 text-xs">레벨</label>
               <select id={`cm-level-${item.id}`} ref={levelRef} defaultValue={String(item.level)} className="input !py-2 text-sm" disabled={busy}>
@@ -162,6 +175,28 @@ export function ClassMaterialRow({ item, levels, disabled }: { item: ClassMateri
                 {MATERIAL_SUBJECTS.map((s) => (
                   <option key={s} value={s}>
                     {MATERIAL_SUBJECT_LABEL[s]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor={`cm-set-${item.id}`} className="label !mb-1 text-xs">과정</label>
+              <select id={`cm-set-${item.id}`} ref={setRef} defaultValue={item.book_set ?? ""} className="input !py-2 text-sm" disabled={busy}>
+                {!isRoundSet(item.book_set) && <option value="">고르기</option>}
+                {ROUND_SETS.map((b) => (
+                  <option key={b} value={b}>
+                    {ROUND_SET_LABEL[b]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor={`cm-seq-${item.id}`} className="label !mb-1 text-xs">회차</label>
+              <select id={`cm-seq-${item.id}`} ref={seqRef} defaultValue={item.seq ?? ""} className="input !py-2 text-sm" disabled={busy}>
+                {item.seq == null && <option value="">고르기</option>}
+                {Array.from({ length: ROUND_MAX }, (_, k) => k + 1).map((n) => (
+                  <option key={n} value={n}>
+                    {n}회차
                   </option>
                 ))}
               </select>

@@ -20,6 +20,7 @@ import {
   STUDY_KINDS,
   termIndex,
 } from "@/lib/study";
+import { onlineSignupPhase, onlineStudyWindow, shortDay } from "@/lib/study-rounds";
 import { getMyOrders, getMyStudyEligibility, getMyStudySignups } from "@/app/my/_lib/queries";
 import { StudyCancelButton, StudySignupButton } from "./StudySignupButton";
 
@@ -187,7 +188,13 @@ export default async function StudyPage() {
               <div className="grid gap-4 lg:grid-cols-3">
                 {ordered.map((study, i) => {
                   const mine = mySignup.get(study.id);
-                  const open = study.status === "open";
+                  // 비대면은 개강일부터 달력 3일만 신청 · 취소한다 (2026-10-05 Alan "개강후 3일동안만 신청받고 4일째부터 시작").
+                  // 대면 · 단어는 그대로 신청 받는 중(open)이면 언제나. 실제로 막는 것은 DB 정책(private.study_signup_open)이다
+                  const online = study.kind === "online";
+                  const opens = study.term?.enrollment_opens_at ?? null;
+                  const studyWindow = online && opens ? onlineStudyWindow(opens) : null;
+                  const phase = online ? onlineSignupPhase(opens, today) : null;
+                  const open = study.status === "open" && (!online || phase === "open");
                   const canAct = !!user && eligible && open;
                   const slots = sortSlots(study.study_slots ?? []);
                   return (
@@ -199,10 +206,26 @@ export default async function StudyPage() {
                           </span>
                           <h3 className="text-lg font-black text-ink">{STUDY_KIND_LABEL[study.kind]}</h3>
                         </div>
-                        <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-bold", open ? "bg-brand-500 text-white" : "bg-ink text-white")}>
-                          {open ? "신청 받는 중" : "신청 마감"}
+                        <span
+                          className={cn(
+                            "shrink-0 rounded-full px-2.5 py-1 text-xs font-bold",
+                            open ? "bg-brand-500 text-white" : study.status === "open" && phase === "before" ? "bg-brand-50 text-brand-700" : "bg-ink text-white",
+                          )}
+                        >
+                          {open ? "신청 받는 중" : study.status === "open" && phase === "before" && studyWindow ? `${shortDay(studyWindow.signupFrom)}부터 신청` : "신청 마감"}
                         </span>
                       </div>
+                      {/* 비대면: 신청 기간 · 시작일 — 개강일(강사가 정한 날)부터 3일 신청, 4일째 시작 */}
+                      {studyWindow && (
+                        <p className="mt-3 rounded-xl bg-brand-50 px-3 py-2 text-sm text-ink-soft">
+                          신청{" "}
+                          <strong className="text-ink">
+                            {shortDay(studyWindow.signupFrom)} ~ {shortDay(studyWindow.signupUntil)}
+                          </strong>{" "}
+                          · <strong className="text-brand-700">{shortDay(studyWindow.startsOn)}부터 시작</strong>
+                          <span className="mt-0.5 block text-xs text-slate">개강일부터 3일 동안만 신청할 수 있어요.</span>
+                        </p>
+                      )}
                       {study.notice && <p className="mt-3 whitespace-pre-wrap rounded-xl bg-surface p-3 text-sm text-ink-soft">{study.notice}</p>}
 
                       {isSlotKind(study.kind) ? (
@@ -265,7 +288,13 @@ export default async function StudyPage() {
                             </div>
                           ) : (
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <p className="text-slate">수업일마다 그날 자료가 열려요.</p>
+                              <p className="text-slate">
+                                {studyWindow && phase === "after"
+                                  ? "신청 기간이 끝났어요. 다음 달 개강일부터 3일 동안 다시 신청할 수 있어요."
+                                  : studyWindow
+                                    ? `${shortDay(studyWindow.startsOn)}부터 수업일마다 그날 자료가 열려요.`
+                                    : "수업일마다 그날 자료가 열려요."}
+                              </p>
                               {canAct && <StudySignupButton studyId={study.id} slotId={null} label="신청하기" />}
                             </div>
                           )}

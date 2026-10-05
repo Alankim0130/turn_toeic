@@ -8,16 +8,18 @@ import { TermChips } from "@/components/admin/TermChips";
 import { CreateStudyCard } from "@/components/admin/studies/StudyKindCard";
 import { MaterialRow } from "@/components/admin/studies/MaterialRow";
 import { STUDY_STATUS_LABEL, termParam } from "@/lib/study";
-import { classDayRounds, roundRowCount } from "@/lib/study-rounds";
+import { classDayRounds, onlineStudyWindow, roundRowCount, shortDay } from "@/lib/study-rounds";
 import { pickTerm, termLabel, TERM_COLUMNS } from "../_lib/queries";
 import { requireStaff } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "비대면 자료", robots: { index: false } };
 
+
 /**
  * 비대면 자료 — **회차로 한 번 올리고 매달 다시 쓴다** (2026-09-22 Alan — "1회차, 2회차... 이렇게 설정하고
  * 매달 강사들이 설정한 일정표에 따라 적용되면 좋겠어", 한 번 올리고 재사용 · 수업일 전체 순서를 골랐다).
- * N회차 = 그 달 반 편성 달력의 N번째 수업일(월수금 + 화목금, 개강일~종강일 안). 붙이는 일은 DB 가 한다 (20260922124700).
+ * N회차 = 그 달 비대면 시작일(개강일+3)부터 N번째 수업일(월수금 + 화목금, 종강일까지). 붙이는 일은 DB 가 한다 (20260922124700 →
+ * 2026-10-05 Alan "개강후 3일동안만 신청받고 4일째부터 시작", 20261005120000).
  * 위 달 칩은 "그 달엔 몇 회차가 며칠에 열리나" 를 미리 보는 것이다 — 자료는 달마다 따로 올리지 않는다.
  */
 export default async function StudyMaterialsPage({ searchParams }: { searchParams: Promise<{ term?: string }> }) {
@@ -40,7 +42,9 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
 
   const items = itemRows ?? [];
   const bySeq = new Map(items.map((i) => [i.seq, i]));
-  const days = term ? classDayRounds((classDates ?? []).map((d) => d.date), { opens: term.enrollment_opens_at, closes: term.closes_at }) : [];
+  // 개강일이 없는 달은 회차를 셀 수 없다 (시작일 = 개강일 + 3)
+  const studyWindow = term?.enrollment_opens_at ? onlineStudyWindow(term.enrollment_opens_at) : null;
+  const days = term && studyWindow ? classDayRounds((classDates ?? []).map((d) => d.date), { opens: studyWindow.startsOn, closes: term.closes_at }) : [];
   const rows = roundRowCount(days.length, Math.max(0, ...items.map((i) => i.seq)));
   const open = Math.min(days.length, items.length ? Math.max(...items.map((i) => i.seq)) : 0);
   const monthLabel = term ? `${term.month}월` : "";
@@ -51,7 +55,7 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
       <PageHeader
         icon="online"
         title="비대면 자료"
-        description="회차마다 한 번 올려 두면 매달 그 달 수업일 순서대로 열려요 — 1회차는 그 달 첫 수업일, 2회차는 둘째 수업일. 신청한 수강생은 그 날부터 받아요."
+        description="회차마다 한 번 올려 두면 매달 그 달 수업일 순서대로 열려요. 신청은 개강일부터 3일, 1회차는 4일째부터의 첫 수업일이에요. 신청한 수강생은 그 날부터 받아요."
       >
         <Link href="/admin/study" className="btn-secondary">
           <Icon name="study" size={18} />
@@ -69,6 +73,12 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
                 <span className="font-black text-ink">{termLabel(term)}</span> 수업일 <strong className="text-brand-600">{days.length}</strong>일 → 1~{days.length || 0}회차가 그 날짜에 열려요
                 {study ? <> · 비대면스터디 {STUDY_STATUS_LABEL[study.status] ?? study.status}</> : null}
               </p>
+              {studyWindow && (
+                <p className="mt-0.5">
+                  신청 <strong className="text-ink">{shortDay(studyWindow.signupFrom)} ~ {shortDay(studyWindow.signupUntil)}</strong> (개강일부터 3일) · 시작{" "}
+                  <strong className="text-ink">{shortDay(studyWindow.startsOn)}</strong>
+                </p>
+              )}
               <p className="mt-0.5">
                 올린 자료 <strong className="text-brand-600">{items.length}</strong>회차
                 {days.length > 0 && open < days.length && <> · 이 달엔 {open + 1}회차부터 자료가 비어 있어요</>}

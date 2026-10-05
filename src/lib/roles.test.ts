@@ -300,13 +300,13 @@ describe("조교에게는 학생 이름만 — 전화번호 · 대학 · 학과 
 });
 
 /**
- * LC 교재 · 음원은 학생에게 **내가 LC 를 듣는 레벨만**, 수업자료실은 **내가 듣는 레벨 × 과목만** — 화면이 아니라 DB 가 막는다
- * (2026-10-03 권한 재점검 → 2026-10-05 Alan "RC단과 학생들은 음원파일과 LC수업자료실에 접근 안되는거 맞지?" 로 과목까지).
- * 그전 정책 `is_staff() or has_term_access(null)` 은 수강 중이면 모든 레벨이라, 음원 주소(/files/audio/숫자)의 숫자만 바꾸면 다른 레벨 음원이 재생됐고,
- * 2026-10-03 ~ 10-05 에는 레벨만 봐서 RC 단과(주3일 60분 RC) 학생에게 LC 음원과 LC 수업자료가 열렸다.
+ * LC 교재 · 음원 · 수업자료실은 학생에게 **내 반의 과정 칸, 그 회차 수업일부터** — 화면이 아니라 DB 가 막는다
+ * (2026-10-03 권한 재점검 → 2026-10-05 Alan "RC단과 학생들은 음원파일과 LC수업자료실에 접근 안되는거 맞지?" 로 과목까지 →
+ * 같은 날 "LC음원듣기와 자료게시판도 수업날짜에 맞춰서 오픈 … 해당 날짜가 안되면 잠금" 으로 과정 · 회차 수업일까지).
+ * 그전 정책 `is_staff() or has_term_access(null)` 은 수강 중이면 모든 레벨이라, 음원 주소(/files/audio/숫자)의 숫자만 바꾸면 다른 레벨 음원이 재생됐다.
  * 저장소 정책(lc-audio · lc-textbooks · class-materials)은 이 표들의 행이 보이는지로 판정하므로 조회 정책이 곧 파일의 막이다.
  */
-describe("LC 교재 · 음원 · 수업자료실 조회는 내 레벨 × 과목으로 좁힌다 (마이그레이션을 순서대로 재생한 마지막 모양)", () => {
+describe("LC 교재 · 음원 · 수업자료실 조회는 내 과정 칸 · 열린 회차로 좁힌다 (마이그레이션을 순서대로 재생한 마지막 모양)", () => {
   const DIR = "supabase/migrations";
   const sqlOf = (f: string) =>
     readFileSync(join(DIR, f), "utf8")
@@ -325,23 +325,31 @@ describe("LC 교재 · 음원 · 수업자료실 조회는 내 레벨 × 과목�
     const selects = [...live].filter(([key, body]) => key.startsWith(`${table} ·`) && /for select/.test(body));
     expect(selects.length, `${table} 조회 정책을 못 찾았다 (문장 모양이 바뀌면 이 테스트가 헛돈다)`).toBeGreaterThan(0);
     for (const [key, body] of selects) {
-      // has_term_access 는 레벨도 과목도 보지 않는다 — 이것으로 열면 모든 레벨이 다시 열린다
+      // has_term_access 는 레벨도 과목도 날짜도 보지 않는다 — 이것으로 열면 모든 레벨 · 모든 회차가 다시 열린다
       expect(body, `${key}`).not.toMatch(/has_term_access|has_section_access|using\s*\(\s*true\s*\)/);
+      // 레벨만 · 과목만 보는 옛 갈래가 남으면 수업일 전 음원 · 자료가 다시 열린다
+      expect(body, `${key}`).not.toMatch(/my_lc_levels|my_subject_levels/);
     }
     return selects;
   };
 
-  it.each(["lc_books", "lc_audio_tracks"])("%s — 학생 갈래는 my_lc_levels(내가 LC 를 듣는 레벨)를 거친다", (table) => {
-    for (const [key, body] of selectsOf(table)) expect(body, `${key}`).toContain("private.my_lc_levels()");
+  it("lc_books — 학생 갈래는 내 LC 과정 칸(my_round_cells — 그 교재를 쓰는 내 반이 있다)을 거친다", () => {
+    for (const [key, body] of selectsOf("lc_books")) {
+      expect(body.replace(/\s+/g, " "), `${key}`).toContain("array[format('%s:lc:%s', level, book_set)] <@ (select private.my_round_cells())");
+    }
   });
 
-  it("class_materials — 자료의 과목으로 가른다 (RC 자료는 RC 를 듣는 레벨, LC 자료는 LC 를 듣는 레벨)", () => {
+  it("lc_audio_tracks — 학생 갈래는 열린 회차(my_open_rounds — 그 강의 내 수업일이 지났다)를 거친다", () => {
+    for (const [key, body] of selectsOf("lc_audio_tracks")) {
+      expect(body.replace(/\s+/g, " "), `${key}`).toContain("array[format('%s:lc:%s:%s', b.level, b.book_set, lc_audio_tracks.day)] <@ (select private.my_open_rounds())");
+    }
+  });
+
+  it("class_materials — 자료의 레벨 · 과목 · 과정 · 회차가 열린 회차여야 한다 (과정 · 회차가 없는 자료는 학생에게 닫힌다)", () => {
     for (const [key, body] of selectsOf("class_materials")) {
       const flat = body.replace(/\s+/g, " ");
-      expect(flat, `${key}`).toContain("subject = 'rc' and array[level] <@ (select private.my_subject_levels('rc'))");
-      expect(flat, `${key}`).toContain("subject = 'lc' and array[level] <@ (select private.my_subject_levels('lc'))");
-      // 과목을 보지 않는 내 레벨 갈래가 남으면 RC 단과에게 LC 자료가 다시 열린다
-      expect(flat, `${key}`).not.toContain("my_lc_levels");
+      expect(flat, `${key}`).toContain("book_set is not null and seq is not null");
+      expect(flat, `${key}`).toContain("array[format('%s:%s:%s:%s', level, subject, book_set, seq)] <@ (select private.my_open_rounds())");
     }
   });
 
@@ -355,15 +363,16 @@ describe("LC 교재 · 음원 · 수업자료실 조회는 내 레벨 × 과목�
     return body.replace(/\s+/g, " ");
   };
 
-  it("my_subject_levels — 시간 단위 반은 그 반의 과목, 과목 칸이 빈 반(묶음 · 속성반 · 방학달 통짜)은 두 과목 모두", () => {
-    const body = fnBody("my_subject_levels");
+  it.each(["my_round_cells", "my_open_rounds"])("%s — 내 반(my_section_ids)의 과정 칸, 과목 칸이 빈 반은 두 과목, 과정 없는 반(묶음 · 속성반)은 뺀다", (name) => {
+    const body = fnBody(name);
     expect(body).toContain("public.my_section_ids()");
-    expect(body).toContain("(s.subject is null or s.subject = p_subject)");
-    // 속성반이 함께 듣는 레벨(650+ 중급속성 = 650 · 850)
-    expect(body).toContain("array[c.target_score] || c.includes_levels");
+    expect(body).toContain("case when s.subject is null then array['rc', 'lc'] else array[s.subject] end");
+    expect(body).toContain("s.book_set is not null");
+    // 테스트 등급을 켠 스태프는 그 등급으로 — 등급 조건이 빠지면 회원(member)에게도 열린다
+    expect(body).toContain("(select private.user_role()) in ('student', 'instructor', 'admin', 'assistant')");
   });
 
-  it("my_lc_levels = my_subject_levels('lc') — LC 교재 · 음원은 LC 를 듣는 레벨만 (RC 단과는 0권)", () => {
-    expect(fnBody("my_lc_levels").trim()).toBe("select private.my_subject_levels('lc')");
+  it("my_open_rounds — 그 회차 수업일이 오늘(KST)이거나 지났다", () => {
+    expect(fnBody("my_open_rounds")).toContain("d.date <= private.today_kst()");
   });
 });
