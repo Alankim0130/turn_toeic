@@ -241,3 +241,41 @@ export function applyNoteChange(runs: NoteRun[], start: number, end: number, cha
 
 /** 조각 전체 글자 수 (코드 포인트) */
 export const runsLength = (runs: NoteRun[]) => runs.reduce((n, r) => n + runLength(r), 0);
+
+const WORD_CHAR = /[\p{L}\p{N}_'’]/u;
+
+/**
+ * 커서만 둔 채 서식 버튼을 누르면 그 단어 전체에 — 워드와 같은 동작 (2026-10-05 Alan "다시 그 글자에 진하게를 또 클릭하면 진하게가 취소되면 좋겠어.
+ * 워드에서 적용되는 방법"). 커서가 단어 안이나 끝에 붙어 있으면 그 단어의 [시작, 끝), 빈칸 · 문장부호 사이면 null
+ */
+export function wordRangeAt(text: string, caret: number): [number, number] | null {
+  const chars = Array.from(text);
+  let start = caret;
+  let end = caret;
+  while (start > 0 && WORD_CHAR.test(chars[start - 1])) start--;
+  while (end < chars.length && WORD_CHAR.test(chars[end])) end++;
+  return end > start ? [start, end] : null;
+}
+
+/**
+ * 고른 부분의 서식 — 도구줄 버튼을 눌린 모양으로 보이는 데 쓴다. 고른 글자가 **모두** 그 서식일 때만 켜진다 (그래야 누르면 풀린다).
+ * 커서만 있으면 바로 앞 글자의 서식 (맨 앞이면 뒤 글자)
+ */
+export function styleAt(runs: NoteRun[], start: number, end: number): NoteStyle {
+  const styles: NoteStyle[] = [];
+  let pos = 0;
+  const from = end > start ? start : Math.max(0, start - 1);
+  const to = end > start ? end : from + 1;
+  for (const r of runs) {
+    const len = runLength(r);
+    if (pos < to && pos + len > from) styles.push(r.style);
+    pos += len;
+  }
+  if (!styles.length) return {};
+  const [first, ...rest] = styles;
+  const out: NoteStyle = {};
+  for (const k of ["bold", "italic", "underline", "mark"] as const) if (styles.every((s) => s[k])) out[k] = true;
+  if (first.color && rest.every((s) => s.color === first.color)) out.color = first.color;
+  if (first.size && rest.every((s) => s.size === first.size)) out.size = first.size;
+  return out;
+}

@@ -100,3 +100,28 @@ describe("바로 보이는 편집기의 조각 연산", () => {
     expect(runsToNote(spliceRuns([], 0, 0, "처음"))).toBe("처음");
   });
 });
+
+import { styleAt, wordRangeAt } from "./note-format";
+
+describe("워드처럼 — 커서만 두면 그 단어, 버튼은 눌린 모양", () => {
+  it("단어 안 · 끝의 커서는 그 단어", () => {
+    expect(wordRangeAt("오늘 숙제는 Part5", 4)).toEqual([3, 6]);
+    expect(wordRangeAt("오늘 숙제는 Part5", 6)).toEqual([3, 6]);
+    expect(wordRangeAt("오늘 숙제는 Part5", 10)).toEqual([7, 12]);
+    expect(wordRangeAt("a  b", 2)).toBeNull();
+  });
+
+  it("고른 글자가 모두 그 서식일 때만 켜진다", () => {
+    const runs = parseNote("[b]가나[/b]다[color=red][b]라[/b][/color]");
+    expect(styleAt(runs, 0, 2)).toEqual({ bold: true });
+    expect(styleAt(runs, 0, 3)).toEqual({});
+    expect(styleAt(runs, 4, 4)).toEqual({ bold: true, color: "red" });
+    expect(styleAt(runs, 0, 0)).toEqual({ bold: true });
+  });
+
+  it("굵은 단어에 커서만 두고 다시 누르면 풀린다", () => {
+    const runs = parseNote("오늘 [b]숙제[/b] 끝");
+    const w = wordRangeAt(runsText(runs), 4)!;
+    expect(runsToNote(applyNoteChange(runs, w[0], w[1], { kind: "flag", flag: "bold" }))).toBe("오늘 숙제 끝");
+  });
+});
