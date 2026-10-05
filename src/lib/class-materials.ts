@@ -1,5 +1,5 @@
 import { fileExt, MB, objectName } from "./upload";
-import { parseNote, runsText, sliceRuns, trimRuns, type NoteRun } from "./note-format";
+import { parseDoc, parseNote, runsText, sliceRuns, trimDoc, trimRuns, type NoteAlign, type NoteRun } from "./note-format";
 
 /**
  * 수업자료실 — 레벨 × RC/LC × 과정 A/B × 회차 (2026-10-05 Alan — "지금 수업자료실이 없어! … 레벨별 구분과 RC, LC가 구분되어야해." →
@@ -60,10 +60,10 @@ export function notePreview(note: string): { folded: boolean; preview: string; c
  * 서식(`note-format.ts`)을 살린 채 접기 — 접을지 · 몇 자인지 · 앞부분은 **학생에게 보이는 글자**로 정하고(태그는 세지 않는다),
  * 앞부분을 그만큼 서식째 자른다. `MaterialNote` 가 그린다
  */
-export function noteView(note: string): { folded: boolean; preview: NoteRun[]; full: NoteRun[]; chars: number } {
-  const full = trimRuns(parseNote(note));
+export function noteView(note: string): { folded: boolean; preview: NoteRun[]; full: NoteRun[]; aligns: NoteAlign[]; chars: number } {
+  const { runs: full, aligns } = trimDoc(parseDoc(note));
   const { folded, preview, chars } = foldPlain(runsText(full));
-  return { folded, preview: folded ? sliceRuns(full, Array.from(preview).length) : full, full, chars };
+  return { folded, preview: folded ? sliceRuns(full, Array.from(preview).length) : full, full, aligns, chars };
 }
 
 function foldPlain(text: string): { folded: boolean; preview: string; chars: number } {

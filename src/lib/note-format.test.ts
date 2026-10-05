@@ -125,3 +125,51 @@ describe("워드처럼 — 커서만 두면 그 단어, 버튼은 눌린 모양"
     expect(runsToNote(applyNoteChange(runs, w[0], w[1], { kind: "flag", flag: "bold" }))).toBe("오늘 숙제 끝");
   });
 });
+
+import { OBJ, alignDoc, docToNote, imageRun, noteImagePaths, parseDoc, resizeImage, spliceDoc, trimDoc } from "./note-format";
+
+describe("줄 정렬 · 그림 (2026-10-05 공지)", () => {
+  it("줄 맨 앞의 [center] · [right] 만 정렬, 줄 가운데면 글자", () => {
+    const d = parseDoc("[center]제목\n본문 [right]끝\n[right]서명");
+    expect(d.aligns).toEqual(["center", "left", "right"]);
+    expect(runsText(d.runs)).toBe("제목\n본문 [right]끝\n서명");
+    expect(docToNote(d)).toBe("[center]제목\n본문 [right]끝\n[right]서명");
+  });
+
+  it("그림은 한 글자, 너비와 함께 다시 읽힌다", () => {
+    const d = parseDoc("앞\n[center][img=images/a-1.webp w=50]\n뒤");
+    expect(d.runs[1]).toEqual({ text: OBJ, style: { img: { path: "images/a-1.webp", w: 50 } } });
+    expect(docToNote(d)).toBe("앞\n[center][img=images/a-1.webp w=50]\n뒤");
+    expect(noteImagePaths("[img=images/a.png][img=images/a.png w=30]")).toEqual(["images/a.png"]);
+    expect(parseDoc("[img=images/a.png w=5]").runs[0].style.img?.w).toBe(10);
+  });
+
+  it("그림 옆에 친 글자는 그림이 되지 않는다 · 너비 바꾸기 · 지우기", () => {
+    let d = parseDoc("[img=images/a.png]");
+    d = spliceDoc(d, 1, 1, "글");
+    expect(docToNote(d)).toBe("[img=images/a.png]글");
+    d = resizeImage(d, 0, 75);
+    expect(docToNote(d)).toBe("[img=images/a.png w=75]글");
+    expect(docToNote(spliceDoc(d, 0, 1, ""))).toBe("글");
+  });
+
+  it("줄바꿈은 그 줄의 정렬을 잇고, 지운 줄의 정렬은 빠진다", () => {
+    let d = parseDoc("[center]가나\n[right]다");
+    d = spliceDoc(d, 1, 1, "\n");
+    expect(d.aligns).toEqual(["center", "center", "right"]);
+    d = spliceDoc(d, 1, 4, "");
+    expect(docToNote(d)).toBe("[center]가다");
+    expect(docToNote(spliceDoc(d, 1, 1, [{ text: "\n", style: {} }, imageRun("images/b.png", 50)]))).toBe("[center]가\n[center][img=images/b.png w=50]다");
+  });
+
+  it("정렬 버튼 — 한 번 더 누르면 왼쪽으로", () => {
+    const d = parseDoc("가\n나\n다");
+    const c = alignDoc(d, 0, 3, "center");
+    expect(c.aligns).toEqual(["center", "center", "left"]);
+    expect(alignDoc(c, 0, 0, "center").aligns).toEqual(["left", "center", "left"]);
+  });
+
+  it("앞뒤 빈 줄을 걷어 내면 정렬도 그만큼 빠진다", () => {
+    expect(trimDoc(parseDoc("\n\n[center]가\n")).aligns).toEqual(["center"]);
+  });
+});

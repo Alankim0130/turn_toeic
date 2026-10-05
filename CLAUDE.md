@@ -87,11 +87,11 @@
    중급속성은 650+850, 실전속성은 750+850 이 저절로 함께 열린다. **화면에서 레벨 숫자로 거르지 말 것** (작업 원칙 4).
    **`src/app/my/_lib/queries.test.ts` 가 소스를 읽어 못박는다 — `queries.ts` 한 파일이 아니라 학생이 닿는 파일 전부**
    (`src/app/my` · `(public)` · `attend` · `(auth)` · `auth` · `src/components`(관리자 조각 빼고) · `src/lib/auth.ts`).
-   스태프에게 열린 **스물두 표**를 읽는 함수에 좁히기(`my_section_ids` · 내 시간표의 `my_schedule_section_ids`(개강 전 예비등록 반까지, 2026-10-02) · `user_id`·`student_id` · 내 id 로 넣는 행 ·
+   스태프에게 열린 **스물세 표**를 읽는 함수에 좁히기(`my_section_ids` · 내 시간표의 `my_schedule_section_ids`(개강 전 예비등록 반까지, 2026-10-02) · `user_id`·`student_id` · 내 id 로 넣는 행 ·
    계정 통합의 `from_user`·`to_user` · 부른 쪽이 준 `section_id`·`study_id` 목록 · 내 등록에서 뽑은 기수 `signupTerms` · 내 과정 칸 · 열린 회차 `roundCells`·`cellLevels`·`roundDates`(2026-10-05))가
    없으면 `npm test` 가 깨지고, **걸린 곳을 한꺼번에** 적는다 (첫 실패가 같은 표의 다른 구멍을 가리지 않게).
    **반·기수로 열리는 것** `session_dates`·`replays`·`session_live_links`·`section_live_links`·`study_materials`·`special_lectures` ·
-   **내 과정 칸 · 수업일로 열리는 것** `lc_books`·`lc_audio_tracks`(2026-10-03 레벨 → 10-05 과목 → 같은 날 **과정 칸 · 그 강의 수업일**. 강사·관리자는 전부. 도메인 규칙 7 "LC 음원")·`class_materials`(수업자료실, 2026-10-05 — 레벨 × 과목 × 과정 × 회차, 그 회차 수업일부터. 도메인 규칙 7-4) ·
+   **내 과정 칸 · 수업일로 열리는 것** `lc_books`·`lc_audio_tracks`(2026-10-03 레벨 → 10-05 과목 → 같은 날 **과정 칸 · 그 강의 수업일**. 강사·관리자는 전부. 도메인 규칙 7 "LC 음원")·`class_materials`(수업자료실, 2026-10-05 — 레벨 × 과목 × 과정 × 회차, 그 회차 수업일부터. 도메인 규칙 7-4)·`class_notices`(수업자료실 공지, 같은 날 — 범위 레벨 × 과목, 수강 중) ·
    **사람으로 열리는 것** `homework_submissions`·`enrollment_orders`·`enrollment_verifications`·`enrollments`·`lecture_signups`·
    `textbook_orders`·`study_signups`·`study_checkins`·`student_messages`·`account_merge_requests`·`attendance_stamps`·
    `attendance_events`·`profiles`. 목록은 **마이그레이션을 재생해 select 정책에 스태프·조교 갈래가 있는 표**로 뽑았다
@@ -118,7 +118,7 @@
 운영 DB 의 실제 설정을 조회해 확인한 것 — **바꿀 때 이 상태를 깨지 않는다.**
 - **모든 public 표(31개)에 RLS 가 켜져 있고 정책이 있다.** 쓰기 정책은 스태프 함수(`is_staff`·`is_admin`·`is_crew`·`can_manage_section`)나
   "본인 행 + 자격 조건" 둘 중 하나다. 새 표를 만들면 **RLS 켜기 + 정책 + grant** 세 가지를 한 마이그레이션에 같이 넣을 것.
-- **버킷 8개 전부 private**(`receipts` · `homework` · `lc-audio` · `lc-textbooks` · `study-materials` · `study-checkins` · `avatars` · `class-materials`), 크기 제한 있음
+- **버킷 9개 전부 private**(`receipts` · `homework` · `lc-audio` · `lc-textbooks` · `study-materials` · `study-checkins` · `avatars` · `class-materials` · `class-notices`), 크기 제한 있음
   (`receipts` 10MB 이미지·PDF, `homework` 20MB 이미지, `lc-audio` 50MB 오디오 · 스태프만 올리는 `study-materials` · `class-materials` 는 50MB · 형식 제한 없음).
   본인 폴더 업로드(`{uid}/…`)·본인/스태프 조회 정책. 파일은 `/files/{kind}/{id}` 가 **사용자 세션으로 행을 읽고**(RLS) 서명 URL 로 보낸다.
 - 서비스 롤은 서버 액션·`src/lib`·API 라우트에서만 (`server-only`). 클라이언트 번들에는 없다. 비밀은 `.env*`(gitignore) 에만 있고 저장소에 없다.
@@ -2182,6 +2182,25 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 - 메뉴 아이콘은 기존 `download`(구름 + 화살표)다 — 전용 아이콘을 힉스필드로 만들었지만 그날 작업 환경에서 결과 CDN 이 막혀 받지 못했다. 바꾸려면 `public/icons/` 에 넣고 `site.ts` 두 줄.
 - **없는 것**: 새 자료 알림, 조교 업로드, 회차를 날짜로 직접 고르기(회차는 늘 그 반의 N번째 수업일이다). 필요하면 Alan 에게 묻고 만든다.
 
+**공지사항 — 1회차 앞, 게시판처럼** (2026-10-05 Alan — "수업자료실에서 1회차 앞에 공지사항을 올릴 수 있는 곳 … 여러개" · "안내글에서 쓰는 글 편집기능이 다 들어가면 좋겠어.
+추가적으로 이미지도 중간에 추가 … 블로그랑 같다고 생각하면" · "이미지 사이즈 조절" · "줄 단위로 왼쪽정렬, 가운데정렬, 오른쪽 정렬" ·
+범위 "강사가 직접 지정할 수 있으면 좋겠어. 전체공지인지, 레벨별이라면 레벨을 선택, RC LC도 선택" · "제목을 누르면 펼침이 아니라, 해당 공지 페이지가 새로 열리면 좋겠어", 마이그레이션 20261005160000)
+- 표 `class_notices`(제목 100자 · 본문 5만 자 · `levels` int[] · `subjects` text[] · `author_name`) — **범위는 levels(비우면 모든 레벨) × subjects(비우면 RC · LC 둘 다), 둘 다 비면 전체 공지.**
+  학생은 **지금 수강 중**일 때만: 전체 공지 = `has_term_access(null)`, 범위 공지 = 내 과정 칸(`my_round_cells`) 중 하나가 레벨 · 과목에 맞는다 (RC 단과에게 LC 공지는 없다).
+  앱 `noticeVisible`(`src/lib/class-notices.ts`, `class-notices.test.ts`)이 같은 규칙이고 **바꾸면 둘 다**. 학생 조회(`getMyClassNotices` · `getMyClassNotice`)는 이것으로 한 번 더 좁힌다 (등급 체계 10).
+  쓰기는 강사·관리자 (조교 아님). 작성자 이름은 박아 둔다(학생은 profiles 를 못 읽는다).
+- **관리자**: `/admin/class-materials` 의 정보 카드 아래 · 1회차 위 `공지사항` — 지금 보는 레벨 · 과목 학생에게도 보이는 공지(전체 포함)를 `공지 · 제목 · 범위 · 작성자 · 날짜` 줄로(`NoticeList`),
+  `공지 올리기` → `/admin/class-materials/notices/new`(보던 레벨이 미리 골라짐), 줄을 누르면 `/admin/class-materials/notices/[id]` 고치기 · 지우기. 편집기가 곧 학생 모양이라 보기 화면은 따로 없다.
+- **학생**: `/my/materials` 맨 위(레벨 칸 위)에 내 공지 목록, 누르면 **공지 페이지** `/my/materials/notices/[id]`(남의 범위면 404).
+- **본문 = 안내와 같은 `NoteEditor`** + 사진. 사진은 브라우저가 private 버킷 `class-notices/images/{uuid}` 에 바로 올리고(10MB · jpg/png/webp/gif · 한 공지 30장) 글에는 `[img=경로 w=너비%]` 만 든다.
+  사진은 한 줄에 하나로 들어가고(앞뒤 줄바꿈), 누르면 크기 25 · 50 · 75 · 100% · 밀어서 10~100% · 지우기. 붙여 넣은 그림 파일도 올린다.
+  **보여 줄 때 보는 사람의 세션으로 서명 주소**(`signNoteImages`, 1시간)를 만든다 — 저장소 조회 정책이 "그 사진을 품은 공지가 보이는 사람" 이라 남의 범위 공지 사진은 주소가 안 나온다.
+  공지를 고치면서 뺀 사진 · 지운 공지의 사진은 저장소에서 지운다. **올리기만 하고 저장하지 않은 사진은 남는다**(화면에도 권한에도 영향 없음).
+- 로컬 Postgres 16 에서 정책을 시험했다(2026-10-05): RC 단과 650 = 전체 · 650 · RC 전체 공지(LC 공지 · 그 사진 0), 속성반(650 RC A · LC B + 850 LC A) = 650 LC 까지, 수강 중 아님 = 0, 스태프 = 전부, 학생 쓰기 = RLS 거부.
+
+**글 편집기 공통 — 줄 정렬** (같은 날): 안내 · 공지 모두 `왼쪽 · 가운데 · 오른쪽` 정렬 버튼(커서가 있는 줄 · 고른 줄들, 다시 누르면 왼쪽). 글에는 줄 맨 앞 `[center]` · `[right]` 로 든다(줄 가운데에 있으면 글자).
+편집기는 `src/components/note/NoteEditor.tsx`(줄마다 `<div>`), 그리기는 `src/components/note/NoteBody.tsx` — 안내(`NoteTextarea` · `MaterialNote`)도 이 둘을 쓴다.
+
 ### 8. 관리자 알림 · 네이버 예약 (2026-09-15 Alan 요청)
 
 - **알림은 웹 푸시만 쓴다.** 이메일·문자·카카오톡 알림은 쓰지 않는다. 받는 사람은 스태프(강사·관리자)뿐이다.
@@ -2809,6 +2828,13 @@ create table class_materials (             -- 레벨 × 과목 × 과정 × 회�
 -- private.my_open_rounds() : 열린 회차 'level:subject:set:seq' — 그 칸 반의 seq 번째 수업일이 오늘(KST)이거나 지났다. LC 음원 · 수업자료실 조회
 -- (private.my_subject_levels · my_lc_levels(20261005110000) 는 남아 있지만 정책이 더 쓰지 않는다)
 
+create table class_notices (               -- 수업자료실 공지 (20261005160000 — 도메인 규칙 7-4 "공지사항")
+  id bigint primary key, title text,       -- 1~100자
+  body text,                               -- 서식 글 5만 자 · 사진은 [img=images/… w=NN] (버킷 class-notices)
+  levels int[], subjects text[],           -- 범위 — 비우면 모든 레벨 / RC · LC 둘 다. 둘 다 비면 전체 공지
+  author_id uuid, author_name text, created_at timestamptz, updated_at timestamptz
+);
+
 -- ─── 인수인계 체크리스트 (마이그레이션 20261004110000) ───
 create table handover_checks (            -- 끝낸 항목. 내용은 docs/HANDOVER.md, 이 표는 누가 · 언제만. 강사·관리자만 조회 · 체크 · 풀기
   item text primary key,                   -- 문서의 항목 번호 (0-1 · 3-B …, check 꼴 ^[0-9]{1,2}-[0-9A-Z]{1,2}$)
@@ -3000,7 +3026,7 @@ where p.role='student'
 | `/my/study` | 내 스터디: 신청한 스터디·시간대, 비대면 자료 받기(해당 날짜부터) + **날짜마다 인증하기**(풀이 사진) | 그 달 수강생 |
 | `/my/notifications` | **알림** — 선생님이 보낸 알림 + **문의 답변** + **결석 안내** + 불라방 수업 시작 알림(앱 안 알림함). 열면 읽음 처리 | member |
 | `/my/homework` | 숙제업로드 — **내 수업 달력**에서 날짜를 고르면 그 날 레벨의 `RC 제출`·`LC 제출` (중급속성·실전속성은 두 레벨). 사진 최대 10장 + 질문(선택). 낸 숙제는 **길쭉한 카드 한 줄**(`제출함` → `강사 점검 완료! 수고하셨습니다!`)이고 사진은 접혀 있다. 강사 코멘트는 펼쳐 둔다 | student |
-| `/my/materials` | **수업자료실** — 내 과정 칸의 자료를 RC · LC 두 칸으로 (RC 단과면 LC 칸은 잠김 · 속성반은 레벨 칸도). **일정표**: 열린 회차(자료가 있는 것, 최근 수업일부터) + 다음 수업일(자물쇠) · PDF·그림은 `열기` + `받기`, 나머지는 `받기` · 강사가 붙인 안내 · 스크립트는 길면 앞 네 줄 + `전체 보기` (2026-10-05, 규칙 7-4) | student |
+| `/my/materials` | **수업자료실** — 맨 위 **공지사항** 목록(누르면 `/my/materials/notices/[id]` 공지 페이지 — 글 · 사진, 2026-10-05) · 내 과정 칸의 자료를 RC · LC 두 칸으로 (RC 단과면 LC 칸은 잠김 · 속성반은 레벨 칸도). **일정표**: 열린 회차(자료가 있는 것, 최근 수업일부터) + 다음 수업일(자물쇠) · PDF·그림은 `열기` + `받기`, 나머지는 `받기` · 강사가 붙인 안내 · 스크립트는 길면 앞 네 줄 + `전체 보기` (2026-10-05, 규칙 7-4) | student |
 | `/my/lc-audio` | LC 음원듣기: **내 LC 과정 칸의 교재**만 · 카드에 열린 음원 수와 다음에 열리는 강 (RC 단과면 없다 — 수업자료실로 안내, 2026-10-05) | student |
 | `/my/lc-audio/[bookId]` | 그 교재의 **수업일 달력** → 날짜를 누르면 그 강의 수업 음원·숙제 음원 (토익 전용 플레이어: 배속·구간반복). **수업일 전 강은 자물쇠 — 그 수업일에 열린다** (2026-10-05) | student |
 
@@ -3035,7 +3061,7 @@ where p.role='student'
 | `/admin/study/plan` | **스터디 시간 설정** — 기수별 대면·단어 시간대 추가, 비대면 열기. 2026-10-02 부터 **여기뿐이다** (반 편성 화면에서 뺐다 — Alan "스터디 생성도 별도의 페이지로"). 관리자 메뉴 `학습` 묶음과 반 편성 탭에서 간다. `?term=` 없이 열면 **달력의 이번 달**(날짜로 고르면 9월 반이 10/3 까지 열려 10월 초에도 9월이 잡힌다 — Alan "해당 달로"), 그 달 기수가 없으면 날짜로 | instructor |
 | `/admin/study-materials` | 비대면 자료 **회차별 공통 자료실** (1회차 · 2회차 … 한 번 올리면 매달 재사용) — 달 칩으로 그 달 신청 기간 · 시작일과 몇 회차가 며칠에 열리는지 미리 본다(1회차 = 개강 4일째부터의 첫 수업일) · 올리기·교체·삭제 · **회차마다 안내 문구**(학생에게 그 회차와 함께 보인다) | instructor |
 | `/admin/homework` | 숙제점검: **과목(= 강사, `RC · 이영수`) → 레벨** 두 줄(칸마다 미점검 건수, `전체` 칸은 없다) + `점검완료 포함` 체크박스. 강사는 자기 과목부터 본다. 목록은 **한 건이 한 줄**이고 **누르면 상세 팝업** — 사진을 `n / N` 으로 넘겨 보고(회전·원본 보기) 질문에 답하고 점검완료하면 학생 알림함으로 간다. **조교도 점검한다**(2026-10-03 — 알림은 조교 이름으로, 전화번호는 조교에게 안 보인다) | instructor · **조교** |
-| `/admin/class-materials` | **수업자료실** — 레벨 → `RC A과정 · RC B과정 · LC A과정 · LC B과정` → **회차 줄**마다 자료 올리기(파일 + 제목 · **안내 · 스크립트 5만 자**, 2026-10-05) · 받기 · 수정(레벨 · 과목 · 과정 · 회차 옮기기 · 파일 교체) · 삭제. 달 칩으로 그 달 이 과정의 반 · 회차 날짜, 과정 · 회차가 없는 옛 자료는 맨 위 노란 상자. 강사는 자기 과목부터 (2026-10-05, 규칙 7-4) | instructor |
+| `/admin/class-materials` | **수업자료실** — 1회차 위 **공지사항**(공지 올리기 · 고치기 `/admin/class-materials/notices/…` — 범위 전체 · 레벨 · RC/LC, 서식 · 정렬 · 사진, 2026-10-05) · 레벨 → `RC A과정 · RC B과정 · LC A과정 · LC B과정` → **회차 줄**마다 자료 올리기(파일 + 제목 · **안내 · 스크립트 5만 자**, 2026-10-05) · 받기 · 수정(레벨 · 과목 · 과정 · 회차 옮기기 · 파일 교체) · 삭제. 달 칩으로 그 달 이 과정의 반 · 회차 날짜, 과정 · 회차가 없는 옛 자료는 맨 위 노란 상자. 강사는 자기 과목부터 (2026-10-05, 규칙 7-4) | instructor |
 | `/admin/lc-audio` | 레벨 탭 → A반·B반 교재 2권의 표지·교재명·설명, 교재별 수업/숙제 음원 등록(강별, 한 강에 여러 개, 올리기 전 배치 확인) | instructor |
 | `/admin/contacts` | 문의 처리 + **답변** — 회원 문의는 답변이 학생 알림함으로, 비회원 문의는 연락처로 직접 답하고 기록만 | instructor |
 | `/admin/notifications` | 알림 설정: 이 기기에서 푸시 받기, 알림 종류 켜기·끄기, 네이버 예약 자동 확인 상태(마지막 확인 · 실패) | instructor |

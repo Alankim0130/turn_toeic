@@ -56,6 +56,8 @@ const WIDE_OPEN_TABLES = [
   "lc_books",
   "lc_audio_tracks",
   "class_materials",
+  // 수업자료실 공지 — 학생은 수강 중 + 내 과정 칸이 범위에 맞을 때, 강사 · 관리자는 전부 (2026-10-05, 마이그레이션 20261005160000)
+  "class_notices",
   // 사람으로 열리는 것 — 정책이 `본인 or 스태프(조교)` 라 스태프에게는 **모든 학생의 행**이 내려온다
   "homework_submissions",
   "enrollment_orders",
@@ -124,6 +126,7 @@ describe("/my 조회는 내 것으로 한 번 더 좁힌다", () => {
     expect(found("lc_books", "getMyLcAudio")).toBe(true);
     expect(found("lc_audio_tracks", "LcBookPage")).toBe(true);
     expect(found("class_materials", "getMyClassMaterials")).toBe(true);
+    expect(found("class_notices", "getMyClassNotices")).toBe(true);
   });
 
   it.each(WIDE_OPEN_TABLES)("%s 를 읽는 곳은 전부 좁힌다", (table) => {
