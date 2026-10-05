@@ -6,6 +6,7 @@ import { formatBytes } from "@/lib/study";
 import { shortDay } from "@/lib/study-rounds";
 import { fileKindLabel, MATERIAL_SUBJECT_LABEL, MATERIAL_SUBJECTS, type MaterialSubject } from "@/lib/class-materials";
 import { ROUND_SET_LABEL, type RoundSet } from "@/lib/class-rounds";
+import { MaterialNote } from "@/components/class-materials/MaterialNote";
 
 export type MyClassMaterial = {
   id: number;
@@ -203,13 +204,8 @@ function MaterialCard({ m }: { m: MyClassMaterial }) {
           </p>
         </div>
       </div>
-      {/* 강사가 적은 안내 — 접지 않는다 */}
-      {m.note && (
-        <p className="whitespace-pre-wrap rounded-xl bg-brand-50 px-3 py-2 text-sm leading-relaxed text-ink-soft [overflow-wrap:anywhere] sm:col-span-2 sm:row-start-2">
-          <span className="mr-1.5 text-xs font-black text-brand-700">안내</span>
-          {m.note}
-        </p>
-      )}
+      {/* 강사가 적은 안내 · 스크립트 — 짧으면 펼쳐 두고, 길면 앞 네 줄 + 전체 보기 (2026-10-05) */}
+      {m.note && <MaterialNote note={m.note} className="bg-brand-50 sm:col-span-2 sm:row-start-2" />}
       <div className={cn("grid gap-2 sm:col-start-2 sm:row-start-1 sm:flex", viewable ? "grid-cols-2" : "grid-cols-1")}>
         {viewable && (
           <a href={`/files/class/${m.id}`} target="_blank" rel="noopener" className="btn-secondary !px-4 !py-2 text-sm">
