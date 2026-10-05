@@ -21,6 +21,12 @@ describe("대시보드 등록생 위젯 — 강좌마다 지금 수강 중인 �
     expect(courseHeadcounts(COURSES, []).map((h) => `${h.label}:${h.count}`)).toEqual(["650:0", "750:0", "850:0", "중급속성:0", "실전속성:0"]);
   });
 
+  it("2주완성(2026-10-05)은 `850 2주완성` — 속성반 다음 맨 뒤", () => {
+    const withTwoWeek = [...COURSES, { id: 80, name: "850+ 2주완성", program: "twoweek", target_score: 850, is_active: true }];
+    expect(headcountLabel(withTwoWeek[5])).toBe("850 2주완성");
+    expect(courseHeadcounts(withTwoWeek, []).map((h) => h.label)).toEqual(["650", "750", "850", "중급속성", "실전속성", "850 2주완성"]);
+  });
+
   it("주5일(월수금 + 화목금 두 반)은 한 사람이다", () => {
     const rows = [
       { student_id: "a", role: "student", course_id: 68 },

@@ -9,6 +9,7 @@ import { Icon } from "@/components/ui/Icon";
 import { cn, COURSE_TYPE_LABEL, TRACK_LABEL } from "@/lib/utils";
 import { blockMinutes, buildBlockTree, dashLabel, flattenBlockTree, minutesLabel, TRACKS, type BlockNode } from "@/lib/time-blocks";
 import { sectionKeyOf } from "./bulk";
+import { isContainerProgram, isTwoWeek } from "@/lib/two-week";
 
 /** 그 달 시간표 한 줄 — 과정 · 트랙별 과목은 시간표 설정에서 정한 값 (여기서는 보여 주기만 한다) */
 export type BulkSlot = { id: number; level: number; program: string; label: string; bookSet: string | null; subjectMwf: string | null; subjectTtf: string | null };
@@ -212,6 +213,13 @@ export function BulkCreateSections({
                       스파르타반 · {[c.target_score, ...c.includes_levels].filter(Boolean).join(" + ")} 반을 함께 들어요. 이 반 학생에게는 같은 트랙·시간의 그 반들(시간 단위)이 함께 열립니다.
                     </p>
                   )}
+                  {/* 2주완성 (2026-10-05 Alan "850반 2주완성반이 있어 … 절반만 수업을 듣는거야. 개강일부터 시작") */}
+                  {isTwoWeek(c.program) && (
+                    <p className="mt-1 text-xs text-slate">
+                      2주완성반 · {c.target_score} 수업을 <strong className="text-ink">개강일부터 앞 절반</strong>만 들어요. 반의 종강일은 그 달 수업일 앞 절반의 마지막 날로
+                      저절로 정해지고, 이 반 학생에게는 같은 트랙 · 시간의 {c.target_score} 시간 단위 반이 그날까지 함께 열립니다.
+                    </p>
+                  )}
                   {!hasSlots && (
                     <p className="mt-1 text-xs text-amber-700">
                       이 강좌의 목표 점수에 맞는 시간표 시간대가 없어요. 시간대 없이 만들어집니다.
@@ -233,7 +241,7 @@ export function BulkCreateSections({
                       {TRACKS.map((t) => (
                         <th key={t} className="py-1 text-center font-semibold">
                           {TRACK_LABEL[t]}
-                          {c.program !== "sparta" && <span className="block text-[10px] font-normal">개설 · 과목 · 과정</span>}
+                          {!isContainerProgram(c.program) && <span className="block text-[10px] font-normal">개설 · 과목 · 과정</span>}
                         </th>
                       ))}
                       <th className="py-1 text-center font-semibold">
@@ -283,7 +291,7 @@ export function BulkCreateSections({
                                       />
                                     </label>
                                   )}
-                                  {c.program !== "sparta" && r.leaf && s && <PlanBadge slot={s} track={t} name={name} />}
+                                  {!isContainerProgram(c.program) && r.leaf && s && <PlanBadge slot={s} track={t} name={name} />}
                                 </span>
                               </td>
                             );

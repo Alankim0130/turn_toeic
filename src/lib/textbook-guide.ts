@@ -14,6 +14,7 @@ import {
   type TextbookNotice,
   type TextbookSettings,
 } from "./textbook";
+import { isTwoWeek } from "./two-week";
 
 /** 학생 화면(세션)과 승인 길(서버) 둘 다 부른다 — `fetchOpenEnrollSections` 와 같은 꼴 */
 type Client = Pick<ReturnType<typeof createAdminClient>, "from" | "rpc">;
@@ -27,7 +28,7 @@ export type DirectBookSection = {
   term_id: number;
   subject: string | null;
   book_set: string | null;
-  course: { target_score: number | null } | null;
+  course: { target_score: number | null; program?: string | null } | null;
 };
 
 /**
@@ -42,6 +43,9 @@ export async function bookSectionsOf(client: Client, direct: readonly DirectBook
 
   const includes = new Map<number, number[]>();
   const mine = new Set(direct.map((s) => s.id));
+  // 2주완성(2026-10-05)은 교재 규칙을 아직 정하지 않았다 (앞 절반만 듣는다 — 몇 권 · 얼마인지 Alan 확인 전).
+  // 품은 반으로 펼치지 않아 그 반 자신(과목 · 과정 없음)이 남고 "정하지 못함"(unknown)이 된다 — 안내를 보내지 않고 미리 고르지도 않는다
+  const unsettled = new Set(direct.filter((s) => isTwoWeek(s.course?.program)).map((s) => s.id));
   const terms = [...new Set(direct.map((s) => s.term_id))];
   const pairs = await Promise.all(terms.map((t) => client.rpc("term_section_includes", { p_term_id: t })));
   for (const { data, error } of pairs) {
@@ -50,7 +54,7 @@ export async function bookSectionsOf(client: Client, direct: readonly DirectBook
       continue;
     }
     for (const p of data ?? []) {
-      if (mine.has(p.section_id)) includes.set(p.section_id, [...(includes.get(p.section_id) ?? []), p.included_id]);
+      if (mine.has(p.section_id) && !unsettled.has(p.section_id)) includes.set(p.section_id, [...(includes.get(p.section_id) ?? []), p.included_id]);
     }
   }
 
@@ -74,7 +78,7 @@ async function liveSectionsOf(client: Client, userId: string) {
     .select(
       `section_id, status, mode,
        order:enrollment_orders!enrollments_order_id_fkey(status),
-       section:class_sections!enrollments_section_id_fkey(id, term_id, closes_at, subject, book_set, course:courses(target_score), term:terms(year, month))`,
+       section:class_sections!enrollments_section_id_fkey(id, term_id, closes_at, subject, book_set, course:courses(target_score, program), term:terms(year, month))`,
     )
     .eq("student_id", userId)
     .eq("mode", "live")

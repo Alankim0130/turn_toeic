@@ -133,8 +133,9 @@ export function sourceNote(target: YM, source: MonthSource): string {
  * - `block`: 방학달 통짜 줄(90분 넘는 한 구간) — 두 과목을 이어 들어 **과정(LC 교재 글자)만**
  * - `package`: 한달완성 — 같은 달·레벨의 다른 줄을 품는 줄. 과정·과목 없음 (안에 든 시간 것을 쓴다)
  * - `sparta`: 스파르타반(중급속성·실전속성) — 과정·과목 없음 (함께 듣는 점수보장반 것을 쓴다)
+ * - `twoweek`: 2주완성반 (2026-10-05) — 과정·과목 없음 (같은 레벨 점수보장반 시간 단위 반 것을 쓴다). 850 시간을 고치면 따라간다 (DB 트리거)
  */
-export type SlotKind = "hour" | "block" | "package" | "sparta";
+export type SlotKind = "hour" | "block" | "package" | "sparta" | "twoweek";
 
 type TimeRow = { id: number; level: number; program: string; start_time: string; end_time: string };
 
@@ -146,6 +147,7 @@ export const slotMinutes = (r: { start_time: string; end_time: string }) => minu
 /** 같은 (레벨 · 과정) 줄들 안에서 이 줄의 종류 */
 export function kindOf(row: TimeRow, sameGroup: TimeRow[]): SlotKind {
   if (row.program === "sparta") return "sparta";
+  if (row.program === "twoweek") return "twoweek";
   const label = slotLabelOf(row);
   if (sameGroup.some((o) => o.id !== row.id && blockContains(label, slotLabelOf(o)))) return "package";
   return slotMinutes(row) <= 90 ? "hour" : "block";

@@ -7,6 +7,7 @@ import { Icon } from "@/components/ui/Icon";
 import { AssignInstructor } from "@/components/admin/sections/AssignInstructor";
 import { SectionsTabs } from "@/components/admin/sections/SectionsTabs";
 import { loadTermData, parseTerm } from "../_lib/term-data";
+import { isContainerProgram } from "@/lib/two-week";
 
 export const metadata: Metadata = { title: "담당 강사 지정", robots: { index: false } };
 
@@ -58,8 +59,8 @@ export default async function AdminSectionInstructorsPage({ searchParams }: { se
                 timeBlock: s.time_block,
                 subject: s.subject,
                 instructor: instructorLabel(s),
-                // 묶음 반(안에 시간 단위 반이 든 반)·스파르타 반은 한 시간씩 강사가 갈린다
-                package: (packages.get(s.id)?.parts.length ?? 0) > 0 || s.course?.program === "sparta",
+                // 묶음 반(안에 시간 단위 반이 든 반)·스파르타 반 · 2주완성 반은 한 시간씩 강사가 갈린다
+                package: (packages.get(s.id)?.parts.length ?? 0) > 0 || isContainerProgram(s.course?.program),
               }))}
             />
           </div>

@@ -9,6 +9,7 @@ import { requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import { sectionKeyOf, timeBlockOf } from "@/components/admin/sections/bulk";
 import { fieldsFor, slotKinds } from "@/lib/timetable-month";
+import { isContainerProgram } from "@/lib/two-week";
 
 /**
  * 반 일괄 개설: **그 달 시간표**(레벨·시간대) × 강좌 × 트랙 조합에서 고른 것만 한 번에 만든다.
@@ -111,7 +112,8 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
       enrollment_opens_at: term.enrollment_opens_at,
       closes_at: term.closes_at,
       target_sessions: sessionsOf(r.track),
-      instructor_id: isPackage || course.program === "sparta" ? null : pickedInstructor,
+      // 그릇 반(묶음 · 스파르타 · 2주완성)은 담당이 한 명이 아니다 — 비운다 (DB section_instructor_plan 과 같은 규칙)
+      instructor_id: isPackage || isContainerProgram(course.program) ? null : pickedInstructor,
       capacity,
       status: r.status,
       book_set: plan.book_set,

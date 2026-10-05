@@ -1,4 +1,5 @@
 import { WEEK5_LABEL } from "./week5";
+import { programRank } from "./timetable";
 
 /**
  * 수동 등업신청에서 학생이 고르는 **수강월 → 레벨 → 요일 → 시간대** (2026-09-17 Alan 요청
@@ -52,7 +53,7 @@ export function enrollTerms(sections: readonly EnrollSection[]): { key: string; 
   return keys.map((key) => ({ key, label: termLabelOf(key) }));
 }
 
-/** 그 달의 레벨(강좌). 점수보장반 먼저, 그 안에서는 목표 점수 순 */
+/** 그 달의 레벨(강좌). 점수보장반 → 스파르타반 → 2주완성반, 그 안에서는 목표 점수 순 */
 export function enrollCourses(sections: readonly EnrollSection[], term: string) {
   const byId = new Map<number, NonNullable<EnrollSection["course"]>>();
   for (const s of sections) {
@@ -61,7 +62,7 @@ export function enrollCourses(sections: readonly EnrollSection[], term: string) 
   }
   return [...byId.values()].sort(
     (a, b) =>
-      (a.program === b.program ? 0 : a.program === "score" ? -1 : 1) ||
+      programRank(a.program) - programRank(b.program) ||
       (a.target_score ?? 0) - (b.target_score ?? 0) ||
       a.name.localeCompare(b.name, "ko"),
   );

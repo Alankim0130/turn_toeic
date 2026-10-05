@@ -86,7 +86,8 @@ export function matchSections(parsed: MatchInput, sections: readonly EnrollSecti
   }
 
   if (byKey.length === 0) {
-    return { result: { kind: "none", reason: `${parsed.level} ${parsed.program === "sparta" ? "프리미어반" : ""} ${parsed.time.timeBlock} 에 열린 반이 없어요`.replace(/\s+/g, " ") }, log };
+    const programName = parsed.program === "sparta" ? "프리미어반" : parsed.program === "twoweek" ? "2주완성" : "";
+    return { result: { kind: "none", reason: `${parsed.level} ${programName} ${parsed.time.timeBlock} 에 열린 반이 없어요`.replace(/\s+/g, " ") }, log };
   }
   if (terms.length === 0) {
     // 수강월은 읽었는데 그 달에 이 시간대 반이 없다 — 다른 달 반에 붙이지 않는다

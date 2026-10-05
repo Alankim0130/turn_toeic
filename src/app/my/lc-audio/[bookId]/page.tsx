@@ -13,6 +13,7 @@ import { holidayNamesBetween } from "@/lib/holidays";
 import { BOOK_SET_LABEL, DAYS, DAY_COUNT, bookLabel, bookTimeLabel, coverSrc, explicitBookSet, lessonRangeLabel, sortTracks } from "@/lib/lc-audio";
 import { cellKey, isRoundOpen, roundCells, roundDates, roundKey } from "@/lib/class-rounds";
 import { getMyAccessibleSections, getMySessions, getMyWeek5 } from "../../_lib/queries";
+import { isContainerProgram } from "@/lib/two-week";
 
 export const metadata: Metadata = { title: "LC 음원듣기", robots: { index: false } };
 
@@ -63,9 +64,9 @@ export default async function LcBookPage({ params }: { params: Promise<{ bookId:
    * 머리말 문구 · 달력의 달 · 트랙 배지를 위한 **이 교재를 쓰는 내 반** 하나. 날짜는 위 `dateOfDay` 가 정한다.
    * 교재는 달이 아니라 **듣는 시간대 · 트랙**이 정한다 (2026-09-16 편성표, 2026-09-19 Alan 재지적) —
    * 반의 `book_set` 하나만 본다. **달 홀짝으로 짐작하지 않는다.**
-   * 스파르타 반 자체는 교재가 없다 — 함께 듣는 점수보장반(RLS 로 같이 내려온다)의 수업일을 쓴다.
+   * 스파르타 반 · 2주완성 반 자체는 교재가 없다 — 함께 듣는 점수보장반(RLS 로 같이 내려온다)의 수업일을 쓴다.
    */
-  const scoreSessions = sessions.filter((s) => s.section && s.section.course?.program !== "sparta");
+  const scoreSessions = sessions.filter((s) => s.section && !isContainerProgram(s.section.course?.program));
   const usable = scoreSessions.filter((s) => explicitBookSet(s.section) === book.book_set && s.section?.course?.target_score === book.level);
 
   // 여러 반(주5일)이면 회차가 많은 쪽을 쓴다

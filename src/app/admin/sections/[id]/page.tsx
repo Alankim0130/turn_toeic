@@ -15,6 +15,7 @@ import { DeleteSectionButton } from "@/components/admin/sections/DeleteSectionBu
 import { labelKo, termKey } from "@/components/admin/sections/dates";
 import { blockContains, dashLabel } from "@/lib/time-blocks";
 import { timetableRowOf } from "@/lib/timetable-row";
+import { isContainerProgram, isTwoWeek } from "@/lib/two-week";
 
 export const metadata: Metadata = { title: "반 상세", robots: { index: false } };
 
@@ -63,16 +64,18 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
   ]);
 
   // 이 반 학생에게 함께 열리는 반 (DB 의 private.section_includes 와 같은 판정):
-  // 스파르타 반 → 포함 레벨의 시간 단위 반, 묶음 반(120분·140분) → 안에 든 60분·70분 시간 단위 반
+  // 스파르타 반 → 포함 레벨의 시간 단위 반, 2주완성 반 → 같은 레벨의 시간 단위 반, 묶음 반(120분·140분) → 안에 든 60분·70분 시간 단위 반
   const isSparta = section.course?.program === "sparta";
+  const twoWeek = isTwoWeek(section.course?.program);
+  const isContainer = isContainerProgram(section.course?.program);
   const { data: includeRows } = await supabase.rpc("term_section_includes", { p_term_id: section.term.id });
   const includedIds = (includeRows ?? []).filter((r) => r.section_id === id).map((r) => r.included_id);
   const { data: includedSections } = includedIds.length
     ? await supabase.from("class_sections").select("id, track, time_block, book_set, subject, course:courses(name)").in("id", includedIds).order("time_block")
     : { data: [] as { id: number; track: string; time_block: string | null; book_set: string | null; subject: string | null; course: { name: string } | null }[] };
-  const isPackage = !isSparta && includedIds.length > 0;
+  const isPackage = !isContainer && includedIds.length > 0;
   // 이 반을 안에 품는 묶음 반 (60분 반이면 120분 반) — 그 반 학생도 이 반을 함께 듣는다
-  const parents = !isSparta ? (sameCourse ?? []).filter((s) => s.track === section.track && blockContains(s.time_block, section.time_block)) : [];
+  const parents = !isContainer ? (sameCourse ?? []).filter((s) => s.track === section.track && blockContains(s.time_block, section.time_block)) : [];
   // 종합/단과 (2026-09-18 Alan): 시간 단위 반은 담당 한 명의 단과(LC·RC), 묶음·스파르타만 종합. 과목은 반의 과목 칸으로 (2026-09-23)
   const typeLabel = sectionTypeLabel(section, { isPackage });
   const sessionLink = (s: NonNullable<typeof sessions>[number]) => {
@@ -86,7 +89,9 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
   };
   const bookSetNote = isSparta
     ? "스파르타 반은 과목·과정을 두지 않아요. 두 과목을 이어 듣고, 함께 듣는 점수보장반의 과정·교재를 씁니다."
-    : isPackage
+    : twoWeek
+      ? "2주완성 반은 과목·과정을 두지 않아요. 같은 레벨 시간 단위 반의 과정·교재를 씁니다."
+      : isPackage
       ? "묶음 반은 과목·과정을 두지 않아요. 안에 든 시간 단위 반에 정하면 이 반 학생도 그 과목·교재를 봅니다."
       : undefined;
 
@@ -97,7 +102,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
     ? {
         href: `/admin/timetable?month=${termKey(section.term.year, section.term.month)}`,
         text:
-          isSparta || isPackage
+          isContainer || isPackage
             ? `${bookSetNote} 과정·과목은 ${section.term.month}월 시간표의 두 시간에서 정해요.`
             : `${section.term.month}월 시간표에서 정해요 — ${planRow.book_set ? `${planRow.book_set} 과정` : "과정 미정"} · ${TRACK_LABEL[section.track] ?? section.track} ${planSubject ? planSubject.toUpperCase() : "과목 미정"}.`,
       }
@@ -166,18 +171,27 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
         </Alert>
       )}
 
-      {/* 스파르타 반 · 묶음 반 권한: 함께 열리는 반 */}
-      {(isSparta || isPackage) && (
+      {/* 스파르타 반 · 2주완성 반 · 묶음 반 권한: 함께 열리는 반 */}
+      {(isContainer || isPackage) && (
         <section aria-labelledby="includes-title" className="card p-5 sm:p-6">
           <h2 id="includes-title" className="flex flex-wrap items-center gap-2 text-lg font-black text-ink">
             {isSparta ? (
               <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-black text-brand-700">스파르타반</span>
+            ) : twoWeek ? (
+              <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-black text-brand-700">2주완성</span>
             ) : (
               <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-black text-white">묶음 반</span>
             )}
             이 반 학생에게 함께 열리는 반
           </h2>
-          {isSparta ? (
+          {twoWeek ? (
+            <p className="mt-1 text-sm text-slate">
+              {section.course?.target_score} 반 중 {termLabel} {TRACK_LABEL[section.track] ?? section.track}·{section.time_block ?? "시간대 없음"} 안에 든 시간 단위 반입니다.
+              이 반 학생은 <strong className="text-ink">개강일부터 앞 절반만</strong> 아래 반의 수업일·다시보기·불라방 링크·LC 음원·수업자료를 함께 봐요 —
+              이 반의 종강일({formatDate(section.closes_at, { month: "numeric", day: "numeric", weekday: "short" })})은 그 달 수업일(월수금 + 화목금) 앞 절반의 마지막 날이고,
+              달력을 고치면 저절로 다시 맞춰져요. 녹화본·불라방 링크는 아래 반에 올리면 되고 2주완성 반에 따로 올리지 않아도 됩니다.
+            </p>
+          ) : isSparta ? (
             <p className="mt-1 text-sm text-slate">
               {[section.course?.target_score, ...(section.course?.includes_levels ?? [])].filter(Boolean).join(" + ")} 반 중 {termLabel}
               {" "}
@@ -192,7 +206,9 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
           )}
           {(includedSections ?? []).length === 0 ? (
             <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              아직 함께 열릴 반이 없어요. 같은 트랙·시간대의 {(section.course?.includes_levels ?? []).join("·")} 반과 {section.course?.target_score} 반을 먼저 개설해 주세요.
+              {twoWeek
+                ? `아직 함께 열릴 반이 없어요. 같은 트랙의 ${section.course?.target_score ?? ""} 시간 단위 반을 먼저 개설해 주세요.`
+                : `아직 함께 열릴 반이 없어요. 같은 트랙·시간대의 ${(section.course?.includes_levels ?? []).join("·")} 반과 ${section.course?.target_score ?? ""} 반을 먼저 개설해 주세요.`}
             </p>
           ) : (
             <ul className="mt-3 divide-y divide-line rounded-xl2 border border-line">

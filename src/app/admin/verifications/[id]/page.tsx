@@ -244,7 +244,7 @@ export default async function VerificationDetailPage({
               ? `${parsed.startMonth}월 (개강일)`
               : "-",
         ],
-        ["레벨 · 과정", [parsed.level ?? "-", parsed.program === "sparta" ? "프리미어(스파르타)" : "점수보장반"].join(" · ")],
+        ["레벨 · 과정", [parsed.level ?? "-", parsed.program === "sparta" ? "프리미어(스파르타)" : parsed.program === "twoweek" ? "2주완성" : "점수보장반"].join(" · ")],
         ["주 · 트랙", [parsed.weekly ? `주${parsed.weekly}일` : "-", (parsed.tracks as string[] | undefined)?.map((t) => (t === "mwf" ? "월수금" : "화목금")).join("+") || "-"].join(" · ")],
         ["수강 시간", (parsed.time as { timeBlock?: string } | null)?.timeBlock ?? "-"],
         ["이름 일치", parsed.nameMatches === true ? "일치" : parsed.nameMatches === false ? "다름 — 확인 필요" : "확인 못 함"],

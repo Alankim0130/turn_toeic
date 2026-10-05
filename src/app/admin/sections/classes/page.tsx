@@ -5,7 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
-import { TRACK_LABEL, cn } from "@/lib/utils";
+import { TRACK_LABEL, cn, formatDate } from "@/lib/utils";
+import { isTwoWeek } from "@/lib/two-week";
 import { dashLabel } from "@/lib/time-blocks";
 import { SectionsTabs } from "@/components/admin/sections/SectionsTabs";
 import { loadTermData, parseTerm } from "../_lib/term-data";
@@ -149,6 +150,18 @@ export default async function AdminSectionClassesPage({
                               {pk && pk.parts.length === 0 && pk.parents.length > 0 && (
                                 <p className="mt-2 text-xs text-slate">
                                   묶음 반 <strong className="text-ink">{pk.parents.map((p) => p.time_block).sort().join(" · ")}</strong> 학생도 이 시간을 함께 들어요.
+                                </p>
+                              )}
+                              {isTwoWeek(s.course?.program) && (
+                                <p className="mt-2 text-xs text-slate">
+                                  <span className="mr-1 rounded-full bg-brand-50 px-2 py-0.5 font-black text-brand-700">2주완성</span>
+                                  개강일부터 앞 절반만 ·{" "}
+                                  <strong className="text-ink">{formatDate(s.closes_at, { month: "numeric", day: "numeric", weekday: "short" })} 종강</strong>
+                                  {includedBySection.get(s.id)?.length ? (
+                                    <> · 함께 열리는 반: <strong className="text-ink">{includedBySection.get(s.id)!.join(" · ")}</strong></>
+                                  ) : (
+                                    <span className="text-amber-700"> · 같은 트랙의 {s.course?.target_score} 시간 단위 반을 먼저 개설해 주세요.</span>
+                                  )}
                                 </p>
                               )}
                               {s.course?.program === "sparta" && (

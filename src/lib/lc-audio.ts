@@ -13,6 +13,8 @@
  *  - 한 강에 파일이 여러 개일 수 있다 (650A 3강 = 교과서 현재진행형 + 영국발음 등).
  */
 
+import { isContainerProgram } from "./two-week";
+
 export const BOOK_SETS = ["A", "B"] as const;
 export type BookSet = (typeof BOOK_SETS)[number];
 
@@ -46,12 +48,12 @@ export type BookSection = {
  *
  * **레벨마다 따로 모으는 것이 핵심이다.** 한 학생이 650 은 B, 850 은 A 를 쓸 수 있다 (시간대가 다르다) —
  * 레벨을 섞어 한 덩어리로 모으면 850 탭에 650 의 교재가 딸려 나온다.
- * 스파르타 반 자체는 교재가 없어 빼고 본다 (함께 듣는 시간 단위 반에 지정돼 있다).
+ * 스파르타 반 · 2주완성 반 자체는 교재가 없어 빼고 본다 (함께 듣는 시간 단위 반에 지정돼 있다).
  */
 export function bookSectionsByLevel<T extends BookSection>(sections: T[]): Map<number, Map<BookSet, T[]>> {
   const out = new Map<number, Map<BookSet, T[]>>();
   for (const s of sections) {
-    if (s.course?.program === "sparta") continue;
+    if (isContainerProgram(s.course?.program)) continue;
     const set = explicitBookSet(s);
     const level = s.course?.target_score;
     if (!set || typeof level !== "number") continue;

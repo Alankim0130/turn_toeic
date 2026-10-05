@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fuzzyIncludes, levenshtein, normalizeReceiptText, parseReceipt, receiptComplete, receiptHasName, receiptStudentName } from "@/lib/receipt";
+import { fuzzyIncludes, isTwoWeekReceipt, levenshtein, normalizeReceiptText, parseReceipt, receiptComplete, receiptHasName, receiptStudentName } from "@/lib/receipt";
 
 /** CLAUDE.md "수강증 표기 규칙" 표의 강좌명. 학원명·강사명은 실제 수강증 양식을 받기 전까지의 가정 */
 const receipt = (course: string, extra = "") => `YBM어학원 서면센터\n역전토익 ${course}\n강사 이혜영\n수강생 김민수\n${extra}`;
@@ -257,6 +257,37 @@ describe("스파르타(프리미어)반 과정명 — 중급속성 · 실전속�
   it("점수보장반 수강증에는 이 단어가 없어 score 로 남는다", () => {
     const p = parseReceipt(line("650 목표", "수강요일 [4주-09/04] 월수금 (월9회)"));
     expect(p.program).toBe("score");
+  });
+});
+
+describe("2주완성 — 실물 수강증을 아직 못 봐서 글자로만 가른다 (2026-10-05)", () => {
+  const line = (title: string, days: string) =>
+    screen(["역전토익 [종합반]", title, "수강생 김민수", "수강센터 부산 서면센터", days, "수강시간 12:30~15:00"].join("\n"));
+
+  it("과정명 `2주완성` 이면 twoweek — 강사가 확인한다는 경고를 남긴다", () => {
+    const p = parseReceipt(line("850+ 2주완성", "수강요일 [2주-10/06] 주5일 (월9회)"));
+    expect(p.program).toBe("twoweek");
+    expect(p.level).toBe(850);
+    expect(p.time?.timeBlock).toBe("12:30~15:00");
+    expect(p.warnings.some((w) => w.includes("2주완성"))).toBe(true);
+  });
+
+  it("수강요일 줄의 기간 `[2주-MM/DD]` 만 있어도 twoweek (과정명을 못 읽었을 때)", () => {
+    expect(parseReceipt(line("850 목표", "수강요일 [2주-10/06] 주5일 (월9회)")).program).toBe("twoweek");
+    expect(parseReceipt(line("850 목표", "수강요일 [2주~10/06] 월수금")).program).toBe("twoweek");
+  });
+
+  it("2주완성은 회차가 절반이라 `주5일 (월9회)` 도 주5일 · 두 트랙이다 (한 달 과정이면 월9회 = 주3일)", () => {
+    const p = parseReceipt(line("850+ 2주완성", "수강요일 [2주-10/06] 주5일 (월9회)"));
+    expect(p.weekly).toBe(5);
+    expect(p.tracks).toEqual(["mwf", "ttf"]);
+  });
+
+  it("한 달 과정 `[4주-…]` · `12주` · 날짜 속 2 는 2주완성이 아니다", () => {
+    expect(parseReceipt(line("850 목표", "수강요일 [4주-10/06] 주5일 (월18회)")).program).toBe("score");
+    expect(isTwoWeekReceipt("수강요일[12주-10/06]")).toBe(false);
+    expect(isTwoWeekReceipt("현재시간2026-10-0212:30:00")).toBe(false);
+    expect(isTwoWeekReceipt("850+2주완성")).toBe(true);
   });
 });
 

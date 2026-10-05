@@ -1,4 +1,4 @@
-import { courseShortName } from "./timetable";
+import { courseShortName, programRank } from "./timetable";
 
 /**
  * 대시보드 등록생 위젯 (2026-09-23 Alan — "아주 크게 650 / 750 / 850 / 중급속성 / 실전속성 총 등록인원만 보이도록").
@@ -22,10 +22,12 @@ const countable = (r: HeadcountRow): r is HeadcountRow & { course_id: number } =
 
 export function headcountLabel(c: Pick<HeadcountCourse, "name" | "program" | "target_score">): string {
   if (c.program === "sparta") return courseShortName(c.name);
+  // 2주완성(2026-10-05)은 레벨을 붙인다 — `850 2주완성` (같은 850 이라 레벨이 빠지면 무엇의 2주완성인지 모른다)
+  if (c.program === "twoweek") return c.target_score != null ? `${c.target_score} ${courseShortName(c.name)}` : c.name;
   return c.target_score != null ? String(c.target_score) : c.name;
 }
 
-/** 점수보장반(레벨 순) 다음에 속성반(레벨 순) */
+/** 점수보장반(레벨 순) → 속성반(레벨 순) → 2주완성 */
 export function courseHeadcounts(courses: HeadcountCourse[], rows: HeadcountRow[]): Headcount[] {
   const people = new Map<number, Set<string>>();
   for (const r of rows.filter(countable)) people.set(r.course_id, (people.get(r.course_id) ?? new Set()).add(r.student_id));
@@ -33,7 +35,7 @@ export function courseHeadcounts(courses: HeadcountCourse[], rows: HeadcountRow[
     .filter((c) => c.is_active || people.has(c.id))
     .sort(
       (a, b) =>
-        Number(a.program === "sparta") - Number(b.program === "sparta") ||
+        programRank(a.program) - programRank(b.program) ||
         (a.target_score ?? 0) - (b.target_score ?? 0) ||
         a.name.localeCompare(b.name, "ko"),
     )
