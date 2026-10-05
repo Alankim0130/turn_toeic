@@ -45,6 +45,8 @@ const QUICK: { href: string; label: string; desc: string; icon: IconName }[] = [
   // 두 칸은 서로 다른 일이다 — 비대면 인증은 내 스터디, 정규 수업 숙제는 숙제업로드 (2026-09-23 Alan)
   { href: "/my/study", label: "내 스터디", desc: "신청 · 자료 · 인증", icon: "study" },
   { href: "/my/homework", label: "숙제업로드", desc: "수업 숙제 사진", icon: "homework" },
+  // 수업자료실 (2026-10-05 Alan) — 내 레벨의 RC · LC 자료
+  { href: "/my/materials", label: "수업자료실", desc: "레벨별 RC·LC 자료", icon: "download" },
   { href: "/my/lc-audio", label: "LC음원듣기", desc: "레벨별 음원", icon: "headphones" },
   { href: "/my/notifications", label: "알림", desc: "선생님 안내 · 수업 시작", icon: "bell" },
   // 내 정보 (2026-10-02 Alan — "학생이 '내 정보' 수정을 할 수 있는 공간이 없는 것 같아")

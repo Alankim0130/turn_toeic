@@ -301,10 +301,11 @@ describe("조교에게는 학생 이름만 — 전화번호 · 대학 · 학과 
 
 /**
  * LC 교재 · 음원은 학생에게 **내 레벨만** — 화면이 아니라 DB 가 막는다 (2026-10-03 권한 재점검).
+ * 수업자료실(class_materials, 2026-10-05)도 같은 "내 레벨" 규칙이다 — 저장소 class-materials 도 이 표의 행이 보이는지로 판정한다.
  * 그전 정책 `is_staff() or has_term_access(null)` 은 수강 중이면 모든 레벨이라, 음원 주소(/files/audio/숫자)의 숫자만 바꾸면 다른 레벨 음원이 재생됐다.
  * 저장소 정책(lc-audio · lc-textbooks)은 이 두 표의 행이 보이는지로 판정하므로 두 표의 조회 정책이 곧 파일의 막이다.
  */
-describe("LC 교재 · 음원 조회는 내 레벨로 좁힌다 (마이그레이션을 순서대로 재생한 마지막 모양)", () => {
+describe("LC 교재 · 음원 · 수업자료실 조회는 내 레벨로 좁힌다 (마이그레이션을 순서대로 재생한 마지막 모양)", () => {
   const DIR = "supabase/migrations";
   const sqlOf = (f: string) =>
     readFileSync(join(DIR, f), "utf8")
@@ -313,13 +314,13 @@ describe("LC 교재 · 음원 조회는 내 레벨로 좁힌다 (마이그레이
       .join("\n");
   const live = new Map<string, string>();
   for (const f of readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort()) {
-    for (const [, verb, name, table, body] of sqlOf(f).matchAll(/(create|drop) policy (?:if exists )?"([^"]+)" on public\.(lc_books|lc_audio_tracks)([^;]*);/g)) {
+    for (const [, verb, name, table, body] of sqlOf(f).matchAll(/(create|drop) policy (?:if exists )?"([^"]+)" on public\.(lc_books|lc_audio_tracks|class_materials)([^;]*);/g)) {
       if (verb === "create") live.set(`${table} · ${name}`, body);
       else live.delete(`${table} · ${name}`);
     }
   }
 
-  it.each(["lc_books", "lc_audio_tracks"])("%s — 학생 갈래는 my_lc_levels 를 거친다 (수강 중이라는 것만으로 열지 않는다)", (table) => {
+  it.each(["lc_books", "lc_audio_tracks", "class_materials"])("%s — 학생 갈래는 my_lc_levels 를 거친다 (수강 중이라는 것만으로 열지 않는다)", (table) => {
     const selects = [...live].filter(([key, body]) => key.startsWith(`${table} ·`) && /for select/.test(body));
     expect(selects.length, `${table} 조회 정책을 못 찾았다 (문장 모양이 바뀌면 이 테스트가 헛돈다)`).toBeGreaterThan(0);
     for (const [key, body] of selects) {

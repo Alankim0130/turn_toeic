@@ -163,7 +163,7 @@ export const site = {
 // ─── 수강생전용 ─────────────────────────────────────────────────────────────
 // 메뉴에는 누구에게나 보이고, 수강생이 아니면 잠금 표시와 함께 소개 페이지(/student)로 안내한다.
 
-export type StudentFeatureKey = "live" | "replay" | "homework" | "study" | "lecture" | "textbook" | "lc-audio";
+export type StudentFeatureKey = "live" | "replay" | "homework" | "study" | "lecture" | "textbook" | "materials" | "lc-audio";
 
 export type StudentFeature = {
   key: StudentFeatureKey;
@@ -248,6 +248,17 @@ export const STUDENT_FEATURES: StudentFeature[] = [
     access: "enrollee",
   },
   {
+    // 수업자료실 (2026-10-05 Alan — "레벨별 구분과 RC, LC가 구분되어야해"). 학생에게는 내 레벨만 — DB 가 막는다 (LC 음원과 같은 규칙)
+    key: "materials",
+    href: "/my/materials",
+    label: "수업자료실",
+    icon: "download",
+    summary: "레벨별 RC·LC 수업 자료",
+    desc: "강사가 올린 수업 자료를 내 레벨에 맞춰 RC와 LC로 나눠 받아요.",
+    points: ["내 레벨 자료만 RC · LC 로 나눠서", "휴대폰에서 바로 열거나 내려받기"],
+    access: "active",
+  },
+  {
     key: "lc-audio",
     href: "/my/lc-audio",
     label: "LC음원듣기",
@@ -276,7 +287,7 @@ export type NavItem = {
   label: string;
   icon: string;
   auth?: "member" | "student" | "staff";
-  /** 하위 메뉴를 펼치는 항목 — 수강생전용(기능 7개) · 연락하기(CONTACT_OPTIONS 세 갈래) */
+  /** 하위 메뉴를 펼치는 항목 — 수강생전용(기능 8개) · 연락하기(CONTACT_OPTIONS 세 갈래) */
   group?: "student" | "contact";
   /** 수강생전용 기능이면 잠금 판정에 쓴다 */
   feature?: StudentFeatureKey;
@@ -381,6 +392,8 @@ export const NAV_ADMIN_SECTIONS: NavSection[] = [
       // 강사 유튜브 채널 연결 · 오늘 회차 송출 상태 (2026-09-21) — 강사·관리자만.
       // 2026-10-01 부터 Zoom 수업을 유튜브로 함께 송출한 방송을 찾아 **다시보기**로 올린다 (불라방 입장은 Zoom 그대로 — 도메인 규칙 1)
       { href: "/admin/live-channels", label: "유튜브 자동 연결", icon: "live" },
+      // 수업자료실 — 레벨 × RC/LC 로 자료를 올린다 (2026-10-05 Alan). 강사·관리자만 (crew 를 붙이지 말 것 — 조교 화면은 Alan 이 정한 여섯 가지)
+      { href: "/admin/class-materials", label: "수업자료실", icon: "download" },
       { href: "/admin/lc-audio", label: "LC 음원", icon: "headphones" },
     ],
   },
@@ -504,6 +517,7 @@ export const NAV_DRAWER: NavSection[] = [
     items: [
       featureNav("study", "스터디 신청"),
       { href: "/my/study", label: "내 스터디", icon: "online" },
+      featureNav("materials"),
       featureNav("lc-audio"),
       featureNav("homework"),
       featureNav("textbook"),

@@ -16,7 +16,7 @@ describe("햄버거 메뉴 묶음 (NAV_DRAWER)", () => {
     }
   });
 
-  it("수강생전용 기능 7개가 한 번씩, 잠금 판정용 feature 와 함께 들어 있다", () => {
+  it("수강생전용 기능 8개가 한 번씩, 잠금 판정용 feature 와 함께 들어 있다", () => {
     for (const f of STUDENT_FEATURES) {
       const found = rows.filter((r) => r.feature === f.key);
       expect(found, f.key).toHaveLength(1);
