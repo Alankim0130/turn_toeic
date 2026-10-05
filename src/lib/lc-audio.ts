@@ -26,32 +26,11 @@ export const BOOK_SET_LABEL: Record<string, string> = { A: "A반", B: "B반" };
 export const explicitBookSet = (s?: { book_set?: string | null; subject?: string | null } | null): BookSet | null =>
   s?.subject === "rc" ? null : s?.book_set === "A" || s?.book_set === "B" ? s.book_set : null;
 
-/** 레벨 × 과목을 가릴 때 보는 반의 칸들 */
-type LevelSection = { subject?: string | null; course?: { target_score?: number | null; includes_levels?: number[] | null } | null };
-
-/**
- * **내가 그 과목을 듣는 레벨** — 접근할 수 있는 반(`my_section_ids()`)의 강좌 레벨 + 속성반이 함께 듣는 레벨(650+ 중급속성 = 650 · 850) 중
- * 그 과목 시간이 있는 것 (2026-10-05 Alan — "RC단과 학생들은 음원파일과 LC수업자료실에 접근 안되는거 맞지?", 마이그레이션 20261005110000).
- *  - 시간 단위 반(60 · 70분)은 그 반의 과목(`subject`) 하나 — **RC 단과(주3일 60분 RC)는 LC 가 없다.**
- *  - 과목 칸이 빈 반은 두 과목 모두 — 120 · 140분 묶음 반 · 속성반 · 방학달 통짜 반(한 반에서 두 과목) · 아직 과목을 안 고른 반.
- *  - 그래서 주5일 60분(월수금 RC + 화목금 LC) · 120분 · 속성반은 둘 다다.
- *
- * 학생에게는 **이 레벨 × 과목만 열린다 — DB 가 막는다** (`private.my_subject_levels`). 그전(2026-10-03 ~ 10-05)에는 레벨만 봐서
- * RC 단과 학생에게도 LC 음원과 LC 수업자료가 열렸다. DB 와 **같은 규칙**이다 — 바꾸면 둘 다. DB 쪽이 더 좁으면 학생이 제 자료를 잃는다.
- * 강사 · 관리자는 정책이 모든 레벨을 열어 주므로(관리자 화면) 학생 화면은 늘 이것으로 한 번 더 좁힌다 (CLAUDE.md 등급 체계 10).
+/*
+ * 학생에게 어느 교재 · 음원이 열리는지는 `src/lib/class-rounds.ts` 가 정한다 (2026-10-05 — 수업 날짜에 맞춰 열기):
+ * 교재 = 내 LC 과정 칸(레벨 × A/B, `roundCells`), 음원 = 그 강의 내 수업일이 지났다(`roundDates`). DB `private.my_round_cells` ·
+ * `private.my_open_rounds` 와 같은 규칙이다. 그전의 레벨 × 과목 판정(`lcLevelsOf` · `subjectLevelsOf`)은 그날 지웠다.
  */
-export function subjectLevelsOf(sections: readonly LevelSection[], subject: "rc" | "lc"): number[] {
-  const levels = sections
-    .filter((s) => s.subject == null || s.subject === subject)
-    .flatMap((s) => [s.course?.target_score, ...(s.course?.includes_levels ?? [])]);
-  return [...new Set(levels.filter((l): l is number => typeof l === "number"))].sort((a, b) => a - b);
-}
-
-/**
- * **내 LC 레벨** = 내가 LC 를 듣는 레벨 (`subjectLevelsOf(…, "lc")`). LC 교재 · 음원은 이 레벨만 열린다 —
- * DB 정책(`private.my_lc_levels` = `my_subject_levels('lc')`)과 같다. RC 단과 학생은 빈 목록이다.
- */
-export const lcLevelsOf = (sections: readonly LevelSection[]): number[] => subjectLevelsOf(sections, "lc");
 
 /** 교재를 가릴 때 보는 반의 칸들 */
 export type BookSection = {

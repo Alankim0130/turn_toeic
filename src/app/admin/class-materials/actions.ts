@@ -13,6 +13,7 @@ import {
   materialFolder,
   titleFromFileName,
 } from "@/lib/class-materials";
+import { isRoundSet, ROUND_MAX } from "@/lib/class-rounds";
 
 export type ClassMaterialResult = { ok: boolean; error?: string };
 
@@ -27,15 +28,17 @@ function errorMessage(error: { code?: string; message?: string } | null, fallbac
   if (error.code === "42501") return "권한이 없어요. 강사·관리자 계정으로 다시 로그인해 주세요.";
   if (error.code === "23503") return "그 레벨이 레벨 목록에 없어요. 새로고침한 뒤 다시 골라 주세요.";
   if (error.code === "23505") return "같은 파일이 이미 올라가 있어요. 새로고침해 주세요.";
-  if (error.code === "23514") return "입력값이 규칙에 맞지 않아요 (제목 100자 · 안내 500자).";
+  if (error.code === "23514") return "입력값이 규칙에 맞지 않아요 (제목 100자 · 안내 500자 · 과정 A/B · 회차 1~30).";
   return fallback;
 }
 
 /**
- * 수업자료실 자료 저장 (2026-10-05 Alan — "레벨별 구분과 RC, LC가 구분되어야해"). 강사·관리자만 — 조교 화면이 아니다.
+ * 수업자료실 자료 저장 (2026-10-05 Alan — "레벨별 구분과 RC, LC가 구분되어야해" → 같은 날 "A/B 과정 전부다 나눠서" · 회차마다 수업일에 열기).
+ * 강사·관리자만 — 조교 화면이 아니다.
  * 파일은 브라우저가 먼저 저장소(`class-materials/{레벨}-{과목}/…`)에 올리고, 여기서는 표의 행만 만든다/고친다.
  *  - id 없음: 새 자료 (파일 필수)
- *  - id 있음: 레벨 · 과목 · 제목 · 안내 수정, file 이 있으면 파일 교체 후 옛 파일 삭제
+ *  - id 있음: 레벨 · 과목 · 과정 · 회차 · 제목 · 안내 수정, file 이 있으면 파일 교체 후 옛 파일 삭제
+ * **과정(A/B)과 회차는 늘 받는다** — 없으면 학생에게 영영 열리지 않는다 (칸이 생기기 전에 올린 자료도 수정하면서 정한다).
  * 로그인한 사람의 세션으로 쓴다 — RLS(`class_materials: 스태프 …`)가 한 번 더 막는다.
  * 제목을 비우면 파일 이름(확장자 뺀 것)이 제목이 된다.
  */
@@ -43,6 +46,8 @@ export async function saveClassMaterial(input: {
   id?: number | null;
   level: number;
   subject: string;
+  bookSet: string;
+  seq: number;
   title: string;
   note?: string | null;
   file?: UploadedFile | null;
@@ -57,6 +62,10 @@ export async function saveClassMaterial(input: {
   const file = input.file ?? null;
   if (!Number.isInteger(level) || level < 10 || level > 990) return { ok: false, error: "레벨을 다시 골라 주세요." };
   if (!isMaterialSubject(subject)) return { ok: false, error: "RC · LC 를 다시 골라 주세요." };
+  const bookSet = input.bookSet;
+  const seq = Number(input.seq);
+  if (!isRoundSet(bookSet)) return { ok: false, error: "A과정 · B과정을 골라 주세요." };
+  if (!Number.isInteger(seq) || seq < 1 || seq > ROUND_MAX) return { ok: false, error: `회차를 1~${ROUND_MAX} 사이로 골라 주세요.` };
   if (note.length > CLASS_MATERIAL_NOTE_MAX) return { ok: false, error: `안내는 ${CLASS_MATERIAL_NOTE_MAX}자 이내로 적어 주세요.` };
   if (file) {
     // 브라우저가 고른 레벨 · 과목 폴더에 올렸어야 한다 (경로 조작 · 다른 버킷 경로 방지)
@@ -77,6 +86,8 @@ export async function saveClassMaterial(input: {
     const { error } = await supabase.from("class_materials").insert({
       level,
       subject,
+      book_set: bookSet,
+      seq,
       title: typed || titleFromFileName(file.name),
       note: note || null,
       file_path: file.path,
@@ -100,6 +111,8 @@ export async function saveClassMaterial(input: {
     .update({
       level,
       subject,
+      book_set: bookSet,
+      seq,
       title: typed || titleFromFileName(file?.name ?? old.file_name),
       note: note || null,
       updated_at: new Date().toISOString(),

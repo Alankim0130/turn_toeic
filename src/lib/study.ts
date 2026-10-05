@@ -21,7 +21,8 @@ export const STUDY_KIND_ICON: Record<string, IconName> = {
 export const STUDY_KIND_DESC: Record<string, string> = {
   offline: "강사가 정한 시간대 중 하나를 골라 학원에서 함께 공부해요.",
   // 풀이는 내 스터디에서 인증한다 — 숙제업로드(정규 수업 숙제)와 섞지 않는다 (2026-09-23 Alan)
-  online: "수업이 있는 날마다 그날의 스터디 자료를 받아요. 풀고 나면 내 스터디에서 풀이 사진으로 인증해요.",
+  // 개강일부터 3일 신청 · 4일째 시작 (2026-10-05 Alan — onlineStudyWindow)
+  online: "개강일부터 3일 동안 신청하고, 4일째부터 수업이 있는 날마다 그날의 스터디 자료를 받아요. 풀고 나면 내 스터디에서 풀이 사진으로 인증해요.",
   vocab: "정해진 시간에 강사에게 단어 점검을 받아요. 시간대를 골라 신청하세요.",
 };
 

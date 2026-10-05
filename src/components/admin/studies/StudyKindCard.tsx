@@ -112,7 +112,7 @@ export function StudyKindCard({ kind, study, termKey }: { kind: string; study: P
       ) : (
         <div className="mt-4 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-slate">
-            이 달에 들어간 자료 <strong className="text-ink">{study.materialCount}회차</strong> · 자료는 회차로 한 번 올리면 매달 수업일 순서대로 열려요. 신청한 수강생은 그 날짜부터 받아요.
+            이 달에 들어간 자료 <strong className="text-ink">{study.materialCount}회차</strong> · 신청은 개강일부터 3일 동안만 받고, 1회차는 4일째부터의 첫 수업일이에요. 자료는 회차로 한 번 올리면 매달 수업일 순서대로 열려요.
           </p>
           <div className="flex shrink-0 flex-wrap gap-2">
             <Link href={`/admin/study-materials?term=${termKey}`} className="btn-primary !py-2">

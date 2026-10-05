@@ -52,7 +52,7 @@ const WIDE_OPEN_TABLES = [
   "section_live_links",
   "study_materials",
   "special_lectures",
-  // 레벨 × 과목으로 열리는 것 — 학생은 내가 그 과목을 듣는 레벨(private.my_subject_levels · my_lc_levels)만, 강사 · 관리자는 전부 (2026-10-03 · 10-05)
+  // 내 과정 칸 · 수업일로 열리는 것 — 학생은 내 반의 레벨 × 과목 × 과정, 음원 · 자료는 그 회차 수업일부터(private.my_round_cells · my_open_rounds), 강사 · 관리자는 전부 (2026-10-03 · 10-05)
   "lc_books",
   "lc_audio_tracks",
   "class_materials",
@@ -82,8 +82,7 @@ const NARROWERS: [RegExp, string][] = [
   [/from_user\.eq\./, "내 계정이 걸린 통합 신청 (from_user · to_user)"],
   [/\.in\("(?:section_id|study_id)"/, "부른 쪽이 준 내 반 · 내 스터디 목록"],
   [/signupTerms/, "내 등록에서 뽑은 기수 (getMyStudyEligibility)"],
-  [/lcLevelsOf\(/, "내가 LC 를 듣는 레벨 (lcLevelsOf = DB private.my_lc_levels)"],
-  [/subjectLevelsOf\(/, "내가 그 과목을 듣는 레벨 (subjectLevelsOf = DB private.my_subject_levels)"],
+  [/\broundCells\(|\bcellLevels\(|\broundDates\(/, "내 과정 칸 · 열린 회차 (class-rounds — DB private.my_round_cells · my_open_rounds)"],
 ];
 
 /** 좁히지 않아도 되는 곳 — **까닭을 적어야** 들어올 수 있다 */

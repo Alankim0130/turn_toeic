@@ -11,6 +11,7 @@ import { getMyOrders, getMyStudyCheckins, getMyStudyEligibility, getMyStudyMater
 import { getSessionProfile } from "@/lib/auth";
 import { studentGate } from "@/components/student/StudentGate";
 import { CheckinPanel } from "@/components/my/study/CheckinPanel";
+import { onlineStudyWindow, shortDay } from "@/lib/study-rounds";
 
 export const metadata: Metadata = {
   title: "내 스터디",
@@ -87,7 +88,12 @@ export default async function MyStudyPage() {
                       {slotTime(s.slot)}
                     </p>
                   )}
-                  {study.kind === "online" && <p className="mt-3 text-sm font-semibold text-ink">수업일마다 그날 자료가 열려요</p>}
+                  {/* 비대면은 개강일+3 부터 시작한다 (2026-10-05 Alan "4일째부터 시작") */}
+                  {study.kind === "online" && (
+                    <p className="mt-3 text-sm font-semibold text-ink">
+                      {study.term?.enrollment_opens_at ? `${shortDay(onlineStudyWindow(study.term.enrollment_opens_at).startsOn)}부터 ` : ""}수업일마다 그날 자료가 열려요
+                    </p>
+                  )}
                   {study.notice && <p className="mt-2 whitespace-pre-wrap text-sm text-slate">{study.notice}</p>}
                 </article>
               </Reveal>
@@ -118,7 +124,12 @@ export default async function MyStudyPage() {
                 </Alert>
               </div>
             ) : list.length === 0 ? (
-              <p className="px-5 py-8 text-center text-sm text-slate">아직 열린 자료가 없어요. 수업일마다 그날 자료가 열립니다.</p>
+              <p className="px-5 py-8 text-center text-sm text-slate">
+                아직 열린 자료가 없어요.{" "}
+                {study.term?.enrollment_opens_at
+                  ? `${shortDay(onlineStudyWindow(study.term.enrollment_opens_at).startsOn)}부터 수업일마다 그날 자료가 열립니다.`
+                  : "수업일마다 그날 자료가 열립니다."}
+              </p>
             ) : (
               <ul className="divide-y divide-line">
                 {list.map((m) => {

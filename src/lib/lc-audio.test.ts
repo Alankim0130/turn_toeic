@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bookSectionsByLevel, bookTimeLabel, bookTimesLabel, explicitBookSet, lcLevelsOf, subjectLevelsOf } from "./lc-audio";
+import { bookSectionsByLevel, bookTimeLabel, bookTimesLabel, explicitBookSet } from "./lc-audio";
 
 const TRACK = { mwf: "월수금", ttf: "화목금" };
 
@@ -79,62 +79,5 @@ describe("bookTimeLabel — 왜 이 교재인지 적는다", () => {
   it("시간대를 모르면 트랙만 적는다 — 없는 시간을 지어내지 않는다", () => {
     expect(bookTimeLabel({ track: "mwf", time_block: null, book_set: "A" }, TRACK)).toBe("월수금");
     expect(bookTimesLabel([], TRACK)).toBe("");
-  });
-});
-
-/**
- * 내가 그 과목을 듣는 레벨 — 학생에게는 DB 도 이 레벨 × 과목의 교재 · 음원 · 수업자료만 연다
- * (2026-10-05 Alan "RC단과 학생들은 음원파일과 LC수업자료실에 접근 안되는거 맞지?", 마이그레이션 20261005110000 `private.my_subject_levels`).
- * 두 규칙이 어긋나 DB 쪽이 좁아지면 학생이 제 자료를 잃는다 — 바꾸면 둘 다.
- */
-describe("subjectLevelsOf — 그 과목 시간이 있는 레벨 (과목 칸이 빈 반은 두 과목 모두)", () => {
-  it("RC 단과(주3일 60분 RC)는 RC 만 — LC 음원 · LC 자료가 없다", () => {
-    expect(subjectLevelsOf([mwf1000], "rc")).toEqual([650]);
-    expect(subjectLevelsOf([mwf1000], "lc")).toEqual([]);
-    expect(lcLevelsOf([mwf1000])).toEqual([]);
-  });
-  it("LC 단과는 LC 만", () => {
-    expect(subjectLevelsOf([ttf1000], "lc")).toEqual([650]);
-    expect(subjectLevelsOf([ttf1000], "rc")).toEqual([]);
-  });
-  it("주5일 60분(월수금 RC + 화목금 LC)은 둘 다", () => {
-    expect(subjectLevelsOf([mwf1000, ttf1000], "rc")).toEqual([650]);
-    expect(lcLevelsOf([mwf1000, ttf1000])).toEqual([650]);
-  });
-  it("120분 묶음 반은 과목 칸이 비어 두 과목 모두 — 품는 시간 단위 반이 내려오지 않아도", () => {
-    expect(lcLevelsOf([bundle])).toEqual([650]);
-    expect(subjectLevelsOf([bundle], "rc")).toEqual([650]);
-  });
-  it("방학달 통짜 반 · 과목을 아직 안 고른 반도 두 과목 모두 — 모를 때 학생 것을 빼앗지 않는다", () => {
-    const vacation = { subject: null, course: { target_score: 750, includes_levels: [] } };
-    expect(lcLevelsOf([vacation])).toEqual([750]);
-    expect(subjectLevelsOf([vacation], "rc")).toEqual([750]);
-    expect(subjectLevelsOf([{ course: { target_score: 850 } }], "lc")).toEqual([850]);
-  });
-  it("레벨을 섞지 않는다 — 650 RC 단과 + 750 LC 단과면 RC 는 650, LC 는 750", () => {
-    const lc750 = { subject: "lc", course: { target_score: 750, includes_levels: [] } };
-    expect(subjectLevelsOf([mwf1000, lc750], "rc")).toEqual([650]);
-    expect(lcLevelsOf([mwf1000, lc750])).toEqual([750]);
-  });
-});
-
-describe("lcLevelsOf — 내가 LC 를 듣는 레벨 (강좌 레벨 + 속성반이 함께 듣는 레벨)", () => {
-  it("점수보장반은 그 레벨 하나 — 120분 반이 품는 60분 반도 같은 레벨이라 한 번만", () => {
-    expect(lcLevelsOf([bundle, mwf1000, mwf1110])).toEqual([650]);
-  });
-  it("중급속성(650 + 850) — 속성반 강좌의 함께 듣는 레벨까지 (850 시간 반이 아직 없어도)", () => {
-    const sparta650 = { course: { target_score: 650, includes_levels: [850] } };
-    expect(lcLevelsOf([sparta650])).toEqual([650, 850]);
-    expect(lcLevelsOf([sparta650, mwf1000, { course: { target_score: 850, includes_levels: [] } }])).toEqual([650, 850]);
-    // 속성반이 여는 850 시간이 RC 뿐이어도 속성반 자체(과목 칸 없음)가 850 LC 를 연다 — 650LC/RC + 850LC/RC
-    const rc850 = { subject: "rc", course: { target_score: 850, includes_levels: [] } };
-    expect(lcLevelsOf([{ ...sparta650, subject: null }, rc850])).toEqual([650, 850]);
-  });
-  it("다른 레벨 반이 섞이지 않으면 다른 레벨은 없다 — 750 학생에게 650 · 850 이 나오지 않는다", () => {
-    expect(lcLevelsOf([{ course: { target_score: 750, includes_levels: [] } }])).toEqual([750]);
-  });
-  it("반이 없거나 강좌를 못 읽으면 빈 목록 — 짐작해서 레벨을 채우지 않는다", () => {
-    expect(lcLevelsOf([])).toEqual([]);
-    expect(lcLevelsOf([{ course: null }, {}])).toEqual([]);
   });
 });
