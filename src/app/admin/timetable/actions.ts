@@ -13,6 +13,7 @@ import {
   fieldsFor,
   kindOf,
   madeMonths,
+  orphanTwoWeekRows,
   parseYm,
   slotKinds,
   slotLabelOf,
@@ -161,7 +162,7 @@ export async function saveTimetableSlot(formData: FormData) {
   });
 }
 
-/** 시간대 지우기 — 그 달 반이 쓰고 있으면 DB 가 막는다. 한 시간만 남게 된 한달완성 줄은 함께 지운다 */
+/** 시간대 지우기 — 그 달 반이 쓰고 있으면 DB 가 막는다. 한 시간만 남게 된 한달완성 줄 · 품을 시간이 없어진 2주완성 줄은 함께 지운다 */
 export async function deleteTimetableSlot(formData: FormData) {
   await requireStaff();
   const month = str(formData, "month");
@@ -181,6 +182,15 @@ export async function deleteTimetableSlot(formData: FormData) {
   for (const p of holders) {
     const parts = rest.filter((o) => o.id !== p.id && blockContains(slotLabelOf(p), slotLabelOf(o)));
     if (parts.length < 2) await supabase.from("timetable_slots").delete().eq("id", p.id);
+  }
+  // 품을 시간이 없어진 2주완성 줄도 지운다 — 방학달에 쓰지 않는 850 시간(기본 줄에는 7월 · 8월이 함께 있다)을 지울 때 (2026-10-05).
+  // 반이 쓰고 있으면 DB 가 막으니 그대로 둔다
+  if (target.program === "score") {
+    const [score, twoWeek] = await Promise.all([
+      loadGroup(supabase, target.year, target.month, target.level, "score"),
+      loadGroup(supabase, target.year, target.month, target.level, "twoweek"),
+    ]);
+    for (const w of orphanTwoWeekRows(twoWeek, score)) await supabase.from("timetable_slots").delete().eq("id", w.id);
   }
   await normalizeGroup(supabase, target.year, target.month, target.level, target.program);
   done(month, { ok: "지웠어요." });

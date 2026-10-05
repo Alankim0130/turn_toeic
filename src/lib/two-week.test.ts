@@ -88,9 +88,19 @@ describe("DB 도 같은 규칙이다 (마이그레이션 재생한 마지막 모
     expect(fn).toContain("(v_program is distinct from 'twoweek' or (d.date >= v_opens and d.date <= v_closes))");
   });
 
-  it("2주완성 반은 같은 레벨 점수보장반의 시간 단위 반을 품는다 (묶음 반은 건너뛴다)", () => {
+  it("2주완성 반은 같은 레벨 점수보장반 중 시간이 안에 들거나 같은 반을 품는다 (묶음 반은 건너뛴다)", () => {
     const fn = last(/create or replace function private\.section_includes[\s\S]*?\$\$;/gi);
-    expect(fn).toContain("pc.program = 'twoweek' and cc.program = 'score' and cc.target_score = pc.target_score and private.time_block_contains(p.time_block, c.time_block) and not private.is_package_section(c.id)");
+    // 시간이 같은 반까지 — 방학달 850 은 통짜 한 반이라 2주완성과 시간이 같다 (2026-10-05 Alan "방학달에도 2주완성 있어").
+    // time_block_contains 는 같은 시간을 빼는 엄격한 포함이라 그것만으로는 방학달 2주완성 학생에게 아무것도 안 열렸다
+    expect(fn).toContain(
+      "pc.program = 'twoweek' and cc.program = 'score' and cc.target_score = pc.target_score and (p.time_block = c.time_block or private.time_block_contains(p.time_block, c.time_block)) and not private.is_package_section(c.id)",
+    );
+  });
+
+  it("방학달 기본 줄에도 2주완성 — 850 통짜 시간마다 한 줄 (7월 · 8월 850 이 함께 있어 처음~끝 한 줄로 잇지 않는다)", () => {
+    const vacation = readFileSync(join(DIR, "20261005160000_two_week_vacation.sql"), "utf8").replace(/\s+/g, " ");
+    expect(vacation).toContain("select null, null, s.level, 'twoweek', 'vacation', s.start_time, s.end_time");
+    expect(vacation).toContain("and s.season = 'vacation' and s.program = 'score'");
   });
 
   it("담당 강사: 점수보장반이 아닌 과정은 그릇이라 비운다", () => {

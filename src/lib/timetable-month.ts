@@ -153,6 +153,20 @@ export function kindOf(row: TimeRow, sameGroup: TimeRow[]): SlotKind {
   return slotMinutes(row) <= 90 ? "hour" : "block";
 }
 
+/**
+ * 품을 시간이 없어진 2주완성 줄 (2026-10-05 Alan "방학달에도 2주완성 있어").
+ * 2주완성 줄은 같은 레벨 점수보장반 시간을 품는 그릇이다 — 시간이 **같거나 안에 드는** 점수보장반 줄이 하나도 없으면 뜻이 없다
+ * (DB `private.section_includes` 의 2주완성 갈래와 같은 시간 규칙). 방학달 기본 줄에는 7월 · 8월 850 이 함께 있어 새 방학달 시간표에
+ * 2주완성 줄도 둘 다 따라오는데, 그 달에 쓰지 않는 850 시간을 지우면 그 시간의 2주완성 줄도 함께 지운다 (`deleteTimetableSlot` —
+ * 한 시간만 남은 한달완성 줄을 함께 지우는 것과 같은 일). 평달 2주완성(12:30~15:00)은 70분 두 시간이 안에 있어 140분 묶음 줄을 지워도 남는다
+ */
+export function orphanTwoWeekRows<T extends TimeRow>(twoWeek: readonly T[], score: readonly TimeRow[]): T[] {
+  return twoWeek.filter((w) => {
+    const label = slotLabelOf(w);
+    return !score.some((s) => s.level === w.level && (slotLabelOf(s) === label || blockContains(label, slotLabelOf(s))));
+  });
+}
+
 /** 모든 줄의 종류 (같은 레벨 · 과정끼리 본다) */
 export function slotKinds<T extends TimeRow>(rows: T[]): Map<number, SlotKind> {
   const out = new Map<number, SlotKind>();

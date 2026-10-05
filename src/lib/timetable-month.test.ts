@@ -7,6 +7,7 @@ import {
   kindOf,
   madeMonths,
   missingOf,
+  orphanTwoWeekRows,
   parseYm,
   shiftYm,
   slotKinds,
@@ -178,5 +179,31 @@ describe("한달완성 묶기 — 이어지는 두 시간", () => {
 
   it("방학달 통짜 줄은 묶지 않는다", () => {
     expect(bundleCandidates([row(1, "10:00", "12:10"), row(2, "12:30", "14:40")])).toEqual([]);
+  });
+});
+
+describe("품을 시간이 없어진 2주완성 줄 (2026-10-05 Alan \"방학달에도 2주완성 있어\")", () => {
+  const tw = (id: number, start: string, end: string, level = 850) => row(id, start, end, { program: "twoweek", level });
+  const sc = (id: number, start: string, end: string, level = 850) => row(id, start, end, { level });
+
+  it("방학달 기본 줄에서 온 7월 · 8월 850 중 쓰지 않는 시간을 지우면 그 시간의 2주완성 줄만 남는다", () => {
+    const twoWeek = [tw(10, "12:30", "14:40"), tw(11, "15:30", "16:50")];
+    // 7월(15:30~16:50)을 지우고 8월(12:30~14:40) 만 남겼다
+    expect(orphanTwoWeekRows(twoWeek, [sc(1, "12:30", "14:40")]).map((w) => w.id)).toEqual([11]);
+    // 둘 다 남아 있으면 지울 것이 없다 (같은 시간도 품는다)
+    expect(orphanTwoWeekRows(twoWeek, [sc(1, "12:30", "14:40"), sc(2, "15:30", "16:50")])).toEqual([]);
+  });
+
+  it("평달 2주완성(12:30~15:00)은 140분 묶음 줄을 지워도 70분 두 시간이 안에 있어 남는다 — 다 지우면 함께 지운다", () => {
+    const twoWeek = [tw(10, "12:30", "15:00")];
+    expect(orphanTwoWeekRows(twoWeek, [sc(1, "12:30", "13:40"), sc(2, "13:50", "15:00")])).toEqual([]);
+    expect(orphanTwoWeekRows(twoWeek, [sc(2, "13:50", "15:00")])).toEqual([]);
+    expect(orphanTwoWeekRows(twoWeek, []).map((w) => w.id)).toEqual([10]);
+  });
+
+  it("다른 레벨 · 걸치기만 한 시간은 품는 시간이 아니다", () => {
+    const twoWeek = [tw(10, "12:30", "14:40")];
+    expect(orphanTwoWeekRows(twoWeek, [sc(1, "12:30", "14:40", 750)]).map((w) => w.id)).toEqual([10]);
+    expect(orphanTwoWeekRows(twoWeek, [sc(1, "14:00", "15:30")]).map((w) => w.id)).toEqual([10]);
   });
 });

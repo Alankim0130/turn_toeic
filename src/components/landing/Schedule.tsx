@@ -14,28 +14,35 @@ import { TimetableCard, type TimetableCardData } from "./TimetableCard";
  * 2026-09-29 부터 시간표는 **달마다 한 벌**이다 — **이번 달 시간표**를 보여 주고, 아직 없으면 가장 가까운 앞선 달 것을 그 달 기준이라고 밝혀 보여 준다.
  * 달 시간표가 하나도 없을 때만 예전 두 벌(평달·방학달 기본 줄)로 돌아가고, 그 계절 줄도 없으면 평달 것을 **평달 기준이라고 밝힌다**
  * (잘못된 시간을 그냥 내보내지 않는다).
- * 카드는 과정(한 달 점수보장반 → 스파르타반) × 레벨로 나눈다 — 같은 650 이라도 스파르타반은 시간대가 다르다.
+ * 카드는 과정(한 달 점수보장반 → 스파르타반 → 2주완성반) × 레벨로 나눈다 — 같은 650 이라도 스파르타반은 시간대가 다르다.
+ * 2주완성반(2026-10-05)은 같은 레벨 수업의 앞 절반이라 카드에 그렇게 적는다 — 이름은 courses.name 에서 온다.
  */
 async function loadTimetable() {
   const supabase = await createClient();
   const today = todayKST();
   const target = { y: Number(today.slice(0, 4)), m: Number(today.slice(5, 7)) };
   const season = seasonOfMonth(target.m);
-  const [{ data }, { data: spartaCourses }] = await Promise.all([
+  const [{ data }, { data: containerCourses }] = await Promise.all([
     supabase
       .from("timetable_levels")
       .select("level, note, timetable_slots(program, season, year, month, start_time, end_time, ttf_recorded)")
       .order("sort_order")
       .order("start_time", { referencedTable: "timetable_slots" }),
-    // 스파르타는 두 레벨을 함께 듣는다 (650+ 중급속성 = 650 + 850). 구성은 courses.includes_levels 한곳 — 코드에 적지 않는다
-    supabase.from("courses").select("target_score, name, includes_levels").eq("program", "sparta").eq("is_active", true),
+    // 스파르타는 두 레벨을 함께 듣는다 (650+ 중급속성 = 650 + 850). 구성은 courses.includes_levels 한곳 — 코드에 적지 않는다.
+    // 2주완성은 카드 제목(850 2주완성)에 쓸 이름만
+    supabase.from("courses").select("program, target_score, name, includes_levels").in("program", ["sparta", "twoweek"]).eq("is_active", true),
   ]);
 
   const rows = data ?? [];
+  const courseOf = (program: string, level: number) => (containerCourses ?? []).find((c) => c.program === program && c.target_score === level);
   const spartaOf = (level: number): TimetableCardData["sparta"] => {
-    const c = (spartaCourses ?? []).find((c) => c.target_score === level);
+    const c = courseOf("sparta", level);
     if (!c) return null;
     return { name: c.name, levels: [level, ...c.includes_levels.filter((l) => l !== level).sort((a, b) => a - b)] };
+  };
+  const twoWeekOf = (level: number): TimetableCardData["twoWeek"] => {
+    const c = courseOf("twoweek", level);
+    return c ? { name: c.name } : null;
   };
   type Slot = (typeof rows)[number]["timetable_slots"][number];
   const pick = (keep: (s: Slot) => boolean): TimetableCardData[] =>
@@ -47,6 +54,7 @@ async function loadTimetable() {
         // 레벨 메모는 점수보장반 카드에만. **인강 여부는 여기가 아니라 시간대마다** `recorded` 로 넘긴다
         note: program === "score" ? t.note : null,
         sparta: program === "sparta" ? spartaOf(t.level) : null,
+        twoWeek: program === "twoweek" ? twoWeekOf(t.level) : null,
         slots: t.timetable_slots
           .filter((s) => keep(s) && s.program === program)
           .sort((a, b) => a.start_time.localeCompare(b.start_time) || a.end_time.localeCompare(b.end_time))
