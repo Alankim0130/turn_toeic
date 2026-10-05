@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { fuzzyIncludes, isTwoWeekReceipt, levenshtein, normalizeReceiptText, parseReceipt, receiptComplete, receiptHasName, receiptStudentName } from "@/lib/receipt";
+import {
+  fuzzyIncludes,
+  isTwoWeekReceipt,
+  levenshtein,
+  normalizeReceiptText,
+  parsePeriodWeeks,
+  parseReceipt,
+  readEnoughFor,
+  receiptComplete,
+  receiptHasName,
+  receiptStudentName,
+} from "@/lib/receipt";
 
 /** CLAUDE.md "수강증 표기 규칙" 표의 강좌명. 학원명·강사명은 실제 수강증 양식을 받기 전까지의 가정 */
 const receipt = (course: string, extra = "") => `YBM어학원 서면센터\n역전토익 ${course}\n강사 이혜영\n수강생 김민수\n${extra}`;
@@ -260,16 +271,47 @@ describe("스파르타(프리미어)반 과정명 — 중급속성 · 실전속�
   });
 });
 
-describe("2주완성 — 실물 수강증을 아직 못 봐서 글자로만 가른다 (2026-10-05)", () => {
+describe("2주완성 — 한 달 과정과 기간 숫자 `[4주-` ↔ `[2주-` 로 가른다 (2026-10-05 Alan \"2주 라는 글자가 있을거야. 지금은 4주\")", () => {
   const line = (title: string, days: string) =>
     screen(["역전토익 [종합반]", title, "수강생 김민수", "수강센터 부산 서면센터", days, "수강시간 12:30~15:00"].join("\n"));
 
-  it("과정명 `2주완성` 이면 twoweek — 강사가 확인한다는 경고를 남긴다", () => {
+  it("과정명 `2주완성` 이면 twoweek · 기간 2 — 표기를 알려 받았으니 강사 확인 경고는 없다", () => {
     const p = parseReceipt(line("850+ 2주완성", "수강요일 [2주-10/06] 주5일 (월9회)"));
     expect(p.program).toBe("twoweek");
+    expect(p.weeks).toBe(2);
     expect(p.level).toBe(850);
     expect(p.time?.timeBlock).toBe("12:30~15:00");
-    expect(p.warnings.some((w) => w.includes("2주완성"))).toBe(true);
+    expect(p.warnings.some((w) => w.includes("2주완성"))).toBe(false);
+  });
+
+  it("과정명이 그대로 `850 목표` 여도 기간 `[2주-` 면 twoweek — 지금 수강증 모양에서 숫자만 바뀐다", () => {
+    const p = parseReceipt(line("850 목표", "수강요일 [2주-10/06] 주5일 (월9회)"));
+    expect(p.program).toBe("twoweek");
+    expect(p.weeks).toBe(2);
+    expect(p.weekly).toBe(5);
+  });
+
+  it("기간 숫자를 따로 읽는다 (parsePeriodWeeks) — 또렷한 숫자가 하나일 때만", () => {
+    expect(parsePeriodWeeks("수강요일[4주-09/04]월수금(월9회)")).toEqual({ weeks: 4, conflict: false });
+    expect(parsePeriodWeeks("수강요일[2주-10/06]주5일(월9회)")).toEqual({ weeks: 2, conflict: false });
+    expect(parsePeriodWeeks("[2주~10/06]")).toEqual({ weeks: 2, conflict: false });
+    // 실물 첫 변형 — 숫자가 글자로 읽혔다 (`[4주-08/04]` → `이나주-98704]`)
+    expect(parsePeriodWeeks("이나주-98704]주5일(월18회라이")).toEqual({ weeks: null, conflict: false });
+    expect(parsePeriodWeeks("수강요일[12주-10/06]")).toEqual({ weeks: null, conflict: false });
+    // 변형마다 이어 붙인 원문에 같은 숫자가 여러 번 — 그대로 하나
+    expect(parsePeriodWeeks("[4주-08/04]…[4주-08/04]")).toEqual({ weeks: 4, conflict: false });
+    // 4 와 2 가 함께 읽혔으면 어느 쪽인지 모른다
+    expect(parsePeriodWeeks("[4주-10/06]…[2주-10/06]")).toEqual({ weeks: null, conflict: true });
+  });
+
+  it("4 와 2 가 함께 읽히면 2주완성으로 보지 않고 경고를 남긴다 — 반 대조가 같은 자리 2주완성 반을 보고 사람에게 넘긴다", () => {
+    const p = parseReceipt(line("850 목표", "수강요일 [4주-10/06] 주5일 (월18회) [2주-10/06]"));
+    expect(p.program).toBe("score");
+    expect(p.weeks).toBeNull();
+    expect(p.warnings).toContain("수강 기간이 2주 · 4주로 함께 읽혔어요");
+    expect(isTwoWeekReceipt(p.compact)).toBe(false);
+    // 과정명 `2주완성` 이 또렷하면 그쪽을 믿는다
+    expect(parseReceipt(line("850+ 2주완성", "수강요일 [4주-10/06] [2주-10/06] 주5일 (월9회)")).program).toBe("twoweek");
   });
 
   it("수강요일 줄의 기간 `[2주-MM/DD]` 만 있어도 twoweek (과정명을 못 읽었을 때)", () => {
@@ -284,7 +326,9 @@ describe("2주완성 — 실물 수강증을 아직 못 봐서 글자로만 가�
   });
 
   it("한 달 과정 `[4주-…]` · `12주` · 날짜 속 2 는 2주완성이 아니다", () => {
-    expect(parseReceipt(line("850 목표", "수강요일 [4주-10/06] 주5일 (월18회)")).program).toBe("score");
+    const month = parseReceipt(line("850 목표", "수강요일 [4주-10/06] 주5일 (월18회)"));
+    expect(month.program).toBe("score");
+    expect(month.weeks).toBe(4);
     expect(isTwoWeekReceipt("수강요일[12주-10/06]")).toBe(false);
     expect(isTwoWeekReceipt("현재시간2026-10-0212:30:00")).toBe(false);
     expect(isTwoWeekReceipt("850+2주완성")).toBe(true);
@@ -524,6 +568,32 @@ describe("오류 점검 (2026-09-22)", () => {
     const p = parseReceipt(screen(["역전토익 [프리미어반]", "750 목표 중급속성", "수강센터 부산 서면센터", "수강요일 주5일 (월18회) 프리미어반", "수강시간 10:00~13:40"].join("\n")));
     expect(p.level).toBe(750);
     expect(p.courseLevel).toBe(650);
+  });
+
+  /**
+   * 2026-10-05 2주완성 — 한 달 수강증과 기간 숫자 하나(`[4주-` ↔ `[2주-`)로만 갈린다. 그런데 이 변형은 그 숫자를 글자로 읽는다
+   * (`[4주-08/04]` → `이 나주-98704]`). 여기서 멈추면 2주완성 수강증도 한 달 수강증처럼 읽혀 한 달 반에 자동 배정된다.
+   */
+  describe("2주완성 자리에서는 기간 숫자까지 읽혀야 멈춘다 (readEnoughFor 의 periodKeys)", () => {
+    const at = new Set(["650|10:00~12:10"]);
+
+    it("이 변형은 기간 숫자를 못 읽는다", () => {
+      expect(parseReceipt(real).weeks).toBeNull();
+      expect(readEnoughFor(null)(real)).toBe(true); // 2주완성 반이 없는 자리는 예전처럼 여기서 멈춘다
+    });
+
+    it("같은 레벨 · 시간에 2주완성 반이 열려 있으면 멈추지 않는다 — 뒤 변형이 숫자를 읽을 기회를 준다", () => {
+      expect(readEnoughFor(null, { periodKeys: at })(real)).toBe(false);
+      expect(readEnoughFor(null, { periodKeys: new Set(["850|12:30~15:00", "750|10:00~12:10"]) })(real)).toBe(true); // 다른 자리
+    });
+
+    it("다음 변형이 `[4주-` · `[2주-` 를 읽으면 멈춘다 — 과정명 `2주완성` 이 또렷해도", () => {
+      expect(readEnoughFor(null, { periodKeys: at })(`${real}\n수강요일 [4주-08/04] 주5일`)).toBe(true);
+      expect(readEnoughFor(null, { periodKeys: at })(`${real}\n수강요일 [2주-08/04] 주5일`)).toBe(true);
+      expect(readEnoughFor(null, { periodKeys: at })(real.replace("650 목표", "650 목표 2주완성"))).toBe(true);
+      // 4 와 2 가 함께면 숫자가 또렷하지 않다 — 남은 변형을 마저 읽는다 (다 읽어도 모르면 반 대조가 사람에게 넘긴다)
+      expect(readEnoughFor(null, { periodKeys: at })(`${real}\n[4주-08/04]\n[2주-08/04]`)).toBe(false);
+    });
   });
 });
 

@@ -81,6 +81,33 @@ describe("실물 수강증 OCR (휴대폰 전체 캡처)", () => {
     expect(matchSections(p, sections).result).toEqual({ kind: "match", sectionIds: [11, 12], term: "2026-08" });
   }, 60_000);
 
+  it("2주완성이 열리는 자리면 기간 숫자 `[4주-` 까지 읽는다 — 첫 변형이 그 숫자를 글자로 읽어도 (2026-10-05)", async () => {
+    const bytes = fs.readFileSync(FIXTURE);
+    // 예전처럼 첫 변형에서 멈추면 기간 숫자가 비어 있다 (`[4주-08/04]` → `이 나주-98704]`)
+    const quick = await readReceiptText({ bytes, mimeType: "image/png", enough: readEnoughFor(null) });
+    expect(quick.ok && parseReceipt(quick.result.text).weeks).toBeNull();
+
+    const out = await readReceiptText({ bytes, mimeType: "image/png", enough: readEnoughFor(null, { periodKeys: new Set(["650|10:00~12:10"]) }) });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const p = parseReceipt(out.result.text);
+    expect(p.weeks).toBe(4);
+    expect(p.program).toBe("score");
+    expect(p.warnings).not.toContain("수강 기간이 2주 · 4주로 함께 읽혔어요");
+
+    // 같은 자리에 2주완성 반이 열려 있어도 한 달 반에 그대로 — 숫자를 읽었으니 자동 승인 길이다
+    const c650 = { id: 1, name: "650", program: "score", target_score: 650 };
+    const t650 = { id: 2, name: "650+ 2주완성", program: "twoweek", target_score: 650 };
+    const aug = { year: 2026, month: 8 };
+    const sections: EnrollSection[] = [
+      { id: 11, track: "mwf", time_block: "10:00~12:10", term: aug, course: c650 },
+      { id: 12, track: "ttf", time_block: "10:00~12:10", term: aug, course: c650 },
+      { id: 21, track: "mwf", time_block: "10:00~12:10", term: aug, course: t650 },
+      { id: 22, track: "ttf", time_block: "10:00~12:10", term: aug, course: t650 },
+    ];
+    expect(matchSections(p, sections).result).toEqual({ kind: "match", sectionIds: [11, 12], term: "2026-08" });
+  }, 60_000);
+
   it("여러 장이 한꺼번에 와도 한 장씩 읽어 모두 끝난다 (교실에서 여럿이 동시에 올리는 경우)", async () => {
     const bytes = fs.readFileSync(FIXTURE);
     const outs = await Promise.all([1, 2, 3].map(() => readReceiptText({ bytes, mimeType: "image/png", enough: readEnoughFor(null) })));

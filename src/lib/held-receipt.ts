@@ -11,7 +11,23 @@ import type { ParsedReceipt } from "./receipt";
 export type StoredParsed = Partial<
   Pick<
     ParsedReceipt,
-    "gates" | "mode" | "modeEvidence" | "card" | "brandExact" | "weekly" | "tracks" | "levels" | "level" | "courseLevel" | "program" | "time" | "courseMonth" | "startMonth" | "capturedOn" | "capturedAt"
+    | "gates"
+    | "mode"
+    | "modeEvidence"
+    | "card"
+    | "brandExact"
+    | "weekly"
+    | "tracks"
+    | "levels"
+    | "level"
+    | "courseLevel"
+    | "program"
+    | "weeks"
+    | "time"
+    | "courseMonth"
+    | "startMonth"
+    | "capturedOn"
+    | "capturedAt"
   >
 > & { nameMatches?: boolean | null };
 
@@ -38,5 +54,7 @@ export function toMatchInput(parsed: StoredParsed): MatchInput {
     time: parsed.time ?? null,
     courseMonth: parsed.courseMonth ?? null,
     startMonth: parsed.startMonth ?? null,
+    // 2026-10-05 전 기록에는 없다 — 비면 "못 읽음" 이라 같은 시간에 2주완성 반이 있으면 사람이 본다
+    weeks: parsed.weeks ?? null,
   };
 }

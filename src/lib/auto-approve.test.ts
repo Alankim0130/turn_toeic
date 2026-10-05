@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoApproveBlockers, BLOCKER_LABEL, blockerLines, type AutoApproveInput } from "./auto-approve";
+import { autoApproveBlockers, BLOCKER_LABEL, blockerLines, type AutoApproveBlocker, type AutoApproveInput } from "./auto-approve";
 
 const quiet = { duplicateImage: false, staleCapture: false, sameCapture: false, paletteOff: false, alreadyEnrolled: [], decidedBefore: null } as const;
 const ok: AutoApproveInput = {
@@ -26,10 +26,11 @@ describe("자동 승인 조건 — 수강증을 올린 자리와 예비 접수 �
     expect(autoApproveBlockers({ ...ok, flags: { ...quiet, sameCapture: true, paletteOff: true } })).toEqual(["same_capture", "palette"]);
   });
 
-  it("2주완성 수강증은 실물 표기를 확인하기 전까지 자동 승인하지 않는다 (2026-10-05) — 점수보장반 · 스파르타는 그대로", () => {
-    expect(autoApproveBlockers({ ...ok, parsed: { ...ok.parsed, program: "twoweek" } })).toEqual(["two_week"]);
-    expect(autoApproveBlockers({ ...ok, parsed: { ...ok.parsed, program: "score" } })).toEqual([]);
-    expect(autoApproveBlockers({ ...ok, parsed: { ...ok.parsed, program: "sparta" } })).toEqual([]);
+  it("기간 숫자(4주 · 2주)를 못 가렸을 때만 막는다 — 2주완성 수강증도 다른 수강증처럼 본다 (2026-10-05 Alan \"2주 라는 글자가 있을거야\")", () => {
+    expect(autoApproveBlockers({ ...ok, periodUnclear: true })).toEqual(["period_unclear"]);
+    expect(autoApproveBlockers({ ...ok, periodUnclear: false })).toEqual([]);
+    // 반을 못 찾았으면 기간은 따로 적지 않는다 — 반 대조가 남긴 까닭 문장이 말한다
+    expect(autoApproveBlockers({ ...ok, matched: false, periodUnclear: true })).toEqual(["no_match"]);
   });
 
   it("저장해 둔 예전 판독 결과에 칸이 없으면 막는 쪽으로 읽는다", () => {
@@ -40,14 +41,18 @@ describe("자동 승인 조건 — 수강증을 올린 자리와 예비 접수 �
 
 describe("막은 까닭의 이름", () => {
   it("모든 까닭에 화면에 적을 말이 있다", () => {
-    const all = autoApproveBlockers({
-      parsed: { program: "twoweek" },
-      nameMatches: false,
-      matched: false,
-      flags: { duplicateImage: true, staleCapture: true, sameCapture: true, paletteOff: true, alreadyEnrolled: [1], decidedBefore: "approved" },
-    });
-    expect(all).toHaveLength(Object.keys(BLOCKER_LABEL).length);
+    const flags = { duplicateImage: true, staleCapture: true, sameCapture: true, paletteOff: true, alreadyEnrolled: [1], decidedBefore: "approved" } as const;
+    // no_match 와 period_unclear 는 함께 붙지 않는다 (반을 찾았을 때만 기간을 본다) — 두 번 불러 모은다
+    const unmatched = autoApproveBlockers({ parsed: {}, nameMatches: false, matched: false, flags });
+    const unclear = autoApproveBlockers({ parsed: {}, nameMatches: false, matched: true, periodUnclear: true, flags });
+    // two_week 는 2026-10-05 몇 시간 동안 남은 옛 기록의 까닭이라 지금은 붙지 않는다 — 그 기록을 읽을 이름표만 둔다
+    const all = new Set<AutoApproveBlocker>([...unmatched, ...unclear, "two_week"]);
+    expect([...all].sort()).toEqual(Object.keys(BLOCKER_LABEL).sort());
     for (const b of all) expect(BLOCKER_LABEL[b]?.length, b).toBeGreaterThan(0);
+  });
+
+  it("옛 기록의 two_week 도 승인 화면에 그대로 읽힌다", () => {
+    expect(blockerLines(["two_week"])).toEqual([BLOCKER_LABEL.two_week]);
   });
 });
 

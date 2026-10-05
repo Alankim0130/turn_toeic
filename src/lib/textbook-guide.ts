@@ -14,7 +14,6 @@ import {
   type TextbookNotice,
   type TextbookSettings,
 } from "./textbook";
-import { isTwoWeek } from "./two-week";
 
 /** 학생 화면(세션)과 승인 길(서버) 둘 다 부른다 — `fetchOpenEnrollSections` 와 같은 꼴 */
 type Client = Pick<ReturnType<typeof createAdminClient>, "from" | "rpc">;
@@ -32,7 +31,7 @@ export type DirectBookSection = {
 };
 
 /**
- * 직접 반 → 함께 듣는 반(묶음 → 시간 단위, 속성반 → 함께 듣는 레벨의 시간 단위)과 그 반들의 교재 칸.
+ * 직접 반 → 함께 듣는 반(묶음 → 시간 단위, 속성반 → 함께 듣는 레벨의 시간 단위, 2주완성 → 같은 레벨의 시간 단위)과 그 반들의 교재 칸.
  * **품는 관계는 DB 가 정한다** (`term_section_includes` — security invoker 이고 반 목록은 공개라 학생 세션으로도 읽힌다).
  * 비공개(draft) 반은 넣지 않는다 — 학생 세션에는 안 보이는 반이라, 서버(service_role)로 읽을 때도 같은 답이 나오게 한다.
  * 못 읽으면 그 반은 묶음 그대로 남아 `booksForSections` 가 "정하지 못함" 으로 본다 — 짐작하지 않는다.
@@ -43,9 +42,8 @@ export async function bookSectionsOf(client: Client, direct: readonly DirectBook
 
   const includes = new Map<number, number[]>();
   const mine = new Set(direct.map((s) => s.id));
-  // 2주완성(2026-10-05)은 교재 규칙을 아직 정하지 않았다 (앞 절반만 듣는다 — 몇 권 · 얼마인지 Alan 확인 전).
-  // 품은 반으로 펼치지 않아 그 반 자신(과목 · 과정 없음)이 남고 "정하지 못함"(unknown)이 된다 — 안내를 보내지 않고 미리 고르지도 않는다
-  const unsettled = new Set(direct.filter((s) => isTwoWeek(s.course?.program)).map((s) => s.id));
+  // 2주완성 반(2026-10-05)도 속성반처럼 품은 850 시간 단위 반으로 펼친다 — 앞 절반만 들어도 교재는 그 시간들의 교재다
+  // (같은 날 Alan "교재는 4권이야" — 주5일이면 두 트랙 × 두 시간 = 850 네 권. 주3일이면 그 트랙의 두 권)
   const terms = [...new Set(direct.map((s) => s.term_id))];
   const pairs = await Promise.all(terms.map((t) => client.rpc("term_section_includes", { p_term_id: t })));
   for (const { data, error } of pairs) {
@@ -54,7 +52,7 @@ export async function bookSectionsOf(client: Client, direct: readonly DirectBook
       continue;
     }
     for (const p of data ?? []) {
-      if (mine.has(p.section_id) && !unsettled.has(p.section_id)) includes.set(p.section_id, [...(includes.get(p.section_id) ?? []), p.included_id]);
+      if (mine.has(p.section_id)) includes.set(p.section_id, [...(includes.get(p.section_id) ?? []), p.included_id]);
     }
   }
 

@@ -1,8 +1,8 @@
 import "server-only";
 import type { createAdminClient } from "./supabase/admin";
 import type { Json } from "./supabase/database.types";
-import { matchSections } from "./match-sections";
-import { fetchOpenEnrollSections } from "./open-sections";
+import { matchSections, twoWeekSpots } from "./match-sections";
+import { fetchOpenEnrollSections, fetchTwoWeekSlots } from "./open-sections";
 import { receiptFlags } from "./verify-flags";
 import { autoApproveBlockers } from "./auto-approve";
 import { approveVerificationWith } from "./approve-verification";
@@ -53,7 +53,9 @@ export async function rematchHeldVerifications(admin: Admin, opts: { notify?: bo
     }
     if (!held || held.length === 0) return summary;
 
-    const [sections, auto] = await Promise.all([fetchOpenEnrollSections(admin), readAutoVerify(admin)]);
+    const [sections, auto, twoWeekSlots] = await Promise.all([fetchOpenEnrollSections(admin), readAutoVerify(admin), fetchTwoWeekSlots(admin)]);
+    // 2주완성이 열리는 자리 (2026-10-05) — 기간 숫자를 못 읽은 한 달 수강증은 그 자리면 사람이 본다 (한 달 반이 먼저 열려도)
+    const spots = twoWeekSpots(sections, twoWeekSlots);
 
     for (const v of held) {
       const candidates = asRecord(v.candidates);
@@ -66,7 +68,7 @@ export async function rematchHeldVerifications(admin: Admin, opts: { notify?: bo
       }
 
       // 수강월은 받아 둔 그 달로 못박는다 — 날짜로만 달을 읽은 수강증은 대조가 다른 달(열려 있는 이번 달) 반을 고를 수 있다
-      const match = matchSections({ ...toMatchInput(parsed), courseMonth: month }, sections);
+      const match = matchSections({ ...toMatchInput(parsed), courseMonth: month }, sections, { twoWeekSpots: spots });
       const matched = match.result.kind === "match" ? match.result : null;
       const storedFlags = asRecord((candidates.flags ?? null) as Json);
       const flags = await receiptFlags(admin, {
@@ -78,7 +80,7 @@ export async function rematchHeldVerifications(admin: Admin, opts: { notify?: bo
         sectionIds: matched?.sectionIds ?? [],
       });
       const nameMatches = typeof candidates.nameMatches === "boolean" ? candidates.nameMatches : null;
-      const blockers = autoApproveBlockers({ parsed, nameMatches, flags, matched: !!matched });
+      const blockers = autoApproveBlockers({ parsed, nameMatches, flags, matched: !!matched, periodUnclear: matched?.periodUnclear === true });
 
       // `hold` 는 지운다 (키째로 — JSON null 로 두면 `candidates->hold is null` 에 안 걸려 계속 기다리는 것으로 보인다)
       const rest = { ...candidates };
