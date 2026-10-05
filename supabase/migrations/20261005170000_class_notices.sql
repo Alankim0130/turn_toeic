@@ -13,6 +13,8 @@
 --     그림 파일은 private 버킷 class-notices — 조회는 **그 그림을 품은 공지가 보이는 사람**만 (공지 행 RLS 를 그대로 거친다).
 --   * 작성자 이름은 author_name 에 박아 둔다 — 학생은 profiles 를 못 읽는다 (알림함 sender_name 과 같은 까닭).
 --   * 새 표 = RLS + 정책 + grant 를 이 파일 하나에 (CLAUDE.md 보안 점검).
+--   * **두 번 돌아도 된다** (정책마다 drop policy if exists) — 처음엔 20261005160000 으로 올렸다가 같은 날 다른 파일(2주완성 방학달)과 번호가 겹쳐
+--     20261005170000 으로 옮겼다. 겹친 채 배포가 먼저 돌아 이 내용이 이미 들어가 있어도 여기서 실패하지 않게.
 -- ============================================================================
 
 create table if not exists public.class_notices (
@@ -38,6 +40,7 @@ alter table public.class_notices enable row level security;
 grant select, insert, update, delete on public.class_notices to authenticated;
 grant all on public.class_notices to service_role;
 
+drop policy if exists "class_notices: 범위 수강생·스태프 조회" on public.class_notices;
 create policy "class_notices: 범위 수강생·스태프 조회" on public.class_notices
   for select to authenticated
   using (
@@ -53,10 +56,13 @@ create policy "class_notices: 범위 수강생·스태프 조회" on public.clas
         and (cardinality(subjects) = 0 or split_part(c.cell, ':', 2) = any (subjects))
     )
   );
+drop policy if exists "class_notices: 스태프 등록" on public.class_notices;
 create policy "class_notices: 스태프 등록" on public.class_notices
   for insert to authenticated with check ((select private.is_staff()));
+drop policy if exists "class_notices: 스태프 수정" on public.class_notices;
 create policy "class_notices: 스태프 수정" on public.class_notices
   for update to authenticated using ((select private.is_staff())) with check ((select private.is_staff()));
+drop policy if exists "class_notices: 스태프 삭제" on public.class_notices;
 create policy "class_notices: 스태프 삭제" on public.class_notices
   for delete to authenticated using ((select private.is_staff()));
 
@@ -66,6 +72,7 @@ values ('class-notices', 'class-notices', false, 10 * 1024 * 1024, array['image/
 on conflict (id) do nothing;
 
 -- 조회 = 그 그림을 본문에 품은 공지를 볼 수 있는 사람 (위 정책 — 학생은 내 범위 공지만). 쓰기는 강사·관리자
+drop policy if exists "class-notices: 공지 보는 사람·스태프 조회" on storage.objects;
 create policy "class-notices: 공지 보는 사람·스태프 조회" on storage.objects
   for select to authenticated
   using (
@@ -75,13 +82,16 @@ create policy "class-notices: 공지 보는 사람·스태프 조회" on storage
       or exists (select 1 from public.class_notices n where position(('[img=' || objects.name) in n.body) > 0)
     )
   );
+drop policy if exists "class-notices: 스태프 업로드" on storage.objects;
 create policy "class-notices: 스태프 업로드" on storage.objects
   for insert to authenticated
   with check (bucket_id = 'class-notices' and (select private.is_staff()));
+drop policy if exists "class-notices: 스태프 수정" on storage.objects;
 create policy "class-notices: 스태프 수정" on storage.objects
   for update to authenticated
   using (bucket_id = 'class-notices' and (select private.is_staff()))
   with check (bucket_id = 'class-notices' and (select private.is_staff()));
+drop policy if exists "class-notices: 스태프 삭제" on storage.objects;
 create policy "class-notices: 스태프 삭제" on storage.objects
   for delete to authenticated
   using (bucket_id = 'class-notices' and (select private.is_staff()));
