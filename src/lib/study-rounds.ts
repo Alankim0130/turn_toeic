@@ -14,8 +14,11 @@ import { shiftDate } from "./term-window";
 /** 회차 수의 끝 — DB check(seq between 1 and 60) 와 같다 */
 export const MATERIAL_ROUND_MAX = 60;
 
-/** 회차 안내 문구 길이 끝 — DB check(char_length(note) <= 500) 와 같다 (2026-09-30 Alan "각 회차마다 안내문구") */
-export const MATERIAL_NOTE_MAX = 500;
+/**
+ * 회차 안내 길이 끝 — DB check(char_length(note) <= 50000) 와 같다 (2026-09-30 Alan "각 회차마다 안내문구" — 처음엔 500자 →
+ * 2026-10-05 Alan "비대면자료 설정하는곳에 안내 부분도 같은설정으로" — 서식 · 사진 태그까지 글자로 세므로 수업자료실 안내 · 공지와 같은 5만 자, 마이그레이션 20261005180000)
+ */
+export const MATERIAL_NOTE_MAX = 50_000;
 
 const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
 

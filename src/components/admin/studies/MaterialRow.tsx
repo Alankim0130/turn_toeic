@@ -9,16 +9,27 @@ import { formatBytes, shortDateTimeKST } from "@/lib/study";
 import { MB, objectName, type UploadedFile } from "@/lib/upload";
 import { removeUploaded, uploadFile } from "@/lib/upload-client";
 import { labelKo } from "@/components/admin/sections/dates";
+import { NoteEditor } from "@/components/note/NoteEditor";
+import { NoteBody } from "@/components/note/NoteBody";
+import { parseDoc, trimDoc } from "@/lib/note-format";
 import { MATERIAL_NOTE_MAX } from "@/lib/study-rounds";
-
-const BUCKET = "study-materials";
+import {
+  MATERIAL_NOTE_IMAGE_FOLDER,
+  MATERIAL_NOTE_IMAGE_MAX_BYTES,
+  MATERIAL_NOTE_IMAGE_MAX_COUNT,
+  STUDY_MATERIAL_BUCKET as BUCKET,
+  materialNoteError,
+} from "@/lib/study-note";
 const MAX = 50 * MB;
 
 export type MaterialItemLite = {
   id: number;
   seq: number;
   title: string | null;
-  /** 회차 안내 문구 (2026-09-30 Alan "각 회차마다 안내문구") — 학생 `/my/study` 의 그 회차 줄에 보인다 */
+  /**
+   * 회차 안내 (2026-09-30 Alan "각 회차마다 안내문구") — 학생 `/my/study` 의 그 회차 줄에 보인다.
+   * 2026-10-05 부터 공지와 같은 서식 글이다 (굵게 · 색 · 크기 · 줄 정렬 · 사진 — `study-note.ts`)
+   */
   note: string | null;
   file_name: string;
   file_size: number | null;
@@ -63,6 +74,8 @@ function useItemSave() {
  * 비대면 자료 **회차 한 줄** (2026-09-22 Alan — "1회차, 2회차... 이렇게 설정하고 매달 강사들이 설정한 일정표에 따라 적용").
  * 자료는 회차에 한 번 올리고 매달 다시 쓴다. 옆의 날짜는 **지금 고른 달에 이 회차가 열리는 날** — 그 달 반 편성 달력의 N번째 수업일이다.
  * 그 달 수업일이 N일보다 적으면 "이 달엔 쓰지 않아요" 로 보인다 (자료는 지우지 않는다 — 수업일이 많은 달에 쓰인다).
+ * **안내는 수업자료실 공지와 같은 편집기**다 (2026-10-05 Alan — "안내 부분도 같은설정으로 넣어줘. 전체공개, 레벨별 이부분 빼고") —
+ * 서식 · 줄 정렬 · 사진 · 사진 크기가 바로 보이고, 보기 모드도 학생 화면과 같은 모양(`NoteBody`)이다. 범위 고르기는 없다.
  */
 export function MaterialRow({
   seq,
@@ -70,6 +83,7 @@ export function MaterialRow({
   today,
   monthLabel,
   item,
+  noteImages,
 }: {
   seq: number;
   /** 고른 달에 이 회차가 열리는 날 (그 달 N번째 수업일). 없으면 null */
@@ -78,6 +92,8 @@ export function MaterialRow({
   /** "9월" — 날짜 옆 설명에 쓴다 */
   monthLabel: string;
   item: MaterialItemLite | null;
+  /** 안내에 든 사진의 서명 주소 (강사 세션으로 만든 것) */
+  noteImages: Record<string, string>;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<"view" | "upload" | "edit" | "confirm">("view");
@@ -86,6 +102,7 @@ export function MaterialRow({
   const fileRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const noteRef = useRef<HTMLTextAreaElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   const isToday = date === today;
 
@@ -93,10 +110,14 @@ export function MaterialRow({
     e.preventDefault();
     const file = fileRef.current?.files?.[0] ?? null;
     if (mode === "upload" && !file) return setError("올릴 파일을 선택해 주세요.");
+    // 파일을 올리기 전에 막는다 — 서버에서 막히면 다 올라간 자료 파일을 다시 지워야 한다
+    const note = noteRef.current?.value ?? "";
+    const noteError = materialNoteError(note);
+    if (noteError) return setError(noteError);
     const ok = await save({
       seq,
       title: titleRef.current?.value ?? "",
-      note: noteRef.current?.value ?? "",
+      note,
       itemId: mode === "edit" ? item?.id : undefined,
       file,
     });
@@ -169,12 +190,7 @@ export function MaterialRow({
         )}
       </div>
 
-      {item?.note && mode !== "edit" && (
-        <p className="mt-3 whitespace-pre-wrap rounded-xl bg-brand-50/70 px-3 py-2 text-sm leading-relaxed text-ink-soft">
-          <span className="mr-1.5 text-xs font-black text-brand-700">안내</span>
-          {item.note}
-        </p>
-      )}
+      {item?.note && mode !== "edit" && <NoteView note={item.note} images={noteImages} />}
 
       {(mode === "upload" || mode === "edit") && (
         <form onSubmit={onSubmit} className="mt-3 grid gap-2 rounded-xl border border-line bg-surface p-3 sm:grid-cols-[1fr_auto] sm:items-end">
@@ -189,25 +205,31 @@ export function MaterialRow({
               </label>
               <input id={`file-${seq}`} ref={fileRef} type="file" className="input !py-1.5 text-sm file:mr-3 file:rounded-full file:border-0 file:bg-brand-50 file:px-3 file:py-1 file:text-xs file:font-bold file:text-brand-700" disabled={busy} />
             </div>
-            <div className="sm:col-span-2">
-              <label htmlFor={`note-${seq}`} className="label !mb-1 text-xs">
-                안내 문구 <span className="font-normal text-mist">(선택 · 학생에게 이 회차 자료와 함께 보여요)</span>
-              </label>
-              <textarea
+            <div className="min-w-0 sm:col-span-2">
+              <p className="label !mb-1 text-xs">
+                안내 <span className="font-normal text-mist">(선택 · 학생에게 이 회차 자료와 함께 보여요 · 글자 서식 · 줄 정렬 · 사진)</span>
+              </p>
+              <NoteEditor
                 id={`note-${seq}`}
                 ref={noteRef}
-                rows={3}
-                maxLength={MATERIAL_NOTE_MAX}
                 defaultValue={item?.note ?? ""}
-                placeholder="예: Part 5 1~30번을 풀고 채점한 뒤, 틀린 문제에 표시해서 풀이 사진으로 인증해 주세요."
-                className="input resize-y !py-2 text-sm"
                 disabled={busy}
+                max={MATERIAL_NOTE_MAX}
+                placeholder="예: Part 5 1~30번을 풀고 채점한 뒤, 틀린 문제에 표시해서 풀이 사진으로 인증해 주세요."
+                images={{
+                  bucket: BUCKET,
+                  folder: MATERIAL_NOTE_IMAGE_FOLDER,
+                  urls: noteImages,
+                  maxBytes: MATERIAL_NOTE_IMAGE_MAX_BYTES,
+                  maxCount: MATERIAL_NOTE_IMAGE_MAX_COUNT,
+                }}
+                onUploadingChange={setUploading}
               />
             </div>
           </div>
           <div className="flex gap-1">
-            <button type="submit" disabled={busy} className="btn-primary !px-4 !py-2 text-sm" aria-busy={busy}>
-              {busy ? "저장 중…" : mode === "edit" ? "저장" : "올리기"}
+            <button type="submit" disabled={busy || uploading} className="btn-primary !px-4 !py-2 text-sm" aria-busy={busy}>
+              {busy ? "저장 중…" : uploading ? "사진 올리는 중…" : mode === "edit" ? "저장" : "올리기"}
             </button>
             <button type="button" onClick={() => { setError(null); setMode("view"); }} disabled={busy} className="btn-ghost !px-3 !py-2 text-xs">
               취소
@@ -235,5 +257,20 @@ export function MaterialRow({
 
       {error && <p className="mt-2 text-xs font-semibold text-red-600">{error}</p>}
     </li>
+  );
+}
+
+/** 저장된 안내 — 학생 `/my/study` 와 같은 모양 (서식 · 줄 정렬 · 사진) */
+function NoteView({ note, images }: { note: string; images: Record<string, string> }) {
+  const { runs, aligns } = trimDoc(parseDoc(note));
+  if (runs.length === 0) return null;
+  return (
+    <NoteBody
+      runs={runs}
+      aligns={aligns}
+      images={images}
+      lead={<span className="mr-1.5 text-xs font-black text-brand-700">안내</span>}
+      className="mt-3 rounded-xl bg-brand-50/70 px-3 py-2 text-sm leading-relaxed text-ink-soft"
+    />
   );
 }

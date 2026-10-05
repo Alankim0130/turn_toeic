@@ -12,6 +12,11 @@ import { getSessionProfile } from "@/lib/auth";
 import { studentGate } from "@/components/student/StudentGate";
 import { CheckinPanel } from "@/components/my/study/CheckinPanel";
 import { onlineStudyWindow, shortDay } from "@/lib/study-rounds";
+import { NoteBody } from "@/components/note/NoteBody";
+import { parseDoc, trimDoc } from "@/lib/note-format";
+import { signNoteImages } from "@/lib/note-images";
+import { STUDY_MATERIAL_BUCKET } from "@/lib/study-note";
+import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
   title: "내 스터디",
@@ -28,6 +33,8 @@ export default async function MyStudyPage() {
   const checkinByMaterial = new Map(checkins.map((c) => [c.material_id, c]));
   const { accessTerms, opensOn } = await getMyStudyEligibility(orders);
   const today = todayKST();
+  // 안내에 든 사진 — 내 세션으로 서명 주소를 만든다. 저장소 정책이 "그 사진을 품은 안내가 보이는 사람" 만 연다 (마이그레이션 20261005180000)
+  const noteImages = await signNoteImages(await createClient(), STUDY_MATERIAL_BUCKET, materials.map((m) => m.note ?? "").join("\n"));
 
   const header = (
     <PageHeader icon="study" title="내 스터디" description="신청한 스터디와 비대면스터디 자료를 한곳에서 확인하세요.">
@@ -146,13 +153,9 @@ export default async function MyStudyPage() {
                           {m.title ? `${m.title} · ` : ""}
                           {m.file_name} · {formatBytes(m.file_size)}
                         </p>
-                        {/* 회차 안내 문구 (2026-09-30 Alan "각 회차마다 안내문구") — 강사가 자료실에 적은 것. 접지 않는다 */}
-                        {m.note && (
-                          <p className="mt-2 whitespace-pre-wrap rounded-xl bg-brand-50 px-3 py-2 text-sm leading-relaxed text-ink-soft">
-                            <span className="mr-1.5 text-xs font-black text-brand-700">안내</span>
-                            {m.note}
-                          </p>
-                        )}
+                        {/* 회차 안내 (2026-09-30 Alan "각 회차마다 안내문구") — 강사가 자료실에 적은 것. 접지 않는다.
+                            2026-10-05 부터 공지와 같은 서식 글이다 — 굵게 · 색 · 크기 · 줄 정렬 · 사진 (`NoteBody`) */}
+                        {m.note && <MaterialNoteBox note={m.note} images={noteImages} />}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <a href={`/files/material/${m.id}?download=1`} className="btn-primary !px-4 !py-2 text-sm">
@@ -170,5 +173,20 @@ export default async function MyStudyPage() {
         );
       })}
     </div>
+  );
+}
+
+/** 회차 안내 — 강사가 편집기에서 본 모양 그대로 (서식 · 줄 정렬 · 사진) */
+function MaterialNoteBox({ note, images }: { note: string; images: Record<string, string> }) {
+  const { runs, aligns } = trimDoc(parseDoc(note));
+  if (runs.length === 0) return null;
+  return (
+    <NoteBody
+      runs={runs}
+      aligns={aligns}
+      images={images}
+      lead={<span className="mr-1.5 text-xs font-black text-brand-700">안내</span>}
+      className="mt-2 rounded-xl bg-brand-50 px-3 py-2 text-sm leading-relaxed text-ink-soft"
+    />
   );
 }

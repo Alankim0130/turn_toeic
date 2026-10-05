@@ -39,7 +39,7 @@ import { cn } from "@/lib/utils";
 
 const fmt = (n: number) => n.toLocaleString("ko-KR");
 
-/** 그림을 넣을 수 있게 할 때 — 수업자료실 공지 (2026-10-05) */
+/** 그림을 넣을 수 있게 할 때 — 수업자료실 공지 · 비대면 자료 회차 안내 (2026-10-05) */
 export type NoteEditorImages = {
   bucket: string;
   /** 저장소 폴더 (`images/`) — 글의 `[img=…]` 경로 규칙(소문자 · 숫자 · / . _ -)에 맞아야 한다 */
@@ -51,7 +51,7 @@ export type NoteEditorImages = {
 };
 
 /**
- * 서식이 바로 보이는 글 편집기 — 수업자료실 안내(`NoteTextarea`)와 수업자료실 공지가 함께 쓴다 (2026-10-05 Alan —
+ * 서식이 바로 보이는 글 편집기 — 수업자료실 안내(`NoteTextarea`) · 수업자료실 공지 · 비대면 자료 회차 안내가 함께 쓴다 (2026-10-05 Alan —
  * "색상, 크기, 진하게, 밑줄 등" → "강사화면에 코드로 보이고 … 바로 미리보기처럼 보여주면 좋겠어" → "워드에서 적용되는 방법" →
  * 공지 "이미지도 중간에 추가 … 블로그랑 같다고 생각하면" · "이미지 사이즈 조절" · "줄 단위로 왼쪽정렬, 가운데정렬, 오른쪽 정렬").
  *
@@ -62,7 +62,8 @@ export type NoteEditorImages = {
  * - **워드처럼**: 같은 버튼을 다시 누르면 풀리고, 걸린 서식 · 정렬의 버튼은 눌린 모양(`styleAt`)이며, 커서만 두고 눌러도 그 단어 전체(`wordRangeAt`)에 건다.
  *   정렬은 커서가 있는 줄(고른 줄들) 단위다. Ctrl(⌘)+B · U · I 도 된다.
  * - 그림(`images` 를 줄 때만): `사진 넣기` → 브라우저가 저장소에 바로 올리고 커서 자리에 한 줄로 넣는다. 그림을 누르면 크기(25 · 50 · 75 · 100% · 밀어서 10~100%)와
- *   지우기가 뜬다. 붙여 넣은 그림 파일도 같은 길로 올린다.
+ *   지우기가 뜬다. 붙여 넣은 그림 파일도 같은 길로 올린다. 올리는 동안은 `onUploadingChange(true)` — 폼은 그동안 저장을 막는다
+ *   (그 사이에 저장하면 사진이 빠진 글이 저장되고, 다 올라간 사진은 어디에도 안 붙는다).
  * - 붙여 넣기는 글자만 받는다(다른 곳의 색 · 글꼴이 딸려 오지 않게). 버튼은 누르는 순간 칸의 선택을 빼앗지 않게 `pointerdown` 기본 동작을 막고,
  *   그래도 놓치는 휴대폰을 위해 마지막 선택을 기억해 둔다.
  */
@@ -75,6 +76,7 @@ export function NoteEditor({
   max,
   images,
   minHeight = "min-h-32",
+  onUploadingChange,
 }: {
   id: string;
   ref?: React.Ref<HTMLTextAreaElement>;
@@ -84,6 +86,8 @@ export function NoteEditor({
   max: number;
   images?: NoteEditorImages;
   minHeight?: string;
+  /** 사진을 올리는 중인지 — 폼이 저장 버튼을 막는 데 쓴다 */
+  onUploadingChange?: (uploading: boolean) => void;
 }) {
   const hidden = useRef<HTMLTextAreaElement>(null);
   useImperativeHandle(ref, () => hidden.current as HTMLTextAreaElement);
@@ -97,6 +101,12 @@ export function NoteEditor({
   const [activeAlign, setActiveAlign] = useState<NoteAlign>("left");
   const [picked, setPicked] = useState<{ offset: number; img: NoteImage } | null>(null);
   const [uploading, setUploading] = useState(0);
+  const uploadingRef = useRef(0);
+  function trackUpload(delta: 1 | -1) {
+    uploadingRef.current += delta;
+    setUploading(uploadingRef.current);
+    if ((delta === 1 && uploadingRef.current === 1) || (delta === -1 && uploadingRef.current === 0)) onUploadingChange?.(uploadingRef.current > 0);
+  }
   const length = charCount(value);
   const over = length > max;
 
@@ -207,7 +217,7 @@ export function NoteEditor({
         setHint(`사진은 한 글에 ${maxCount}장까지 넣을 수 있어요.`);
         break;
       }
-      setUploading((n) => n + 1);
+      trackUpload(1);
       try {
         const up = await uploadFile(images.bucket, `${images.folder}${objectName(file)}`, file);
         urls.current[up.path] = URL.createObjectURL(file);
@@ -222,7 +232,7 @@ export function NoteEditor({
       } catch (err) {
         setHint(err instanceof Error ? err.message : "사진을 올리지 못했어요.");
       } finally {
-        setUploading((n) => n - 1);
+        trackUpload(-1);
       }
     }
   }
