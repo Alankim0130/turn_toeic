@@ -10,12 +10,13 @@ import { decideVerification, type VerifyTerm } from "@/lib/verify-decision";
 import { todayKST } from "@/lib/utils";
 import { resolveEnrollChoice, type EnrollSection } from "@/lib/enroll-options";
 import { getOpenEnrollSections } from "../_lib/queries";
+import { fetchTwoWeekSlots } from "@/lib/open-sections";
 import { parseReceipt, readEnoughFor, receiptHasName, receiptStudentName, type ParsedReceipt } from "@/lib/receipt";
 import { nameMismatchOf, type NameMismatch } from "@/lib/name-mismatch";
 import { readReceiptText, tesseractOcr } from "@/lib/ocr";
 import { measurePalette } from "@/lib/ocr-image";
 import type { PaletteShares } from "@/lib/receipt-forensics";
-import { matchSections } from "@/lib/match-sections";
+import { matchSections, twoWeekSpots } from "@/lib/match-sections";
 import { assignedLabels } from "@/lib/assigned-label";
 import { approveVerificationWith } from "@/lib/approve-verification";
 import { receiptFlags, type FlagInput } from "@/lib/verify-flags";
@@ -157,7 +158,7 @@ type ReadReceipt = ReadOk | ReadFail;
  * 올라온 수강증을 서버에서 읽는다 (tesseract.js, `src/lib/ocr.ts`).
  * **못 읽어도 접수는 된다** — 스태프 검토로 간다 (`decideVerification`). 사유만 `ocr_raw` 에 남긴다.
  */
-async function readReceipt(admin: Admin, filePath: string, studentName: string | null): Promise<ReadReceipt> {
+async function readReceipt(admin: Admin, filePath: string, studentName: string | null, periodKeys?: ReadonlySet<string>): Promise<ReadReceipt> {
   const { data: file, error } = await admin.storage.from("receipts").download(filePath);
   if (error || !file) {
     console.error(`[ocr] 수강증 파일을 내려받지 못했어요: ${error?.message ?? "no file"}`);
@@ -167,9 +168,10 @@ async function readReceipt(admin: Admin, filePath: string, studentName: string |
   const bytes = new Uint8Array(await file.arrayBuffer());
   const hash = createHash("sha256").update(bytes).digest("hex");
   // 색 팔레트는 OCR 과 무관하게 잰다 — 글자를 못 읽어도 "우리 화면인가" 는 알 수 있다 (실측 35~54ms).
-  // 판독은 판정 키에 더해 **학생 이름까지** 읽혀야 멈춘다 (`readEnoughFor`) — 이름이 자동 승인 조건이다
+  // 판독은 판정 키에 더해 **학생 이름까지** 읽혀야 멈춘다 (`readEnoughFor`) — 이름이 자동 승인 조건이다.
+  // 2주완성이 열리는 레벨 · 시간이면 기간 숫자(4주 · 2주)까지 (2026-10-05 — `periodKeys` = `twoWeekSpots`)
   const [outcome, palette] = await Promise.all([
-    readReceiptText({ bytes, mimeType: file.type, filePath, enough: readEnoughFor(studentName) }),
+    readReceiptText({ bytes, mimeType: file.type, filePath, enough: readEnoughFor(studentName, { periodKeys }) }),
     measurePalette(bytes),
   ]);
   if (!outcome.ok) return { ok: false, ocr: { engine: tesseractOcr.name, error: outcome.reason }, hash, palette };
@@ -192,12 +194,12 @@ async function readReceipt(admin: Admin, filePath: string, studentName: string |
 
 /** 스태프 화면에 보여 줄 판독 결과. 원문은 ocr_raw 에 있으니 여기서는 뺀다 */
 function parsedSummary({ parsed, nameMatches }: ReadOk) {
-  const { gates, mode, modeEvidence, card, brandExact, weekly, tracks, levels, level, courseLevel, program, times, time, months, tuition, warnings } = parsed;
+  const { gates, mode, modeEvidence, card, brandExact, weekly, tracks, levels, level, courseLevel, program, weeks, times, time, months, tuition, warnings } = parsed;
   // capturedAt 은 **중복 검사가 다시 읽는 값**이라 반드시 남긴다 (`parsed->>capturedAt`).
   // 수강월(배지 · 개강일 달)은 반 대조가 쓴 값이라 스태프가 "왜 이 달 반인가" 를 볼 수 있게 남긴다 (2026-09-22 — 예전에는 빠져 있었다)
   const { capturedOn, capturedAt, courseMonth, startMonth } = parsed;
   return {
-    gates, mode, modeEvidence, card, brandExact, weekly, tracks, levels, level, courseLevel, program, times, time, months, courseMonth, startMonth,
+    gates, mode, modeEvidence, card, brandExact, weekly, tracks, levels, level, courseLevel, program, weeks, times, time, months, courseMonth, startMonth,
     tuition, warnings, nameMatches, capturedOn, capturedAt,
   };
 }
@@ -249,14 +251,17 @@ export async function submitVerification(input: { filePath: string }): Promise<S
   const { user, admin } = guarded;
   const filePath = String(input.filePath);
 
-  const [sections, { data: profile }, auto] = await Promise.all([
+  const [sections, { data: profile }, auto, twoWeekSlots] = await Promise.all([
     getOpenEnrollSections(),
     admin.from("profiles").select("name").eq("id", user.id).maybeSingle(),
     // 긴급 스위치 (2026-09-22) — 꺼져 있으면(읽지 못해도) 기계가 판정하지 않는다: 자동 거절도 자동 승인도 없이 전부 검토 대기
     readAutoVerify(admin),
+    // 2주완성이 열리는 자리 (2026-10-05) — 그 자리의 수강증은 기간 숫자(4주 · 2주)까지 읽고, 못 읽은 한 달 수강증은 사람이 본다
+    fetchTwoWeekSlots(admin),
   ]);
+  const spots = twoWeekSpots(sections, twoWeekSlots);
 
-  const outcome = await readReceipt(admin, filePath, profile?.name ?? null);
+  const outcome = await readReceipt(admin, filePath, profile?.name ?? null, spots);
   const read = outcome.ok ? outcome : null;
   const decision = decideVerification(read?.parsed ?? null, openTermsOf(sections), todayKST());
   // 수강증 이름 ≠ 가입 실명 — 거절하지 않고(오인식일 수 있다) 검토로 보내되, 학생에게 팝업으로 알린다 (2026-09-30 Alan)
@@ -266,14 +271,15 @@ export async function submitVerification(input: { filePath: string }): Promise<S
   const held = decision.kind === "upcoming" ? decision.month : null;
 
   // 반 대조 — 거절되지 않은 것만. 기록은 자동 승인이 안 되더라도 스태프가 본다
-  const match = !rejected && read ? matchSections(read.parsed, sections) : null;
+  const match = !rejected && read ? matchSections(read.parsed, sections, { twoWeekSpots: spots }) : null;
   const matched = match?.result.kind === "match" ? match.result : null;
 
   // 위조·돌려쓰기 의심 신호 + 이미 그 달 반에 있는가 (2026-09-18 · 2026-09-22). 이미지만으로 위조를 가려낼 수는 없다 —
   // 근본 대책은 YBM 등록 명단 대조(CLAUDE.md 미확정 11). 여기서는 **자동 승인만 막고** 스태프에게 이유를 보여 준다.
   const flags = rejected ? null : await receiptFlags(admin, flagInput(user.id, outcome, matched?.sectionIds ?? []));
   // 자동 승인 조건은 한곳(`auto-approve.ts`) — 받아 둔 예비 접수를 다시 맞출 때도 같은 조건을 본다
-  const blockers = read && flags ? autoApproveBlockers({ parsed: read.parsed, nameMatches: read.nameMatches, flags, matched: !!matched }) : null;
+  const blockers =
+    read && flags ? autoApproveBlockers({ parsed: read.parsed, nameMatches: read.nameMatches, flags, matched: !!matched, periodUnclear: matched?.periodUnclear === true }) : null;
   // 받아 두는 수강증은 지금 배정하지 않는다 — 날짜로만 달을 읽은 수강증은 대조가 다른 달 반을 고를 수 있다
   const autoApprove = auto.on && held == null && !!matched && blockers?.length === 0;
   // 이미 승인된 수강증을 또 올렸다 (2026-10-02 Alan — 승인 뒤 같은 캡처를 다시 올려 검토 대기에 쌓이던 것):
@@ -390,9 +396,10 @@ export async function submitManualVerification(input: {
   const { user, admin } = guarded;
   const filePath = String(input.filePath);
 
-  const [sections, { data: profile }] = await Promise.all([
+  const [sections, { data: profile }, twoWeekSlots] = await Promise.all([
     getOpenEnrollSections(),
     admin.from("profiles").select("name").eq("id", user.id).maybeSingle(),
+    fetchTwoWeekSlots(admin),
   ]);
   const resolved = resolveEnrollChoice(sections, {
     term: String(input?.term ?? ""),
@@ -413,7 +420,7 @@ export async function submitManualVerification(input: {
   // 자동 승인만 막고 **수동 등업신청으로 내면 파일 중복 · 같은 초 캡처 · 색 검사를 모두 비껴갔다** — 셋 다 스태프가 그림을 봐서는
   // 알 수 없는 신호다. 판정(거절 · 자동 승인)은 하지 않고 승인 화면에만 적는다 — 수동 신청은 늘 스태프가 본다.
   // 읽은 레벨·시간·이름도 함께 남아 스태프가 학생이 고른 반과 수강증을 맞대 볼 수 있다
-  const outcome = await readReceipt(admin, filePath, profile?.name ?? null);
+  const outcome = await readReceipt(admin, filePath, profile?.name ?? null, twoWeekSpots(sections, twoWeekSlots));
   const read = outcome.ok ? outcome : null;
   const flags = await receiptFlags(admin, flagInput(user.id, outcome, resolved.sectionIds));
 

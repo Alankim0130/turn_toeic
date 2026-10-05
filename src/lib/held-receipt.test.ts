@@ -61,7 +61,8 @@ describe("받아 둔 다음 달 수강증 다시 맞추기 (2026-09-22 Alan — 
 
   it("빠진 칸은 '못 읽음' 으로 채운다 — 대조가 알아서 멈춘다", () => {
     const input = toMatchInput({});
-    expect(input).toEqual({ level: null, levels: [], courseLevel: null, program: "score", weekly: null, tracks: [], time: null, courseMonth: null, startMonth: null });
+    // weeks(기간 숫자, 2026-10-05)도 예전 기록에는 없다 — "못 읽음" 이라 2주완성이 열리는 자리면 사람이 본다
+    expect(input).toEqual({ level: null, levels: [], courseLevel: null, program: "score", weekly: null, tracks: [], time: null, courseMonth: null, startMonth: null, weeks: null });
     expect(matchSections(input, [sec(OCT, "mwf", C650, "10:00~12:10")]).result.kind).toBe("none");
   });
 

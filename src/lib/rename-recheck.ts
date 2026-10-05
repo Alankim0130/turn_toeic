@@ -13,7 +13,7 @@ import { receiptHasName } from "./receipt";
 
 /** `enrollment_verifications.candidates` 에 남긴 대조 기록 (actions.ts 의 submitVerification). 예전 기록은 칸이 빠져 있을 수 있다 */
 export type StoredCandidates = {
-  result?: { kind: string; sectionIds?: number[] } | null;
+  result?: { kind: string; sectionIds?: number[]; periodUnclear?: boolean } | null;
   nameMatches?: boolean | null;
   flags?: Partial<AutoApproveFlags> | null;
   blockers?: AutoApproveBlocker[] | null;
@@ -55,7 +55,7 @@ export function planRenameRecheck(row: StoredVerification, newName: string): Ren
     alreadyEnrolled: c.flags.alreadyEnrolled ?? [],
     decidedBefore: c.flags.decidedBefore ?? null,
   };
-  const blockers = autoApproveBlockers({ parsed: row.parsed ?? {}, nameMatches: true, flags, matched });
+  const blockers = autoApproveBlockers({ parsed: row.parsed ?? {}, nameMatches: true, flags, matched, periodUnclear: c.result?.periodUnclear === true });
   const mode = row.parsed?.mode;
 
   if (blockers.length === 0 && c.hold == null && matched && (mode === "onsite" || mode === "live")) {

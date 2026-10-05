@@ -1,4 +1,4 @@
-import { receiptCourseMonth, type ParsedReceipt } from "./receipt";
+import { periodKey, receiptCourseMonth, type ParsedReceipt } from "./receipt";
 import { termKeyOf, type EnrollSection } from "./enroll-options";
 
 /**
@@ -21,11 +21,41 @@ import { termKeyOf, type EnrollSection } from "./enroll-options";
  * 화면·엔진·DB 가 없는 순수 함수라 테스트로 굳힌다.
  */
 
-export type MatchInput = Pick<ParsedReceipt, "level" | "levels" | "courseLevel" | "program" | "weekly" | "tracks" | "time" | "courseMonth" | "startMonth">;
+export type MatchInput = Pick<ParsedReceipt, "level" | "levels" | "courseLevel" | "program" | "weekly" | "tracks" | "time" | "courseMonth" | "startMonth"> &
+  Partial<Pick<ParsedReceipt, "weeks">>;
 
 export type MatchResult =
-  | { kind: "match"; sectionIds: number[]; term: string }
+  | {
+      kind: "match";
+      sectionIds: number[];
+      term: string;
+      /**
+       * 한 달 수강증인데 기간 숫자 `[4주-` 를 또렷이 못 읽었고, 같은 레벨 · 시간에 **2주완성도 열린다** (2026-10-05, `twoWeekSpots`).
+       * 두 수강증은 그 숫자 하나로만 갈린다 — 찾은 한 달 반은 승인 화면에 골라 두되 자동 승인하지 않는다 (`period_unclear`)
+       */
+      periodUnclear?: true;
+    }
   | { kind: "none" | "ambiguous"; reason: string };
+
+/** 시간표의 2주완성 줄 (`timetable_slots` — program twoweek, 달 줄 · 기본 줄) */
+export type TwoWeekSlot = { level: number; start_time: string; end_time: string };
+
+/**
+ * 2주완성이 열리는 `레벨|시간` (2026-10-05) — **열린 2주완성 반**과 **시간표의 2주완성 줄**을 합친다.
+ * 이 자리의 수강증은 한 달 과정과 기간 숫자 하나(`[4주-` ↔ `[2주-`)로만 갈려서, 그 숫자까지 읽혀야 판독을 멈추고(`readEnoughFor`)
+ * 끝내 못 읽은 한 달 수강증은 자동 승인하지 않는다(`periodUnclear`).
+ * - **시간표도 보는 까닭**: 그 달 2주완성 반을 아직 안 열었어도 수강증은 먼저 온다 — 반만 보면 그 사이 숫자를 못 읽은 2주완성 수강증이
+ *   한 달 반에 그대로 자동 배정된다 (받아 둔 다음 달 수강증도 한 달 반이 먼저 열리면 그 반에 붙는다).
+ * - **기수는 보지 않는다**: 읽기 전에는 수강월을 모른다. 조금 넓게 잡을 뿐이다 — 숫자를 또렷이 읽은 수강증은 그대로 자동 승인된다.
+ */
+export function twoWeekSpots(sections: readonly EnrollSection[], timetable: readonly TwoWeekSlot[] = []): Set<string> {
+  const out = new Set<string>();
+  for (const s of sections) {
+    if (s.course?.program === "twoweek" && s.course.target_score != null && s.time_block) out.add(periodKey(s.course.target_score, s.time_block));
+  }
+  for (const r of timetable) out.add(periodKey(r.level, `${r.start_time.slice(0, 5)}~${r.end_time.slice(0, 5)}`));
+  return out;
+}
 
 /** 스태프 화면용 대조 기록 — 같은 레벨 반마다 어느 키가 맞았는지 */
 export type MatchLog = {
@@ -50,7 +80,14 @@ export function pickTerms(parsed: Pick<MatchInput, "courseMonth" | "startMonth">
   return month == null ? uniq : uniq.filter((k) => Number(k.split("-")[1]) === month);
 }
 
-export function matchSections(parsed: MatchInput, sections: readonly EnrollSection[]): { result: MatchResult; log: MatchLog[] } {
+/**
+ * `twoWeekSpots` — 2주완성이 열리는 자리 (`twoWeekSpots(반, 시간표)`). 주지 않으면 열린 반에서만 센다.
+ */
+export function matchSections(
+  parsed: MatchInput,
+  sections: readonly EnrollSection[],
+  opts: { twoWeekSpots?: ReadonlySet<string> } = {},
+): { result: MatchResult; log: MatchLog[] } {
   const all = sections.filter(usable);
 
   if (parsed.level == null) return { result: { kind: "none", reason: "레벨을 읽지 못했어요" }, log: [] };
@@ -113,5 +150,9 @@ export function matchSections(parsed: MatchInput, sections: readonly EnrollSecti
     picked.push(hit[0].id);
   }
 
-  return { result: { kind: "match", sectionIds: picked, term: terms[0] }, log };
+  // 한 달 수강증과 2주완성 수강증은 기간 숫자 하나로만 갈린다 (2026-10-05 Alan "2주 라는 글자가 있을거야. 지금은 4주") —
+  // 그 숫자(`[4주-`)를 또렷이 못 읽었는데 같은 레벨 · 시간에 2주완성이 열리면 사람이 본다 (찾은 한 달 반은 승인 화면에 골라 둔다)
+  const spots = opts.twoWeekSpots ?? twoWeekSpots(sections);
+  const periodUnclear = parsed.program === "score" && parsed.weeks !== 4 && spots.has(periodKey(parsed.level, parsed.time.timeBlock));
+  return { result: { kind: "match", sectionIds: picked, term: terms[0], ...(periodUnclear ? { periodUnclear: true as const } : {}) }, log };
 }

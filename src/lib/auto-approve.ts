@@ -33,8 +33,13 @@ export type AutoApproveBlocker =
   /** 같은 캡처를 전에 사람이 판정했다 (firsttoeic 사고 5) */
   | "decided_before"
   /**
-   * 2주완성 수강증 (2026-10-05) — 실물 수강증을 아직 못 봐서 표기(주3일/주5일 · 회차)를 확정하지 못했다.
-   * 같은 850 시간이라 짐작으로 붙이면 한 달짜리 반 · 앞 절반 반이 바뀔 수 있어 강사가 본다. 샘플을 받으면 표기 규칙을 정하고 이 막음을 푼다
+   * 한 달 수강증인데 기간 숫자 `[4주-` 를 또렷이 못 읽었고 같은 레벨 · 시간에 2주완성도 열린다 (2026-10-05, `MatchResult.periodUnclear` — 시간표 줄 · 열린 반).
+   * 두 수강증은 그 숫자 하나로만 갈려서(Alan "2주 라는 글자가 있을거야. 지금은 4주"), 짐작으로 붙이면 앞 절반 학생이 한 달 반에 들어간다
+   */
+  | "period_unclear"
+  /**
+   * (옛 기록용) 2026-10-05 몇 시간 동안 2주완성 수강증을 모두 사람에게 보냈다 — 표기를 확인하기 전이었다.
+   * 같은 날 Alan 이 표기(`[2주-…]`)를 알려 줘 더는 붙이지 않는다. 그때 남은 기록의 까닭을 읽으려고 이름만 둔다
    */
   | "two_week";
 
@@ -49,16 +54,19 @@ export type AutoApproveFlags = {
 
 export type AutoApproveInput = {
   /** 저장해 둔 판독 결과에서도 부른다 — 예전 기록에 칸이 없으면 **막는 쪽**으로 읽는다 */
-  parsed: Partial<Pick<ParsedReceipt, "gates" | "brandExact" | "card" | "modeEvidence" | "program">>;
+  parsed: Partial<Pick<ParsedReceipt, "gates" | "brandExact" | "card" | "modeEvidence">>;
   nameMatches: boolean | null | undefined;
   flags: AutoApproveFlags;
   /** 반 대조가 딱 맞았나 */
   matched: boolean;
+  /** 반 대조가 기간 숫자(4주 · 2주)를 못 가렸다 (`MatchResult.periodUnclear`) */
+  periodUnclear?: boolean;
 };
 
-export function autoApproveBlockers({ parsed, nameMatches, flags, matched }: AutoApproveInput): AutoApproveBlocker[] {
+export function autoApproveBlockers({ parsed, nameMatches, flags, matched, periodUnclear = false }: AutoApproveInput): AutoApproveBlocker[] {
   const out: AutoApproveBlocker[] = [];
   if (!matched) out.push("no_match");
+  if (matched && periodUnclear) out.push("period_unclear");
   if (parsed.gates?.academy !== true || parsed.gates?.brand !== true) out.push("gate");
   if (parsed.brandExact !== true) out.push("brand_word");
   if (parsed.card !== true) out.push("card");
@@ -70,7 +78,6 @@ export function autoApproveBlockers({ parsed, nameMatches, flags, matched }: Aut
   if (flags.paletteOff) out.push("palette");
   if (flags.alreadyEnrolled.length > 0) out.push("already_enrolled");
   if (flags.decidedBefore !== null) out.push("decided_before");
-  if (parsed.program === "twoweek") out.push("two_week");
   return out;
 }
 
@@ -88,7 +95,8 @@ export const BLOCKER_LABEL: Record<AutoApproveBlocker, string> = {
   palette: "화면 색이 YBM 수강증과 다름",
   already_enrolled: "이미 그 달 반에 배정됨",
   decided_before: "같은 캡처를 전에 사람이 판정함",
-  two_week: "2주완성 수강증 — 표기를 아직 확인하지 않아 강사가 반을 확인",
+  period_unclear: "수강 기간 숫자(4주 · 2주)를 또렷이 못 읽음 — 같은 시간에 2주완성반이 있어 한 달 반이 맞는지 강사가 확인",
+  two_week: "2주완성 수강증 — 표기를 확인하기 전이라 강사가 반을 확인",
 };
 
 /**

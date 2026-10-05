@@ -7,7 +7,8 @@
  *  - 주3일/주5일 · 트랙: 회차 `월18회`(주5일) · `월9회`(주3일)를 먼저, 그다음 `주5일` 을 본다 — 주5일 표기 안에도 `월수금`·`화목금`
  *    글자가 있어서 트랙부터 보면 주3일로 오독한다. `주5일` 은 숫자 5 가 꼭 있어야 한다 (`25일`·`일주일` 은 주5일이 아니다).
  *  - 레벨: 650 · 750 · 850 숫자. `프리미어반`·`스파르타`·`중급속성`·`실전속성` 중 하나라도 있으면 스파르타(program = sparta).
- *    `2주완성` 글자나 수강요일 줄의 `[2주-MM/DD]` 가 있으면 2주완성(program = twoweek, 2026-10-05) — 실물을 아직 못 봐서 자동 승인하지 않는다.
+ *    `2주완성` 글자나 수강요일 줄의 `[2주-MM/DD]` 가 있으면 2주완성(program = twoweek, 2026-10-05 — Alan "2주 라는 글자가 있을거야. 지금은 4주").
+ *    한 달 과정과 다른 곳은 기간 숫자(`[4주-` ↔ `[2주-`) 하나뿐이라 그 숫자를 `weeks` 로 따로 읽는다 — 첫 변형은 그 숫자를 글자로 읽곤 한다.
  *    `중급속성` = 650, `실전속성` = 750 — 숫자를 못 읽으면 이걸로 레벨을 정하고, 숫자와 다르면 경고를 남긴다.
  *  - 수업 시간: `HH:MM~HH:MM` 을 **그대로** 돌려준다. 60/120분으로 가르지 않는다 — 실제 길이가 70·130·140·190·260분 등 다양해서
  *    숫자 기준선을 두면 850 70분이 60분으로, 스파르타가 120분으로 섞인다. 판정은 반의 `time_block` 라벨과 같은지로 한다.
@@ -66,6 +67,11 @@ export type ParsedReceipt = {
   /** 과정명이 말하는 레벨 (`중급속성` = 650 · `실전속성` = 750). 없으면 null. 숫자와 다르면 자동 승인하지 않는다 */
   courseLevel: number | null;
   program: Program;
+  /**
+   * 수강요일 줄의 기간 숫자 `[N주-` (2026-10-05) — 한 달 과정 4 · 2주완성 2. 또렷이 하나로 읽혔을 때만, 아니면 null.
+   * 같은 기수 · 레벨 · 시간에 2주완성 반이 열려 있는데 한 달 수강증이 4 를 또렷이 못 읽었으면 자동 승인하지 않는다 (`periodUnclear`)
+   */
+  weeks: number | null;
   times: ReceiptTime[];
   /** 첫 시간 범위 */
   time: ReceiptTime | null;
@@ -119,8 +125,9 @@ export const RECEIPT_KEYWORDS = {
   /** 스파르타(프리미어)반 표기. 어느 하나만 읽혀도 sparta 다 — `프리미어반` 한 글자 오인식에 무너지지 않게 (2026-09-18 Alan 확인) */
   spartaWords: ["프리미어", "스파르타", "중급속성", "실전속성"],
   /**
-   * 2주완성 표기 (2026-10-05 Alan "850반 2주완성반이 있어"). **실물 수강증을 아직 못 봤다** — 과정명 `2주완성` 이나
-   * 수강요일 줄의 기간 `[2주-10/06]`(한 달 과정은 `[4주-…]`) 중 하나로 본다. 숫자가 든 낱말이라 편집거리로 찾지 않는다 (`주5일` 과 같은 까닭)
+   * 2주완성 표기 (2026-10-05 Alan "850반 2주완성반이 있어" → 같은 날 "수강증은 없는데 2주 라는 글자가 있을거야. 지금은 4주라고 적혀있을거야").
+   * 수강요일 줄의 기간 `[2주-10/06]`(한 달 과정은 `[4주-…]` — `parsePeriodWeeks`)이나 과정명 `2주완성` 으로 본다. 실물은 아직 못 봤다.
+   * 숫자가 든 낱말이라 편집거리로 찾지 않는다 (`주5일` 과 같은 까닭)
    */
   twoWeek: "2주완성",
   /** 과정명이 레벨을 정한다: 스파르타 650+ 중급속성 · 스파르타 750+ 실전속성 */
@@ -133,8 +140,22 @@ export const RECEIPT_KEYWORDS = {
   academyPlaces: ["서면", "부산"],
 } as const;
 
-/** 2주완성 수강증인가 — 과정명 `2주완성` 또는 수강요일 줄의 기간 `2주-MM…` (앞에 다른 숫자가 붙은 `12주` 는 아니다). 공백을 뺀 원문으로 본다 */
-export const isTwoWeekReceipt = (compact: string): boolean => compact.includes(RECEIPT_KEYWORDS.twoWeek) || /(?<!\d)2주[-~]\d/.test(compact);
+/**
+ * 수강요일 줄의 기간 숫자 — `[4주-09/04]` → 4 · `[2주-10/06]` → 2 (2026-10-05). 한 달 과정과 2주완성이 **이 숫자 하나로만** 갈린다.
+ * 숫자 바로 뒤 `주-` 와 날짜 숫자가 와야 한다 (앞에 다른 숫자가 붙은 `12주` 는 아니다). 공백을 뺀 원문으로 본다.
+ * **또렷이 읽은 숫자가 하나일 때만** 돌려준다 — 변형마다 2 와 4 가 다르게 읽히면(`conflict`) 어느 쪽인지 모른다.
+ * 실측(2026-10-05 실물 8월 수강증): 운영이 멈추는 첫 변형은 `[4주-08/04]` 를 `이나주-98704]` 로 읽었다 — 숫자가 글자로 바뀐다.
+ * 그래서 2주완성 반이 같은 시간에 열려 있으면 이 숫자까지 읽힐 때까지 변형을 더 읽는다 (`readEnoughFor` 의 `periodKeys`).
+ */
+export function parsePeriodWeeks(compact: string): { weeks: number | null; conflict: boolean } {
+  const digits = new Set([...compact.matchAll(/(?<!\d)(\d)주[-~]\d/g)].map((m) => Number(m[1])));
+  if (digits.size === 1) return { weeks: [...digits][0], conflict: false };
+  return { weeks: null, conflict: digits.size > 1 };
+}
+
+/** 2주완성 수강증인가 — 과정명 `2주완성` 또는 수강요일 줄의 기간 `[2주-…]` (기간 숫자가 2 와 4 로 함께 읽혔으면 아니다 — 모른다) */
+export const isTwoWeekReceipt = (compact: string): boolean =>
+  compact.includes(RECEIPT_KEYWORDS.twoWeek) || parsePeriodWeeks(compact).weeks === 2;
 
 export const LEVELS = [650, 750, 850] as const;
 
@@ -505,7 +526,9 @@ export function parseReceipt(raw: string): ParsedReceipt {
   let tracks: Track[] = [];
   const has18 = compact.includes(RECEIPT_KEYWORDS.sessions18);
   const has9 = compact.includes(RECEIPT_KEYWORDS.sessions9);
-  const twoWeek = isTwoWeekReceipt(compact);
+  const period = parsePeriodWeeks(compact);
+  if (period.conflict) warnings.push("수강 기간이 2주 · 4주로 함께 읽혔어요");
+  const twoWeek = compact.includes(RECEIPT_KEYWORDS.twoWeek) || period.weeks === 2;
   if (twoWeek && WEEKLY5.test(compact)) {
     // 2주완성은 회차가 절반이라(주5일도 9회 안팎) 회차로 주3일 · 주5일을 가르지 않는다 — `주5일` 글자를 먼저 본다
     weekly = 5;
@@ -531,7 +554,6 @@ export function parseReceipt(raw: string): ParsedReceipt {
 
   // 과정 — 2주완성 표기가 먼저, 그다음 프리미어 · 스파르타 · 중급속성 · 실전속성 중 하나라도 있으면 스파르타반
   const program: Program = twoWeek ? "twoweek" : RECEIPT_KEYWORDS.spartaWords.some((w) => fuzzyIncludes(compact, w, 1)) ? "sparta" : "score";
-  if (twoWeek) warnings.push("2주완성 수강증이에요 — 실물 표기를 아직 확인하지 않아 강사가 반을 확인해요");
   // 과정명이 레벨을 말해 준다 (중급속성 = 650, 실전속성 = 750). 숫자를 못 읽었을 때 대신 쓰고, 읽었는데 다르면 경고
   const courseLevel =
     Object.entries(RECEIPT_KEYWORDS.spartaLevelWords).find(([word]) => fuzzyIncludes(compact, word, 1))?.[1] ?? null;
@@ -571,6 +593,7 @@ export function parseReceipt(raw: string): ParsedReceipt {
     level,
     courseLevel,
     program,
+    weeks: period.weeks,
     times,
     time,
     // 캡처 시각은 수강 날짜가 아니다 — 지우고 센다 (ParsedReceipt.months 참고)
@@ -589,9 +612,20 @@ export function parseReceipt(raw: string): ParsedReceipt {
  * 이름은 자동 승인 조건(G3)인데 멈추는 기준에 없어서, 첫 변형이 이름만 잘못 읽으면 더 또렷한 변형을 읽지 않고 검토로 보냈다.
  * 이름이 수강증에 없으면(남의 수강증) 변형을 다 읽는다 — 느려질 뿐 결과는 같다.
  */
-export function readEnoughFor(studentName: string | null | undefined): (text: string) => boolean {
-  return (text) => receiptComplete(text) && (!studentName || receiptHasName(text, studentName));
+export function readEnoughFor(studentName: string | null | undefined, opts: { periodKeys?: ReadonlySet<string> } = {}): (text: string) => boolean {
+  return (text) => {
+    const p = parseReceipt(text);
+    if (!parsedComplete(p)) return false;
+    if (studentName && !receiptHasName(text, studentName)) return false;
+    // 같은 레벨 · 시간에 2주완성 반이 열려 있으면 기간 숫자(`[4주-` · `[2주-`)까지 또렷해야 멈춘다 (2026-10-05) — 그 숫자 하나로
+    // 한 달 반과 앞 절반 반이 갈린다. 다른 수강증은 예전처럼 첫 변형에서 멈춘다 (교실에서 한꺼번에 올릴 때 느려지지 않게)
+    if (opts.periodKeys?.has(periodKey(p.level!, p.time!.timeBlock)) && p.weeks == null && !p.compact.includes(RECEIPT_KEYWORDS.twoWeek)) return false;
+    return true;
+  };
 }
+
+/** `레벨|시간` — 2주완성 반이 열려 있는 자리를 셀 때 (`readEnoughFor` 의 `periodKeys` · 반 대조의 `periodUnclear`) */
+export const periodKey = (level: number, timeBlock: string) => `${level}|${timeBlock}`;
 
 /* ─── OCR 엔진 자리 ──────────────────────────────────────────────────────── */
 
@@ -618,7 +652,10 @@ export interface OcrEngine {
  * 자동 승인에 필요한 것(`역전토익` 글자 · 카드 칸 라벨)도 여기 넣는다 — 첫 변형이 놓쳤으면 다음 변형이 읽을 기회를 준다.
  */
 export function receiptComplete(text: string): boolean {
-  const p = parseReceipt(text);
+  return parsedComplete(parseReceipt(text));
+}
+
+function parsedComplete(p: ParsedReceipt): boolean {
   return (
     p.gates.academy &&
     p.brandExact &&

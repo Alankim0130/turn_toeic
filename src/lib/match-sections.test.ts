@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchSections, pickTerms, type MatchInput } from "./match-sections";
+import { matchSections, pickTerms, twoWeekSpots, type MatchInput } from "./match-sections";
 import { parseReceipt } from "./receipt";
 import type { EnrollSection } from "./enroll-options";
 
@@ -241,9 +241,68 @@ describe("2주완성 (2026-10-05) — 같은 850 12:30~15:00 이어도 과정으
     expect(result).toEqual({ kind: "match", sectionIds: [9001, 9002], term: "2026-10" });
   });
 
-  it("한 달 850 수강증은 그대로 점수보장반 묶음 반 — 2주완성 반이 함께 열려 있어도", () => {
-    const { result } = matchSections({ ...at850, program: "score" }, withTwoWeek);
-    expect(result).toEqual({ kind: "match", sectionIds: [find(OCT, "mwf", 3, "12:30~15:00"), find(OCT, "ttf", 3, "12:30~15:00")], term: "2026-10" });
+  const month850 = () => [find(OCT, "mwf", 3, "12:30~15:00"), find(OCT, "ttf", 3, "12:30~15:00")];
+
+  it("한 달 850 수강증(`[4주-`)은 그대로 점수보장반 묶음 반 — 2주완성 반이 함께 열려 있어도", () => {
+    const { result } = matchSections({ ...at850, program: "score", weeks: 4 }, withTwoWeek);
+    expect(result).toEqual({ kind: "match", sectionIds: month850(), term: "2026-10" });
+  });
+
+  it("기간 숫자를 또렷이 못 읽었으면 한 달 반을 찾되 periodUnclear — 앞 절반 학생이 한 달 반에 붙지 않게 사람이 본다", () => {
+    for (const weeks of [null, undefined]) {
+      const { result } = matchSections({ ...at850, program: "score", weeks }, withTwoWeek);
+      expect(result).toEqual({ kind: "match", sectionIds: month850(), term: "2026-10", periodUnclear: true });
+    }
+  });
+
+  it("periodUnclear 는 2주완성이 열리는 레벨 · 시간에서만 — 다른 수강증은 예전 그대로", () => {
+    // 2주완성 반도 시간표 줄도 없다
+    expect(matchSections({ ...at850, program: "score", weeks: null }, SECTIONS).result).not.toHaveProperty("periodUnclear");
+    // 70분 수강증 — 2주완성(140분 한 줄)과 시간이 다르다
+    const at70 = { ...at850, program: "score" as const, weeks: null, time: { start: "12:30", end: "13:40", minutes: 70, timeBlock: "12:30~13:40" } };
+    expect(matchSections(at70, withTwoWeek).result).not.toHaveProperty("periodUnclear");
+    // 다른 레벨
+    expect(matchSections({ ...base, weeks: null, courseMonth: 10 }, withTwoWeek).result).not.toHaveProperty("periodUnclear");
+    // 2주완성 수강증 자체
+    expect(matchSections({ ...at850, program: "twoweek", weeks: 2 }, withTwoWeek).result).not.toHaveProperty("periodUnclear");
+  });
+
+  it("기수는 보지 않는다 — 2주완성 반이 10월에만 있어도 9월 수강증이 숫자를 못 읽었으면 사람이 본다 (읽기 전에는 수강월을 모른다)", () => {
+    expect(matchSections({ ...at850, program: "score", weeks: null, courseMonth: 9 }, withTwoWeek).result).toEqual({
+      kind: "match",
+      sectionIds: [find(SEP, "mwf", 3, "12:30~15:00"), find(SEP, "ttf", 3, "12:30~15:00")],
+      term: "2026-09",
+      periodUnclear: true,
+    });
+  });
+
+  it("그 달 2주완성 반을 아직 안 열었어도 시간표에 2주완성 줄이 있으면 막는다 — 숫자를 못 읽은 2주완성 수강증이 한 달 반에 들어가지 않게", () => {
+    const spots = twoWeekSpots(SECTIONS, [{ level: 850, start_time: "12:30:00", end_time: "15:00:00" }]);
+    expect([...spots]).toEqual(["850|12:30~15:00"]);
+    expect(matchSections({ ...at850, program: "score", weeks: null }, SECTIONS, { twoWeekSpots: spots }).result).toEqual({
+      kind: "match",
+      sectionIds: month850(),
+      term: "2026-10",
+      periodUnclear: true,
+    });
+    // `[4주-` 를 읽었으면 그대로 자동 승인 길
+    expect(matchSections({ ...at850, program: "score", weeks: 4 }, SECTIONS, { twoWeekSpots: spots }).result).not.toHaveProperty("periodUnclear");
+  });
+
+  it("twoWeekSpots — 열린 2주완성 반과 시간표 줄을 합친다 (점수보장반 · 속성반 반은 세지 않는다)", () => {
+    expect([...twoWeekSpots(withTwoWeek)]).toEqual(["850|12:30~15:00"]);
+    expect([...twoWeekSpots(SECTIONS)]).toEqual([]);
+    expect([...twoWeekSpots(withTwoWeek, [{ level: 850, start_time: "12:30:00", end_time: "15:00:00" }, { level: 750, start_time: "10:00:00", end_time: "12:10:00" }])].sort()).toEqual([
+      "750|10:00~12:10",
+      "850|12:30~15:00",
+    ]);
+  });
+
+  it("수강증 글자 그대로 — `850 목표` · `[2주-10/06] 주5일 (월9회)` 는 2주완성 반 두 개, `[4주-…` 는 한 달 반", () => {
+    const read = (days: string) =>
+      parseReceipt(["10월 과정", "역전토익 [종합반]", "850 목표", "수강센터 부산 서면센터", "강의실 본관 701호", days, "수강시간 12:30~15:00"].join("\n"));
+    expect(matchSections(read("수강요일 [2주-10/06] 주5일 (월9회)"), withTwoWeek).result).toEqual({ kind: "match", sectionIds: [9001, 9002], term: "2026-10" });
+    expect(matchSections(read("수강요일 [4주-10/06] 주5일 (월18회)"), withTwoWeek).result).toEqual({ kind: "match", sectionIds: month850(), term: "2026-10" });
   });
 
   it("2주완성 반이 아직 없으면 '850 2주완성 … 에 열린 반이 없어요'", () => {

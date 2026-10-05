@@ -1,6 +1,7 @@
 import "server-only";
 import type { createAdminClient } from "./supabase/admin";
 import type { EnrollSection } from "./enroll-options";
+import type { TwoWeekSlot } from "./match-sections";
 import { todayKST } from "./utils";
 
 type Client = Pick<ReturnType<typeof createAdminClient>, "from">;
@@ -19,5 +20,15 @@ export async function fetchOpenEnrollSections(client: Client): Promise<EnrollSec
     .gte("closes_at", todayKST())
     .order("enrollment_opens_at")
     .order("time_block");
+  return data ?? [];
+}
+
+/**
+ * 시간표의 2주완성 줄 — 달 줄 · 기본 줄 모두 (2026-10-05). 반 대조가 `twoWeekSpots(반, 이것)` 으로 2주완성이 열리는 자리를 센다 —
+ * 그 달 2주완성 반을 아직 안 열었어도 2주완성 수강증은 먼저 온다. 읽지 못하면 빈 목록 (열린 반에서 센 것만 쓴다)
+ */
+export async function fetchTwoWeekSlots(client: Client): Promise<TwoWeekSlot[]> {
+  const { data, error } = await client.from("timetable_slots").select("level, start_time, end_time").eq("program", "twoweek");
+  if (error) console.error(`[verify] 2주완성 시간표를 읽지 못했어요: ${error.message}`);
   return data ?? [];
 }
