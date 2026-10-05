@@ -33,8 +33,11 @@ export type Program = (typeof PROGRAMS)[number];
 
 export const PROGRAM_LABEL: Record<Program, string> = { score: "한 달 점수보장반", sparta: "스파르타반", twoweek: "2주완성반" };
 
-/** 랜딩 수업시간표에 카드로 세우는 과정 — 2주완성은 아직 넣지 않았다 (Alan 확인 전 — 랜딩은 마케팅 화면이라 묻고 넣는다) */
-export const LANDING_PROGRAMS: readonly Program[] = ["score", "sparta"];
+/**
+ * 랜딩 수업시간표에 카드로 세우는 과정 — 점수보장반 → 스파르타반 → 2주완성반 (2026-10-05 Alan "랜딩 수업시간표에도 넣어줘").
+ * 카드는 그 달 시간표에 그 과정 줄이 있는 레벨만 선다 (지금 2주완성은 850 하나)
+ */
+export const LANDING_PROGRAMS: readonly Program[] = ["score", "sparta", "twoweek"];
 
 export const isProgram = (v: unknown): v is Program => typeof v === "string" && (PROGRAMS as readonly string[]).includes(v);
 

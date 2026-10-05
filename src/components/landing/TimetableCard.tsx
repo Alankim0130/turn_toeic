@@ -19,6 +19,11 @@ export type TimetableCardData = {
    * 강좌 행이 없으면 null — 구성을 짐작해서 적지 않는다
    */
   sparta?: { name: string; levels: number[] } | null;
+  /**
+   * 2주완성 카드만: 강좌 이름(`courses.name` — 제목에는 `courseShortName` 으로 "2주완성"만, 2026-10-05).
+   * 강좌 행이 없으면 null — 제목은 과정 이름으로 대신하고, 앞 절반이라는 설명은 과정의 규칙이라 그대로 적는다
+   */
+  twoWeek?: { name: string } | null;
 };
 
 /**
@@ -48,6 +53,9 @@ export function TimetableCard({ card, delay = 0 }: { card: TimetableCardData; de
             // 스파르타 카드는 "650 중급속성" — 이름은 courses.name 에서 온다 (2026-09-17 Alan "스파르타라고 하지말고 중급속성과 실전속성으로").
             // 강좌 행이 없을 때만 과정 이름으로 대신한다
             <span className="ml-1.5 text-lg text-brand-600">{card.sparta ? courseShortName(card.sparta.name) : PROGRAM_LABEL.sparta}</span>
+          ) : card.program === "twoweek" ? (
+            // 2주완성 카드는 "850 2주완성" (2026-10-05 Alan "랜딩 수업시간표에도 넣어줘")
+            <span className="ml-1.5 text-lg text-brand-600">{card.twoWeek ? courseShortName(card.twoWeek.name) : PROGRAM_LABEL.twoweek}</span>
           ) : (
             <span className="ml-0.5 text-lg">반</span>
           )}
@@ -68,6 +76,18 @@ export function TimetableCard({ card, delay = 0 }: { card: TimetableCardData; de
           <p className="mt-1.5 text-xs font-semibold text-slate">
             {card.sparta.levels.map((lv) => `${lv}반`).join(" + ")} 수업을 함께 들어요
           </p>
+        </div>
+      )}
+
+      {/* 2주완성은 같은 레벨 수업을 개강일부터 앞 절반만 듣는다 (2026-10-05 Alan "2주완성은 절반만 수업을 듣는거야. 개강일부터 시작이야") —
+          단과(60 · 70분)가 없어 시간 줄은 그 레벨 수업 전체 한 줄이다 */}
+      {card.program === "twoweek" && (
+        <div className="mt-4 rounded-xl border border-brand-200 bg-white px-4 py-3 text-center" data-twoweek>
+          <p className="flex flex-wrap items-center justify-center gap-1.5">
+            <span className="rounded-full bg-brand-600 px-2.5 py-0.5 text-sm font-black text-white">{card.level}반 수업</span>
+            <span className="rounded-full border border-brand-300 bg-brand-50 px-2.5 py-0.5 text-sm font-black text-brand-700">개강일부터 2주</span>
+          </p>
+          <p className="mt-1.5 text-xs font-semibold text-slate">한 달 과정의 앞 절반만 들어요</p>
         </div>
       )}
 

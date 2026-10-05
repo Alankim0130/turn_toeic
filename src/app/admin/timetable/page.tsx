@@ -220,7 +220,8 @@ export default async function AdminTimetablePage({ searchParams }: { searchParam
               {program === "twoweek" && (
                 <p className="-mt-2 mb-3 text-xs text-slate">
                   같은 레벨 수업을 <strong className="text-ink">개강일부터 앞 절반</strong>만 들어요 — 반의 종강일은 그 달 수업일(월수금 + 화목금) 앞 절반의 마지막 날로
-                  저절로 정해져요 (18일이면 9번째 날). 과정 · 과목은 같은 레벨 수업 것을 써요.
+                  저절로 정해져요 (18일이면 9번째 날). 과정 · 과목은 같은 레벨 수업 것을 써요. 시간은 그 달 같은 레벨 수업 전체와 같게 적어요 —
+                  방학달처럼 수업이 통짜 한 줄이면 그 줄과 같은 시간이에요 (그 수업 시간을 지우면 이 줄도 함께 지워져요).
                 </p>
               )}
               {/* 카드는 PC 넓은 화면(xl)에서만 두 줄 — 세 줄로 두면 카드가 좁아져 시각이 잘리고 줄마다 접혔다 */}
