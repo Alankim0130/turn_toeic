@@ -146,7 +146,7 @@
   1. Integrations → Cron → Jobs 에 6개: `daily-status-transition` · `promote-live-replays` · `notify-live-class-start` · `naver-booking-sync` · `live-detect` · `cron-history-cleanup` (하는 일은 부록 표).
   2. Integrations → Vault 에 `app_cron_secret` 하나 — DB가 우리 사이트를 부를 때 붙이는 비밀이고, DB 안에서 만든 값이라 건네줄 것이 없다.
   3. SQL Editor 에서 `select value from private.app_config where key = 'site_url';` → `https://winnertoeic.com` 이면 된다. 도메인을 바꿀 때만 고친다.
-  4. Storage 에 비공개 저장소 8곳: `receipts` · `homework` · `lc-audio` · `lc-textbooks` · `study-materials` · `study-checkins` · `avatars` · `class-materials`.
+  4. Storage 에 비공개 저장소 9곳: `receipts` · `homework` · `lc-audio` · `lc-textbooks` · `study-materials` · `study-checkins` · `avatars` · `class-materials` · `class-notices`.
   5. **프로젝트를 Pause 하거나 지우는 버튼은 절대 누르지 않는다.**
 
 ## 4단계 · Vercel (사이트 서버) + 도메인

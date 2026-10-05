@@ -7,7 +7,8 @@ import { formatDate, todayKST, TRACK_LABEL } from "@/lib/utils";
 import { initialSubject, type MaterialSubject } from "@/lib/class-materials";
 import { cellKey, cellsOfSection, isRoundOpen, roundKey, roundsOf } from "@/lib/class-rounds";
 import { bookTimesLabel } from "@/lib/lc-audio";
-import { getMyAccessibleSections, getMyClassMaterials, getMyOrders, getMyStudyEligibility } from "../_lib/queries";
+import { getMyAccessibleSections, getMyClassMaterials, getMyClassNotices, getMyOrders, getMyStudyEligibility } from "../_lib/queries";
+import { NoticeList } from "@/components/class-materials/NoticeList";
 
 export const metadata: Metadata = { title: "수업자료실", robots: { index: false } };
 
@@ -25,7 +26,19 @@ export default async function ClassMaterialsPage({ searchParams }: { searchParam
   const locked = await studentGate("materials");
   if (locked) return locked;
 
-  const [sp, { access, dates, materials }, orders, mySections] = await Promise.all([searchParams, getMyClassMaterials(), getMyOrders(), getMyAccessibleSections()]);
+  const [sp, { access, dates, materials }, orders, mySections, notices] = await Promise.all([
+    searchParams,
+    getMyClassMaterials(),
+    getMyOrders(),
+    getMyAccessibleSections(),
+    getMyClassNotices(),
+  ]);
+  // 공지사항 — 회차 자료보다 앞 (2026-10-05 Alan). 누르면 공지 페이지가 새로 열린다
+  const noticeList = notices.length > 0 && (
+    <section aria-label="공지사항">
+      <NoticeList items={notices} hrefOf={(id) => `/my/materials/notices/${id}`} />
+    </section>
+  );
   const header = <PageHeader icon="download" title="수업자료실" description="내 수업 자료를 RC · LC 로 나눠 받아요. 회차마다 그 수업일에 열려요." />;
 
   const { accessTerms, opensOn } = await getMyStudyEligibility(orders);
@@ -58,6 +71,7 @@ export default async function ClassMaterialsPage({ searchParams }: { searchParam
     return (
       <div className="space-y-8">
         {header}
+        {noticeList}
         <EmptyState icon="download" title="내 수업 자료가 아직 없어요" description="강사님이 내 반의 과정을 정하고 자료를 올리면 수업일마다 여기에서 받을 수 있어요." />
       </div>
     );
@@ -97,6 +111,7 @@ export default async function ClassMaterialsPage({ searchParams }: { searchParam
   return (
     <div className="space-y-5">
       {header}
+      {noticeList}
       <ClassMaterialsView
         levels={access.map((a) => a.level)}
         level={here.level}

@@ -8,6 +8,7 @@ import { fetchOpenEnrollSections } from "@/lib/open-sections";
 import { isMaterialSubject, materialAccess, type MaterialSubject } from "@/lib/class-materials";
 import { cellKey, cellLevels, isRoundOpen, isRoundSet, roundCells, roundDates, roundKey } from "@/lib/class-rounds";
 import { clipToOwnRange } from "@/lib/two-week";
+import { noticeVisible, scopeOf } from "@/lib/class-notices";
 
 /**
  * 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다.
@@ -567,6 +568,32 @@ export async function getMyClassMaterials() {
       : [],
   );
   return { access, dates, materials };
+}
+
+const NOTICE_LIST_COLS = "id, title, levels, subjects, author_name, created_at, updated_at";
+
+/**
+ * 수업자료실 공지 (2026-10-05) — **내 범위 공지만**: 지금 수강 중이고, 범위 공지면 내 과정 칸이 레벨 · 과목에 맞는다 (`noticeVisible`).
+ * RLS 에만 맡기지 않는다 (등급 체계 10) — 정책이 강사 · 관리자에게 모든 공지를 연다. 최근 것부터
+ */
+export async function getMyClassNotices() {
+  const supabase = await createClient();
+  const [sections, { accessTerms }] = await Promise.all([getMyAccessibleSections(), getMyStudyEligibility()]);
+  const cells = [...roundCells(sections)];
+  const enrolled = accessTerms.size > 0;
+  if (!enrolled) return [];
+  const { data } = await supabase.from("class_notices").select(NOTICE_LIST_COLS).order("created_at", { ascending: false }).limit(200);
+  return (data ?? []).filter((n) => noticeVisible(scopeOf(n), cells, enrolled));
+}
+
+/** 공지 한 편 — 목록과 같은 규칙으로 내 범위가 아니면 null */
+export async function getMyClassNotice(id: number) {
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const supabase = await createClient();
+  const [sections, { accessTerms }] = await Promise.all([getMyAccessibleSections(), getMyStudyEligibility()]);
+  const cells = [...roundCells(sections)];
+  const { data } = await supabase.from("class_notices").select(`${NOTICE_LIST_COLS}, body`).eq("id", id).maybeSingle();
+  return data && noticeVisible(scopeOf(data), cells, accessTerms.size > 0) ? data : null;
 }
 
 /** 라벨 */

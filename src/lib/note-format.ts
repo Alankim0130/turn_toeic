@@ -8,6 +8,9 @@
  * - **토익 지문의 빈칸(`______` · `-------`)과 겹치지 않게** 마크다운(`**` · `__`)을 쓰지 않았다.
  * - 모르는 태그 · 짝이 없는 닫는 태그 · 목록에 없는 색은 **적힌 그대로 글자로** 보인다 (조용히 사라지지 않는다). 닫지 않은 태그는 끝까지 적용된다.
  * - 글자 수 상한(5만 자)은 태그까지 센다 — DB check 가 저장된 글 전체를 보기 때문이다.
+ * - **줄 정렬**(같은 날 Alan "줄 단위로 왼쪽정렬, 가운데정렬, 오른쪽 정렬") — 줄 맨 앞의 `[center]` · `[right]` (왼쪽은 표시 없음). 줄 가운데에 있으면 글자다.
+ * - **이미지**(같은 날 — 수업자료실 공지 "블로그랑 같다고 생각하면") — `[img=images/….webp w=50]`. 글에서는 한 글자(`OBJ`)로 세고 너비는 칸의 몇 %(10~100)다.
+ *   그림 주소는 글에 없다 — 저장소 경로만 두고 보여 줄 때 보는 사람의 세션으로 서명 주소를 만든다(남이 주소를 들고 가도 곧 만료된다).
  */
 
 export const NOTE_COLORS = {
@@ -26,7 +29,20 @@ export const NOTE_SIZES = {
 } as const;
 export type NoteSize = keyof typeof NOTE_SIZES;
 
+export type NoteAlign = "left" | "center" | "right";
+export const NOTE_ALIGNS: NoteAlign[] = ["left", "center", "right"];
+export const NOTE_ALIGN_LABEL: Record<NoteAlign, string> = { left: "왼쪽 정렬", center: "가운데 정렬", right: "오른쪽 정렬" };
+export const alignClassName = (a: NoteAlign) => (a === "center" ? "text-center" : a === "right" ? "text-right" : "");
+
+export type NoteImage = { path: string; w: number };
+/** 글 속 그림 한 장이 차지하는 글자 (U+FFFC OBJECT REPLACEMENT CHARACTER) */
+export const OBJ = "\uFFFC";
+export const IMAGE_WIDTHS = [25, 50, 75, 100] as const;
+export const IMAGE_MIN_W = 10;
+const clampWidth = (w: number) => (Number.isFinite(w) ? Math.min(100, Math.max(IMAGE_MIN_W, Math.round(w))) : 100);
+
 export type NoteStyle = {
+  img?: NoteImage;
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
@@ -40,7 +56,7 @@ export type NoteRun = { text: string; style: NoteStyle };
 const FLAGS = { b: "bold", i: "italic", u: "underline", mark: "mark" } as const;
 type FlagTag = keyof typeof FLAGS;
 
-const TAG = /\[(\/?)(b|i|u|mark|color|size)(?:=([a-z]+))?\]/g;
+const TAG = /\[(\/?)(b|i|u|mark|color|size|center|right)(?:=([a-z]+))?\]|\[img=([a-z0-9][a-z0-9/._-]{0,200})(?: w=(\d{1,3}))?\]/g;
 
 type Open = { tag: string; style: NoteStyle };
 
@@ -54,27 +70,61 @@ function styleOf(stack: Open[]): NoteStyle {
 }
 
 const sameStyle = (a: NoteStyle, b: NoteStyle) =>
+  !a.img &&
+  !b.img &&
   !!a.bold === !!b.bold && !!a.italic === !!b.italic && !!a.underline === !!b.underline && !!a.mark === !!b.mark && a.color === b.color && a.size === b.size;
 
 function push(runs: NoteRun[], text: string, style: NoteStyle) {
   if (!text) return;
+  if (style.img) {
+    runs.push({ text: OBJ, style });
+    return;
+  }
   const last = runs.at(-1);
   if (last && sameStyle(last.style, style)) last.text += text;
   else runs.push({ text, style });
 }
 
+/** 글 한 편 = 글자 조각 + 줄마다 정렬 (`aligns.length` = 줄 수) */
+export type NoteDoc = { runs: NoteRun[]; aligns: NoteAlign[] };
+
 /** 저장된 글 → 글자 조각. 같은 서식이 이어지면 한 조각으로 합친다 */
 export function parseNote(note: string): NoteRun[] {
+  return parseDoc(note).runs;
+}
+
+/** 저장된 글 → 글자 조각 + 줄 정렬 */
+export function parseDoc(note: string): NoteDoc {
   const runs: NoteRun[] = [];
+  const aligns: NoteAlign[] = ["left"];
   const stack: Open[] = [];
+  let lineEmpty = true;
+  const emit = (text: string, style: NoteStyle) => {
+    if (!text) return;
+    push(runs, text, style);
+    const parts = text.split("\n");
+    for (let k = 1; k < parts.length; k++) aligns.push("left");
+    lineEmpty = parts.length > 1 ? parts.at(-1) === "" : lineEmpty && text === "";
+  };
   let at = 0;
   for (const m of note.matchAll(TAG)) {
-    const [whole, close, tag, value] = m;
-    push(runs, note.slice(at, m.index), styleOf(stack));
+    const [whole, close, tag, value, imgPath, imgW] = m;
+    emit(note.slice(at, m.index), styleOf(stack));
     at = m.index + whole.length;
 
+    if (imgPath !== undefined) {
+      runs.push({ text: OBJ, style: { img: { path: imgPath, w: imgW === undefined ? 100 : clampWidth(Number(imgW)) } } });
+      lineEmpty = false;
+      continue;
+    }
     let ok = false;
-    if (close) {
+    if (tag === "center" || tag === "right") {
+      // 줄 맨 앞에서만 정렬 — 줄 가운데의 [center] 는 글자다
+      if (!close && value === undefined && lineEmpty) {
+        aligns[aligns.length - 1] = tag;
+        ok = true;
+      }
+    } else if (close) {
       if (value === undefined) {
         const i = stack.findLastIndex((o) => o.tag === tag);
         if (i >= 0) {
@@ -94,10 +144,10 @@ export function parseNote(note: string): NoteRun[] {
       stack.push({ tag, style: { size: value } });
       ok = true;
     }
-    if (!ok) push(runs, whole, styleOf(stack));
+    if (!ok) emit(whole, styleOf(stack));
   }
-  push(runs, note.slice(at), styleOf(stack));
-  return runs;
+  emit(note.slice(at), styleOf(stack));
+  return { runs, aligns };
 }
 
 /** 서식을 뺀 글 — 접을지 · 몇 자인지는 학생에게 보이는 글자로 센다 */
@@ -141,6 +191,34 @@ export function runClassName(s: NoteStyle): string {
 /** 서식 태그를 모두 지운 글 — `서식 지우기` 버튼이 고른 부분에 쓴다 */
 export const stripNoteTags = (text: string) => text.replace(TAG, "");
 
+/** 줄마다 자른 조각 — 보여 줄 때 줄마다 정렬이 다르다 */
+export function splitLines(runs: NoteRun[]): NoteRun[][] {
+  const lines: NoteRun[][] = [[]];
+  for (const r of runs) {
+    const parts = r.text.split("\n");
+    parts.forEach((part, k) => {
+      if (k > 0) lines.push([]);
+      if (part) lines[lines.length - 1].push({ text: part, style: r.style });
+    });
+  }
+  return lines;
+}
+
+/** 글에 든 그림 경로 — 서명 주소를 만들고, 공지를 고칠 때 빠진 그림을 저장소에서 지운다 */
+export function noteImagePaths(note: string): string[] {
+  return [...new Set(parseNote(note).flatMap((r) => (r.style.img ? [r.style.img.path] : [])))];
+}
+
+/** 앞뒤 빈칸 · 빈 줄을 걷어 낸 글 — 걷어 낸 줄만큼 정렬도 뺀다 */
+export function trimDoc(doc: NoteDoc): NoteDoc {
+  const plain = runsText(doc.runs);
+  const lead = plain.match(/^\s*/)?.[0] ?? "";
+  const runs = trimRuns(doc.runs);
+  const dropped = lead.split("\n").length - 1;
+  const lines = runsText(runs).split("\n").length;
+  return { runs, aligns: doc.aligns.slice(dropped, dropped + lines) };
+}
+
 /** 고른 글을 감쌀 여는 · 닫는 태그 */
 export type NoteWrap = { open: string; close: string };
 export const noteWrap = {
@@ -163,6 +241,10 @@ export function runsToNote(runs: NoteRun[]): string {
   for (const r of runs) {
     if (!r.text) continue;
     const s = r.style;
+    if (s.img) {
+      out += `[img=${s.img.path}${s.img.w === 100 ? "" : ` w=${s.img.w}`}]`;
+      continue;
+    }
     const wraps: NoteWrap[] = [];
     if (s.bold) wraps.push(noteWrap.bold);
     if (s.italic) wraps.push(noteWrap.italic);
@@ -173,6 +255,16 @@ export function runsToNote(runs: NoteRun[]): string {
     out += wraps.map((w) => w.open).join("") + r.text + wraps.reverse().map((w) => w.close).join("");
   }
   return out;
+}
+
+/** 글 한 편 → 저장할 글. 줄마다 정렬 표시를 맨 앞에 */
+export function docToNote(doc: NoteDoc): string {
+  return splitLines(doc.runs)
+    .map((line, i) => {
+      const a = doc.aligns[i] ?? "left";
+      return (a === "left" ? "" : `[${a}]`) + runsToNote(line);
+    })
+    .join("\n");
 }
 
 /** 같은 서식끼리 잇고 빈 조각을 버린다 */
@@ -202,13 +294,55 @@ function splitAt(runs: NoteRun[], at: number): [NoteRun[], number] {
 }
 
 /** [start, end) 를 `text`(서식 없음 · 앞 글자의 서식을 잇는다)로 바꾼다 — 붙여 넣기 · 줄바꿈 */
-export function spliceRuns(runs: NoteRun[], start: number, end: number, text: string): NoteRun[] {
+export function spliceRuns(runs: NoteRun[], start: number, end: number, insert: string | NoteRun[]): NoteRun[] {
   const [a, i] = splitAt(runs, start);
   const [b, j] = splitAt(a, end);
   const before = b.slice(0, i);
-  const style = before.at(-1)?.style ?? b[i]?.style ?? {};
-  return normalizeRuns([...before, { text, style: { ...style } }, ...b.slice(j)]);
+  // 그림 옆에 친 글자가 그림이 되지 않게 — 그림의 서식은 잇지 않는다
+  const near = [...before].reverse().find((r) => !r.style.img)?.style ?? b.slice(i).find((r) => !r.style.img)?.style ?? {};
+  const added = typeof insert === "string" ? [{ text: insert, style: { ...near, img: undefined } }] : insert;
+  return normalizeRuns([...before, ...added, ...b.slice(j)].map((r) => ({ text: r.text, style: stripUndefined(r.style) })));
 }
+
+const stripUndefined = (s: NoteStyle): NoteStyle => Object.fromEntries(Object.entries(s).filter(([, v]) => v !== undefined && v !== false));
+
+/** `offset` 글자가 몇 번째 줄인가 */
+export const lineOf = (runs: NoteRun[], offset: number) => (Array.from(runsText(runs)).slice(0, offset).join("").match(/\n/g) ?? []).length;
+
+/** 글 한 편에서 [start, end) 를 바꾼다 — 새 줄은 그 줄의 정렬을 잇고, 지운 줄의 정렬은 빠진다 */
+export function spliceDoc(doc: NoteDoc, start: number, end: number, insert: string | NoteRun[]): NoteDoc {
+  const l1 = lineOf(doc.runs, start);
+  const l2 = lineOf(doc.runs, end);
+  const text = typeof insert === "string" ? insert : runsText(insert);
+  const k = (text.match(/\n/g) ?? []).length;
+  const keep = doc.aligns[l1] ?? "left";
+  return {
+    runs: spliceRuns(doc.runs, start, end, insert),
+    aligns: [...doc.aligns.slice(0, l1 + 1), ...Array(k).fill(keep), ...doc.aligns.slice(l2 + 1)],
+  };
+}
+
+/** 고른 줄들의 정렬 — 이미 다 그 정렬이면 왼쪽으로 되돌린다 (서식 버튼과 같이 한 번 더 누르면 풀린다) */
+export function alignDoc(doc: NoteDoc, start: number, end: number, align: NoteAlign): NoteDoc {
+  const l1 = lineOf(doc.runs, start);
+  const l2 = lineOf(doc.runs, end);
+  const off = align !== "left" && doc.aligns.slice(l1, l2 + 1).every((a) => a === align);
+  return { runs: doc.runs, aligns: doc.aligns.map((a, i) => (i >= l1 && i <= l2 ? (off ? "left" : align) : a)) };
+}
+
+/** `offset` 자리의 그림 너비를 바꾼다 */
+export function resizeImage(doc: NoteDoc, offset: number, w: number): NoteDoc {
+  let pos = 0;
+  const runs = doc.runs.map((r) => {
+    const here = pos;
+    pos += runLength(r);
+    return here === offset && r.style.img ? { text: r.text, style: { ...r.style, img: { ...r.style.img, w: clampWidth(w) } } } : r;
+  });
+  return { runs, aligns: doc.aligns };
+}
+
+/** 그림 한 장 조각 */
+export const imageRun = (path: string, w = 100): NoteRun => ({ text: OBJ, style: { img: { path, w: clampWidth(w) } } });
 
 export type NoteChange =
   | { kind: "flag"; flag: "bold" | "italic" | "underline" | "mark" }
@@ -224,7 +358,7 @@ export function applyNoteChange(runs: NoteRun[], start: number, end: number, cha
   const middle = b.slice(i, j);
   const all = (pred: (s: NoteStyle) => boolean) => middle.every((r) => pred(r.style));
   let next: (s: NoteStyle) => NoteStyle;
-  if (change.kind === "clear") next = () => ({});
+  if (change.kind === "clear") next = (s) => (s.img ? { img: s.img } : {});
   else if (change.kind === "flag") {
     const off = all((s) => !!s[change.flag]);
     next = (s) => ({ ...s, [change.flag]: off ? undefined : true });
@@ -235,8 +369,7 @@ export function applyNoteChange(runs: NoteRun[], start: number, end: number, cha
     const off = all((s) => s.size === change.size);
     next = (s) => ({ ...s, size: off ? undefined : change.size });
   }
-  const clean = (s: NoteStyle): NoteStyle => Object.fromEntries(Object.entries(s).filter(([, v]) => v !== undefined && v !== false));
-  return normalizeRuns([...b.slice(0, i), ...middle.map((r) => ({ text: r.text, style: clean(next(r.style)) })), ...b.slice(j)]);
+  return normalizeRuns([...b.slice(0, i), ...middle.map((r) => ({ text: r.text, style: stripUndefined(next(r.style)) })), ...b.slice(j)]);
 }
 
 /** 조각 전체 글자 수 (코드 포인트) */
