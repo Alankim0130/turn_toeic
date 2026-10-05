@@ -9,14 +9,56 @@ import { fileExt, MB, objectName } from "./upload";
  *   (`class_materials` 조회 정책 = `private.my_open_rounds()`, 마이그레이션 20261005130000 — 규칙은 `class-rounds.ts`).
  *   **RC 단과 학생에게는 RC 자료만, LC 단과에게는 LC 자료만** 열린다 (2026-10-05 Alan — "RC단과 학생들은 음원파일과 LC수업자료실에 접근 안되는거 맞지?").
  *   주5일 60분 · 120분 · 속성반은 둘 다. 과정 · 회차가 없는 옛 자료는 학생에게 보이지 않는다.
- * - 여기 값은 DB 와 같아야 한다 — 과목 check(`subject in ('rc','lc')`) · 제목 1~100자 · 안내 500자 · 버킷 50MB (`class-materials.test.ts` 가 본다).
+ * - 여기 값은 DB 와 같아야 한다 — 과목 check(`subject in ('rc','lc')`) · 제목 1~100자 · 안내 5만 자 · 버킷 50MB (`class-materials.test.ts` 가 본다).
+ * - **안내 칸에 스크립트를 올린다** (2026-10-05 Alan — "여기 안내에 스크립트를 올려줄예정이야. 그래서 글을 쫌 길게 적을 수 있어야해" — 500자 → 5만 자,
+ *   마이그레이션 20261005150000). 짧은 안내는 예전처럼 펼쳐 두고, 길면 앞 몇 줄만 보이고 `전체 보기` 로 편다 (`notePreview` · `MaterialNote`).
  */
 
 export const CLASS_MATERIAL_BUCKET = "class-materials";
 /** 버킷 한도 (마이그레이션의 file_size_limit) — 비대면 자료와 같다 */
 export const CLASS_MATERIAL_MAX_BYTES = 50 * MB;
 export const CLASS_MATERIAL_TITLE_MAX = 100;
-export const CLASS_MATERIAL_NOTE_MAX = 500;
+/**
+ * 안내 · 스크립트 상한 — LC 한 회차 스크립트에 해석을 붙여도 넉넉하다. 서버 액션 본문 한도(1MB)에도 한참 못 미친다 (한글 5만 자 ≈ 150KB).
+ * 화면은 넘치면 잘라 넣지 않고(maxLength 를 두지 않는다 — 붙여 넣은 스크립트 뒤가 소리 없이 잘린다) 빨갛게 알리고 저장을 막는다
+ */
+export const CLASS_MATERIAL_NOTE_MAX = 50_000;
+
+const SURROGATE_PAIR = /[\uD800-\uDBFF][\uDC00-\uDFFF]/g;
+/**
+ * 글자 수 — DB 의 `char_length` 와 같은 셈(코드 포인트). JS 의 `.length` 는 이모지를 두 자로 센다.
+ * 입력칸 글자 수 · 폼 · 서버 액션 · 접힌 안내의 글자 수가 모두 이것으로 세어 DB check 와 한 자도 어긋나지 않는다.
+ * 글자를 칠 때마다 부르므로 배열을 만들지 않고 셈만 한다
+ */
+export const charCount = (s: string): number => s.length - (s.match(SURROGATE_PAIR)?.length ?? 0);
+
+/** 안내가 상한을 넘었을 때의 말 — 폼(파일을 올리기 전에)과 서버 액션이 같은 말을 쓴다. 넘지 않으면 null */
+export function noteTooLong(note: string): string | null {
+  const n = charCount(note);
+  if (n <= CLASS_MATERIAL_NOTE_MAX) return null;
+  const fmt = (v: number) => v.toLocaleString("ko-KR");
+  return `안내가 ${fmt(CLASS_MATERIAL_NOTE_MAX)}자를 넘어요 (${fmt(n)}자). 줄이거나, 긴 스크립트는 파일로 올려 주세요.`;
+}
+
+/** 이보다 길면(줄 · 글자 어느 쪽이든) 접어 둔다 — 짧은 안내("수업 전에 출력해 오세요")는 예전처럼 늘 펼쳐 둔다 */
+export const NOTE_FOLD_LINES = 6;
+export const NOTE_FOLD_CHARS = 300;
+/** 접었을 때 보이는 앞부분 */
+export const NOTE_PREVIEW_LINES = 4;
+export const NOTE_PREVIEW_CHARS = 200;
+
+/**
+ * 안내를 접을지와 접었을 때 보일 앞부분. 글자는 코드 포인트로 센다(이모지를 반으로 자르지 않는다).
+ * 줄 수 · 글자 수 둘 다 기준 안이면 접지 않는다 — 다섯 줄짜리 짧은 안내를 "전체 보기" 뒤에 숨기지 않게
+ */
+export function notePreview(note: string): { folded: boolean; preview: string; chars: number } {
+  const text = note.trim();
+  const chars = charCount(text);
+  const lines = text.split("\n");
+  if (lines.length <= NOTE_FOLD_LINES && chars <= NOTE_FOLD_CHARS) return { folded: false, preview: text, chars };
+  const head = Array.from(lines.slice(0, NOTE_PREVIEW_LINES).join("\n")).slice(0, NOTE_PREVIEW_CHARS).join("").trimEnd();
+  return { folded: true, preview: head, chars };
+}
 
 /** 순서가 곧 화면 순서다 — RC 가 먼저 (숙제점검 · 숙제제출과 같은 순서) */
 export const MATERIAL_SUBJECTS = ["rc", "lc"] as const;

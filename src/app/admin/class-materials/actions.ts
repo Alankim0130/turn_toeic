@@ -7,10 +7,10 @@ import { isSafeObjectPath, type UploadedFile } from "@/lib/upload";
 import {
   CLASS_MATERIAL_BUCKET,
   CLASS_MATERIAL_MAX_BYTES,
-  CLASS_MATERIAL_NOTE_MAX,
   CLASS_MATERIAL_TITLE_MAX,
   isMaterialSubject,
   materialFolder,
+  noteTooLong,
   titleFromFileName,
 } from "@/lib/class-materials";
 import { isRoundSet, ROUND_MAX } from "@/lib/class-rounds";
@@ -66,7 +66,8 @@ export async function saveClassMaterial(input: {
   const seq = Number(input.seq);
   if (!isRoundSet(bookSet)) return { ok: false, error: "A과정 · B과정을 골라 주세요." };
   if (!Number.isInteger(seq) || seq < 1 || seq > ROUND_MAX) return { ok: false, error: `회차를 1~${ROUND_MAX} 사이로 골라 주세요.` };
-  if (note.length > CLASS_MATERIAL_NOTE_MAX) return { ok: false, error: `안내는 ${CLASS_MATERIAL_NOTE_MAX}자 이내로 적어 주세요.` };
+  const noteError = noteTooLong(note);
+  if (noteError) return { ok: false, error: noteError };
   if (file) {
     // 브라우저가 고른 레벨 · 과목 폴더에 올렸어야 한다 (경로 조작 · 다른 버킷 경로 방지)
     if (!isSafeObjectPath(file.path, materialFolder(level, subject)) || !file.name || !(file.size >= 0)) return { ok: false, error: "파일 정보가 올바르지 않아요. 다시 올려 주세요." };

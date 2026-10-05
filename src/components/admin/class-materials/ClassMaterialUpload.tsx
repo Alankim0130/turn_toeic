@@ -6,15 +6,16 @@ import { saveClassMaterial } from "@/app/admin/class-materials/actions";
 import {
   CLASS_MATERIAL_BUCKET,
   CLASS_MATERIAL_MAX_BYTES,
-  CLASS_MATERIAL_NOTE_MAX,
   CLASS_MATERIAL_TITLE_MAX,
   materialObjectPath,
+  noteTooLong,
   titleFromFileName,
   type MaterialSubject,
 } from "@/lib/class-materials";
 import type { RoundSet } from "@/lib/class-rounds";
 import type { UploadedFile } from "@/lib/upload";
 import { removeUploaded, uploadFile } from "@/lib/upload-client";
+import { NoteTextarea } from "./NoteTextarea";
 
 /**
  * 수업자료실 — **한 회차**(레벨 × 과목 × 과정 × 회차)에 자료 하나를 올린다 (2026-10-05).
@@ -51,6 +52,9 @@ export function ClassMaterialUpload({
     const file = fileRef.current?.files?.[0] ?? null;
     if (!file) return setError("올릴 파일을 골라 주세요.");
     if (file.size > CLASS_MATERIAL_MAX_BYTES) return setError("파일은 50MB 이하만 올릴 수 있어요. PDF 로 줄이거나 나눠 주세요.");
+    const note = noteRef.current?.value ?? "";
+    const noteError = noteTooLong(note);
+    if (noteError) return setError(noteError);
 
     setBusy(true);
     let uploaded: UploadedFile | null = null;
@@ -62,7 +66,7 @@ export function ClassMaterialUpload({
         bookSet: set,
         seq,
         title: titleRef.current?.value ?? "",
-        note: noteRef.current?.value ?? "",
+        note,
         file: uploaded,
       });
       if (!res.ok) {
@@ -108,17 +112,9 @@ export function ClassMaterialUpload({
         </div>
         <div className="sm:col-span-2">
           <label htmlFor={`${id}-note`} className="label !mb-1 text-xs">
-            안내 <span className="font-normal text-mist">(선택 · 학생에게 자료와 함께 보여요)</span>
+            안내 · 스크립트 <span className="font-normal text-mist">(선택 · 학생에게 자료와 함께 보여요 · 길면 접혀요)</span>
           </label>
-          <textarea
-            id={`${id}-note`}
-            ref={noteRef}
-            rows={2}
-            maxLength={CLASS_MATERIAL_NOTE_MAX}
-            placeholder="예: 수업 전에 출력해 오세요."
-            className="input resize-y !py-2 text-sm"
-            disabled={busy}
-          />
+          <NoteTextarea id={`${id}-note`} ref={noteRef} placeholder={"예: 수업 전에 출력해 오세요.\n스크립트를 그대로 붙여 넣어도 돼요 — 줄바꿈도 그대로 보여요."} disabled={busy} />
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">

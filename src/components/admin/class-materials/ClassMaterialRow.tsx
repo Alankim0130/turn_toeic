@@ -4,16 +4,18 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteClassMaterial, saveClassMaterial } from "@/app/admin/class-materials/actions";
 import { Icon } from "@/components/ui/Icon";
+import { MaterialNote } from "@/components/class-materials/MaterialNote";
+import { NoteTextarea } from "./NoteTextarea";
 import {
   CLASS_MATERIAL_BUCKET,
   CLASS_MATERIAL_MAX_BYTES,
-  CLASS_MATERIAL_NOTE_MAX,
   CLASS_MATERIAL_TITLE_MAX,
   fileKindLabel,
   isMaterialSubject,
   MATERIAL_SUBJECT_LABEL,
   MATERIAL_SUBJECTS,
   materialObjectPath,
+  noteTooLong,
   type MaterialSubject,
 } from "@/lib/class-materials";
 import { isRoundSet, ROUND_MAX, ROUND_SET_LABEL, ROUND_SETS } from "@/lib/class-rounds";
@@ -73,6 +75,9 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
     if (!isRoundSet(bookSet) || !Number.isInteger(seq) || seq < 1) return setError("과정과 회차를 골라 주세요.");
     const file = fileRef.current?.files?.[0] ?? null;
     if (file && file.size > CLASS_MATERIAL_MAX_BYTES) return setError("파일은 50MB 이하만 올릴 수 있어요.");
+    const note = noteRef.current?.value ?? "";
+    const noteError = noteTooLong(note);
+    if (noteError) return setError(noteError);
 
     setBusy(true);
     let uploaded: UploadedFile | null = null;
@@ -86,7 +91,7 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
         bookSet,
         seq,
         title: titleRef.current?.value ?? "",
-        note: noteRef.current?.value ?? "",
+        note,
         file: uploaded,
       });
       if (!res.ok) {
@@ -129,12 +134,7 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
           </div>
         </div>
 
-        {item.note && mode !== "edit" && (
-          <p className="whitespace-pre-wrap rounded-xl bg-brand-50/70 px-3 py-2 text-sm leading-relaxed text-ink-soft [overflow-wrap:anywhere] sm:col-span-2 sm:row-start-2">
-            <span className="mr-1.5 text-xs font-black text-brand-700">안내</span>
-            {item.note}
-          </p>
-        )}
+        {item.note && mode !== "edit" && <MaterialNote note={item.note} showCount className="bg-brand-50/70 sm:col-span-2 sm:row-start-2" />}
 
         {mode === "view" && (
           <div className="flex flex-wrap justify-end gap-1 sm:col-start-2 sm:row-start-1">
@@ -222,9 +222,9 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
           </div>
           <div>
             <label htmlFor={`cm-note-${item.id}`} className="label !mb-1 text-xs">
-              안내 <span className="font-normal text-mist">(선택)</span>
+              안내 · 스크립트 <span className="font-normal text-mist">(선택)</span>
             </label>
-            <textarea id={`cm-note-${item.id}`} ref={noteRef} rows={2} maxLength={CLASS_MATERIAL_NOTE_MAX} defaultValue={item.note ?? ""} className="input resize-y !py-2 text-sm" disabled={busy} />
+            <NoteTextarea id={`cm-note-${item.id}`} ref={noteRef} defaultValue={item.note ?? ""} disabled={busy} />
           </div>
           <div className="flex justify-end gap-1">
             <button type="submit" disabled={busy} aria-busy={busy} className="btn-primary !px-4 !py-2 text-sm">
