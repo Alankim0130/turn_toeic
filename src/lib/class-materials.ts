@@ -4,8 +4,10 @@ import { fileExt, MB, objectName } from "./upload";
  * 수업자료실 — 레벨 × RC/LC (2026-10-05 Alan — "지금 수업자료실이 없어! 수업자료실을 하나 만들어야하는데, 레벨별 구분과 RC, LC가 구분되어야해.").
  *
  * - 강사·관리자가 `/admin/class-materials` 에서 레벨(lc_levels — 650 · 750 · 850) × 과목(RC · LC)을 골라 파일을 올린다.
- * - 학생은 `/my/materials` 에서 **내 레벨만** 본다 — 화면이 아니라 DB 가 막는다 (`class_materials` 조회 정책 = `private.my_lc_levels()`,
- *   LC 음원과 같은 "내 레벨" 규칙. 마이그레이션 20261005100000). 내 레벨 안에서는 RC · LC 둘 다 열린다.
+ * - 학생은 `/my/materials` 에서 **내가 듣는 레벨 × 과목만** 본다 — 화면이 아니라 DB 가 막는다 (`class_materials` 조회 정책 =
+ *   `private.my_subject_levels(과목)`, 마이그레이션 20261005110000). **RC 단과 학생에게는 RC 자료만, LC 단과에게는 LC 자료만** 열린다
+ *   (2026-10-05 Alan — "RC단과 학생들은 음원파일과 LC수업자료실에 접근 안되는거 맞지?"). 주5일 60분 · 120분 · 속성반은 둘 다.
+ *   (20261005100000 처음에는 레벨만 봐서 내 레벨 안에서는 RC · LC 둘 다 열렸다.)
  * - 여기 값은 DB 와 같아야 한다 — 과목 check(`subject in ('rc','lc')`) · 제목 1~100자 · 안내 500자 · 버킷 50MB (`class-materials.test.ts` 가 본다).
  */
 
@@ -49,10 +51,30 @@ export function fileKindLabel(name: string, type?: string | null): string {
 }
 
 /**
- * 학생 화면에서 처음 펼칠 과목 — 주소에 있으면 그것, 없으면 **자료가 있는 첫 과목**(RC → LC), 둘 다 비면 RC.
+ * 학생 화면에서 처음 펼칠 과목 — 주소에 있으면 그것, 없으면 **자료가 있는 첫 과목**(RC → LC), 둘 다 비면 첫 과목.
  * RC 가 비어 있는데 RC 부터 보여 주면 "자료가 없다" 로 읽힌다 (LC 칸에 자료가 있는데도).
+ * `allowed` 는 그 레벨에서 내가 듣는 과목이다 — RC 단과 학생이 주소에 `subject=lc` 를 쳐도 RC 를 펼친다 (LC 는 DB 가 닫아 둔다).
  */
-export function initialSubject(param: string | undefined, counts: Partial<Record<MaterialSubject, number>>): MaterialSubject {
-  if (isMaterialSubject(param)) return param;
-  return MATERIAL_SUBJECTS.find((s) => (counts[s] ?? 0) > 0) ?? MATERIAL_SUBJECTS[0];
+export function initialSubject(
+  param: string | undefined,
+  counts: Partial<Record<MaterialSubject, number>>,
+  allowed: readonly MaterialSubject[] = MATERIAL_SUBJECTS,
+): MaterialSubject {
+  const subjects = allowed.length ? allowed : MATERIAL_SUBJECTS;
+  if (isMaterialSubject(param) && subjects.includes(param)) return param;
+  return subjects.find((s) => (counts[s] ?? 0) > 0) ?? subjects[0];
+}
+
+/** 한 레벨에서 내가 받을 수 있는 과목 — RC 단과면 `["rc"]` */
+export type MaterialAccess = { level: number; subjects: MaterialSubject[] };
+
+/**
+ * 학생 수업자료실의 레벨 × 과목 — 과목마다 **내가 그 과목을 듣는 레벨**(`subjectLevelsOf`, src/lib/lc-audio.ts — DB `private.my_subject_levels` 와 같은 규칙)을
+ * 받아 레벨마다 과목을 모은다. 레벨 순서는 `order`(교재 레벨 목록 lc_levels) 그대로이고, 그 목록에 하나도 없으면 숫자 순서.
+ * 레벨마다 과목이 하나 이상이다 (과목이 없는 레벨은 애초에 들지 않는다).
+ */
+export function materialAccess(bySubject: Record<MaterialSubject, readonly number[]>, order: readonly number[]): MaterialAccess[] {
+  const mine = [...new Set(MATERIAL_SUBJECTS.flatMap((s) => bySubject[s]))].sort((a, b) => a - b);
+  const listed = order.filter((l) => mine.includes(l));
+  return (listed.length ? listed : mine).map((level) => ({ level, subjects: MATERIAL_SUBJECTS.filter((s) => bySubject[s].includes(level)) }));
 }

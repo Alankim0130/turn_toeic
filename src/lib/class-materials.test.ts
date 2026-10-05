@@ -8,6 +8,7 @@ import {
   fileKindLabel,
   initialSubject,
   isMaterialSubject,
+  materialAccess,
   MATERIAL_SUBJECTS,
   materialFolder,
   materialObjectPath,
@@ -34,11 +35,8 @@ describe("DB 와 같은 값", () => {
     expect(CLASS_MATERIAL_MAX_BYTES).toBe(50 * 1024 * 1024);
   });
 
-  it("학생 조회는 내 레벨(my_lc_levels)로 — 수강 중이라는 것만으로 열지 않는다", () => {
-    const select = /create policy "class_materials: [^"]+" on public\.class_materials\s+for select[^;]+;/.exec(SQL)?.[0] ?? "";
-    expect(select).toContain("private.my_lc_levels()");
-    expect(select).not.toMatch(/has_term_access|has_section_access/);
-    // 저장소 파일은 이 표의 행이 보이는지로 — 남의 레벨 파일은 서명 URL 도 못 만든다
+  it("저장소 파일은 이 표의 행이 보이는지로 판정한다 — 학생 조회 정책(레벨 × 과목)은 roles.test.ts 가 재생해서 본다", () => {
+    // 남의 레벨 · 내가 듣지 않는 과목의 파일은 서명 URL 도 못 만든다 (2026-10-05 — RC 단과 학생의 LC 자료)
     expect(SQL).toMatch(/bucket_id = 'class-materials'\s+and \(\s+\(select private\.is_staff\(\)\)\s+or exists \(select 1 from public\.class_materials m where m\.file_path = objects\.name\)/);
   });
 });
@@ -93,6 +91,13 @@ describe("fileKindLabel", () => {
 });
 
 describe("initialSubject — 학생이 처음 펼칠 과목", () => {
+  it("그 레벨에서 내가 듣는 과목 안에서만 — RC 단과가 주소에 subject=lc 를 쳐도 RC (2026-10-05)", () => {
+    expect(initialSubject("lc", { rc: 3 }, ["rc"])).toBe("rc");
+    expect(initialSubject(undefined, { lc: 2 }, ["lc"])).toBe("lc");
+    expect(initialSubject(undefined, { lc: 0 }, ["lc"])).toBe("lc");
+    expect(initialSubject("rc", { rc: 0, lc: 4 }, ["rc", "lc"])).toBe("rc");
+  });
+
   it("주소에 있으면 그것", () => {
     expect(initialSubject("lc", { rc: 3, lc: 0 })).toBe("lc");
   });
@@ -107,5 +112,30 @@ describe("initialSubject — 학생이 처음 펼칠 과목", () => {
     expect(initialSubject("math", { rc: 0, lc: 0 })).toBe("rc");
     expect(isMaterialSubject("math")).toBe(false);
     expect(isMaterialSubject(undefined)).toBe(false);
+  });
+});
+
+describe("materialAccess — 레벨마다 내가 듣는 과목 (DB private.my_subject_levels 와 같은 규칙에서 받는다)", () => {
+  it("RC 단과 650 → 650 은 RC 하나", () => {
+    expect(materialAccess({ rc: [650], lc: [] }, [650, 750, 850])).toEqual([{ level: 650, subjects: ["rc"] }]);
+  });
+  it("중급속성(650 + 850, 두 과목) · 레벨 순서는 교재 레벨 목록 그대로", () => {
+    expect(materialAccess({ rc: [650, 850], lc: [650, 850] }, [850, 650, 750])).toEqual([
+      { level: 850, subjects: ["rc", "lc"] },
+      { level: 650, subjects: ["rc", "lc"] },
+    ]);
+  });
+  it("레벨마다 과목이 다를 수 있다 — 650 RC 단과 + 750 LC 단과", () => {
+    expect(materialAccess({ rc: [650], lc: [750] }, [650, 750, 850])).toEqual([
+      { level: 650, subjects: ["rc"] },
+      { level: 750, subjects: ["lc"] },
+    ]);
+  });
+  it("레벨 목록을 못 읽으면 숫자 순서 · 반이 없으면 빈 목록", () => {
+    expect(materialAccess({ rc: [750], lc: [650, 750] }, [])).toEqual([
+      { level: 650, subjects: ["lc"] },
+      { level: 750, subjects: ["rc", "lc"] },
+    ]);
+    expect(materialAccess({ rc: [], lc: [] }, [650])).toEqual([]);
   });
 });
