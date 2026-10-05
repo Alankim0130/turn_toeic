@@ -11,6 +11,8 @@ import { STUDY_STATUS_LABEL, termParam } from "@/lib/study";
 import { classDayRounds, onlineStudyWindow, roundRowCount, shortDay } from "@/lib/study-rounds";
 import { pickTerm, termLabel, TERM_COLUMNS } from "../_lib/queries";
 import { requireStaff } from "@/lib/auth";
+import { signNoteImages } from "@/lib/note-images";
+import { STUDY_MATERIAL_BUCKET } from "@/lib/study-note";
 
 export const metadata: Metadata = { title: "비대면 자료", robots: { index: false } };
 
@@ -42,6 +44,8 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
 
   const items = itemRows ?? [];
   const bySeq = new Map(items.map((i) => [i.seq, i]));
+  // 안내에 든 사진 — 강사 세션으로 서명 주소를 한 번에 만든다 (보기 모드 · 편집기가 함께 쓴다)
+  const noteImages = await signNoteImages(supabase, STUDY_MATERIAL_BUCKET, items.map((i) => i.note ?? "").join("\n"));
   // 개강일이 없는 달은 회차를 셀 수 없다 (시작일 = 개강일 + 3)
   const studyWindow = term?.enrollment_opens_at ? onlineStudyWindow(term.enrollment_opens_at) : null;
   const days = term && studyWindow ? classDayRounds((classDates ?? []).map((d) => d.date), { opens: studyWindow.startsOn, closes: term.closes_at }) : [];
@@ -110,7 +114,15 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
 
         <ul className="space-y-3">
           {Array.from({ length: rows }, (_, k) => k + 1).map((seq) => (
-            <MaterialRow key={`${seq}-${bySeq.get(seq)?.id ?? "new"}`} seq={seq} date={days[seq - 1] ?? null} today={today} monthLabel={monthLabel} item={bySeq.get(seq) ?? null} />
+            <MaterialRow
+              key={`${seq}-${bySeq.get(seq)?.id ?? "new"}`}
+              seq={seq}
+              date={days[seq - 1] ?? null}
+              today={today}
+              monthLabel={monthLabel}
+              item={bySeq.get(seq) ?? null}
+              noteImages={noteImages}
+            />
           ))}
         </ul>
       </div>

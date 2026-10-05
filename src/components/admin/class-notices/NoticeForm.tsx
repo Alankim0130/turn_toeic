@@ -43,6 +43,7 @@ export function NoticeForm({
   const [picked, setPicked] = useState<number[]>(notice ? notice.levels : defaultLevels);
   const [subject, setSubject] = useState<MaterialSubject | null>(notice?.subjects.length === 1 ? notice.subjects[0] : null);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scope = { levels: picked, subjects: subject ? [subject] : [] };
   const who = scopeLabel(scope) === "전체" ? "수강 중인 모든 학생" : `${scopeLabel(scope)} 수강생`;
@@ -134,6 +135,7 @@ export function NoticeForm({
           minHeight="min-h-72"
           placeholder="공지 내용을 적어 주세요. 사진도 넣을 수 있어요."
           images={{ bucket: CLASS_NOTICE_BUCKET, folder: CLASS_NOTICE_IMAGE_FOLDER, urls: imageUrls, maxBytes: CLASS_NOTICE_IMAGE_MAX_BYTES, maxCount: CLASS_NOTICE_IMAGE_MAX_COUNT }}
+          onUploadingChange={setUploading}
         />
       </div>
 
@@ -144,8 +146,8 @@ export function NoticeForm({
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <button type="submit" disabled={busy} aria-busy={busy} className="btn-primary !px-6">
-          {busy ? "저장 중…" : notice ? "고친 내용 저장" : "공지 올리기"}
+        <button type="submit" disabled={busy || uploading} aria-busy={busy} className="btn-primary !px-6">
+          {busy ? "저장 중…" : uploading ? "사진 올리는 중…" : notice ? "고친 내용 저장" : "공지 올리기"}
         </button>
         <Link href={back} className="btn-secondary">
           목록으로
