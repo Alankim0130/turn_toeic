@@ -27,4 +27,37 @@ export function sectionTypeLabel(
   return subject ? `단과 ${SUBJECT_LABEL[subject]}` : null;
 }
 
+/** 학생명단 카드의 단과 이름표 — 종합은 적지 않는다 (`singleSubjectOf`) */
+export const SINGLE_SUBJECT_LABEL: Record<Subject, string> = { rc: "RC단과", lc: "LC단과" };
+
+/**
+ * 학생 한 사람의 반 **한 줄**이 단과인지 — 단과면 그 과목, 아니면 null (2026-10-05 Alan — 학생명단 카드에
+ * "종합반인지 RC단과, LC단과 표시가 안되어있어. 종합반이 대부분이니 RC단과, LC단과만 표시해주면 좋겠어").
+ *
+ * 한 줄 = 주5일이면 월수금 + 화목금 두 반, 아니면 반 하나 (`groupWeek5`). **줄 안의 반이 전부 한 과목일 때만** 단과다 —
+ * 주3일 60 · 70분(시간 단위 반 하나)이 여기 해당한다.
+ *  - 주5일 60분은 두 트랙의 과목이 서로 반대라(월수금 RC · 화목금 LC) 두 과목을 다 듣는다 → 단과가 아니다
+ *  - 묶음 반(120 · 140분) · 방학달 통짜 반은 과목 칸이 비어 있다(두 과목을 이어 듣는다) → null
+ *  - 속성반 · 2주완성(그릇 반)은 종합이다 → null
+ *  - 과목 칸이 빈 시간 단위 반(아직 안 고름)은 모르는 것이라 null — 짐작해 적지 않는다
+ * 과목은 반의 과목 칸(`class_sections.subject`)으로 읽는다 — 그 학생의 교재 · LC 음원 · 수업자료실도 이 칸을 본다.
+ * (반 목록의 `sectionTypeLabel` 은 담당 강사의 과목을 먼저 보지만, 담당은 이 칸에서 저절로 정해진다.)
+ * 강좌가 단과 상품(`course_type` lc · rc)이면 그 과목이다 — `sectionTypeLabel` 과 같은 순서.
+ */
+export function singleSubjectOf(
+  sections: readonly {
+    subject?: string | null;
+    course?: { course_type?: string | null; program?: string | null } | null;
+  }[],
+): Subject | null {
+  let out: Subject | null = null;
+  for (const s of sections) {
+    const type = s.course?.course_type;
+    const subject: Subject | null = isSubject(type) ? type : isContainerProgram(s.course?.program) ? null : isSubject(s.subject) ? s.subject : null;
+    if (!subject || (out && out !== subject)) return null;
+    out = subject;
+  }
+  return out;
+}
+
 export const groupKeyOf = (s: { course_id: number | null; time_block: string | null }) => `${s.course_id}|${s.time_block ?? ""}`;
