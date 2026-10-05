@@ -42,6 +42,7 @@ const FILES = [...ROOTS.flatMap(walk), ...EXTRA_FILES];
  * 정책이 **스태프(조교)에게 본인 것 밖까지** 여는 표 — 마이그레이션을 재생해 뽑았다 (2026-09-24).
  * 학생 화면에서 읽으면 반드시 좁혀야 한다. 공용 목록(교재 레벨 목록 · 스터디 공지 · 반 목록)은 모두에게 같으므로 뺐다.
  * LC 교재 · 음원은 2026-10-03 부터 여기 든다 — 학생에게는 내 레벨만 열리고 강사 · 관리자에게는 전부 열린다 (마이그레이션 20261003120000).
+ * 수업자료실(class_materials)도 같은 규칙이다 (2026-10-05, 마이그레이션 20261005100000).
  */
 const WIDE_OPEN_TABLES = [
   // 반·기수로 열리는 것
@@ -54,6 +55,7 @@ const WIDE_OPEN_TABLES = [
   // 레벨로 열리는 것 — 학생은 내 레벨(private.my_lc_levels)만, 강사 · 관리자는 모든 레벨 (2026-10-03)
   "lc_books",
   "lc_audio_tracks",
+  "class_materials",
   // 사람으로 열리는 것 — 정책이 `본인 or 스태프(조교)` 라 스태프에게는 **모든 학생의 행**이 내려온다
   "homework_submissions",
   "enrollment_orders",
@@ -121,6 +123,7 @@ describe("/my 조회는 내 것으로 한 번 더 좁힌다", () => {
     expect(found("enrollment_orders", "getStudentAccess")).toBe(true);
     expect(found("lc_books", "getMyLcAudio")).toBe(true);
     expect(found("lc_audio_tracks", "LcBookPage")).toBe(true);
+    expect(found("class_materials", "getMyClassMaterials")).toBe(true);
   });
 
   it.each(WIDE_OPEN_TABLES)("%s 를 읽는 곳은 전부 좁힌다", (table) => {

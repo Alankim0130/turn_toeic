@@ -465,6 +465,30 @@ export async function getMyLcAudio() {
   return { ...empty, books: books ?? [], tracks: tracks ?? [] };
 }
 
+/**
+ * 수업자료실 (2026-10-05 Alan — "레벨별 구분과 RC, LC가 구분되어야해") — **내 레벨 자료만**, 최근에 올린 것이 위.
+ * 내 레벨 = LC 음원과 같은 `lcLevelsOf`(접근 가능한 반의 강좌 레벨 + 속성반이 함께 듣는 레벨) — DB 정책 `private.my_lc_levels()` 와 같은 규칙이다.
+ * 정책은 강사 · 관리자에게 모든 레벨을 열어 주므로 학생 화면은 여기서 한 번 더 좁힌다 (CLAUDE.md 등급 체계 10).
+ * 레벨 순서는 교재 레벨 목록(lc_levels) 그대로 — 그 목록을 못 읽으면 숫자 순서.
+ */
+export async function getMyClassMaterials() {
+  const supabase = await createClient();
+  const [{ data: levelRows }, sections] = await Promise.all([
+    supabase.from("lc_levels").select("level").order("sort_order").order("level"),
+    getMyAccessibleSections(),
+  ]);
+  const mine = lcLevelsOf(sections);
+  if (mine.length === 0) return { levels: [] as number[], materials: [] };
+  const listed = (levelRows ?? []).map((l) => l.level).filter((l) => mine.includes(l));
+  const levels = listed.length ? listed : mine;
+  const { data } = await supabase
+    .from("class_materials")
+    .select("id, level, subject, title, note, file_name, file_size, content_type, created_at, updated_at")
+    .in("level", mine)
+    .order("created_at", { ascending: false });
+  return { levels, materials: data ?? [] };
+}
+
 /** 라벨 */
 export const ORDER_STATUS_LABEL: Record<string, string> = {
   preliminary: "예비등록",
