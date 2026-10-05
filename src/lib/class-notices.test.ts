@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CLASS_NOTICE_BODY_MAX, CLASS_NOTICE_IMAGE_MAX_BYTES, noticeCovers, noticeError, noticeVisible, scopeLabel } from "./class-notices";
 
-const SQL = readFileSync("supabase/migrations/20261005160000_class_notices.sql", "utf8");
+const SQL = readFileSync("supabase/migrations/20261005170000_class_notices.sql", "utf8");
 
 describe("noticeVisible — DB 정책과 같은 규칙", () => {
   const all = { levels: [], subjects: [] };

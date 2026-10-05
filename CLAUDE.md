@@ -2201,7 +2201,7 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 
 **공지사항 — 1회차 앞, 게시판처럼** (2026-10-05 Alan — "수업자료실에서 1회차 앞에 공지사항을 올릴 수 있는 곳 … 여러개" · "안내글에서 쓰는 글 편집기능이 다 들어가면 좋겠어.
 추가적으로 이미지도 중간에 추가 … 블로그랑 같다고 생각하면" · "이미지 사이즈 조절" · "줄 단위로 왼쪽정렬, 가운데정렬, 오른쪽 정렬" ·
-범위 "강사가 직접 지정할 수 있으면 좋겠어. 전체공지인지, 레벨별이라면 레벨을 선택, RC LC도 선택" · "제목을 누르면 펼침이 아니라, 해당 공지 페이지가 새로 열리면 좋겠어", 마이그레이션 20261005160000)
+범위 "강사가 직접 지정할 수 있으면 좋겠어. 전체공지인지, 레벨별이라면 레벨을 선택, RC LC도 선택" · "제목을 누르면 펼침이 아니라, 해당 공지 페이지가 새로 열리면 좋겠어", 마이그레이션 20261005170000)
 - 표 `class_notices`(제목 100자 · 본문 5만 자 · `levels` int[] · `subjects` text[] · `author_name`) — **범위는 levels(비우면 모든 레벨) × subjects(비우면 RC · LC 둘 다), 둘 다 비면 전체 공지.**
   학생은 **지금 수강 중**일 때만: 전체 공지 = `has_term_access(null)`, 범위 공지 = 내 과정 칸(`my_round_cells`) 중 하나가 레벨 · 과목에 맞는다 (RC 단과에게 LC 공지는 없다).
   앱 `noticeVisible`(`src/lib/class-notices.ts`, `class-notices.test.ts`)이 같은 규칙이고 **바꾸면 둘 다**. 학생 조회(`getMyClassNotices` · `getMyClassNotice`)는 이것으로 한 번 더 좁힌다 (등급 체계 10).
@@ -2846,7 +2846,7 @@ create table class_materials (             -- 레벨 × 과목 × 과정 × 회�
 -- private.my_open_rounds() : 열린 회차 'level:subject:set:seq' — 그 칸 반의 seq 번째 수업일이 오늘(KST)이거나 지났다. LC 음원 · 수업자료실 조회
 -- (private.my_subject_levels · my_lc_levels(20261005110000) 는 남아 있지만 정책이 더 쓰지 않는다)
 
-create table class_notices (               -- 수업자료실 공지 (20261005160000 — 도메인 규칙 7-4 "공지사항")
+create table class_notices (               -- 수업자료실 공지 (20261005170000 — 도메인 규칙 7-4 "공지사항")
   id bigint primary key, title text,       -- 1~100자
   body text,                               -- 서식 글 5만 자 · 사진은 [img=images/… w=NN] (버킷 class-notices)
   levels int[], subjects text[],           -- 범위 — 비우면 모든 레벨 / RC · LC 둘 다. 둘 다 비면 전체 공지
