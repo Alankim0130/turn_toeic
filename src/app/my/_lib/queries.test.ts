@@ -41,8 +41,8 @@ const FILES = [...ROOTS.flatMap(walk), ...EXTRA_FILES];
 /**
  * 정책이 **스태프(조교)에게 본인 것 밖까지** 여는 표 — 마이그레이션을 재생해 뽑았다 (2026-09-24).
  * 학생 화면에서 읽으면 반드시 좁혀야 한다. 공용 목록(교재 레벨 목록 · 스터디 공지 · 반 목록)은 모두에게 같으므로 뺐다.
- * LC 교재 · 음원은 2026-10-03 부터 여기 든다 — 학생에게는 내 레벨만 열리고 강사 · 관리자에게는 전부 열린다 (마이그레이션 20261003120000).
- * 수업자료실(class_materials)도 같은 규칙이다 (2026-10-05, 마이그레이션 20261005100000).
+ * LC 교재 · 음원은 2026-10-03 부터 여기 든다 — 학생에게는 내가 LC 를 듣는 레벨만 열리고 강사 · 관리자에게는 전부 열린다 (마이그레이션 20261003120000 · 20261005110000).
+ * 수업자료실(class_materials, 2026-10-05)은 내가 듣는 레벨 × 과목만 — RC 단과 학생에게 LC 자료는 없다 (마이그레이션 20261005100000 · 20261005110000).
  */
 const WIDE_OPEN_TABLES = [
   // 반·기수로 열리는 것
@@ -52,7 +52,7 @@ const WIDE_OPEN_TABLES = [
   "section_live_links",
   "study_materials",
   "special_lectures",
-  // 레벨로 열리는 것 — 학생은 내 레벨(private.my_lc_levels)만, 강사 · 관리자는 모든 레벨 (2026-10-03)
+  // 레벨 × 과목으로 열리는 것 — 학생은 내가 그 과목을 듣는 레벨(private.my_subject_levels · my_lc_levels)만, 강사 · 관리자는 전부 (2026-10-03 · 10-05)
   "lc_books",
   "lc_audio_tracks",
   "class_materials",
@@ -82,7 +82,8 @@ const NARROWERS: [RegExp, string][] = [
   [/from_user\.eq\./, "내 계정이 걸린 통합 신청 (from_user · to_user)"],
   [/\.in\("(?:section_id|study_id)"/, "부른 쪽이 준 내 반 · 내 스터디 목록"],
   [/signupTerms/, "내 등록에서 뽑은 기수 (getMyStudyEligibility)"],
-  [/lcLevelsOf\(/, "내 LC 레벨 — 접근 가능한 반의 강좌 레벨 (lcLevelsOf = DB private.my_lc_levels)"],
+  [/lcLevelsOf\(/, "내가 LC 를 듣는 레벨 (lcLevelsOf = DB private.my_lc_levels)"],
+  [/subjectLevelsOf\(/, "내가 그 과목을 듣는 레벨 (subjectLevelsOf = DB private.my_subject_levels)"],
 ];
 
 /** 좁히지 않아도 되는 곳 — **까닭을 적어야** 들어올 수 있다 */

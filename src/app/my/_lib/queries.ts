@@ -5,7 +5,8 @@ import { todayKST } from "@/lib/utils";
 import { week5SectionIds } from "@/lib/week5";
 import type { EnrollSection } from "@/lib/enroll-options";
 import { fetchOpenEnrollSections } from "@/lib/open-sections";
-import { lcLevelsOf } from "@/lib/lc-audio";
+import { lcLevelsOf, subjectLevelsOf } from "@/lib/lc-audio";
+import { isMaterialSubject, materialAccess, type MaterialSubject } from "@/lib/class-materials";
 
 /**
  * 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다.
@@ -442,9 +443,9 @@ export async function getHomeworkLevels() {
 }
 
 /**
- * LC 음원듣기: 레벨 목록 + **내 레벨**의 교재(A·B반 권별) + 그 음원.
- * 정책은 학생에게 내 레벨만 열지만 **강사·관리자에게는 모든 레벨**을 연다 (관리자 LC 음원 화면) — 그래서 여기서 한 번 더 좁힌다 (머리말).
- * 내 레벨은 `lcLevelsOf` 한곳 — DB 정책(`private.my_lc_levels`)과 같은 규칙이다.
+ * LC 음원듣기: 레벨 목록 + **내가 LC 를 듣는 레벨**의 교재(A·B반 권별) + 그 음원. RC 단과 학생은 빈 목록이다 (2026-10-05).
+ * 정책은 학생에게 그 레벨만 열지만 **강사·관리자에게는 모든 레벨**을 연다 (관리자 LC 음원 화면) — 그래서 여기서 한 번 더 좁힌다 (머리말).
+ * 레벨은 `lcLevelsOf` 한곳 — DB 정책(`private.my_lc_levels` = `my_subject_levels('lc')`)과 같은 규칙이다.
  */
 export async function getMyLcAudio() {
   const supabase = await createClient();
@@ -466,10 +467,11 @@ export async function getMyLcAudio() {
 }
 
 /**
- * 수업자료실 (2026-10-05 Alan — "레벨별 구분과 RC, LC가 구분되어야해") — **내 레벨 자료만**, 최근에 올린 것이 위.
- * 내 레벨 = LC 음원과 같은 `lcLevelsOf`(접근 가능한 반의 강좌 레벨 + 속성반이 함께 듣는 레벨) — DB 정책 `private.my_lc_levels()` 와 같은 규칙이다.
- * 정책은 강사 · 관리자에게 모든 레벨을 열어 주므로 학생 화면은 여기서 한 번 더 좁힌다 (CLAUDE.md 등급 체계 10).
- * 레벨 순서는 교재 레벨 목록(lc_levels) 그대로 — 그 목록을 못 읽으면 숫자 순서.
+ * 수업자료실 (2026-10-05 Alan — "레벨별 구분과 RC, LC가 구분되어야해") — **내가 듣는 레벨 × 과목의 자료만**, 최근에 올린 것이 위.
+ * 과목마다 `subjectLevelsOf`(접근 가능한 반의 강좌 레벨 + 속성반이 함께 듣는 레벨 중 그 과목 시간이 있는 것) — DB 정책 `private.my_subject_levels` 와 같은 규칙이다.
+ * **RC 단과 학생에게는 RC 자료만** (2026-10-05 Alan — "RC단과 학생들은 음원파일과 LC수업자료실에 접근 안되는거 맞지?").
+ * 정책은 강사 · 관리자에게 모든 자료를 열어 주므로 학생 화면은 여기서 한 번 더 좁힌다 (CLAUDE.md 등급 체계 10).
+ * 레벨 순서는 교재 레벨 목록(lc_levels) 그대로 — 그 목록을 못 읽으면 숫자 순서 (`materialAccess`).
  */
 export async function getMyClassMaterials() {
   const supabase = await createClient();
@@ -477,16 +479,17 @@ export async function getMyClassMaterials() {
     supabase.from("lc_levels").select("level").order("sort_order").order("level"),
     getMyAccessibleSections(),
   ]);
-  const mine = lcLevelsOf(sections);
-  if (mine.length === 0) return { levels: [] as number[], materials: [] };
-  const listed = (levelRows ?? []).map((l) => l.level).filter((l) => mine.includes(l));
-  const levels = listed.length ? listed : mine;
+  const bySubject: Record<MaterialSubject, number[]> = { rc: subjectLevelsOf(sections, "rc"), lc: subjectLevelsOf(sections, "lc") };
+  const access = materialAccess(bySubject, (levelRows ?? []).map((l) => l.level));
+  if (access.length === 0) return { access, materials: [] };
   const { data } = await supabase
     .from("class_materials")
     .select("id, level, subject, title, note, file_name, file_size, content_type, created_at, updated_at")
-    .in("level", mine)
+    .in("level", [...new Set([...bySubject.rc, ...bySubject.lc])])
     .order("created_at", { ascending: false });
-  return { levels, materials: data ?? [] };
+  // 레벨은 위에서 좁혔고, 과목은 여기서 — 그 레벨에서 내가 듣는 과목의 자료만
+  const materials = (data ?? []).filter((m) => isMaterialSubject(m.subject) && bySubject[m.subject].includes(m.level));
+  return { access, materials };
 }
 
 /** 라벨 */
