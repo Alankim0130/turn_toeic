@@ -7,6 +7,7 @@ import type { EnrollSection } from "@/lib/enroll-options";
 import { fetchOpenEnrollSections } from "@/lib/open-sections";
 import { isMaterialSubject, materialAccess, type MaterialSubject } from "@/lib/class-materials";
 import { cellKey, cellLevels, isRoundOpen, isRoundSet, roundCells, roundDates, roundKey } from "@/lib/class-rounds";
+import { clipToOwnRange } from "@/lib/two-week";
 
 /**
  * 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다.
@@ -83,6 +84,33 @@ export const getMyOrders = cache(async () => {
 });
 export type MyOrder = Awaited<ReturnType<typeof getMyOrders>>[number];
 
+/** 내가 직접 배정된 반 — 수강 중 · 예비등록 등록의 배정. 묶음 반 · 속성반 · 2주완성이 품는 반은 들지 않는다 */
+export function myDirectSectionIds(orders: readonly MyOrder[]): Set<number> {
+  return new Set(
+    orders.flatMap((o) =>
+      o.status === "active" || o.status === "preliminary" ? o.enrollments.filter((e) => e.status === "active" && e.section).map((e) => e.section!.id) : [],
+    ),
+  );
+}
+
+/**
+ * 기수마다 내 반(직접 배정)의 가장 늦은 종강일. 2주완성 반은 앞 절반 마지막 수업일에 끝나는데 품은 850 반은 그 달 끝까지라,
+ * 그 뒤 날짜의 불라방 링크 · 다음 수업을 내 것으로 보여 주지 않게 쓴다 (2026-10-05). 다른 반은 품은 반과 종강일이 같다.
+ */
+export function myTermEnds(orders: readonly MyOrder[]): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const o of orders) {
+    if (o.status !== "active" && o.status !== "preliminary") continue;
+    for (const e of o.enrollments) {
+      const sec = e.section;
+      if (e.status !== "active" || !sec?.closes_at) continue;
+      const prev = out.get(sec.term_id);
+      if (!prev || sec.closes_at > prev) out.set(sec.term_id, sec.closes_at);
+    }
+  }
+  return out;
+}
+
 /**
  * 지금 등업신청을 받는 반 — 아직 종강하지 않은 공개 반 (조건은 `fetchOpenEnrollSections` 한곳).
  * 수동 등업신청의 레벨·요일·시간대 선택지가 여기서 나온다 (작업 원칙 4 — 코드에 시간대를 적지 않는다).
@@ -126,8 +154,9 @@ export async function getMySessions(opts: { upcoming?: boolean } = {}) {
     .from("session_dates")
     .select(`id, seq, date, start_time, end_time, section:class_sections(${SECTION_COLS})`);
   if (!error && ids) q = q.in("section_id", ids);
-  const { data } = await q.order("date", { ascending: true }).order("start_time", { ascending: true });
-  return data ?? [];
+  const [{ data }, orders] = await Promise.all([q.order("date", { ascending: true }).order("start_time", { ascending: true }), getMyOrders()]);
+  // 2주완성(2026-10-05): 품은 850 반의 뒤 절반 수업일은 내 것이 아니다 — 내 반 회차 범위로 자른다 (다른 반은 그대로)
+  return clipToOwnRange(data ?? [], myDirectSectionIds(orders));
 }
 export type MySession = Awaited<ReturnType<typeof getMySessions>>[number];
 
@@ -195,6 +224,8 @@ export type MyLiveCard = {
   kind: "today" | "next" | "standing";
   seq?: number;
   date?: string;
+  /** 내 반의 종강일 (그 기수에서 가장 늦은 것) — 이 뒤의 다음 수업은 내 것이 아니다 (2주완성은 앞 절반 마지막 날) */
+  until?: string;
 };
 
 /**
@@ -205,30 +236,48 @@ export type MyLiveCard = {
 export async function getMyLiveCards(): Promise<MyLiveCard[]> {
   const supabase = await createClient();
   const today = todayKST();
-  const [{ data: ids, error: idsError }, { data: standing }, { data: perSession }] = await Promise.all([
+  const [{ data: ids, error: idsError }, { data: standing }, { data: perSession }, orders] = await Promise.all([
     supabase.rpc("my_section_ids"),
     supabase.from("section_live_links").select(`section_id, live_url, updated_at, section:class_sections(${SECTION_COLS})`),
     supabase.from("session_live_links").select(`session_date_id, live_url, session:session_dates(id, seq, date, section_id, section:class_sections(${SECTION_COLS}))`),
+    getMyOrders(),
   ]);
   // **내 반만** — 링크 정책도 스태프에게 전부 열려 있다 (머리말). 조회가 실패하면 예전처럼 둔다
   const mine = idsError || !ids ? null : new Set(ids);
+  // 내 반의 종강일 뒤 회차 링크는 내 것이 아니다 — 2주완성은 앞 절반 마지막 날까지 (품은 850 반은 그 달 끝까지 링크가 있다)
+  const ends = myTermEnds(orders);
+  const untilOf = (termId: number) => ends.get(termId);
   const cards = new Map<number, MyLiveCard>();
   for (const l of standing ?? [])
-    if (l.section && (!mine || mine.has(l.section_id))) cards.set(l.section_id, { sectionId: l.section_id, section: l.section, url: l.live_url, kind: "standing" });
+    if (l.section && (!mine || mine.has(l.section_id)))
+      cards.set(l.section_id, { sectionId: l.section_id, section: l.section, url: l.live_url, kind: "standing", until: untilOf(l.section.term_id) });
   const upcoming = (perSession ?? [])
-    .filter((l) => l.session?.section && l.session.date >= today && (!mine || mine.has(l.session.section_id)))
+    .filter((l) => {
+      const sec = l.session?.section;
+      if (!sec || l.session!.date < today || (mine && !mine.has(l.session!.section_id))) return false;
+      const until = untilOf(sec.term_id);
+      return !until || l.session!.date <= until;
+    })
     .sort((a, b) => a.session!.date.localeCompare(b.session!.date) || a.session!.seq - b.session!.seq);
   for (const l of upcoming) {
     const s = l.session!;
     const prev = cards.get(s.section_id);
     if (prev && prev.kind !== "standing") continue; // 더 가까운 회차 링크가 이미 있다
-    cards.set(s.section_id, { sectionId: s.section_id, section: s.section!, url: l.live_url, kind: s.date === today ? "today" : "next", seq: s.seq, date: s.date });
+    cards.set(s.section_id, {
+      sectionId: s.section_id,
+      section: s.section!,
+      url: l.live_url,
+      kind: s.date === today ? "today" : "next",
+      seq: s.seq,
+      date: s.date,
+      until: untilOf(s.section!.term_id),
+    });
   }
   return [...cards.values()].sort((a, b) => a.sectionId - b.sectionId);
 }
 
-/** 오늘 이후 첫 수업일을 section_id 별로 */
-export async function getNextSessionBySection(sectionIds: number[]) {
+/** 오늘 이후 첫 수업일을 section_id 별로. `until`(반 → 마지막 날)이 있으면 그 뒤 날짜는 세지 않는다 (2주완성 — 내 반 종강일 뒤는 내 수업이 아니다) */
+export async function getNextSessionBySection(sectionIds: number[], until: ReadonlyMap<number, string> = new Map()) {
   if (sectionIds.length === 0) return new Map<number, { date: string; start_time: string | null; end_time: string | null; seq: number }>();
   const supabase = await createClient();
   const { data } = await supabase
@@ -238,7 +287,10 @@ export async function getNextSessionBySection(sectionIds: number[]) {
     .gte("date", todayKST())
     .order("date", { ascending: true });
   const map = new Map<number, { date: string; start_time: string | null; end_time: string | null; seq: number }>();
-  for (const s of data ?? []) if (!map.has(s.section_id)) map.set(s.section_id, s);
+  for (const s of data ?? []) {
+    const end = until.get(s.section_id);
+    if (!map.has(s.section_id) && (!end || s.date <= end)) map.set(s.section_id, s);
+  }
   return map;
 }
 

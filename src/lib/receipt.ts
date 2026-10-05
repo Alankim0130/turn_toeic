@@ -7,6 +7,7 @@
  *  - 주3일/주5일 · 트랙: 회차 `월18회`(주5일) · `월9회`(주3일)를 먼저, 그다음 `주5일` 을 본다 — 주5일 표기 안에도 `월수금`·`화목금`
  *    글자가 있어서 트랙부터 보면 주3일로 오독한다. `주5일` 은 숫자 5 가 꼭 있어야 한다 (`25일`·`일주일` 은 주5일이 아니다).
  *  - 레벨: 650 · 750 · 850 숫자. `프리미어반`·`스파르타`·`중급속성`·`실전속성` 중 하나라도 있으면 스파르타(program = sparta).
+ *    `2주완성` 글자나 수강요일 줄의 `[2주-MM/DD]` 가 있으면 2주완성(program = twoweek, 2026-10-05) — 실물을 아직 못 봐서 자동 승인하지 않는다.
  *    `중급속성` = 650, `실전속성` = 750 — 숫자를 못 읽으면 이걸로 레벨을 정하고, 숫자와 다르면 경고를 남긴다.
  *  - 수업 시간: `HH:MM~HH:MM` 을 **그대로** 돌려준다. 60/120분으로 가르지 않는다 — 실제 길이가 70·130·140·190·260분 등 다양해서
  *    숫자 기준선을 두면 850 70분이 60분으로, 스파르타가 120분으로 섞인다. 판정은 반의 `time_block` 라벨과 같은지로 한다.
@@ -17,7 +18,7 @@
 
 export type Track = "mwf" | "ttf";
 export type EnrollMode = "onsite" | "live";
-export type Program = "score" | "sparta";
+export type Program = "score" | "sparta" | "twoweek";
 
 export type ReceiptTime = {
   /** "10:00" */
@@ -117,6 +118,11 @@ export const RECEIPT_KEYWORDS = {
   ttf: "화목금",
   /** 스파르타(프리미어)반 표기. 어느 하나만 읽혀도 sparta 다 — `프리미어반` 한 글자 오인식에 무너지지 않게 (2026-09-18 Alan 확인) */
   spartaWords: ["프리미어", "스파르타", "중급속성", "실전속성"],
+  /**
+   * 2주완성 표기 (2026-10-05 Alan "850반 2주완성반이 있어"). **실물 수강증을 아직 못 봤다** — 과정명 `2주완성` 이나
+   * 수강요일 줄의 기간 `[2주-10/06]`(한 달 과정은 `[4주-…]`) 중 하나로 본다. 숫자가 든 낱말이라 편집거리로 찾지 않는다 (`주5일` 과 같은 까닭)
+   */
+  twoWeek: "2주완성",
   /** 과정명이 레벨을 정한다: 스파르타 650+ 중급속성 · 스파르타 750+ 실전속성 */
   spartaLevelWords: { 중급속성: 650, 실전속성: 750 } as Record<string, number>,
   brand: "역전토익",
@@ -126,6 +132,9 @@ export const RECEIPT_KEYWORDS = {
   academyLabel: "수강센터",
   academyPlaces: ["서면", "부산"],
 } as const;
+
+/** 2주완성 수강증인가 — 과정명 `2주완성` 또는 수강요일 줄의 기간 `2주-MM…` (앞에 다른 숫자가 붙은 `12주` 는 아니다). 공백을 뺀 원문으로 본다 */
+export const isTwoWeekReceipt = (compact: string): boolean => compact.includes(RECEIPT_KEYWORDS.twoWeek) || /(?<!\d)2주[-~]\d/.test(compact);
 
 export const LEVELS = [650, 750, 850] as const;
 
@@ -496,7 +505,12 @@ export function parseReceipt(raw: string): ParsedReceipt {
   let tracks: Track[] = [];
   const has18 = compact.includes(RECEIPT_KEYWORDS.sessions18);
   const has9 = compact.includes(RECEIPT_KEYWORDS.sessions9);
-  if (has18 && has9) {
+  const twoWeek = isTwoWeekReceipt(compact);
+  if (twoWeek && WEEKLY5.test(compact)) {
+    // 2주완성은 회차가 절반이라(주5일도 9회 안팎) 회차로 주3일 · 주5일을 가르지 않는다 — `주5일` 글자를 먼저 본다
+    weekly = 5;
+    tracks = ["mwf", "ttf"];
+  } else if (has18 && has9) {
     warnings.push("월18회(주5일)와 월9회(주3일)가 함께 읽혔어요");
   } else if (has18 || (!has9 && WEEKLY5.test(compact))) {
     weekly = 5;
@@ -515,8 +529,9 @@ export function parseReceipt(raw: string): ParsedReceipt {
     }
   }
 
-  // 과정 — 프리미어 · 스파르타 · 중급속성 · 실전속성 중 하나라도 있으면 스파르타반
-  const program: Program = RECEIPT_KEYWORDS.spartaWords.some((w) => fuzzyIncludes(compact, w, 1)) ? "sparta" : "score";
+  // 과정 — 2주완성 표기가 먼저, 그다음 프리미어 · 스파르타 · 중급속성 · 실전속성 중 하나라도 있으면 스파르타반
+  const program: Program = twoWeek ? "twoweek" : RECEIPT_KEYWORDS.spartaWords.some((w) => fuzzyIncludes(compact, w, 1)) ? "sparta" : "score";
+  if (twoWeek) warnings.push("2주완성 수강증이에요 — 실물 표기를 아직 확인하지 않아 강사가 반을 확인해요");
   // 과정명이 레벨을 말해 준다 (중급속성 = 650, 실전속성 = 750). 숫자를 못 읽었을 때 대신 쓰고, 읽었는데 다르면 경고
   const courseLevel =
     Object.entries(RECEIPT_KEYWORDS.spartaLevelWords).find(([word]) => fuzzyIncludes(compact, word, 1))?.[1] ?? null;

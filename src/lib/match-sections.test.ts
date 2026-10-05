@@ -226,3 +226,29 @@ describe("방학달 시간표로 만든 반 — 새 수강증이 그 달 반에 
     expect(matchSections(jan, V).result.kind).toBe("none");
   });
 });
+
+describe("2주완성 (2026-10-05) — 같은 850 12:30~15:00 이어도 과정으로 가른다", () => {
+  const T850 = course(9, 850, "twoweek");
+  const withTwoWeek: EnrollSection[] = [
+    ...SECTIONS,
+    { id: 9001, track: "mwf", time_block: "12:30~15:00", term: OCT, course: T850 },
+    { id: 9002, track: "ttf", time_block: "12:30~15:00", term: OCT, course: T850 },
+  ];
+  const at850 = { ...base, level: 850, levels: [850], weekly: 5 as const, tracks: ["mwf", "ttf"] as ("mwf" | "ttf")[], courseMonth: 10, time: { start: "12:30", end: "15:00", minutes: 150, timeBlock: "12:30~15:00" } };
+
+  it("2주완성 수강증 → 2주완성 반 두 개 (한 달짜리 850 묶음 반에 붙지 않는다)", () => {
+    const { result } = matchSections({ ...at850, program: "twoweek" }, withTwoWeek);
+    expect(result).toEqual({ kind: "match", sectionIds: [9001, 9002], term: "2026-10" });
+  });
+
+  it("한 달 850 수강증은 그대로 점수보장반 묶음 반 — 2주완성 반이 함께 열려 있어도", () => {
+    const { result } = matchSections({ ...at850, program: "score" }, withTwoWeek);
+    expect(result).toEqual({ kind: "match", sectionIds: [find(OCT, "mwf", 3, "12:30~15:00"), find(OCT, "ttf", 3, "12:30~15:00")], term: "2026-10" });
+  });
+
+  it("2주완성 반이 아직 없으면 '850 2주완성 … 에 열린 반이 없어요'", () => {
+    const { result } = matchSections({ ...at850, program: "twoweek" }, SECTIONS);
+    expect(result.kind).toBe("none");
+    expect((result as { reason: string }).reason).toBe("850 2주완성 12:30~15:00 에 열린 반이 없어요");
+  });
+});

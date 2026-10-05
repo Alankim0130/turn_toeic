@@ -4,6 +4,8 @@ import { todayKST } from "@/lib/utils";
 import { sectionTypeLabel } from "@/lib/section-type";
 import { termKey } from "@/components/admin/sections/dates";
 import { blockMinutes, buildBlockTree, minutesLabel, parseTimeBlock, sectionPackages } from "@/lib/time-blocks";
+import { isContainerProgram } from "@/lib/two-week";
+import { programRank } from "@/lib/timetable";
 
 type Client = Awaited<ReturnType<typeof createClient>>;
 
@@ -62,7 +64,7 @@ export async function loadTermData(supabase: Client, y: number, m: number, opts:
         supabase
           .from("class_sections")
           .select(
-            "id, bundle_id, track, time_block, book_set, subject, recorded, live_to_replay, course_id, capacity, status, instructor_id, course:courses(name, course_type, target_score, program), instructor:profiles(name, subject), session_dates(count), section_live_links(section_id)",
+            "id, bundle_id, track, time_block, book_set, subject, recorded, live_to_replay, course_id, capacity, status, instructor_id, closes_at, course:courses(name, course_type, target_score, program), instructor:profiles(name, subject), session_dates(count), section_live_links(section_id)",
           )
           .eq("term_id", term.id)
           .order("course_id")
@@ -77,8 +79,8 @@ export async function loadTermData(supabase: Client, y: number, m: number, opts:
   type Sec = (typeof sections)[number];
   const instructors = instructorRows ?? null;
 
-  // 스파르타 반이 권한을 함께 주는 반 (DB 의 private.section_includes 와 같은 판정) — 카드에 보여 준다
-  const hasSparta = sections.some((s) => s.course?.program === "sparta");
+  // 스파르타 · 2주완성 반이 권한을 함께 주는 반 (DB 의 private.section_includes 와 같은 판정) — 카드에 보여 준다
+  const hasSparta = sections.some((s) => isContainerProgram(s.course?.program));
   const { data: includeRows } = term && hasSparta && opts.includes ? await supabase.rpc("term_section_includes", { p_term_id: term.id }) : { data: [] };
   const sectionById = new Map(sections.map((s) => [s.id, s]));
   const includedBySection = new Map<number, string[]>();
@@ -105,7 +107,7 @@ export async function loadTermData(supabase: Client, y: number, m: number, opts:
     const parts = packages.get(s.id)?.parts ?? [];
     const names = [...new Set(parts.map((p) => p.instructor?.name).filter((n): n is string => !!n))].sort((a, b) => a.localeCompare(b, "ko"));
     if (names.length > 0) return names.join(" · ");
-    if (parts.length > 0 || s.course?.program === "sparta") return subjectInstructorNames.length > 0 ? subjectInstructorNames.join(" · ") : null;
+    if (parts.length > 0 || isContainerProgram(s.course?.program)) return subjectInstructorNames.length > 0 ? subjectInstructorNames.join(" · ") : null;
     return null;
   };
   // 시간대 라벨 → "120분" 같은 분량 (묶음은 안에 든 시간 단위의 합)
@@ -124,7 +126,7 @@ export async function loadTermData(supabase: Client, y: number, m: number, opts:
   // 주5일 = 같은 강좌·시간대의 월수금 + 화목금. 그 둘을 한 묶음으로 모아 보여준다 (시간대가 없는 반은 하나씩 만들기의 bundle_id 로)
   const order = (s: Sec) => {
     const span = parseTimeBlock(s.time_block);
-    return [s.course?.program === "sparta" ? 1 : 0, s.course?.target_score ?? 0, span?.start ?? 9999, -(span?.end ?? 0), s.track === "mwf" ? 0 : 1];
+    return [programRank(s.course?.program), s.course?.target_score ?? 0, span?.start ?? 9999, -(span?.end ?? 0), s.track === "mwf" ? 0 : 1];
   };
   const sorted = [...sections].sort((a, b) => {
     const oa = order(a);

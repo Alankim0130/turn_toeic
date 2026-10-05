@@ -4,7 +4,7 @@ import { Reveal } from "@/components/ui/Reveal";
 import { InstructorCameo } from "@/components/ui/InstructorCameo";
 import { KakaoChatButton } from "@/components/ui/KakaoChatButton";
 import { todayKST } from "@/lib/utils";
-import { PROGRAMS, SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
+import { LANDING_PROGRAMS, SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
 import { madeMonths, sameYm, ymIndex } from "@/lib/timetable-month";
 import { timeBlockOf } from "@/components/admin/sections/bulk";
 import { TimetableCard, type TimetableCardData } from "./TimetableCard";
@@ -39,7 +39,7 @@ async function loadTimetable() {
   };
   type Slot = (typeof rows)[number]["timetable_slots"][number];
   const pick = (keep: (s: Slot) => boolean): TimetableCardData[] =>
-    PROGRAMS.flatMap((program) =>
+    LANDING_PROGRAMS.flatMap((program) =>
       rows.map((t) => ({
         key: `${program}-${t.level}`,
         level: t.level,

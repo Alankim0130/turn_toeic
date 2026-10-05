@@ -116,8 +116,9 @@ export function sectionChip(
   opts: { withTerm?: boolean } = {},
 ) {
   if (!s) return "반 미배정";
+  // 2주완성은 같은 850 이라 레벨만 적으면 한 달짜리 850 과 구별되지 않는다 (2026-10-05) — `850+ 2주완성`
   const level = s.course?.target_score
-    ? `${s.course.program === "sparta" ? "스파르타 " : ""}${s.course.target_score}+`
+    ? `${s.course.program === "sparta" ? "스파르타 " : ""}${s.course.target_score}+${s.course.program === "twoweek" ? " 2주완성" : ""}`
     : (s.course?.name ?? "강좌");
   const track = s.id != null && week5?.has(s.id) ? WEEK5_LABEL : s.track ? (TRACK_LABEL[s.track] ?? s.track) : null;
   // 트랙과 시간은 한 덩어리로 붙여 쓴다 — 가운뎃점을 넷 찍으면 배지가 휴대폰에서 두 줄로 접힌다

@@ -5,7 +5,8 @@ import { lectureTitle } from "@/lib/lecture";
 import { classHours, toClassHours, type ClassHour } from "@/lib/class-hours";
 import { initialDay } from "@/lib/class-day";
 import { studentTrackLabel, week5SectionIds } from "@/lib/week5";
-import { getMyLectures, getMyLectureSignupIds, getMyOrders, getMySectionIncludes, getMySessions, getMyStudyEligibility, termLabel } from "./queries";
+import { isContainerProgram } from "@/lib/two-week";
+import { getMyLectures, getMyLectureSignupIds, getMyOrders, getMySectionIncludes, getMySessions, getMyStudyEligibility, myDirectSectionIds, termLabel } from "./queries";
 
 /** 달력 한 달치 — 화면이 그대로 `MonthSchedule` 에 넘길 수 있는 모양 */
 export type ScheduleMonth = {
@@ -44,13 +45,7 @@ export async function getMySchedule() {
    * 시간표에는 **내가 등록한 반**(직접 배정된 반) 줄만 두고, 함께 열리는 반은 그 줄의 설명으로 붙인다 —
    * 120분 주5일 학생이 하루에 60분 줄 두 개를 보면 회차 수가 두 배로 보인다.
    */
-  const direct = new Set(
-    orders.flatMap((o) =>
-      o.status === "active" || o.status === "preliminary"
-        ? o.enrollments.filter((e) => e.status === "active" && e.section).map((e) => e.section!.id)
-        : [],
-    ),
-  );
+  const direct = myDirectSectionIds(orders);
   const rows = sessionRows.filter((s) => s.section);
   const byDay = new Map<string, typeof rows>();
   for (const s of rows) {
@@ -73,9 +68,11 @@ export async function getMySchedule() {
   for (const list of byDay.values()) {
     const own = direct.size ? list.filter((s) => direct.has(s.section!.id)) : [];
     if (own.length === 0) {
-      // 등록 정보를 못 읽은 경우: 같은 날 실제 수업(점수보장반)이 있으면 스파르타 반 줄만 뺀다
-      const hasReal = list.some((s) => s.section!.course?.program !== "sparta");
-      sessions.push(...list.filter((s) => !(hasReal && s.section!.course?.program === "sparta")));
+      // 내 반 회차가 없는 날 = 품은 반만 수업이 있는 날 (2주완성의 뒤 절반) — 내 수업이 아니다 (2026-10-05)
+      if (direct.size) continue;
+      // 등록 정보를 못 읽은 경우: 같은 날 실제 수업(점수보장반)이 있으면 그릇 반(속성반 · 2주완성) 줄만 뺀다
+      const hasReal = list.some((s) => !isContainerProgram(s.section!.course?.program));
+      sessions.push(...list.filter((s) => !(hasReal && isContainerProgram(s.section!.course?.program))));
       continue;
     }
     const sameDay = list.map((s) => s.section!);

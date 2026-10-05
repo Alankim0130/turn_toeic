@@ -36,8 +36,9 @@ export function receiptFacts(parsed: unknown): string {
   const parts: string[] = [];
   const month = typeof p.courseMonth === "number" ? p.courseMonth : typeof p.startMonth === "number" ? p.startMonth : null;
   if (month) parts.push(`${month}월`);
-  if (typeof p.level === "number") parts.push(p.program === "sparta" ? `${p.level} 프리미어` : String(p.level));
-  else if (p.program === "sparta") parts.push("프리미어");
+  const programName = p.program === "sparta" ? "프리미어" : p.program === "twoweek" ? "2주완성" : "";
+  if (typeof p.level === "number") parts.push(programName ? `${p.level} ${programName}` : String(p.level));
+  else if (programName) parts.push(programName);
   const tracks = Array.isArray(p.tracks) ? (p.tracks as string[]).map((t) => (t === "mwf" ? "월수금" : t === "ttf" ? "화목금" : t)) : [];
   if (typeof p.weekly === "number") parts.push(`주${p.weekly}일${tracks.length ? `(${tracks.join("+")})` : ""}`);
   else if (tracks.length) parts.push(tracks.join("+"));

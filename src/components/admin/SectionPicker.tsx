@@ -3,6 +3,7 @@
 import { useId, useMemo, useState } from "react";
 import { cn, TRACK_LABEL } from "@/lib/utils";
 import { blockMinutes, buildBlockTree, dashLabel, flattenBlockTree, minutesLabel, TRACKS, tracksLabel } from "@/lib/time-blocks";
+import { programRank } from "@/lib/timetable";
 
 export type PickerSection = {
   id: number;
@@ -58,7 +59,7 @@ export function SectionPicker({
     const out: TermGroup[] = [];
     for (const [key, tg] of terms) {
       const courses = [...tg.byCourse.values()]
-        .sort((a, b) => (a.course.program === b.course.program ? 0 : a.course.program === "score" ? -1 : 1) || (a.course.target_score ?? 0) - (b.course.target_score ?? 0) || a.course.name.localeCompare(b.course.name, "ko"))
+        .sort((a, b) => programRank(a.course.program) - programRank(b.course.program) || (a.course.target_score ?? 0) - (b.course.target_score ?? 0) || a.course.name.localeCompare(b.course.name, "ko"))
         .map(({ course, list }) => {
           const tree = buildBlockTree(list.map((s) => s.time_block), { nest: course.program === "score" });
           const rows: Row[] = flattenBlockTree(tree).map(({ node, depth }) => ({
@@ -245,6 +246,7 @@ function CourseGroup({
         <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-black text-ink">{course.name}</span>
           {course.program === "sparta" && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-black text-brand-700">스파르타반</span>}
+          {course.program === "twoweek" && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-black text-brand-700">앞 절반</span>}
           {hasPicked && <span className="rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-black text-white">고름</span>}
           {hasTaken && <span className="rounded-full bg-line px-2 py-0.5 text-[11px] font-black text-slate">배정됨</span>}
         </span>

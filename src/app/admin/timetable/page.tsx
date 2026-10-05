@@ -97,7 +97,7 @@ export default async function AdminTimetablePage({ searchParams }: { searchParam
     const c = (courses ?? []).find((c) => c.program === program && c.target_score === level);
     return c ? `${level} ${courseShortName(c.name)}` : `${level} ${PROGRAM_LABEL[program]}`;
   };
-  // 스파르타 카드는 그 레벨에 스파르타 강좌가 있을 때만 (850 은 없다)
+  // 스파르타 · 2주완성 카드는 그 레벨에 그 과정 강좌가 있을 때만 (스파르타 850 은 없다 · 2주완성은 850 만)
   const hasProgram = (level: number, program: Program) => program === "score" || (courses ?? []).some((c) => c.program === program && c.target_score === level);
 
   const prev = shiftYm(ym, -1);
@@ -216,6 +216,13 @@ export default async function AdminTimetablePage({ searchParams }: { searchParam
           {PROGRAMS.map((program) => (
             <section key={program} aria-labelledby={`program-${program}`}>
               <h2 id={`program-${program}`} className="mb-3 text-lg font-black text-ink">{PROGRAM_LABEL[program]}</h2>
+              {/* 2주완성 (2026-10-05 Alan "850반 2주완성반이 있어 … 절반만 수업을 듣는거야. 개강일부터 시작") — 반의 종강일은 저절로 정해진다 */}
+              {program === "twoweek" && (
+                <p className="-mt-2 mb-3 text-xs text-slate">
+                  같은 레벨 수업을 <strong className="text-ink">개강일부터 앞 절반</strong>만 들어요 — 반의 종강일은 그 달 수업일(월수금 + 화목금) 앞 절반의 마지막 날로
+                  저절로 정해져요 (18일이면 9번째 날). 과정 · 과목은 같은 레벨 수업 것을 써요.
+                </p>
+              )}
               {/* 카드는 PC 넓은 화면(xl)에서만 두 줄 — 세 줄로 두면 카드가 좁아져 시각이 잘리고 줄마다 접혔다 */}
               <div className="grid gap-4 xl:grid-cols-2">
                 {levels.filter((l) => hasProgram(l.level, program)).map((l) => {
@@ -264,7 +271,7 @@ export default async function AdminTimetablePage({ searchParams }: { searchParam
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
                           <TimeRange label={`${title} 새 시간대`} />
                           <div className="flex flex-1 items-center justify-between gap-3">
-                            <RecordedCheck />
+                            {program === "twoweek" ? <span /> : <RecordedCheck />}
                             <button type="submit" className="btn-primary whitespace-nowrap !px-4 !py-2">시간대 더하기</button>
                           </div>
                         </div>
@@ -341,6 +348,7 @@ const KIND_NOTE: Record<SlotKind, string> = {
   block: "통짜 · 두 과목 이어 듣기",
   package: "한달완성",
   sparta: "함께 듣는 반의 과정·과목",
+  twoweek: "같은 레벨 수업 앞 절반",
 };
 
 function SlotRowForm({ row, kind, title, monthKey, used }: { row: Row; kind: SlotKind; title: string; monthKey: string; used: number }) {
@@ -370,7 +378,12 @@ function SlotRowForm({ row, kind, title, monthKey, used }: { row: Row; kind: Slo
           </div>
         )}
         <div className="flex items-center justify-between gap-3">
-          <RecordedCheck defaultChecked={row.ttf_recorded} />
+          {/* 2주완성 줄에는 인강이 없다 — 같은 레벨 수업(오전 · 주간)의 앞 절반이다 */}
+          {kind === "twoweek" ? (
+            <p className="text-[11px] text-slate">같은 레벨 수업의 앞 절반 — 그 수업 시간을 고치면 따라가요</p>
+          ) : (
+            <RecordedCheck defaultChecked={row.ttf_recorded} />
+          )}
           <button type="submit" className="btn-secondary whitespace-nowrap !px-4 !py-2">저장</button>
         </div>
       </form>

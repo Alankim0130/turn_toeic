@@ -1,5 +1,6 @@
 import { COURSE_TYPE_LABEL } from "./utils";
 import { isSubject, SUBJECT_LABEL, type Subject } from "./instructor-subject";
+import { isContainerProgram } from "./two-week";
 
 /**
  * 반 하나의 종합/단과 이름 (2026-09-18 Alan — "강사가 한 명만 설정되는 경우는 종합반이 아니라 단과반인데 종합으로 표시되어 있다").
@@ -20,7 +21,8 @@ export function sectionTypeLabel(
 ): string | null {
   const type = s.course?.course_type;
   if (type === "lc" || type === "rc") return COURSE_TYPE_LABEL[type];
-  if (s.course?.program === "sparta" || opts.isPackage) return COURSE_TYPE_LABEL.full;
+  // 그릇 반(스파르타 · 2주완성 — 2026-10-05) · 묶음 반은 두 과목을 이어 듣는 종합이다
+  if (isContainerProgram(s.course?.program) || opts.isPackage) return COURSE_TYPE_LABEL.full;
   const subject: Subject | null = isSubject(s.instructor?.subject) ? s.instructor.subject : isSubject(s.subject) ? s.subject : null;
   return subject ? `단과 ${SUBJECT_LABEL[subject]}` : null;
 }

@@ -31,7 +31,12 @@ export type AutoApproveBlocker =
   /** 그 달 반에 이미 배정돼 있다 — 새로 넣으면 등록이 두 건 */
   | "already_enrolled"
   /** 같은 캡처를 전에 사람이 판정했다 (firsttoeic 사고 5) */
-  | "decided_before";
+  | "decided_before"
+  /**
+   * 2주완성 수강증 (2026-10-05) — 실물 수강증을 아직 못 봐서 표기(주3일/주5일 · 회차)를 확정하지 못했다.
+   * 같은 850 시간이라 짐작으로 붙이면 한 달짜리 반 · 앞 절반 반이 바뀔 수 있어 강사가 본다. 샘플을 받으면 표기 규칙을 정하고 이 막음을 푼다
+   */
+  | "two_week";
 
 export type AutoApproveFlags = {
   duplicateImage: boolean;
@@ -44,7 +49,7 @@ export type AutoApproveFlags = {
 
 export type AutoApproveInput = {
   /** 저장해 둔 판독 결과에서도 부른다 — 예전 기록에 칸이 없으면 **막는 쪽**으로 읽는다 */
-  parsed: Partial<Pick<ParsedReceipt, "gates" | "brandExact" | "card" | "modeEvidence">>;
+  parsed: Partial<Pick<ParsedReceipt, "gates" | "brandExact" | "card" | "modeEvidence" | "program">>;
   nameMatches: boolean | null | undefined;
   flags: AutoApproveFlags;
   /** 반 대조가 딱 맞았나 */
@@ -65,6 +70,7 @@ export function autoApproveBlockers({ parsed, nameMatches, flags, matched }: Aut
   if (flags.paletteOff) out.push("palette");
   if (flags.alreadyEnrolled.length > 0) out.push("already_enrolled");
   if (flags.decidedBefore !== null) out.push("decided_before");
+  if (parsed.program === "twoweek") out.push("two_week");
   return out;
 }
 
@@ -82,6 +88,7 @@ export const BLOCKER_LABEL: Record<AutoApproveBlocker, string> = {
   palette: "화면 색이 YBM 수강증과 다름",
   already_enrolled: "이미 그 달 반에 배정됨",
   decided_before: "같은 캡처를 전에 사람이 판정함",
+  two_week: "2주완성 수강증 — 표기를 아직 확인하지 않아 강사가 반을 확인",
 };
 
 /**

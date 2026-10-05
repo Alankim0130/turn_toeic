@@ -23,7 +23,10 @@ export default async function LivePage() {
   // 회차 링크(오늘 → 다음 수업) 가 있으면 그것, 없으면 반의 상시 링크 (2026-09-18 Alan)
   const cards = await getMyLiveCards();
   const week5 = await getMyWeek5();
-  const next = await getNextSessionBySection(cards.map((c) => c.sectionId));
+  const next = await getNextSessionBySection(
+    cards.map((c) => c.sectionId),
+    new Map(cards.flatMap((c) => (c.until ? [[c.sectionId, c.until] as const] : []))),
+  );
   // 개강 전 배정이 있으면 개강일을 적어 준다 (2026-10-02 Alan — 숙제업로드·LC음원과 같은 안내)
   const opens = cards.length === 0 ? [...(await getMyStudyEligibility()).opensOn.values()].sort()[0] : undefined;
 

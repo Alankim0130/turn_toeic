@@ -6,7 +6,7 @@
  *
  * 규칙 자체는 새로 만든 것이 아니다 — CLAUDE.md 도메인 규칙 1 "반 권한" 에 이미 있다:
  * **녹화본 · 불라방 링크 · LC 교재는 시간 단위 반(60분·70분)에 한 번만 둔다.**
- * 묶음 반(120분·140분)과 스파르타 반에는 올리지 않는다 — 그 학생들은 `private.section_includes` 가
+ * 묶음 반(120분·140분)과 스파르타 반 · 2주완성 반(2026-10-05)에는 올리지 않는다 — 그 학생들은 `private.section_includes` 가
  * 열어 주는 시간 단위 반의 녹화본을 그대로 본다. 스파르타 650 이면 650 + 850 의 시간 단위 반이다.
  *
  * 그런데 화면은 **묶음 반만 고른 뒤에 경고**했고 스파르타 반은 아무 처리가 없어서, 10월 반 36개가
@@ -24,6 +24,7 @@
  */
 
 import type { TRACK_LABEL } from "./utils";
+import { isContainerProgram, isTwoWeek } from "./two-week";
 
 export type ReplaySection = {
   id: number;
@@ -40,6 +41,9 @@ type PackageMap = Map<number, { parts: { id: number }[] }>;
 const TRACK_ORDER: Record<string, number> = { mwf: 0, ttf: 1 };
 
 const isSparta = (s: ReplaySection) => s.course?.program === "sparta";
+
+/** 그릇 반 = 점수보장반이 아닌 과정 (스파르타 · 2주완성, 2026-10-05) — 품은 시간 단위 반의 녹화본을 그대로 본다 */
+const isContainer = (s: ReplaySection) => isContainerProgram(s.course?.program);
 
 /** 안에 시간 단위 반이 든 반 = 묶음 반 (120분 · 140분) */
 const isPackage = (s: ReplaySection, packages: PackageMap) => (packages.get(s.id)?.parts.length ?? 0) > 0;
@@ -64,7 +68,7 @@ const isEvening = (s: ReplaySection, eveningBlocks: ReadonlySet<string>) => !!s.
  * 거짓이어도 목록에서 무조건 지우지는 않는다 — 이미 녹화본이 붙어 있으면 남겨야 고치고 지울 수 있다 (화면 몫).
  */
 const uploadable = (s: ReplaySection, packages: PackageMap, eveningBlocks: ReadonlySet<string> = new Set()) =>
-  !isSparta(s) && !isPackage(s, packages) && !isEvening(s, eveningBlocks);
+  !isContainer(s) && !isPackage(s, packages) && !isEvening(s, eveningBlocks);
 
 /** 레벨 탭에 쓸 값. 스파르타는 레벨이 같아도 섞지 않는다 (교재·시간이 다르다) */
 const levelOf = (s: ReplaySection): number | null => (typeof s.course?.target_score === "number" ? s.course.target_score : null);
@@ -81,7 +85,7 @@ function levels(list: ReplaySection[]): number[] {
  */
 function groupLabel(s: ReplaySection): string {
   const term = s.term ? `${s.term.month}월` : "기수 미지정";
-  return isSparta(s) ? `${term} · 스파르타` : term;
+  return isSparta(s) ? `${term} · 스파르타` : isTwoWeek(s.course?.program) ? `${term} · 2주완성` : term;
 }
 
 /** 기수는 최신이 위, 그 안에서 레벨 오름차순 → 시간 → 트랙. 스파르타는 레벨이 같아도 뒤로 */
@@ -90,14 +94,14 @@ function compare(a: ReplaySection, b: ReplaySection): number {
   return (
     termOf(b) - termOf(a) ||
     (a.course?.target_score ?? 9999) - (b.course?.target_score ?? 9999) ||
-    Number(isSparta(a)) - Number(isSparta(b)) ||
+    Number(isContainer(a)) - Number(isContainer(b)) ||
     (a.time_block ?? "").localeCompare(b.time_block ?? "") ||
     (TRACK_ORDER[a.track] ?? 9) - (TRACK_ORDER[b.track] ?? 9) ||
     a.id - b.id
   );
 }
 
-export const replayTargets = { isSparta, isPackage, isEvening, uploadable, levelOf, levels, groupLabel, compare };
+export const replayTargets = { isSparta, isContainer, isPackage, isEvening, uploadable, levelOf, levels, groupLabel, compare };
 
 /** 화면이 쓰는 트랙 이름표의 타입만 빌려 온다 (값은 utils 한곳) */
 export type TrackLabel = typeof TRACK_LABEL;
