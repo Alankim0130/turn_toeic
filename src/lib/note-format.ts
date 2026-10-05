@@ -151,3 +151,93 @@ export const noteWrap = {
   color: (c: NoteColor): NoteWrap => ({ open: `[color=${c}]`, close: "[/color]" }),
   size: (s: NoteSize): NoteWrap => ({ open: `[size=${s}]`, close: "[/size]" }),
 };
+
+/* ── 바로 보이는 편집기(`NoteEditor`)가 쓰는 조각 연산 — 2026-10-05 Alan "강사화면에 코드로 보이고 … 바로 미리보기처럼 보여주면 좋겠어" ── */
+
+const charsOf = (s: string) => Array.from(s);
+const runLength = (r: NoteRun) => charsOf(r.text).length;
+
+/** 조각 → 저장할 글. 조각마다 여는 · 닫는 태그를 따로 붙인다 (겹침이 없어 다시 읽으면 같은 조각이 나온다) */
+export function runsToNote(runs: NoteRun[]): string {
+  let out = "";
+  for (const r of runs) {
+    if (!r.text) continue;
+    const s = r.style;
+    const wraps: NoteWrap[] = [];
+    if (s.bold) wraps.push(noteWrap.bold);
+    if (s.italic) wraps.push(noteWrap.italic);
+    if (s.underline) wraps.push(noteWrap.underline);
+    if (s.mark) wraps.push(noteWrap.mark);
+    if (s.color) wraps.push(noteWrap.color(s.color));
+    if (s.size) wraps.push(noteWrap.size(s.size));
+    out += wraps.map((w) => w.open).join("") + r.text + wraps.reverse().map((w) => w.close).join("");
+  }
+  return out;
+}
+
+/** 같은 서식끼리 잇고 빈 조각을 버린다 */
+export function normalizeRuns(runs: NoteRun[]): NoteRun[] {
+  const out: NoteRun[] = [];
+  for (const r of runs) push(out, r.text, { ...r.style });
+  return out;
+}
+
+/** `at` 글자 앞에서 조각을 가른다 — 돌려준 배열에서 그 자리가 몇 번째 조각부터인지와 함께 */
+function splitAt(runs: NoteRun[], at: number): [NoteRun[], number] {
+  const out: NoteRun[] = [];
+  let pos = 0;
+  let index = -1;
+  for (const r of runs) {
+    const chars = charsOf(r.text);
+    if (index < 0 && at > pos && at < pos + chars.length) {
+      out.push({ text: chars.slice(0, at - pos).join(""), style: r.style }, { text: chars.slice(at - pos).join(""), style: r.style });
+      index = out.length - 1;
+    } else {
+      if (index < 0 && at <= pos) index = out.length;
+      out.push(r);
+    }
+    pos += chars.length;
+  }
+  return [out, index < 0 ? out.length : index];
+}
+
+/** [start, end) 를 `text`(서식 없음 · 앞 글자의 서식을 잇는다)로 바꾼다 — 붙여 넣기 · 줄바꿈 */
+export function spliceRuns(runs: NoteRun[], start: number, end: number, text: string): NoteRun[] {
+  const [a, i] = splitAt(runs, start);
+  const [b, j] = splitAt(a, end);
+  const before = b.slice(0, i);
+  const style = before.at(-1)?.style ?? b[i]?.style ?? {};
+  return normalizeRuns([...before, { text, style: { ...style } }, ...b.slice(j)]);
+}
+
+export type NoteChange =
+  | { kind: "flag"; flag: "bold" | "italic" | "underline" | "mark" }
+  | { kind: "color"; color: NoteColor }
+  | { kind: "size"; size: NoteSize }
+  | { kind: "clear" };
+
+/** 고른 글자 [start, end) 에 서식을 건다. 고른 글자가 이미 다 그 서식이면 푼다 (굵게를 한 번 더 누르면 풀린다) */
+export function applyNoteChange(runs: NoteRun[], start: number, end: number, change: NoteChange): NoteRun[] {
+  if (end <= start) return runs;
+  const [a, i] = splitAt(runs, start);
+  const [b, j] = splitAt(a, end);
+  const middle = b.slice(i, j);
+  const all = (pred: (s: NoteStyle) => boolean) => middle.every((r) => pred(r.style));
+  let next: (s: NoteStyle) => NoteStyle;
+  if (change.kind === "clear") next = () => ({});
+  else if (change.kind === "flag") {
+    const off = all((s) => !!s[change.flag]);
+    next = (s) => ({ ...s, [change.flag]: off ? undefined : true });
+  } else if (change.kind === "color") {
+    const off = all((s) => s.color === change.color);
+    next = (s) => ({ ...s, color: off ? undefined : change.color });
+  } else {
+    const off = all((s) => s.size === change.size);
+    next = (s) => ({ ...s, size: off ? undefined : change.size });
+  }
+  const clean = (s: NoteStyle): NoteStyle => Object.fromEntries(Object.entries(s).filter(([, v]) => v !== undefined && v !== false));
+  return normalizeRuns([...b.slice(0, i), ...middle.map((r) => ({ text: r.text, style: clean(next(r.style)) })), ...b.slice(j)]);
+}
+
+/** 조각 전체 글자 수 (코드 포인트) */
+export const runsLength = (runs: NoteRun[]) => runs.reduce((n, r) => n + runLength(r), 0);

@@ -65,3 +65,38 @@ describe("접기 — 태그는 세지 않고 보이는 글자로", () => {
 it("서식 지우기", () => {
   expect(stripNoteTags("[b]가[/b] [color=red]나[/color] [x]")).toBe("가 나 [x]");
 });
+
+import { applyNoteChange, normalizeRuns, runsToNote, spliceRuns } from "./note-format";
+
+describe("바로 보이는 편집기의 조각 연산", () => {
+  const plain = (t: string) => [{ text: t, style: {} }];
+
+  it("고른 글자만 굵게 → 태그 글로 저장되고 다시 읽으면 같다", () => {
+    const runs = applyNoteChange(plain("가나다라"), 1, 3, { kind: "flag", flag: "bold" });
+    expect(runsToNote(runs)).toBe("가[b]나다[/b]라");
+    expect(normalizeRuns(parseNote(runsToNote(runs)))).toEqual(runs);
+  });
+
+  it("같은 버튼을 다시 누르면 풀린다", () => {
+    const on = applyNoteChange(plain("가나다"), 0, 3, { kind: "flag", flag: "underline" });
+    expect(runsToNote(applyNoteChange(on, 0, 3, { kind: "flag", flag: "underline" }))).toBe("가나다");
+  });
+
+  it("색 · 크기가 겹쳐도 한 번에 다시 읽힌다", () => {
+    let runs = applyNoteChange(plain("abcdef"), 0, 4, { kind: "color", color: "blue" });
+    runs = applyNoteChange(runs, 2, 6, { kind: "size", size: "xl" });
+    expect(runsToNote(runs)).toBe("[color=blue]ab[/color][color=blue][size=xl]cd[/size][/color][size=xl]ef[/size]");
+    expect(normalizeRuns(parseNote(runsToNote(runs)))).toEqual(runs);
+  });
+
+  it("서식 지우기", () => {
+    const runs = applyNoteChange(parseNote("[b][color=red]가나[/color][/b]"), 0, 2, { kind: "clear" });
+    expect(runsToNote(runs)).toBe("가나");
+  });
+
+  it("줄바꿈 · 붙여 넣기는 앞 글자 서식을 잇는다", () => {
+    expect(runsToNote(spliceRuns(parseNote("[b]가나[/b]다"), 2, 2, "\n"))).toBe("[b]가나\n[/b]다");
+    expect(runsToNote(spliceRuns(plain("가나다"), 1, 2, "XY"))).toBe("가XY다");
+    expect(runsToNote(spliceRuns([], 0, 0, "처음"))).toBe("처음");
+  });
+});
