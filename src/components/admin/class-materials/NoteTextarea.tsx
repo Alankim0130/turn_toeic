@@ -11,6 +11,9 @@ import {
   runsToNote,
   normalizeRuns,
   spliceRuns,
+  styleAt,
+  runsText,
+  wordRangeAt,
   type NoteChange,
   type NoteColor,
   type NoteRun,
@@ -34,7 +37,9 @@ const fmt = (n: number) => n.toLocaleString("ko-KR");
  *   칸을 다시 그리는 것은 버튼 · 줄바꿈 · 붙여 넣기 때뿐이다 — **글자를 치는 동안 다시 그리면 한글 조합이 깨진다.**
  * - 붙여 넣기는 글자만 받는다(다른 곳의 색 · 글꼴이 딸려 오지 않게). 줄바꿈은 글자 `\n` 으로 넣는다(브라우저마다 `<div>` · `<br>` 이 달라서).
  * - 버튼은 누르는 순간 칸의 선택을 빼앗지 않게 `pointerdown` 기본 동작을 막고, 그래도 놓치는 휴대폰을 위해 마지막 선택을 기억해 둔다.
- * - 같은 버튼을 다시 누르면 그 서식이 풀린다. Ctrl(⌘)+B · U · I 도 된다. 글자를 고르지 않고 누르면 "글자를 먼저 골라 주세요".
+ * - **워드처럼** (같은 날 Alan — "다시 그 글자에 진하게를 또 클릭하면 진하게가 취소되면 좋겠어. 워드에서 적용되는 방법"):
+ *   같은 버튼을 다시 누르면 그 서식이 풀리고, 지금 고른 글자(커서만 있으면 바로 앞 글자)에 걸린 서식의 버튼은 **눌린 모양**(`styleAt`)이다.
+ *   글자를 고르지 않고 단어 안에 커서만 두고 눌러도 **그 단어 전체**에 걸고 푼다(`wordRangeAt`). Ctrl(⌘)+B · U · I 도 된다.
  */
 export function NoteTextarea({
   id,
@@ -55,6 +60,7 @@ export function NoteTextarea({
   const lastRange = useRef<[number, number] | null>(null);
   const [value, setValue] = useState(defaultValue);
   const [hint, setHint] = useState<string | null>(null);
+  const [active, setActive] = useState<NoteStyle>({});
   const length = charCount(value);
   const over = length > CLASS_MATERIAL_NOTE_MAX;
 
@@ -75,7 +81,9 @@ export function NoteTextarea({
     const onSelect = () => {
       const el = editor.current;
       const r = el && readSelection(el);
-      if (r) lastRange.current = r;
+      if (!r || !el) return;
+      lastRange.current = r;
+      setActive(styleAt(readRuns(el), r[0], r[1]));
     };
     document.addEventListener("selectionchange", onSelect);
     return () => document.removeEventListener("selectionchange", onSelect);
@@ -88,16 +96,25 @@ export function NoteTextarea({
   function change(c: NoteChange) {
     const el = editor.current;
     if (!el || disabled) return;
-    const range = readSelection(el) ?? lastRange.current;
-    if (!range || range[0] === range[1]) {
-      setHint("서식을 넣을 글자를 먼저 골라 주세요.");
+    const before = current();
+    let range = readSelection(el) ?? lastRange.current;
+    let caret: number | null = null;
+    // 커서만 있으면 그 단어 전체 (워드처럼) — 서식을 건 뒤 커서는 제자리로
+    if (range && range[0] === range[1]) {
+      caret = range[0];
+      range = wordRangeAt(runsText(before), caret);
+    }
+    if (!range) {
+      setHint("서식을 넣을 글자를 고르거나 단어 안에 커서를 두세요.");
       return;
     }
     setHint(null);
-    const runs = applyNoteChange(current(), range[0], range[1], c);
+    const runs = applyNoteChange(before, range[0], range[1], c);
     paint(el, runs);
     el.focus();
-    writeSelection(el, range[0], range[1]);
+    if (caret !== null) writeSelection(el, caret, caret);
+    else writeSelection(el, range[0], range[1]);
+    setActive(styleAt(runs, range[0], range[1]));
     commit(runs);
   }
 
@@ -116,27 +133,27 @@ export function NoteTextarea({
     <>
       <textarea ref={hidden} defaultValue={defaultValue} hidden readOnly tabIndex={-1} aria-hidden />
       <div role="toolbar" aria-label="글자 서식" aria-controls={id} className="mb-1.5 flex flex-wrap items-center gap-1">
-        <Tool label="굵게 (Ctrl+B)" onUse={() => change({ kind: "flag", flag: "bold" })} disabled={disabled}>
+        <Tool label="굵게 (Ctrl+B)" on={!!active.bold} onUse={() => change({ kind: "flag", flag: "bold" })} disabled={disabled}>
           <span className="font-black">가</span>
         </Tool>
-        <Tool label="밑줄 (Ctrl+U)" onUse={() => change({ kind: "flag", flag: "underline" })} disabled={disabled}>
+        <Tool label="밑줄 (Ctrl+U)" on={!!active.underline} onUse={() => change({ kind: "flag", flag: "underline" })} disabled={disabled}>
           <span className="underline underline-offset-2">가</span>
         </Tool>
-        <Tool label="기울임 (Ctrl+I)" onUse={() => change({ kind: "flag", flag: "italic" })} disabled={disabled}>
+        <Tool label="기울임 (Ctrl+I)" on={!!active.italic} onUse={() => change({ kind: "flag", flag: "italic" })} disabled={disabled}>
           <span className="italic">가</span>
         </Tool>
-        <Tool label="형광펜" onUse={() => change({ kind: "flag", flag: "mark" })} disabled={disabled}>
+        <Tool label="형광펜" on={!!active.mark} onUse={() => change({ kind: "flag", flag: "mark" })} disabled={disabled}>
           <span className="rounded-sm bg-yellow-200 px-0.5 text-ink">가</span>
         </Tool>
         <span aria-hidden className="mx-0.5 h-5 w-px bg-line" />
         {(Object.keys(NOTE_COLORS) as NoteColor[]).map((c) => (
-          <Tool key={c} label={`글자 색 ${NOTE_COLORS[c].label}`} onUse={() => change({ kind: "color", color: c })} disabled={disabled}>
+          <Tool key={c} label={`글자 색 ${NOTE_COLORS[c].label}`} on={active.color === c} onUse={() => change({ kind: "color", color: c })} disabled={disabled}>
             <span className={cn("block size-4 rounded-full", NOTE_COLORS[c].swatch)} />
           </Tool>
         ))}
         <span aria-hidden className="mx-0.5 h-5 w-px bg-line" />
         {(Object.keys(NOTE_SIZES) as NoteSize[]).map((s) => (
-          <Tool key={s} label={`글자 크기 ${NOTE_SIZES[s].label}`} onUse={() => change({ kind: "size", size: s })} disabled={disabled} wide>
+          <Tool key={s} label={`글자 크기 ${NOTE_SIZES[s].label}`} on={active.size === s} onUse={() => change({ kind: "size", size: s })} disabled={disabled} wide>
             {NOTE_SIZES[s].label}
           </Tool>
         ))}
@@ -189,7 +206,7 @@ export function NoteTextarea({
         )}
       />
       <p id={`${id}-count`} className={cn("mt-1 flex justify-between gap-2 text-[11px] tabular-nums", over ? "font-bold text-red-600" : "text-mist")}>
-        <span className={cn(hint && "font-bold text-brand-700")}>{hint ?? "글자를 골라 위 버튼을 누르면 학생 화면과 같은 모양으로 바로 바뀌어요."}</span>
+        <span className={cn(hint && "font-bold text-brand-700")}>{hint ?? "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 한 번 더 누르면 풀려요."}</span>
         <span className="shrink-0">
           {over && <>{fmt(length - CLASS_MATERIAL_NOTE_MAX)}자를 줄여 주세요 · </>}
           {fmt(length)} / {fmt(CLASS_MATERIAL_NOTE_MAX)}자
@@ -326,12 +343,14 @@ function writeSelection(root: HTMLElement, start: number, end: number) {
 
 function Tool({
   label,
+  on = false,
   onUse,
   disabled,
   wide,
   children,
 }: {
   label: string;
+  on?: boolean;
   onUse: () => void;
   disabled?: boolean;
   wide?: boolean;
@@ -342,12 +361,14 @@ function Tool({
       type="button"
       aria-label={label}
       title={label}
+      aria-pressed={on}
       disabled={disabled}
       onPointerDown={(e) => e.preventDefault()}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onUse}
       className={cn(
-        "inline-flex h-8 items-center justify-center rounded-lg border border-line bg-white text-sm text-ink transition hover:border-brand-300 hover:bg-brand-50 disabled:opacity-50",
+        "inline-flex h-8 items-center justify-center rounded-lg border text-sm text-ink transition disabled:opacity-50",
+        on ? "border-brand-600 bg-brand-100 ring-2 ring-brand-500" : "border-line bg-white hover:border-brand-300 hover:bg-brand-50",
         wide ? "px-2 text-xs font-bold" : "w-8",
       )}
     >
