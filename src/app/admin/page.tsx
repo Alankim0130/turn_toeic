@@ -28,6 +28,18 @@ const dayShort = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10
 /** 위젯의 날짜 칸 하나에 적는 예약 시각 수 — 넘치면 "외 N" 으로 줄인다 (자세한 것은 네이버 예약 화면) */
 const NAVER_TIMES_SHOWN = 4;
 
+/**
+ * 등록생 위젯의 `(불라방 N)` — 그 줄 인원 중 불라방 인원. 아래 시간대별 표의 괄호(현장 숫자 옆에 따로 붙는 불라방)와 달리
+ * 큰 숫자가 이미 전체라 `불라방` 을 적는다. 0 이면 글자 없이 자리만 둔다 (표처럼 0 은 적지 않는다 — 숫자 줄은 맞춘다)
+ */
+function LiveCount({ n }: { n: number }) {
+  return (
+    <span className="min-w-[4.75rem] whitespace-nowrap pl-1.5 text-left text-xs font-semibold text-slate">
+      {n > 0 ? `(불라방 ${n.toLocaleString("ko-KR")})` : ""}
+    </span>
+  );
+}
+
 export default async function AdminDashboardPage() {
   // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
   const { user, profile } = await requireStaff();
@@ -113,21 +125,17 @@ export default async function AdminDashboardPage() {
   }
   const slots = [...slotLabels].sort((a, b) => slotKey(a) - slotKey(b) || a.localeCompare(b, "ko"));
   const courses = [...courseNames].sort((a, b) => (courseScore.get(a) ?? 0) - (courseScore.get(b) ?? 0) || a.localeCompare(b, "ko"));
-  const slotTotal = (slot: string) =>
-    courses.reduce(
-      (acc, c) => {
-        const v = cells.get(`${c}|${slot}`);
-        return { onsite: acc.onsite + (v?.onsite ?? 0), live: acc.live + (v?.live ?? 0) };
-      },
-      { onsite: 0, live: 0 },
-    );
+  // 맨 아래 시간대별 합계 줄은 없앴다 (2026-10-06 Alan "수업시간대별 인원수에서 합계는 빼줘") — 시간마다 · 트랙마다 앉는 자리를 더한 수라
+  // 120분 · 주5일 · 속성반 학생이 여러 번 세어져 위 등록생 총인원과 맞지 않는다. 되살리지 말 것
 
   const genderData = countBy(profiles.data ?? [], (p) => (p.gender ? GENDER_LABEL[p.gender] ?? p.gender : "미응답"), "미응답");
   const univData = countBy(profiles.data ?? [], (p) => p.university).slice(0, 5);
 
   // 오늘 현황 — 등록생 위젯 · 네이버 예약 위젯 (2026-09-23 Alan: 예비등록생 · 졸업생 칸은 뺐다)
   const headcounts = courseRows && !courseList.error ? courseHeadcounts(courseList.data ?? [], courseRows) : null;
-  const headTotal = courseRows ? headcountTotal(courseRows) : 0;
+  const headTotal = courseRows ? headcountTotal(courseRows) : { count: 0, live: 0 };
+  // 불라방이 한 명이라도 있으면 줄마다 괄호 칸을 둔다 — 괄호가 없는 줄도 같은 폭을 비워 둬야 숫자가 한 줄로 선다
+  const anyLive = headTotal.live > 0 || (headcounts ?? []).some((h) => h.live > 0);
   const naverDays = new Map(bookingsByDay(naver.data ?? []).map((d) => [d.day, d]));
   const naverFailing = (naverStatus.data?.consecutive_failures ?? 0) > 0;
   const naverChecked = naverStatus.data?.last_success_at ?? null;
@@ -237,7 +245,8 @@ export default async function AdminDashboardPage() {
             </p>
           </Link>
 
-          {/* 등록생 — 강좌마다 지금 수강 중인 사람 수를 크게. 주5일·120분 학생도 한 사람 (`courseHeadcounts`) */}
+          {/* 등록생 — 강좌마다 지금 수강 중인 사람 수를 크게. 주5일·120분 학생도 한 사람 (`courseHeadcounts`).
+              괄호는 그중 불라방 인원 (2026-10-06 Alan "등록생부분에서 불라방인원은 괄호로") — 큰 숫자는 그대로 전체다 */}
           <Link href="/admin/students?tab=active" className="card flex flex-col p-4 transition hover:-translate-y-0.5 hover:shadow-pink sm:p-5 lg:col-span-3">
             <div className="flex items-center gap-2">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50">
@@ -262,6 +271,7 @@ export default async function AdminDashboardPage() {
                           {h.count.toLocaleString("ko-KR")}
                         </span>
                         <span className="text-xs font-bold text-slate">명</span>
+                        {anyLive && <LiveCount n={h.live} />}
                       </span>
                     </li>
                   ))}
@@ -269,8 +279,9 @@ export default async function AdminDashboardPage() {
                 <div className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-brand-50 px-3 py-2.5">
                   <span className="text-sm font-black text-brand-700 sm:text-base">총인원</span>
                   <span className="flex items-baseline gap-0.5">
-                    <span className="text-3xl font-black leading-none tabular-nums text-brand-600">{headTotal.toLocaleString("ko-KR")}</span>
+                    <span className="text-3xl font-black leading-none tabular-nums text-brand-600">{headTotal.count.toLocaleString("ko-KR")}</span>
                     <span className="text-xs font-bold text-slate">명</span>
+                    {anyLive && <LiveCount n={headTotal.live} />}
                   </span>
                 </div>
               </div>
@@ -388,18 +399,6 @@ export default async function AdminDashboardPage() {
                     })}
                   </tr>
                 ))}
-                <tr>
-                  <th scope="row" className="py-2.5 pr-4 text-left text-xs font-black text-slate">합계</th>
-                  {slots.map((s) => {
-                    const t = slotTotal(s);
-                    return (
-                      <td key={s} className="px-3 py-2.5 text-right tabular-nums">
-                        <span className="font-black text-brand-600">{t.onsite}</span>
-                        {t.live > 0 && <span className="ml-1 text-xs font-semibold text-slate">({t.live})</span>}
-                      </td>
-                    );
-                  })}
-                </tr>
               </tbody>
             </table>
           </div>
