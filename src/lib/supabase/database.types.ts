@@ -340,14 +340,51 @@ export type Database = {
           },
         ]
       }
-      class_materials: {
+      class_material_files: {
         Row: {
-          book_set: string | null
           content_type: string | null
           created_at: string
           file_name: string
           file_path: string
           file_size: number | null
+          id: number
+          material_id: number
+          sort_order: number
+        }
+        Insert: {
+          content_type?: string | null
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          id?: number
+          material_id: number
+          sort_order?: number
+        }
+        Update: {
+          content_type?: string | null
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          id?: number
+          material_id?: number
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "class_material_files_material_id_fkey"
+            columns: ["material_id"]
+            isOneToOne: false
+            referencedRelation: "class_materials"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      class_materials: {
+        Row: {
+          book_set: string | null
+          created_at: string
           id: number
           level: number
           note: string | null
@@ -359,11 +396,7 @@ export type Database = {
         }
         Insert: {
           book_set?: string | null
-          content_type?: string | null
           created_at?: string
-          file_name: string
-          file_path: string
-          file_size?: number | null
           id?: number
           level: number
           note?: string | null
@@ -375,11 +408,7 @@ export type Database = {
         }
         Update: {
           book_set?: string | null
-          content_type?: string | null
           created_at?: string
-          file_name?: string
-          file_path?: string
-          file_size?: number | null
           id?: number
           level?: number
           note?: string | null

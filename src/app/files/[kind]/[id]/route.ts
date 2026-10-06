@@ -5,7 +5,9 @@ import { isImageType } from "@/lib/upload";
 /**
  * 비공개 파일 열기: /files/material/12 · /files/homework/34 · /files/audio/56 · /files/textbook/78 · /files/item/9 · /files/class/3
  *  - item = 비대면 자료 회차 자료실(study_material_items, 스태프만 — 학생은 그 달에 적용된 material 로 받는다)
- *  - class = 수업자료실(class_materials, 2026-10-05) — 학생은 내 레벨 자료만 행이 보여서 남의 레벨 id 는 404 다
+ *  - class = 수업자료실 파일(class_material_files, 2026-10-06 — 자료 하나에 파일 여러 개라 **id 는 파일 id** 다).
+ *    파일 행은 부모 자료(class_materials)가 보이는 사람에게만 보여서, 남의 칸 · 아직 안 열린 회차의 id 는 404 다.
+ *    2026-10-05 에 올린 파일은 자료와 같은 id 로 옮겼다 — 그날 받은 링크가 그대로 같은 파일이다 (마이그레이션 20261006100000)
  *  - 사용자 세션으로 행을 조회하므로 RLS 가 접근 권한을 정한다 (못 보면 404).
  *  - 저장소 서명 URL 도 사용자 세션으로 만들어 storage 정책을 한 번 더 통과한다.
  *  - ?download=1 은 원본 파일명으로 내려받기, 숙제 사진·교재 이미지는 ?w=400 으로 썸네일.
@@ -46,7 +48,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       : kind === "item"
         ? await supabase.from("study_material_items").select(cols).eq("id", id).maybeSingle()
       : kind === "class"
-        ? await supabase.from("class_materials").select(cols).eq("id", id).maybeSingle()
+        ? await supabase.from("class_material_files").select(cols).eq("id", id).maybeSingle()
       : kind === "homework"
         ? await supabase.from("homework_files").select(cols).eq("id", id).maybeSingle()
         : kind === "textbook"

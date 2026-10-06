@@ -2,14 +2,18 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   CLASS_MATERIAL_BUCKET,
+  CLASS_MATERIAL_FILES_MAX,
   CLASS_MATERIAL_MAX_BYTES,
   CLASS_MATERIAL_NOTE_MAX,
   CLASS_MATERIAL_TITLE_MAX,
   charCount,
+  defaultMaterialTitle,
   fileKindLabel,
   initialSubject,
   isMaterialSubject,
+  isViewableKind,
   materialAccess,
+  materialBadge,
   MATERIAL_SUBJECTS,
   materialFolder,
   materialObjectPath,
@@ -17,8 +21,11 @@ import {
   NOTE_FOLD_LINES,
   NOTE_PREVIEW_CHARS,
   NOTE_PREVIEW_LINES,
+  NOTE_TITLE_CHARS,
+  noteHasText,
   notePreview,
   noteTooLong,
+  sortMaterialFiles,
   titleFromFileName,
 } from "./class-materials";
 import { isSafeObjectPath } from "./upload";
@@ -30,6 +37,8 @@ import { isSafeObjectPath } from "./upload";
 const SQL = readFileSync("supabase/migrations/20261005100000_class_materials.sql", "utf8");
 /** 안내를 스크립트용으로 늘린 마이그레이션 (2026-10-05 Alan — "여기 안내에 스크립트를 올려줄예정이야") */
 const NOTE_SQL = readFileSync("supabase/migrations/20261005150000_class_material_note_long.sql", "utf8");
+/** 자료 하나에 파일 여러 개 · 글만 (2026-10-06 Alan — "파일업로드를 안하고 글만 적어서 올릴수도 … 파일을 한번에 여러개") */
+const FILES_SQL = readFileSync("supabase/migrations/20261006100000_class_material_files.sql", "utf8");
 
 describe("DB 와 같은 값", () => {
   it("과목은 rc · lc 둘이고 순서는 RC 먼저 (DB check 와 같다)", () => {
@@ -57,6 +66,102 @@ describe("DB 와 같은 값", () => {
   it("저장소 파일은 이 표의 행이 보이는지로 판정한다 — 학생 조회 정책(레벨 × 과목)은 roles.test.ts 가 재생해서 본다", () => {
     // 남의 레벨 · 내가 듣지 않는 과목의 파일은 서명 URL 도 못 만든다 (2026-10-05 — RC 단과 학생의 LC 자료)
     expect(SQL).toMatch(/bucket_id = 'class-materials'\s+and \(\s+\(select private\.is_staff\(\)\)\s+or exists \(select 1 from public\.class_materials m where m\.file_path = objects\.name\)/);
+  });
+});
+
+describe("파일 여러 개 · 글만 (마이그레이션 20261006100000)", () => {
+  it("새 표 = RLS + 정책 + grant 를 한 파일에 (CLAUDE.md 보안 점검)", () => {
+    expect(FILES_SQL).toContain("create table if not exists public.class_material_files");
+    expect(FILES_SQL).toContain("references public.class_materials (id) on delete cascade");
+    expect(FILES_SQL).toContain("alter table public.class_material_files enable row level security");
+    expect(FILES_SQL).toContain("grant select, insert, update, delete on public.class_material_files to authenticated");
+    // 정책은 지우고 만든다 — 다시 돌려도 실패하지 않게 (없는 정책을 그냥 drop 하면 배포가 통째로 실패한다)
+    for (const name of [...FILES_SQL.matchAll(/create policy "([^"]+)"/g)].map((m) => m[1])) {
+      expect(FILES_SQL, name).toContain(`drop policy if exists "${name}"`);
+    }
+  });
+
+  it("파일 행은 부모 자료가 보이는 사람만 본다 — 열린 회차 규칙(class_materials 정책)을 그대로 탄다", () => {
+    expect(FILES_SQL).toMatch(/for select to authenticated\s+using \(exists \(select 1 from public\.class_materials m where m\.id = class_material_files\.material_id\)\)/);
+    // 쓰기는 강사·관리자만 — 조교 화면이 아니다
+    for (const verb of ["insert", "update", "delete"]) {
+      expect(FILES_SQL).toMatch(new RegExp(`for ${verb} to authenticated[^;]*private\\.is_staff\\(\\)`));
+    }
+  });
+
+  it("있던 파일은 자료와 같은 id 로 옮긴다 — 그날 받은 /files/class/{id} 링크가 그대로 같은 파일이다", () => {
+    expect(FILES_SQL).toMatch(/select m\.id, m\.id, m\.file_path/);
+    // 직접 넣은 id 뒤에서 번호를 이어 간다 (안 맞추면 다음 파일이 23505 로 실패한다)
+    expect(FILES_SQL).toContain("pg_get_serial_sequence('public.class_material_files', 'id')");
+    // 글만 올린 자료는 파일 칸이 빈다
+    expect(FILES_SQL).toContain("alter table public.class_materials alter column file_path drop not null");
+    expect(FILES_SQL).toContain("alter table public.class_materials alter column file_name drop not null");
+  });
+
+  it("저장소 정책 — 파일 표의 행이 보이면 (배포 사이 옛 앱이 올린 파일을 위해 옛 칸도 함께 본다)", () => {
+    expect(FILES_SQL).toContain('drop policy if exists "class-materials: 내 레벨 수강생·스태프 조회" on storage.objects');
+    expect(FILES_SQL).toMatch(/or exists \(select 1 from public\.class_material_files f where f\.file_path = objects\.name\)/);
+  });
+
+  it("파일 수 상한 — 서버 액션 본문(1MB)에 경로 · 이름 20개는 넉넉하다", () => {
+    expect(CLASS_MATERIAL_FILES_MAX).toBe(20);
+  });
+});
+
+describe("noteHasText — 글만 올리는 자료의 조건", () => {
+  it("보이는 글자가 있어야 한다 — 서식 태그 · 빈 줄만 남은 글은 없는 것", () => {
+    expect(noteHasText("1강 스크립트")).toBe(true);
+    expect(noteHasText("[b]듣기 전에[/b]")).toBe(true);
+    expect(noteHasText("")).toBe(false);
+    expect(noteHasText(null)).toBe(false);
+    expect(noteHasText(undefined)).toBe(false);
+    expect(noteHasText("  \n\n  ")).toBe(false);
+    expect(noteHasText("[b][/b]\n[center]")).toBe(false);
+  });
+});
+
+describe("defaultMaterialTitle — 제목을 비워 두면", () => {
+  it("파일 하나면 그 이름 · 여럿이면 첫 이름 외 N개", () => {
+    expect(defaultMaterialTitle(["850 LC 1강 스크립트.pdf"], null)).toBe("850 LC 1강 스크립트");
+    expect(defaultMaterialTitle(["1강_스크립트.pdf", "1강 해설.pdf", "1강 음원.mp3"], "안내")).toBe("1강 스크립트 외 2개");
+  });
+
+  it("글만이면 안내의 첫 줄 — 서식 태그는 빼고, 길면 줄인다", () => {
+    expect(defaultMaterialTitle([], "\n\n[b]850+R 1강 교재 스크립트[/b]\nM: Good morning")).toBe("850+R 1강 교재 스크립트");
+    const long = `${"가".repeat(NOTE_TITLE_CHARS + 10)}\n둘째 줄`;
+    expect(defaultMaterialTitle([], long)).toBe(`${"가".repeat(NOTE_TITLE_CHARS)}…`);
+  });
+
+  it("아무것도 없으면 '수업 자료' · 늘 1~100자 (DB check)", () => {
+    expect(defaultMaterialTitle([], null)).toBe("수업 자료");
+    expect(defaultMaterialTitle([], "[b][/b]")).toBe("수업 자료");
+    const many = defaultMaterialTitle([`${"나".repeat(150)}.pdf`, "b.pdf"], null);
+    expect(Array.from(many).length).toBeLessThanOrEqual(CLASS_MATERIAL_TITLE_MAX);
+    expect(many.endsWith(" 외 1개")).toBe(true);
+  });
+});
+
+describe("materialBadge · isViewableKind · sortMaterialFiles", () => {
+  const f = (id: number, file_name: string, sort_order = 0, content_type: string | null = null) => ({ id, file_name, content_type, sort_order, file_size: 1 });
+
+  it("글만 → 글 · 하나 → 그 종류 · 여럿 → 파일 N", () => {
+    expect(materialBadge([])).toBe("글");
+    expect(materialBadge([f(1, "a.pdf")])).toBe("PDF");
+    expect(materialBadge([f(1, "a.pdf"), f(2, "b.mp3")])).toBe("파일 2");
+  });
+
+  it("그 자리에서 여는 것은 PDF · 그림뿐", () => {
+    expect(isViewableKind("PDF")).toBe(true);
+    expect(isViewableKind("그림")).toBe(true);
+    expect(isViewableKind("한글")).toBe(false);
+    expect(isViewableKind("음원")).toBe(false);
+  });
+
+  it("올린 순서(sort_order), 같으면 먼저 넣은 것 — 원본은 건드리지 않는다", () => {
+    const list = [f(5, "c", 2), f(3, "a", 0), f(9, "b", 0)];
+    expect(sortMaterialFiles(list).map((x) => x.id)).toEqual([3, 9, 5]);
+    expect(list.map((x) => x.id)).toEqual([5, 3, 9]);
+    expect(sortMaterialFiles(null)).toEqual([]);
   });
 });
 

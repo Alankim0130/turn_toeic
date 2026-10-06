@@ -77,7 +77,8 @@ export default async function ClassMaterialsAdminPage({ searchParams }: { search
   /** 칸 숫자 = 그 칸에 올라온 자료 수 (다른 축은 지금 보고 있는 값 그대로 — 숙제점검과 같은 규칙) */
   const count = async (l: number, s: MaterialSubject, b: RoundSet) =>
     (await supabase.from("class_materials").select("id", { count: "exact", head: true }).eq("level", l).eq("subject", s).eq("book_set", b)).count ?? 0;
-  const cols = "id, level, subject, book_set, seq, title, note, file_name, file_size, content_type, created_at, updated_at";
+  // 파일은 자료마다 0 ~ 20개 (class_material_files, 2026-10-06) — 줄이 순서대로 정렬한다
+  const cols = "id, level, subject, book_set, seq, title, note, created_at, updated_at, files:class_material_files(id, file_name, file_size, content_type, sort_order)";
 
   const [{ data: rows, error }, { data: loose }, levelCounts, cellCounts, { data: sectionRows }, { data: noticeRows }] = await Promise.all([
     supabase.from("class_materials").select(cols).eq("level", level).eq("subject", subject).eq("book_set", set).order("seq").order("created_at"),
@@ -153,7 +154,8 @@ export default async function ClassMaterialsAdminPage({ searchParams }: { search
         <section className="card space-y-1 p-4 text-sm text-slate sm:p-5">
           <p>
             <span className="font-black text-ink">{cellLabel}</span> 자료 <strong className="text-brand-600">{list.length}</strong>개 · 회차마다 올리면 이 과정을 듣는 학생에게{" "}
-            <strong className="text-ink">그 반의 회차 수업일</strong>에 하나씩 열려요. 한 번 올리면 이 과정이 돌아오는 달마다 다시 써요.
+            <strong className="text-ink">그 반의 회차 수업일</strong>에 하나씩 열려요. 한 번 올리면 이 과정이 돌아오는 달마다 다시 써요. 자료 하나에 파일을 여러 개
+            붙여도 되고, 파일 없이 글(안내 · 스크립트)만 올려도 돼요.
           </p>
           {term &&
             (sections.length > 0 ? (
