@@ -207,8 +207,13 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
 
 /** 둥근 글꼴에서 `강` 이 읽히는 꼴 — 칸 라벨 안에서만 쓴다 */
 const GANG = "[강남감]";
-/** `수강시간` 칸 라벨 — 그대로 또는 글꼴 오인식(`수남시반`) */
-const STUDY_TIME_LABEL = new RegExp(`수${GANG}시[간반]`);
+/**
+ * `시간` 이 읽히는 꼴 — 그대로 · 둥근 글꼴의 `시반` · **PC · 태블릿 화면 글꼴의 `신관`** (2026-10-06 실측 — PC 수강증을 원본 크기로 읽어도,
+ * 카드를 키워 읽어도 `수강신관` 이 나왔다. `수강시간` 과 두 글자가 달라 편집거리 1 로는 못 받는다). 메뉴의 `수강신청` 은 여기 들지 않는다
+ */
+const SIGAN = "(?:시[간반]|신관)";
+/** `수강시간` 칸 라벨 — 그대로 또는 글꼴 오인식(`수남시반` · `수강신관`) */
+const STUDY_TIME_LABEL = new RegExp(`수${GANG}${SIGAN}`);
 /** `강의실` 칸 라벨 — 그대로 또는 글꼴 오인식(`감의실`) */
 const ROOM_LABEL = new RegExp(`${GANG}의실`, "g");
 
@@ -431,9 +436,11 @@ export function parseReceiptMonths(text: string): { year: number; month: number 
  * `09월 과정` · `9월과정` → 9. 수강증 화면 맨 위 배지 (2026-09-16 샘플).
  * 공백을 지운 원문에서는 바로 앞 줄의 캡처 시각 초(`…19:27:43`)가 `09` 에 붙어 `4309월과정` 이 되므로
  * "앞에 숫자가 없어야 한다" 는 조건을 두면 못 읽는다 — 가장 왼쪽에서 `월 과정` 에 붙는 한두 자리만 본다.
+ * **PC · 태블릿 화면의 배지는 `월` 이 `뭘` 로 자주 읽힌다** (2026-10-06 실측 — 카드 변형을 여러 크기로 읽으면 절반쯤 `10뭘 과정`).
+ * 숫자 뒤 `뭘 과정` 은 배지 말고는 나올 곳이 없어 같은 낱말로 본다. `개`(3개 과정) 같은 다른 글자는 여전히 아니다
  */
 export function parseCourseMonth(text: string): number | null {
-  const m = text.match(/(\d{1,2})\s*월\s*과정/);
+  const m = text.match(/(\d{1,2})\s*[월뭘]\s*과정/);
   if (!m) return null;
   const month = Number(m[1]);
   return month >= 1 && month <= 12 ? month : null;
@@ -549,7 +556,7 @@ export function parseReceipt(raw: string): ParsedReceipt {
   else if (modeEvidence === "live") warnings.push("강의실 칸을 못 읽어 칸 밖의 글자로 불라방으로 봤어요");
 
   // 한 글자 오인식은 봐준다 (2026-09-30 실측 `수갈생` · `수강시관`) — 수강생은 줄 첫머리 규칙(`studentLabelEnd`), 네 글자 라벨은 편집거리 1.
-  // `수강센터` ↔ `수강시간` 은 두 글자가 달라 서로를 대신하지 못한다. 둥근 글꼴의 `수남시반` 은 `STUDY_TIME_LABEL` 이 받는다 (2026-10-06 — 두 글자가 달라 편집거리 1 로는 못 받는다)
+  // `수강센터` ↔ `수강시간` 은 두 글자가 달라 서로를 대신하지 못한다. 둥근 글꼴의 `수남시반` · PC 글꼴의 `수강신관` 은 `STUDY_TIME_LABEL` 이 받는다 (2026-10-06 — 두 글자가 달라 편집거리 1 로는 못 받는다)
   const card =
     text.split("\n").some((l) => studentLabelEnd(l.replace(/\s+/g, "")) >= 0) &&
     CARD_LABELS.filter((label) => label !== "수강생").every(
@@ -618,7 +625,7 @@ export function parseReceipt(raw: string): ParsedReceipt {
   // 수업 시간은 **수강시간 칸의 값**이다 (2026-09-22). 칸을 못 읽었을 때 시간이 하나뿐이면 그것을 쓰고,
   // 여럿이면(배너·다른 글자) 어느 것인지 모르니 비워 둔다 — 첫 번째를 골라 엉뚱한 시간대 반에 붙이지 않게
   const times = parseTimes(compact);
-  const labeled = compact.match(new RegExp(String.raw`수${GANG}시[간반][^\d]{0,3}(\d{1,2}:\d{2}~\d{1,2}:\d{2})`));
+  const labeled = compact.match(new RegExp(String.raw`수${GANG}${SIGAN}[^\d]{0,3}(\d{1,2}:\d{2}~\d{1,2}:\d{2})`));
   const time = (labeled ? parseTimes(labeled[1])[0] : undefined) ?? (times.length === 1 ? times[0] : null);
   if (times.length === 0) warnings.push("수업 시간(HH:MM~HH:MM)을 찾지 못했어요");
   else if (!time) warnings.push(`수업 시간이 여러 개라 어느 것인지 모르겠어요: ${times.map((t) => t.timeBlock).join(", ")}`);
