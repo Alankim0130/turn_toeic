@@ -12,9 +12,12 @@ import {
   defaultMaterialTitle,
   isMaterialSubject,
   materialFolder,
+  materialLinks,
   noteHasText,
   noteTooLong,
+  parseMaterialLinks,
   sortMaterialFiles,
+  type LinkInput,
 } from "@/lib/class-materials";
 import { isRoundSet, ROUND_MAX } from "@/lib/class-rounds";
 
@@ -31,7 +34,7 @@ function errorMessage(error: { code?: string; message?: string } | null, fallbac
   if (error.code === "42501") return "권한이 없어요. 강사·관리자 계정으로 다시 로그인해 주세요.";
   if (error.code === "23503") return "그 레벨이 레벨 목록에 없어요. 새로고침한 뒤 다시 골라 주세요.";
   if (error.code === "23505") return "같은 파일이 이미 올라가 있어요. 새로고침해 주세요.";
-  if (error.code === "23514") return "입력값이 규칙에 맞지 않아요 (제목 100자 · 안내 5만 자 · 과정 A/B · 회차 1~30).";
+  if (error.code === "23514") return "입력값이 규칙에 맞지 않아요 (제목 100자 · 안내 5만 자 · 과정 A/B · 회차 1~30 · 링크 20개).";
   return fallback;
 }
 
@@ -50,10 +53,12 @@ const fileRows = (materialId: number, files: UploadedFile[], start = 0) =>
  * 수업자료실 자료 저장 (2026-10-05 Alan — "레벨별 구분과 RC, LC가 구분되어야해" → 같은 날 "A/B 과정 전부다 나눠서" · 회차마다 수업일에 열기 →
  * 2026-10-06 "파일업로드를 안하고 글만 적어서 올릴수도 있도록 … 파일을 한번에 여러개 올릴 수 있도록").
  * 강사·관리자만 — 조교 화면이 아니다.
- * **자료 하나 = 제목 + 안내 + 파일 0 ~ 20개** (게시판 글 하나). 파일은 브라우저가 먼저 저장소(`class-materials/{레벨}-{과목}/…`)에 올리고,
- * 여기서는 자료 행과 파일 행(class_material_files)만 만든다/고친다.
- *  - id 없음: 새 자료 — 파일이 없으면 안내에 글이 있어야 한다
- *  - id 있음: 레벨 · 과목 · 과정 · 회차 · 제목 · 안내 수정 + 새 파일 더하기(`files`) + 파일 빼기(`removeFileIds` — 저장소에서도 지운다)
+ * **자료 하나 = 제목 + 안내 + 파일 0 ~ 20개 + 링크 0 ~ 20개** (게시판 글 하나). 파일은 브라우저가 먼저 저장소(`class-materials/{레벨}-{과목}/…`)에 올리고,
+ * 여기서는 자료 행과 파일 행(class_material_files)만 만든다/고친다. 링크는 자료 행의 `links` 칸이라 함께 저장된다 (2026-10-06 Alan — "유튜브 링크를 … 여러개").
+ *  - id 없음: 새 자료 — 글 · 파일 · 링크 중 하나는 있어야 한다
+ *  - id 있음: 레벨 · 과목 · 과정 · 회차 · 제목 · 안내 · 링크 수정 + 새 파일 더하기(`files`) + 파일 빼기(`removeFileIds` — 저장소에서도 지운다).
+ *    `links` 를 안 보내면(undefined) 링크는 그대로 둔다 — 보내면 그 목록으로 갈아 끼운다(빈 배열이면 다 뺀다)
+ * 링크는 폼과 같은 `parseMaterialLinks` 로 다시 읽는다 — 화면이 보낸 값을 믿지 않는다 (http · https 만, 20개, 이름 100자).
  * **과정(A/B)과 회차는 늘 받는다** — 없으면 학생에게 영영 열리지 않는다 (칸이 생기기 전에 올린 자료도 수정하면서 정한다).
  * 로그인한 사람의 세션으로 쓴다 — RLS(`class_materials` · `class_material_files: 스태프 …`)가 한 번 더 막는다.
  * 제목을 비우면 `defaultMaterialTitle` — 첫 파일 이름(여럿이면 "… 외 N개"), 글만이면 안내 첫 줄.
@@ -71,6 +76,8 @@ export async function saveClassMaterial(input: {
   files?: UploadedFile[] | null;
   /** 고칠 때 뺄 파일 id (그 자료의 파일만 받는다) */
   removeFileIds?: number[] | null;
+  /** 링크 목록 (2026-10-06) — 고칠 때 안 보내면 그대로 둔다 */
+  links?: LinkInput[] | null;
 }): Promise<ClassMaterialResult> {
   const { user, profile } = await requireStaff();
   // 테스트 등급이면 RLS 가 학생으로 본다 — 저장이 "권한 없음" 으로 막히기 전에 까닭을 말한다
@@ -87,6 +94,10 @@ export async function saveClassMaterial(input: {
   if (!Number.isInteger(seq) || seq < 1 || seq > ROUND_MAX) return { ok: false, error: `회차를 1~${ROUND_MAX} 사이로 골라 주세요.` };
   const noteError = noteTooLong(note);
   if (noteError) return { ok: false, error: noteError };
+  // 링크 — 안 보냈으면(undefined) null: 새 자료는 링크 없음, 고칠 때는 그대로
+  const parsedLinks = input.links === undefined ? null : parseMaterialLinks(input.links);
+  if (parsedLinks && !parsedLinks.ok) return { ok: false, error: parsedLinks.error };
+  const newLinks = parsedLinks?.links ?? null;
 
   // 새 파일 — 브라우저가 고른 레벨 · 과목 폴더에 올렸어야 한다 (경로 조작 · 다른 버킷 경로 방지). 같은 경로가 두 번 오면 한 번만
   const files = [...new Map((input.files ?? []).map((f) => [f?.path, f])).values()];
@@ -103,7 +114,8 @@ export async function saveClassMaterial(input: {
   const supabase = await createClient();
 
   if (!input.id) {
-    if (files.length === 0 && !noteHasText(note)) return { ok: false, error: "파일을 고르거나 안내 · 스크립트를 적어 주세요." };
+    const links = newLinks ?? [];
+    if (files.length === 0 && links.length === 0 && !noteHasText(note)) return { ok: false, error: "파일 · 링크를 넣거나 안내 · 스크립트를 적어 주세요." };
     if (files.length > CLASS_MATERIAL_FILES_MAX) return { ok: false, error: `파일은 한 자료에 ${CLASS_MATERIAL_FILES_MAX}개까지 올릴 수 있어요.` };
     const { data: created, error } = await supabase
       .from("class_materials")
@@ -112,8 +124,9 @@ export async function saveClassMaterial(input: {
         subject,
         book_set: bookSet,
         seq,
-        title: typed || defaultMaterialTitle(files.map((f) => f.name), note),
+        title: typed || defaultMaterialTitle(files.map((f) => f.name), note, links),
         note: note || null,
+        links,
         uploaded_by: user.id,
       })
       .select("id")
@@ -134,7 +147,7 @@ export async function saveClassMaterial(input: {
   const id = Number(input.id);
   if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "잘못된 요청이에요." };
   const [{ data: old }, { data: oldFiles, error: oldFilesError }] = await Promise.all([
-    supabase.from("class_materials").select("id").eq("id", id).maybeSingle(),
+    supabase.from("class_materials").select("id, links").eq("id", id).maybeSingle(),
     supabase.from("class_material_files").select("id, file_path, file_name, sort_order").eq("material_id", id),
   ]);
   if (!old) return { ok: false, error: "자료를 찾을 수 없어요. 새로고침해 주세요." };
@@ -144,7 +157,10 @@ export async function saveClassMaterial(input: {
   const current = sortMaterialFiles(oldFiles ?? []);
   const removing = current.filter((f) => removeIds.has(f.id));
   const staying = current.filter((f) => !removeIds.has(f.id));
-  if (staying.length + files.length === 0 && !noteHasText(note)) return { ok: false, error: "파일을 다 빼려면 안내 · 스크립트를 적어 주세요. 파일이나 글 중 하나는 있어야 해요." };
+  const links = newLinks ?? materialLinks(old.links);
+  if (staying.length + files.length + links.length === 0 && !noteHasText(note)) {
+    return { ok: false, error: "파일 · 링크를 다 빼려면 안내 · 스크립트를 적어 주세요. 글 · 파일 · 링크 중 하나는 있어야 해요." };
+  }
   if (staying.length + files.length > CLASS_MATERIAL_FILES_MAX) return { ok: false, error: `파일은 한 자료에 ${CLASS_MATERIAL_FILES_MAX}개까지예요. 몇 개를 빼고 더해 주세요.` };
 
   // 1) 새 파일 행 — 실패하면 아무것도 바뀌지 않은 채 돌아간다
@@ -164,8 +180,10 @@ export async function saveClassMaterial(input: {
       subject,
       book_set: bookSet,
       seq,
-      title: typed || defaultMaterialTitle([...staying.map((f) => f.file_name), ...files.map((f) => f.name)], note),
+      title: typed || defaultMaterialTitle([...staying.map((f) => f.file_name), ...files.map((f) => f.name)], note, links),
       note: note || null,
+      // 링크를 보냈을 때만 갈아 끼운다 (안 보냈으면 칸을 건드리지 않는다)
+      ...(newLinks ? { links: newLinks } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)

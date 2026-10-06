@@ -387,6 +387,7 @@ export type Database = {
           created_at: string
           id: number
           level: number
+          links: Json
           note: string | null
           seq: number | null
           subject: string
@@ -399,6 +400,7 @@ export type Database = {
           created_at?: string
           id?: number
           level: number
+          links?: Json
           note?: string | null
           seq?: number | null
           subject: string
@@ -411,6 +413,7 @@ export type Database = {
           created_at?: string
           id?: number
           level?: number
+          links?: Json
           note?: string | null
           seq?: number | null
           subject?: string

@@ -3,20 +3,30 @@ import { describe, expect, it } from "vitest";
 import {
   CLASS_MATERIAL_BUCKET,
   CLASS_MATERIAL_FILES_MAX,
+  CLASS_MATERIAL_LINK_LABEL_MAX,
+  CLASS_MATERIAL_LINK_URL_MAX,
+  CLASS_MATERIAL_LINKS_MAX,
   CLASS_MATERIAL_MAX_BYTES,
   CLASS_MATERIAL_NOTE_MAX,
   CLASS_MATERIAL_TITLE_MAX,
   charCount,
   defaultMaterialTitle,
+  draftLinks,
   fileKindLabel,
   initialSubject,
   isMaterialSubject,
   isViewableKind,
+  linkCountLabel,
+  linkTitle,
   materialAccess,
   materialBadge,
+  materialLinks,
   MATERIAL_SUBJECTS,
   materialFolder,
   materialObjectPath,
+  normalizeLinkUrl,
+  parseMaterialLinks,
+  shortLinkUrl,
   NOTE_FOLD_CHARS,
   NOTE_FOLD_LINES,
   NOTE_PREVIEW_CHARS,
@@ -41,6 +51,8 @@ const NOTE_SQL = readFileSync("supabase/migrations/20261005150000_class_material
 const FILES_SQL = readFileSync("supabase/migrations/20261006100000_class_material_files.sql", "utf8");
 /** 그 다음 단계 (contract) — 새 앱이 뜬 뒤 옛 파일 칸을 지운다 */
 const CONTRACT_SQL = readFileSync("supabase/migrations/20261006110000_class_material_files_contract.sql", "utf8");
+/** 자료 하나에 링크 여러 개 (2026-10-06 Alan — "유튜브 링크를 한번씩 … 링크를 여러개 올릴 수 있도록") */
+const LINKS_SQL = readFileSync("supabase/migrations/20261006143000_class_material_links.sql", "utf8");
 
 describe("DB 와 같은 값", () => {
   it("과목은 rc · lc 둘이고 순서는 RC 먼저 (DB check 와 같다)", () => {
@@ -328,5 +340,145 @@ describe("noteTooLong — 폼과 서버가 같은 말로 막는다", () => {
     expect("😀".length).toBe(2);
     expect(noteTooLong("😀".repeat(CLASS_MATERIAL_NOTE_MAX))).toBeNull();
     expect(noteTooLong("😀".repeat(CLASS_MATERIAL_NOTE_MAX + 1))).toContain("(50,001자)");
+  });
+});
+
+describe("링크 — 자료 하나에 0 ~ 20개 (2026-10-06 Alan '유튜브 링크를 … 여러개', 마이그레이션 20261006143000)", () => {
+  it("DB check 와 같은 상한 — 20개 · 주소 2,000자(http/https) · 이름 100자", () => {
+    expect(CLASS_MATERIAL_LINKS_MAX).toBe(20);
+    expect(LINKS_SQL).toContain(`jsonb_array_length(p_links) <= ${CLASS_MATERIAL_LINKS_MAX}`);
+    expect(LINKS_SQL).toContain(`char_length(e.v ->> 'url') > ${CLASS_MATERIAL_LINK_URL_MAX}`);
+    expect(LINKS_SQL).toContain(`char_length(coalesce(e.v ->> 'label', '')) > ${CLASS_MATERIAL_LINK_LABEL_MAX}`);
+    expect(LINKS_SQL).toContain("'^https?://[^[:space:]]+$'");
+    // 칸은 비어 있는 배열로 시작한다 — 있던 자료는 그대로 '링크 없음' 이다
+    expect(LINKS_SQL).toContain("add column if not exists links jsonb not null default '[]'::jsonb");
+    // check 는 저장하는 강사 세션의 권한으로 함수를 부른다 — 실행 권한이 없으면 저장이 통째로 막힌다
+    expect(LINKS_SQL).toContain("grant execute on function private.class_material_links_ok(jsonb) to authenticated, service_role");
+    // 다시 돌려도 실패하지 않게
+    expect(LINKS_SQL).toContain("drop constraint if exists class_materials_links_check");
+  });
+
+  it("normalizeLinkUrl — https:// 를 빼먹으면 붙이고, http(s) 가 아니거나 이상한 주소는 받지 않는다", () => {
+    expect(normalizeLinkUrl("  https://youtu.be/dQw4w9WgXcQ?si=abc  ")).toBe("https://youtu.be/dQw4w9WgXcQ?si=abc");
+    expect(normalizeLinkUrl("youtu.be/dQw4w9WgXcQ")).toBe("https://youtu.be/dQw4w9WgXcQ");
+    expect(normalizeLinkUrl("www.youtube.com/watch?v=dQw4w9WgXcQ")).toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+    expect(normalizeLinkUrl("http://blog.naver.com/abc/1")).toBe("http://blog.naver.com/abc/1");
+    expect(normalizeLinkUrl("HTTPS://EXAMPLE.COM/A")).toBe("https://example.com/A");
+    for (const bad of ["", "   ", "javascript:alert(1)", "data:text/html,x", "ftp://a.com/x", "mailto:a@b.com", "http://localhost:3000", "https://youtube.com@evil.com/x", "그냥 글", "youtube"]) {
+      expect(normalizeLinkUrl(bad), bad).toBeNull();
+    }
+    expect(normalizeLinkUrl(`https://a.com/${"a".repeat(CLASS_MATERIAL_LINK_URL_MAX)}`)).toBeNull();
+  });
+
+  it("parseMaterialLinks — 빈 줄은 건너뛰고, 주소 없는 이름 · 못 읽는 주소는 그 줄 번호와 함께 막는다", () => {
+    expect(parseMaterialLinks(null)).toEqual({ ok: true, links: [] });
+    expect(
+      parseMaterialLinks([
+        { url: "youtu.be/dQw4w9WgXcQ", label: "  1강\n해설   영상 " },
+        { url: "", label: "" },
+        { url: "https://blog.naver.com/x", label: "" },
+      ]),
+    ).toEqual({
+      ok: true,
+      links: [
+        { url: "https://youtu.be/dQw4w9WgXcQ", label: "1강 해설 영상" },
+        { url: "https://blog.naver.com/x", label: null },
+      ],
+    });
+    expect(parseMaterialLinks([{ url: "", label: "이름만" }])).toMatchObject({ ok: false, index: 0, error: expect.stringContaining("1번째 링크에 주소가 없어요") });
+    expect(parseMaterialLinks([{ url: "https://a.com" }, { url: "javascript:alert(1)" }])).toMatchObject({ ok: false, index: 1, error: expect.stringContaining("2번째 링크 주소") });
+    expect(parseMaterialLinks([{ url: "https://a.com", label: "가".repeat(CLASS_MATERIAL_LINK_LABEL_MAX + 1) }])).toMatchObject({ ok: false, index: 0 });
+    expect(parseMaterialLinks([{ url: "https://a.com", label: "가".repeat(CLASS_MATERIAL_LINK_LABEL_MAX) }])).toMatchObject({ ok: true });
+    // 화면이 보낸 이상한 값도 견딘다 (서버 액션이 그대로 받는다)
+    expect(parseMaterialLinks([{ url: 5 } as never, null as never, { url: "https://a.com", label: 3 } as never])).toEqual({ ok: true, links: [{ url: "https://a.com/", label: null }] });
+  });
+
+  it("같은 주소는 한 번만 (먼저 적은 이름) · 20개를 넘으면 막는다", () => {
+    const r = parseMaterialLinks([
+      { url: "https://youtu.be/dQw4w9WgXcQ", label: "처음" },
+      { url: "youtu.be/dQw4w9WgXcQ", label: "두 번째" },
+    ]);
+    expect(r).toEqual({ ok: true, links: [{ url: "https://youtu.be/dQw4w9WgXcQ", label: "처음" }] });
+    const many = Array.from({ length: CLASS_MATERIAL_LINKS_MAX + 1 }, (_, k) => ({ url: `https://a.com/${k}` }));
+    expect(parseMaterialLinks(many)).toMatchObject({ ok: false, error: "링크는 한 자료에 20개까지 올릴 수 있어요." });
+    expect(parseMaterialLinks(many.slice(0, CLASS_MATERIAL_LINKS_MAX))).toMatchObject({ ok: true });
+  });
+
+  it("materialLinks — DB 값이 이상해도 http(s) 주소만 남긴다 (화면 href 의 마지막 방어선)", () => {
+    expect(materialLinks(null)).toEqual([]);
+    expect(materialLinks({ url: "https://a.com" })).toEqual([]);
+    expect(
+      materialLinks([
+        { url: "https://youtu.be/dQw4w9WgXcQ", label: "영상" },
+        { url: "javascript:alert(1)", label: "x" },
+        { url: "https://a.com/x y" },
+        "https://b.com",
+        { url: "http://c.com", label: "  " },
+      ]),
+    ).toEqual([
+      { url: "https://youtu.be/dQw4w9WgXcQ", label: "영상" },
+      { url: "http://c.com", label: null },
+    ]);
+  });
+
+  it("linkTitle · shortLinkUrl — 이름이 없으면 유튜브 영상 · 사이트 이름, 여럿이면 번호", () => {
+    expect(linkTitle({ url: "https://youtu.be/dQw4w9WgXcQ", label: "1강 해설" }, 0, 3)).toBe("1강 해설");
+    expect(linkTitle({ url: "https://youtu.be/dQw4w9WgXcQ", label: null }, 0, 1)).toBe("유튜브 영상");
+    expect(linkTitle({ url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", label: null }, 1, 2)).toBe("유튜브 영상 2");
+    expect(linkTitle({ url: "https://www.youtube.com/@winnertoeic", label: null }, 0, 1)).toBe("유튜브");
+    expect(linkTitle({ url: "https://www.blog.naver.com/x", label: null }, 2, 3)).toBe("blog.naver.com 3");
+    expect(shortLinkUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ")).toBe("youtube.com/watch?v=dQw4w9WgXcQ");
+    expect(shortLinkUrl("http://a.com/")).toBe("a.com");
+  });
+
+  it("defaultMaterialTitle — 파일이 먼저, 그다음 이름 붙인 링크, 안내 첫 줄, 이름 없는 링크", () => {
+    const yt = { url: "https://youtu.be/dQw4w9WgXcQ", label: null };
+    const named = { url: "https://youtu.be/aaaaaaaaaaa", label: "Part 5 해설 강의" };
+    expect(defaultMaterialTitle(["1강.pdf"], "안내", [named])).toBe("1강");
+    expect(defaultMaterialTitle([], "꼭 보고 오세요", [yt, named])).toBe("Part 5 해설 강의 외 1개");
+    expect(defaultMaterialTitle([], "꼭 보고 오세요", [yt])).toBe("꼭 보고 오세요");
+    expect(defaultMaterialTitle([], null, [yt])).toBe("유튜브 영상");
+    expect(defaultMaterialTitle([], null, [yt, { url: "https://a.com", label: null }])).toBe("유튜브 영상 외 1개");
+    const longLabel = defaultMaterialTitle([], null, [{ url: "https://a.com", label: "가".repeat(100) }, yt]);
+    expect(Array.from(longLabel).length).toBeLessThanOrEqual(CLASS_MATERIAL_TITLE_MAX);
+    expect(longLabel.endsWith(" 외 1개")).toBe(true);
+  });
+
+  it("draftLinks — 폼의 제목 자리 표시는 지금 읽히는 줄만 (못 읽는 줄 · 빈 줄 · 같은 주소는 건너뛴다)", () => {
+    expect(
+      draftLinks([
+        { url: "youtu.be/dQw4w9WgXcQ", label: "1강" },
+        { url: "아직 치는 중", label: "" },
+        { url: "", label: "이름만" },
+        { url: "https://youtu.be/dQw4w9WgXcQ", label: "또" },
+        { url: "https://a.com", label: "" },
+      ]),
+    ).toEqual([
+      { url: "https://youtu.be/dQw4w9WgXcQ", label: "1강" },
+      { url: "https://a.com/", label: null },
+    ]);
+    expect(draftLinks([])).toEqual([]);
+  });
+
+  it("linkCountLabel — 다 유튜브 영상이면 영상 N개, 아니면 링크 N개", () => {
+    expect(linkCountLabel([{ url: "https://youtu.be/dQw4w9WgXcQ", label: null }])).toBe("영상 1개");
+    expect(linkCountLabel([{ url: "https://youtu.be/dQw4w9WgXcQ", label: null }, { url: "https://a.com", label: null }])).toBe("링크 2개");
+  });
+
+  it("materialBadge — 링크만이면 영상 · 유튜브 · 링크, 파일과 함께면 자료 N", () => {
+    const pdf = { id: 1, file_name: "a.pdf", content_type: null, sort_order: 0, file_size: 1 };
+    const yt = { url: "https://youtu.be/dQw4w9WgXcQ", label: null };
+    const yt2 = { url: "https://www.youtube.com/watch?v=aaaaaaaaaaa", label: null };
+    const channel = { url: "https://www.youtube.com/@winnertoeic", label: null };
+    const web = { url: "https://blog.naver.com/x", label: null };
+    expect(materialBadge([], [yt])).toBe("영상");
+    expect(materialBadge([], [yt, yt2])).toBe("영상 2");
+    expect(materialBadge([], [channel])).toBe("유튜브");
+    expect(materialBadge([], [web])).toBe("링크");
+    expect(materialBadge([], [yt, web])).toBe("링크 2");
+    expect(materialBadge([pdf], [yt])).toBe("자료 2");
+    // 링크가 없으면 예전 그대로
+    expect(materialBadge([pdf], [])).toBe("PDF");
+    expect(materialBadge([], [])).toBe("글");
   });
 });

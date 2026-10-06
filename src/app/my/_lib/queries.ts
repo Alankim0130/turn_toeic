@@ -5,7 +5,7 @@ import { todayKST } from "@/lib/utils";
 import { week5SectionIds } from "@/lib/week5";
 import type { EnrollSection } from "@/lib/enroll-options";
 import { fetchOpenEnrollSections } from "@/lib/open-sections";
-import { isMaterialSubject, materialAccess, type MaterialSubject } from "@/lib/class-materials";
+import { isMaterialSubject, materialAccess, materialLinks, type MaterialSubject } from "@/lib/class-materials";
 import { cellKey, cellLevels, isRoundOpen, isRoundSet, roundCells, roundDates, roundKey } from "@/lib/class-rounds";
 import { clipToOwnRange } from "@/lib/two-week";
 import { noticeVisible, scopeOf } from "@/lib/class-notices";
@@ -557,15 +557,16 @@ export async function getMyClassMaterials() {
   if (access.length === 0) return { access, dates, materials: [] };
   const { data } = await supabase
     .from("class_materials")
-    // 파일은 자료마다 0 ~ 20개 (class_material_files, 2026-10-06) — 자료가 보이는 사람에게만 내려온다 (조회 정책이 부모 자료를 본다)
-    .select("id, level, subject, book_set, seq, title, note, created_at, updated_at, files:class_material_files(id, file_name, file_size, content_type, sort_order)")
+    // 파일은 자료마다 0 ~ 20개 (class_material_files, 2026-10-06) — 자료가 보이는 사람에게만 내려온다 (조회 정책이 부모 자료를 본다).
+    // 링크(links)는 자료 행의 칸이라 자료와 같은 날 함께 열린다 (같은 날 Alan "유튜브 링크를 … 여러개")
+    .select("id, level, subject, book_set, seq, title, note, links, created_at, updated_at, files:class_material_files(id, file_name, file_size, content_type, sort_order)")
     .in("level", [...new Set([...bySubject.rc, ...bySubject.lc])])
     .order("created_at", { ascending: false });
   const today = todayKST();
   // 과정 · 회차가 정해지고, 그 회차의 내 수업일이 오늘이거나 지난 자료만 (과정 · 회차가 없는 옛 자료는 학생에게 보이지 않는다)
   const materials = (data ?? []).flatMap((m) =>
     isMaterialSubject(m.subject) && isRoundSet(m.book_set) && m.seq != null && isRoundOpen(dates.get(roundKey(m.level, m.subject, m.book_set, m.seq)), today)
-      ? [{ ...m, subject: m.subject, book_set: m.book_set, seq: m.seq }]
+      ? [{ ...m, subject: m.subject, book_set: m.book_set, seq: m.seq, links: materialLinks(m.links) }]
       : [],
   );
   return { access, dates, materials };

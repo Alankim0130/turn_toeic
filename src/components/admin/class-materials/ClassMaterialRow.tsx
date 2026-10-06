@@ -6,21 +6,28 @@ import { deleteClassMaterial, saveClassMaterial } from "@/app/admin/class-materi
 import { Icon } from "@/components/ui/Icon";
 import { MaterialNote } from "@/components/class-materials/MaterialNote";
 import { MaterialFileList } from "@/components/class-materials/MaterialFileList";
+import { MaterialLinkList } from "@/components/class-materials/MaterialLinkList";
 import { MaterialFilePicker, type PickedFile } from "./MaterialFilePicker";
+import { linkRowsOf, MaterialLinkEditor, type LinkRow } from "./MaterialLinkEditor";
 import { NoteTextarea } from "./NoteTextarea";
 import {
   CLASS_MATERIAL_BUCKET,
   CLASS_MATERIAL_FILES_MAX,
+  CLASS_MATERIAL_LINKS_MAX,
   CLASS_MATERIAL_TITLE_MAX,
   defaultMaterialTitle,
+  draftLinks,
   fileKindLabel,
   isMaterialSubject,
+  linkCountLabel,
   MATERIAL_SUBJECT_LABEL,
   MATERIAL_SUBJECTS,
   materialBadge,
+  materialLinks,
   materialObjectPath,
   noteHasText,
   noteTooLong,
+  parseMaterialLinks,
   sortMaterialFiles,
   type MaterialFile,
   type MaterialSubject,
@@ -42,9 +49,14 @@ export type ClassMaterialLite = {
   note: string | null;
   /** 붙은 파일 0 ~ 20개 (class_material_files, 2026-10-06) — 0이면 글만 올린 자료 */
   files: MaterialFile[] | null;
+  /** 링크 0 ~ 20개 (class_materials.links jsonb, 2026-10-06) — 읽은 그대로 받아 `materialLinks` 가 고른다 */
+  links: unknown;
   created_at: string;
   updated_at: string;
 };
+
+/** 넓은 화면의 줄 자리 — 제목 줄 다음부터 안내 · 파일 목록 · 링크 목록이 있는 것만 차례로 선다 (빈 줄이 남으면 격자 간격이 두 번 들어간다) */
+const SM_ROW = ["sm:row-start-2", "sm:row-start-3", "sm:row-start-4"] as const;
 
 /**
  * 수업자료실 자료 한 줄 (2026-10-05) — 받기 · 수정 · 삭제.
@@ -61,9 +73,11 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
   const [error, setError] = useState<string | null>(null);
   const [pickProblem, setPickProblem] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  // 수정 — 뺄 파일(되살릴 수 있게 표시만) · 새로 더할 파일
+  // 수정 — 뺄 파일(되살릴 수 있게 표시만) · 새로 더할 파일 · 링크 칸
   const [removed, setRemoved] = useState<Set<number>>(() => new Set());
   const [added, setAdded] = useState<PickedFile[]>([]);
+  const [linkRows, setLinkRows] = useState<LinkRow[]>([]);
+  const [badLink, setBadLink] = useState<number | null>(null);
   const levelRef = useRef<HTMLSelectElement>(null);
   const subjectRef = useRef<HTMLSelectElement>(null);
   const setRef = useRef<HTMLSelectElement>(null);
@@ -72,22 +86,31 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
   const noteRef = useRef<HTMLTextAreaElement>(null);
 
   const files = sortMaterialFiles(item.files);
+  const links = materialLinks(item.links);
   const single = files.length === 1 ? files[0] : null;
   const edited = item.updated_at.slice(0, 16) !== item.created_at.slice(0, 16);
   const staying = files.filter((f) => !removed.has(f.id));
   const totalBytes = files.reduce((n, f) => n + (f.file_size ?? 0), 0);
   const meta = [
-    single ? single.file_name : files.length > 1 ? `파일 ${files.length}개` : "글만",
+    single ? single.file_name : files.length > 1 ? `파일 ${files.length}개` : null,
+    links.length > 0 ? linkCountLabel(links) : null,
+    files.length === 0 && links.length === 0 ? "글만" : null,
     files.length > 0 && totalBytes > 0 ? formatBytes(totalBytes) : null,
     `${shortDateTimeKST(item.created_at)} 올림`,
     edited ? `${shortDateTimeKST(item.updated_at)} 고침` : null,
   ].filter(Boolean);
+  // 넓은 화면에서 안내 → 파일 목록 → 링크 목록이 차례로 선다 (보기 모드에서만 그린다)
+  const showNote = mode !== "edit" && !!item.note;
+  const showFiles = mode !== "edit" && files.length > 1;
+  const linksRow = SM_ROW[(showNote ? 1 : 0) + (showFiles ? 1 : 0)];
 
   function startEdit() {
     setError(null);
     setPickProblem(null);
     setRemoved(new Set());
     setAdded([]);
+    setLinkRows(linkRowsOf(links));
+    setBadLink(null);
     setMode("edit");
   }
 
@@ -104,7 +127,14 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
     const note = noteRef.current?.value ?? "";
     const noteError = noteTooLong(note);
     if (noteError) return setError(noteError);
-    if (staying.length + added.length === 0 && !noteHasText(note)) return setError("파일을 다 빼려면 안내 · 스크립트를 적어 주세요. 파일이나 글 중 하나는 있어야 해요.");
+    const parsed = parseMaterialLinks(linkRows);
+    if (!parsed.ok) {
+      setBadLink(parsed.index ?? null);
+      return setError(parsed.error);
+    }
+    if (staying.length + added.length + parsed.links.length === 0 && !noteHasText(note)) {
+      return setError("파일 · 링크를 다 빼려면 안내 · 스크립트를 적어 주세요. 글 · 파일 · 링크 중 하나는 있어야 해요.");
+    }
 
     setBusy(true);
     const uploaded: UploadedFile[] = [];
@@ -125,6 +155,7 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
         note,
         files: uploaded,
         removeFileIds: [...removed],
+        links: parsed.links,
       });
       if (!res.ok) {
         await removeUploaded(CLASS_MATERIAL_BUCKET, uploaded.map((u) => u.path));
@@ -167,10 +198,10 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
           <span
             className={cn(
               "flex size-11 shrink-0 items-center justify-center rounded-xl text-[11px] font-black ring-1",
-              files.length === 0 ? "bg-surface text-slate ring-line" : "bg-brand-50 text-brand-700 ring-brand-100",
+              files.length + links.length === 0 ? "bg-surface text-slate ring-line" : "bg-brand-50 text-brand-700 ring-brand-100",
             )}
           >
-            {materialBadge(files)}
+            {materialBadge(files, links)}
           </span>
           <div className="min-w-0 flex-1">
             <p className="font-black leading-snug text-ink [overflow-wrap:anywhere]">{item.title}</p>
@@ -179,9 +210,11 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
           </div>
         </div>
 
-        {mode !== "edit" && item.note && <MaterialNote note={item.note} showCount className="bg-brand-50/70 sm:col-span-2 sm:row-start-2" />}
+        {showNote && item.note && <MaterialNote note={item.note} showCount className="bg-brand-50/70 sm:col-span-2 sm:row-start-2" />}
         {/* 안내가 없으면 둘째 줄로 올린다 — 빈 줄이 남으면 격자 간격이 두 번 들어간다 */}
-        {mode !== "edit" && files.length > 1 && <MaterialFileList files={files} className={cn("sm:col-span-2", item.note ? "sm:row-start-3" : "sm:row-start-2")} />}
+        {showFiles && <MaterialFileList files={files} className={cn("sm:col-span-2", item.note ? "sm:row-start-3" : "sm:row-start-2")} />}
+        {/* 링크 — 강사도 학생과 같은 목록으로 틀어 볼 수 있다 (2026-10-06) */}
+        {mode !== "edit" && links.length > 0 && <MaterialLinkList links={links} className={cn("sm:col-span-2", linksRow)} />}
 
         {mode === "view" && (
           <div className="flex flex-wrap justify-end gap-1 sm:col-start-2 sm:row-start-1">
@@ -258,7 +291,7 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
               ref={titleRef}
               maxLength={CLASS_MATERIAL_TITLE_MAX}
               defaultValue={item.title}
-              placeholder={defaultMaterialTitle([...staying.map((f) => f.file_name), ...added.map((p) => p.file.name)], null)}
+              placeholder={defaultMaterialTitle([...staying.map((f) => f.file_name), ...added.map((p) => p.file.name)], null, draftLinks(linkRows))}
               className="input !py-2 text-sm"
               disabled={busy}
             />
@@ -313,6 +346,20 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
               disabled={busy}
             />
             {pickProblem && <p className="mt-1 text-xs font-semibold text-amber-700">{pickProblem}</p>}
+          </div>
+          <div>
+            <p className="label !mb-1 text-xs">
+              링크 <span className="font-normal text-mist">(고치거나 빼거나 더할 수 있어요 · {CLASS_MATERIAL_LINKS_MAX}개까지 · 유튜브 영상은 학생 화면에서 바로 재생돼요)</span>
+            </p>
+            <MaterialLinkEditor
+              rows={linkRows}
+              onChange={(rows) => {
+                setLinkRows(rows);
+                setBadLink(null);
+              }}
+              invalid={badLink}
+              disabled={busy}
+            />
           </div>
           <div className="flex justify-end gap-1">
             <button type="submit" disabled={busy} aria-busy={busy} className="btn-primary !px-4 !py-2 text-sm">

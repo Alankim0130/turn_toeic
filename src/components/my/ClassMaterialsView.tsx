@@ -7,16 +7,19 @@ import { shortDay } from "@/lib/study-rounds";
 import {
   fileKindLabel,
   isViewableKind,
+  linkCountLabel,
   MATERIAL_SUBJECT_LABEL,
   MATERIAL_SUBJECTS,
   materialBadge,
   sortMaterialFiles,
   type MaterialFile,
+  type MaterialLink,
   type MaterialSubject,
 } from "@/lib/class-materials";
 import { ROUND_SET_LABEL, type RoundSet } from "@/lib/class-rounds";
 import { MaterialNote } from "@/components/class-materials/MaterialNote";
 import { MaterialFileList } from "@/components/class-materials/MaterialFileList";
+import { MaterialLinkList } from "@/components/class-materials/MaterialLinkList";
 
 export type MyClassMaterial = {
   id: number;
@@ -24,8 +27,13 @@ export type MyClassMaterial = {
   note: string | null;
   /** 붙은 파일 0 ~ 20개 (2026-10-06) — 0이면 강사가 글만 올린 자료 */
   files: MaterialFile[] | null;
+  /** 링크 0 ~ 20개 (2026-10-06 — 유튜브 영상은 그 자리에서 재생). `materialLinks` 를 거친 값 */
+  links: MaterialLink[];
   created_at: string;
 };
+
+/** 넓은 화면의 줄 자리 — 제목 줄 다음부터 안내 · 파일 목록 · 링크 목록이 있는 것만 차례로 선다 */
+const SM_ROW = ["sm:row-start-2", "sm:row-start-3", "sm:row-start-4"] as const;
 
 /** 일정표 한 줄 — 내 수업일 하나 = 한 회차 (과정 A/B · 회차 · 그 과정을 쓰는 내 수업 시간) */
 export type MaterialRound = { key: string; date: string; set: RoundSet; seq: number; time: string | null };
@@ -194,23 +202,26 @@ export function ClassMaterialsView({
 
 /**
  * 자료 한 장 — **파일 0 ~ 20개** (2026-10-06): 하나면 제목 줄 오른쪽에 `열기`(PDF · 그림) · `받기`, 여럿이면 안내 아래 파일 목록(파일마다),
- * 없으면 강사가 글(안내 · 스크립트)만 올린 것이라 버튼이 없다
+ * 없으면 강사가 글(안내 · 스크립트)만 올린 것이라 버튼이 없다.
+ * **링크 0 ~ 20개**(같은 날 Alan "유튜브 링크를 … 여러개")는 맨 아래 목록 — 유튜브 영상은 `보기` 를 누르면 그 자리에서 재생된다
  */
 function MaterialCard({ m }: { m: MyClassMaterial }) {
   const files = sortMaterialFiles(m.files);
+  const links = m.links;
   const single = files.length === 1 ? files[0] : null;
   const viewable = single ? isViewableKind(fileKindLabel(single.file_name, single.content_type)) : false;
+  const linksRow = SM_ROW[(m.note ? 1 : 0) + (files.length > 1 ? 1 : 0)];
   return (
-    // 휴대폰: 제목 → 안내 → 파일 · 버튼. 넓은 화면: 제목 줄 오른쪽에 버튼, 안내 · 파일 목록은 그 아래 한 줄 전체 (버튼만 따로 한 줄을 먹지 않게)
+    // 휴대폰: 제목 → 안내 → 파일 · 버튼 → 링크. 넓은 화면: 제목 줄 오른쪽에 버튼, 안내 · 파일 목록 · 링크 목록은 그 아래 한 줄 전체 (버튼만 따로 한 줄을 먹지 않게)
     <li className="card grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-5">
       <div className="flex min-w-0 items-start gap-3 sm:col-start-1 sm:row-start-1">
         <span
           className={cn(
             "flex size-11 shrink-0 items-center justify-center rounded-xl text-[11px] font-black ring-1",
-            files.length === 0 ? "bg-surface text-slate ring-line" : "bg-brand-50 text-brand-700 ring-brand-100",
+            files.length + links.length === 0 ? "bg-surface text-slate ring-line" : "bg-brand-50 text-brand-700 ring-brand-100",
           )}
         >
-          {materialBadge(files)}
+          {materialBadge(files, links)}
         </span>
         <div className="min-w-0 flex-1">
           <p className="font-black leading-snug text-ink [overflow-wrap:anywhere]">{m.title}</p>
@@ -218,6 +229,7 @@ function MaterialCard({ m }: { m: MyClassMaterial }) {
             {formatDate(new Date(m.created_at), { month: "long", day: "numeric" })} 올림
             {single?.file_size != null && <> · {formatBytes(single.file_size)}</>}
             {files.length > 1 && <> · 파일 {files.length}개</>}
+            {links.length > 0 && <> · {linkCountLabel(links)}</>}
           </p>
         </div>
       </div>
@@ -238,6 +250,8 @@ function MaterialCard({ m }: { m: MyClassMaterial }) {
           </a>
         </div>
       )}
+      {/* 링크 — 휴대폰에서는 파일 버튼 다음, 넓은 화면에서는 안내 · 파일 목록 아래 한 줄 전체 */}
+      {links.length > 0 && <MaterialLinkList links={links} className={cn("sm:col-span-2", linksRow)} />}
     </li>
   );
 }
