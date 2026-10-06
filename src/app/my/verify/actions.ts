@@ -377,7 +377,7 @@ export async function submitVerification(input: { filePath: string }): Promise<S
 }
 
 /**
- * 수동 등업신청 — 학생이 **레벨 · 요일 · 시간대**를 직접 골라 낸다 (2026-09-17 Alan 요청).
+ * 수동 등업신청 — 학생이 **레벨 · 종합/단과 · 요일 · 시간대**를 직접 골라 낸다 (2026-09-17 Alan 요청 → 2026-10-06 단과도 고른다).
  * 자동 판정이 틀렸을 때의 길이다.
  *
  * **고른 것이 곧 배정은 아니다.** 여기서는 "이렇게 신청했다" 만 기록하고, 수강증이 진짜인지는 스태프가 보고 승인한다 —
@@ -388,6 +388,8 @@ export async function submitManualVerification(input: {
   filePath: string;
   term: string;
   courseId: number;
+  /** 종합 · 단과 (full · rc · lc, 2026-10-06) — 그 레벨에 한 가지뿐이면 비어 와도 된다 (`resolveEnrollChoice`) */
+  kind?: string;
   track: string;
   timeBlock: string;
 }): Promise<SubmitVerificationResult> {
@@ -404,6 +406,7 @@ export async function submitManualVerification(input: {
   const resolved = resolveEnrollChoice(sections, {
     term: String(input?.term ?? ""),
     courseId: Number(input?.courseId) || undefined,
+    kind: String(input?.kind ?? ""),
     track: String(input?.track ?? ""),
     timeBlock: String(input?.timeBlock ?? ""),
   });

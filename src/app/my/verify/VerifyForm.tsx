@@ -8,11 +8,15 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
 import {
+  enrollBlockMinutes,
   enrollBlocks,
   enrollCourses,
+  enrollKinds,
   enrollTerms,
   enrollTracks,
+  KIND_CHOICE_LABEL,
   TRACK_CHOICE_LABEL,
+  type EnrollKind,
   type EnrollSection,
   type EnrollTrack,
 } from "@/lib/enroll-options";
@@ -38,6 +42,7 @@ function ChoiceRow<T extends string | number>({
   onChange,
   disabled,
   empty,
+  hint,
 }: {
   label: string;
   options: { key: T; label: string }[];
@@ -45,12 +50,15 @@ function ChoiceRow<T extends string | number>({
   onChange: (v: T) => void;
   disabled?: boolean;
   empty: string;
+  /** 줄 위의 한 줄 도움말 (회색) */
+  hint?: string;
 }) {
   return (
     <div>
       <span className="label">
         {label} <span className="font-normal text-brand-600">*</span>
       </span>
+      {hint && <p className="-mt-1 mb-2 text-xs text-slate">{hint}</p>}
       {options.length === 0 ? (
         <p className="text-sm text-mist">{empty}</p>
       ) : (
@@ -121,14 +129,21 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
   const terms = useMemo(() => enrollTerms(sections), [sections]);
   const [term, setTerm] = useState<string | null>(terms.length === 1 ? terms[0].key : null);
   const [courseId, setCourseId] = useState<number | null>(null);
+  const [kind, setKind] = useState<EnrollKind | null>(null);
   const [track, setTrack] = useState<EnrollTrack | null>(null);
   const [block, setBlock] = useState<string | null>(null);
 
   const courses = useMemo(() => (term ? enrollCourses(sections, term) : []), [sections, term]);
-  const tracks = useMemo(() => (term && courseId ? enrollTracks(sections, term, courseId) : []), [sections, term, courseId]);
+  // 종합 · 단과 (2026-10-06 Alan "단과도 설정할 수 있도록") — 한 가지뿐인 레벨(속성반 · 2주완성 · 단과 반이 없는 달)은 고르는 줄 없이 그것으로 둔다
+  const kinds = useMemo(() => (term && courseId ? enrollKinds(sections, term, courseId) : []), [sections, term, courseId]);
+  const kindValue = kinds.length === 1 ? kinds[0] : kind;
+  const tracks = useMemo(
+    () => (term && courseId && kindValue ? enrollTracks(sections, term, courseId, kindValue) : []),
+    [sections, term, courseId, kindValue],
+  );
   const blocks = useMemo(
-    () => (term && courseId && track ? enrollBlocks(sections, term, courseId, track) : []),
-    [sections, term, courseId, track],
+    () => (term && courseId && kindValue && track ? enrollBlocks(sections, term, courseId, track, kindValue) : []),
+    [sections, term, courseId, kindValue, track],
   );
 
   // 미리보기 object URL 정리 (언마운트 시)
@@ -183,13 +198,15 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
         ? "수강월을 골라 주세요."
         : !courseId
           ? "레벨을 골라 주세요."
-          : !track
-            ? "요일을 골라 주세요."
-            : !block
-              ? "시간대를 골라 주세요."
-              : !agree
-                ? "개인정보 수집·이용에 동의해 주세요."
-                : null
+          : !kindValue
+            ? "종합반인지 단과인지 골라 주세요."
+            : !track
+              ? "요일을 골라 주세요."
+              : !block
+                ? "시간대를 골라 주세요."
+                : !agree
+                  ? "개인정보 수집·이용에 동의해 주세요."
+                  : null
     : !file
       ? "수강증 파일을 선택해 주세요."
       : !agree
@@ -208,7 +225,7 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
       const path = await ensureUploaded();
       startTransition(async () => {
         const res = manual
-          ? await submitManualVerification({ filePath: path, term: term!, courseId: courseId!, track: track!, timeBlock: block! })
+          ? await submitManualVerification({ filePath: path, term: term!, courseId: courseId!, kind: kindValue!, track: track!, timeBlock: block! })
           : await submitVerification({ filePath: path });
 
         if (res.ok) {
@@ -527,7 +544,7 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
         </label>
       </div>
 
-      {/* 수동: 레벨 · 요일 · 시간대 (수강월은 두 달 이상 열려 있을 때만 고른다) */}
+      {/* 수동: 레벨 · 종합/단과 · 요일 · 시간대 (수강월은 두 달 이상, 종합/단과는 두 가지 이상 열려 있을 때만 고른다) */}
       {manual && (
         <div className="space-y-4 rounded-xl2 border border-brand-200 bg-brand-50/40 p-4">
           {sections.length === 0 ? (
@@ -544,6 +561,7 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
                   onChange={(v) => {
                     setTerm(v);
                     setCourseId(null);
+                    setKind(null);
                     setTrack(null);
                     setBlock(null);
                   }}
@@ -557,16 +575,32 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
                 empty={term ? "이 달에 열린 강좌가 없어요." : "먼저 수강월을 골라 주세요."}
                 onChange={(v) => {
                   setCourseId(v);
+                  setKind(null);
                   setTrack(null);
                   setBlock(null);
                 }}
               />
+              {kinds.length > 1 && (
+                <ChoiceRow
+                  label="종합 · 단과"
+                  options={kinds.map((k) => ({ key: k, label: KIND_CHOICE_LABEL[k] }))}
+                  value={kind}
+                  disabled={busy}
+                  empty="먼저 레벨을 골라 주세요."
+                  hint="한 과목만 듣는 단과라면 듣는 과목(RC · LC)을 골라 주세요. 두 과목을 다 들으면 종합반이에요."
+                  onChange={(v) => {
+                    setKind(v);
+                    setTrack(null);
+                    setBlock(null);
+                  }}
+                />
+              )}
               <ChoiceRow
                 label="요일"
                 options={tracks.map((t) => ({ key: t, label: TRACK_CHOICE_LABEL[t] }))}
                 value={track}
-                disabled={busy || !courseId}
-                empty="먼저 레벨을 골라 주세요."
+                disabled={busy || !kindValue}
+                empty={courseId ? "먼저 종합반인지 단과인지 골라 주세요." : "먼저 레벨을 골라 주세요."}
                 onChange={(v) => {
                   setTrack(v);
                   setBlock(null);
@@ -574,7 +608,11 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
               />
               <ChoiceRow
                 label="시간대"
-                options={blocks.map((b) => ({ key: b, label: b }))}
+                // 분량을 함께 적는다 — 종합 주5일에는 60분과 120분이 같은 시각에 함께 선다 (`enrollBlockMinutes`)
+                options={blocks.map((b) => {
+                  const minutes = term && courseId ? enrollBlockMinutes(sections, term, courseId, b) : null;
+                  return { key: b, label: minutes ? `${b} · ${minutes}분` : b };
+                })}
                 value={block}
                 disabled={busy || !track}
                 empty="먼저 요일을 골라 주세요."

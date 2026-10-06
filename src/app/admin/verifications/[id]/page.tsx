@@ -16,6 +16,7 @@ import { heldMonth as heldMonthOf } from "@/lib/verify-decision";
 import { preselectForApproval } from "@/lib/final-assignment";
 import { getProfileNames, getStaffPhones } from "../../_lib/profile-names";
 import { missingClassOf } from "@/lib/missing-class";
+import { KIND_CHOICE_LABEL, kindOfSections } from "@/lib/enroll-options";
 
 export const metadata: Metadata = { title: "등업 검토", robots: { index: false } };
 
@@ -57,7 +58,7 @@ export default async function VerificationDetailPage({
       : supabase.storage.from("receipts").createSignedUrl(v.file_path, 600),
     supabase
       .from("class_sections")
-      .select("id, term_id, track, start_time, end_time, time_block, tuition, live_tuition, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(id, name, program, target_score)")
+      .select("id, term_id, track, start_time, end_time, time_block, subject, tuition, live_tuition, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(id, name, program, target_score, course_type)")
       .eq("status", "open")
       .gte("closes_at", today)
       .order("enrollment_opens_at")
@@ -173,6 +174,9 @@ export default async function VerificationDetailPage({
   const suggested = matchLog?.result?.kind === "match" ? (matchLog.result.sectionIds ?? []).filter((n) => typeof n === "number") : [];
   const requested = requestedManual.length > 0 ? requestedManual : suggested;
   const requestedLabels = requested.map((id) => candidates.find((c) => c.id === id)?.label ?? `반 #${id}`);
+  // 학생이 고른 종합 · 단과 (2026-10-06 — 수동 등업신청에서 단과를 고를 수 있게 됐다). **단과만 적는다** — 학생명단 이름표와 같은 규칙 (종합이 대부분이다)
+  const requestedKind = requestedManual.length ? kindOfSections(sections ?? [], (sections ?? []).filter((s) => requestedManual.includes(s.id))) : null;
+  const requestedSingle = requestedKind === "rc" || requestedKind === "lc" ? KIND_CHOICE_LABEL[requestedKind] : null;
   // 승인 칸에 **실제로 미리 골라 둔다** (2026-09-22 — 예전에는 "미리 골라 뒀습니다" 라고 적어 놓고 값을 넘기지 않아 늘 빈 칸이었다).
   // 지금 열려 있어 목록에 보이는 반만 — 안 보이는 반이 숨은 칸으로 함께 승인되면 안 된다.
   // **같은 달 기존 배정도 함께 체크한다** (2026-09-23) — 승인은 체크한 반이 그 달의 최종 배정이라, 안 체크해 두면 그대로 눌렀을 때 빠진다
@@ -299,7 +303,10 @@ export default async function VerificationDetailPage({
             )}
             {v.source === "manual" && (
               <div className="mt-4 rounded-xl border border-brand-200 bg-brand-50 p-3">
-                <p className="text-sm font-black text-brand-700">학생이 직접 고른 반 (수동 등업신청)</p>
+                <p className="text-sm font-black text-brand-700">
+                  학생이 직접 고른 반 (수동 등업신청)
+                  {requestedSingle && <span className="ml-1.5 whitespace-nowrap rounded bg-ink px-1.5 py-0.5 text-[11px] text-white">{requestedSingle}</span>}
+                </p>
                 {requestedLabels.length === 0 ? (
                   <p className="mt-1 text-sm text-slate">고른 반을 찾을 수 없습니다 (반이 지워졌을 수 있어요).</p>
                 ) : (

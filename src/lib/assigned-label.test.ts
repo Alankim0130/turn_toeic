@@ -20,4 +20,20 @@ describe("승인된 반 한 줄 (학생 팝업)", () => {
   it("없는 반 id 는 건너뛴다", () => {
     expect(assignedLabels(S, [99], "onsite")).toEqual([]);
   });
+
+  // 2026-10-06 — 단과면 강좌 이름 뒤에 RC단과 · LC단과. 종합(묶음 · 주5일 60분)은 적지 않는다
+  it("단과(시간 단위 반 하나)는 RC단과 · LC단과 를 적는다", () => {
+    const T: EnrollSection[] = [
+      ...S,
+      { id: 21, track: "mwf", time_block: "11:10~12:10", subject: "lc", term: sep, course: c650 },
+      { id: 22, track: "mwf", time_block: "18:30~19:30", subject: "rc", term: sep, course: c650 },
+      { id: 23, track: "ttf", time_block: "18:30~19:30", subject: "lc", term: sep, course: c650 },
+    ];
+    expect(assignedLabels(T, [21], "onsite")).toEqual(["2026년 9월 · 650+ 왕기초반 · LC단과 · 월수금 · 11:10~12:10 · 현장"]);
+    expect(assignedLabels(T, [22], "live")).toEqual(["2026년 9월 · 650+ 왕기초반 · RC단과 · 월수금 · 18:30~19:30 · 불라방"]);
+    // 주5일 60분은 두 과목을 다 듣는 종합 — 단과라고 적지 않는다
+    expect(assignedLabels(T, [22, 23], "onsite")).toEqual(["2026년 9월 · 650+ 왕기초반 · 주5일 · 18:30~19:30 · 현장"]);
+    // 120분 묶음 반도 종합
+    expect(assignedLabels(T, [11], "onsite")).toEqual(["2026년 9월 · 650+ 왕기초반 · 월수금 · 10:00~12:10 · 현장"]);
+  });
 });
