@@ -14,8 +14,6 @@ import { fetchTwoWeekSlots } from "@/lib/open-sections";
 import { parseReceipt, readEnoughFor, receiptHasName, receiptStudentName, type ParsedReceipt } from "@/lib/receipt";
 import { nameMismatchOf, type NameMismatch } from "@/lib/name-mismatch";
 import { readReceiptText, tesseractOcr } from "@/lib/ocr";
-import { measurePalette } from "@/lib/ocr-image";
-import type { PaletteShares } from "@/lib/receipt-forensics";
 import { matchSections, twoWeekSpots } from "@/lib/match-sections";
 import { assignedLabels } from "@/lib/assigned-label";
 import { approveVerificationWith } from "@/lib/approve-verification";
@@ -26,6 +24,8 @@ import { sendTextbookNotice } from "@/lib/textbook-guide";
 import type { TextbookNotice } from "@/lib/textbook";
 import { replacePendingReceipts } from "@/lib/pending-receipts";
 import { seatOfSections, type ReceiptSeat } from "@/lib/receipt-seat";
+import { planClassChangeFor } from "@/lib/class-change-db";
+import { classChangeLog } from "@/lib/class-change";
 
 export type SubmitVerificationResult =
   /**
@@ -44,6 +44,8 @@ export type SubmitVerificationResult =
       nameMismatch?: NameMismatch;
       /** 이미 승인된 수강증을 또 올렸다 — 접수하지 않고 닫았다 (2026-10-02 Alan) */
       alreadyApproved?: boolean;
+      /** 반을 바꾼 수강증이라 그 달 이전 반을 빼고 새 반으로 바꿨다 — 뺀 반 한 줄들 (2026-10-06 Alan "마지막에 올린 수강증을 기반으로 등업처리") */
+      replaced?: string[];
       /** 불라방으로 등업됐다 — 내 반 교재비 안내 (2026-10-02 Alan "수강증 업로드를 하고 나면 거기에 맞춰서 교재비 안내"). 알림함에도 같은 것이 간다 */
       textbook?: TextbookNotice;
     }
@@ -107,13 +109,18 @@ function done() {
   revalidatePath("/admin/students");
 }
 
-/** OCR 이 반을 찾아 바로 등업한 것도 스태프에게 알린다 — 승인 화면에서 확인·정정할 수 있게 */
-function notifyAutoApproved(admin: Admin, userId: string, status: "active" | "preliminary") {
+/**
+ * OCR 이 반을 찾아 바로 등업한 것도 스태프에게 알린다 — 승인 화면에서 확인·정정할 수 있게.
+ * 반을 바꾼 수강증이면(2026-10-06) 그렇게 말한다 — 이전 반을 뺐으니 두 반을 함께 듣는 학생이면 강사가 되돌려야 한다
+ */
+function notifyAutoApproved(admin: Admin, userId: string, status: "active" | "preliminary", changed = false) {
   after(async () => {
     const { data: profile } = await admin.from("profiles").select("name").eq("id", userId).maybeSingle();
     await notifyStaff("verification", {
-      title: "자동 등업 완료",
-      body: `${profile?.name || "회원"}님의 수강증을 읽어 반을 배정했어요${status === "preliminary" ? " (개강 전 — 예비등록생)" : ""}. 잘못됐으면 승인 화면에서 정정해 주세요.`,
+      title: changed ? "자동 등업 완료 (반 변경)" : "자동 등업 완료",
+      body: changed
+        ? `${profile?.name || "회원"}님이 반을 바꾼 수강증을 올려 이전 반을 빼고 새 반으로 바꿨어요${status === "preliminary" ? " (개강 전 — 예비등록생)" : ""}. 잘못됐으면 승인 화면에서 정정해 주세요.`
+        : `${profile?.name || "회원"}님의 수강증을 읽어 반을 배정했어요${status === "preliminary" ? " (개강 전 — 예비등록생)" : ""}. 잘못됐으면 승인 화면에서 정정해 주세요.`,
       url: "/admin/verifications?status=approved",
     });
   });
@@ -126,15 +133,13 @@ type ReadOk = {
   nameMatches: boolean | null;
   /** 파일 SHA-256 — 다른 계정이 같은 파일을 올렸는지 본다 (돌려쓰기 의심, 2026-09-18) */
   hash: string;
-  /** 화면의 색이 YBM 수강증 팔레트와 맞는가 (2026-09-19, `src/lib/receipt-forensics.ts`). 못 쟀으면 null */
-  palette: PaletteShares | null;
 };
 /**
  * 못 읽었을 때도 **왜** 못 읽었는지는 남긴다 (`ocr_raw.error`) — 승인 화면과 Vercel 로그에서 원인을 볼 수 있게.
- * **파일을 받았으면 해시·색은 OCR 과 상관없이 남긴다** (2026-09-22) — 예전에는 OCR 이 실패하면 해시를 버려서, 그 파일을
+ * **파일을 받았으면 해시는 OCR 과 상관없이 남긴다** (2026-09-22) — 예전에는 OCR 이 실패하면 해시를 버려서, 그 파일을
  * 나중에 다른 계정이 올려도 "같은 파일" 로 잡히지 않았다.
  */
-type ReadFail = { ok: false; ocr: { engine: string; error: string }; hash: string | null; palette: PaletteShares | null };
+type ReadFail = { ok: false; ocr: { engine: string; error: string }; hash: string | null };
 type ReadReceipt = ReadOk | ReadFail;
 
 /**
@@ -145,19 +150,16 @@ async function readReceipt(admin: Admin, filePath: string, studentName: string |
   const { data: file, error } = await admin.storage.from("receipts").download(filePath);
   if (error || !file) {
     console.error(`[ocr] 수강증 파일을 내려받지 못했어요: ${error?.message ?? "no file"}`);
-    return { ok: false, ocr: { engine: tesseractOcr.name, error: "download_failed" }, hash: null, palette: null };
+    return { ok: false, ocr: { engine: tesseractOcr.name, error: "download_failed" }, hash: null };
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
   const hash = createHash("sha256").update(bytes).digest("hex");
-  // 색 팔레트는 OCR 과 무관하게 잰다 — 글자를 못 읽어도 "우리 화면인가" 는 알 수 있다 (실측 35~54ms).
   // 판독은 판정 키에 더해 **학생 이름까지** 읽혀야 멈춘다 (`readEnoughFor`) — 이름이 자동 승인 조건이다.
-  // 2주완성이 열리는 레벨 · 시간이면 기간 숫자(4주 · 2주)까지 (2026-10-05 — `periodKeys` = `twoWeekSpots`)
-  const [outcome, palette] = await Promise.all([
-    readReceiptText({ bytes, mimeType: file.type, filePath, enough: readEnoughFor(studentName, { periodKeys }) }),
-    measurePalette(bytes),
-  ]);
-  if (!outcome.ok) return { ok: false, ocr: { engine: tesseractOcr.name, error: outcome.reason }, hash, palette };
+  // 2주완성이 열리는 레벨 · 시간이면 기간 숫자(4주 · 2주)까지 (2026-10-05 — `periodKeys` = `twoWeekSpots`).
+  // 화면 색(팔레트)은 2026-10-06 부터 재지 않는다 (Alan "화면색상으로 위조를 잡아내는거는 안해도 괜찮을 것 같아" — `verify-flags.ts`)
+  const outcome = await readReceiptText({ bytes, mimeType: file.type, filePath, enough: readEnoughFor(studentName, { periodKeys }) });
+  if (!outcome.ok) return { ok: false, ocr: { engine: tesseractOcr.name, error: outcome.reason }, hash };
   const ocr = outcome.result;
 
   const parsed = parseReceipt(ocr.text);
@@ -171,7 +173,6 @@ async function readReceipt(admin: Admin, filePath: string, studentName: string |
     ocr: { engine: ocr.engine, text: ocr.text, confidence: typeof confidence === "number" ? confidence : null },
     nameMatches,
     hash,
-    palette,
   };
 }
 
@@ -203,7 +204,7 @@ function uploadSeat(filePath: string, read: ReadReceipt, sections: EnrollSection
 /** 올라온 수강증 한 장 → 위조 신호 검사 입력 (`receiptFlags`, 한곳에서 잰다 — `src/lib/verify-flags.ts`) */
 function flagInput(userId: string, read: ReadReceipt, sectionIds: readonly number[]): FlagInput {
   const parsed = read.ok ? read.parsed : null;
-  return { userId, hash: read.hash, capturedOn: parsed?.capturedOn ?? null, capturedAt: parsed?.capturedAt ?? null, palette: read.palette, sectionIds };
+  return { userId, hash: read.hash, capturedOn: parsed?.capturedOn ?? null, capturedAt: parsed?.capturedAt ?? null, sectionIds };
 }
 
 /**
@@ -218,19 +219,18 @@ function flagInput(userId: string, read: ReadReceipt, sectionIds: readonly numbe
  * **자동 승인** (2026-09-18 Alan: "반을 찾아서 자동승인까지"): 다음이 **전부** 맞을 때만 바로 등업한다 —
  *   ① 게이트 통과(우리 센터 · 역전토익) ② 수강증 `수강생` 칸 = 가입 실명 ③ 열린 반 중 레벨·과정·시간대·수강월·트랙이
  *   **딱 맞는 반이 정확히 그 수만큼**(주3일 1 · 주5일 2) 있음 (`matchSections`) ④ 수강 방식을 강의실 칸에서 **읽어서** 정함
- *   ⑤ 그 달 반에 아직 배정돼 있지 않음 ⑥ `역전토익` 글자 · 수강증 카드 칸 라벨이 보임
+ *   ⑤ 그 달 반에 아직 배정돼 있지 않음 — **반을 바꾼 것이 분명하면 새 수강증으로 바꿔 넣는다** (2026-10-06 Alan, `class-change.ts`) ⑥ `역전토익` 글자 · 수강증 카드 칸 라벨이 보임
  *   ⑦ 같은 캡처를 전에 사람이 판정한 적 없음 (2026-09-22 ④~⑦ 추가 — ⑥⑦ 은 firsttoeic 운영 사고에서 배운 것). 하나라도 어긋나면 스태프 검토로 간다 —
  *   애매한데 넣으면 오배정이고, 오배정은 남의 반 다시보기를 열어 준다.
  * 이미지가 아니거나(PDF) OCR 이 실패하면 읽은 것이 없으니 그대로 검토 대기로 간다.
  *
- * **위조 신호 네 가지도 자동 승인을 막는다** (2026-09-18 · 2026-09-19 Alan). 넷 다 **거절하지 않는다** —
+ * **위조 신호 세 가지도 자동 승인을 막는다** (2026-09-18 · 2026-09-19 Alan). 셋 다 **거절하지 않는다** —
  * 스태프 검토로 보내고 승인 화면에 까닭을 적을 뿐이다. 진짜 학생이 걸릴 수 있기 때문이다.
  *   1. `duplicateImage` — 같은 파일(SHA-256)을 다른 계정이 올렸다
  *   2. `staleCapture` — 캡처한 지 45일이 넘었다 (지난 수강증 재사용)
  *   3. `sameCapture` — **같은 초**에 캡처된 수강증이 다른 계정에 있다. 수강증 맨 위 `현재시간` 은 초까지 찍히므로
  *      두 사람이 같은 초에 각자 캡처할 수 없다. 파일 해시와 달리 **글자를 고쳐도 살아남는다**
- *   4. `paletteOff` — 화면 색이 YBM 수강증 팔레트가 아니다 (`src/lib/receipt-forensics.ts`).
- *      AI 로 만들었거나 손으로 그린 그림, 다른 학원 수강증이 여기 걸린다
+ *   (넷째였던 화면 색 검사 `paletteOff` 는 2026-10-06 에 뺐다 — 아이폰 넓은 색 공간 캡처의 진짜 수강증이 하루 7장 걸렸다. Alan "괜히 번거로운 것 같아")
  *
  * **학생에게는 "위조 의심" 을 말하지 않는다** — 진짜 학생에게 실례고, 위조하는 쪽에는 무엇을 고쳐야 하는지 알려 주는 꼴이다.
  * 학생 화면에는 늘 "강사가 직접 확인해 드려요" 만 나가고, 까닭은 승인 화면에만 적는다.
@@ -276,8 +276,15 @@ export async function submitVerification(input: { filePath: string }): Promise<S
   // 자동 승인 조건은 한곳(`auto-approve.ts`) — 받아 둔 예비 접수를 다시 맞출 때도 같은 조건을 본다
   const blockers =
     read && flags ? autoApproveBlockers({ parsed: read.parsed, nameMatches: read.nameMatches, flags, matched: !!matched, periodUnclear: matched?.periodUnclear === true }) : null;
+  // 반을 바꾼 수강증 (2026-10-06 Alan — "마지막에 올린 수강증을 기반으로 등업처리를 해주면 좋겠어"). 그 달 반에 이미 있다는 것 **하나만** 걸렸으면
+  // 바꾼 것이 분명한지 본다 (`class-change.ts` — 같은 반 · 시간이 겹침 · 같은 레벨). 분명하면 새 수강증대로 등업하고 그 달 이전 등록을 뺀다.
+  // 단과를 하나 더 산 것일 수 있거나 · 다른 레벨이거나 · 강사가 직접 넣은 배정이면 예전처럼 강사가 본다
+  const onlyEnrolled = !!blockers && blockers.length > 0 && blockers.every((b) => b === "already_enrolled");
+  const change = auto.on && held == null && matched && onlyEnrolled ? await planClassChangeFor(admin, user.id, matched.sectionIds) : null;
+  const replace = change?.kind === "replace" ? change : null;
+  const changeLog = change ? classChangeLog(change) : null;
   // 받아 두는 수강증은 지금 배정하지 않는다 — 날짜로만 달을 읽은 수강증은 대조가 다른 달 반을 고를 수 있다
-  const autoApprove = auto.on && held == null && !!matched && blockers?.length === 0;
+  const autoApprove = auto.on && held == null && !!matched && (blockers?.length === 0 || !!replace);
   // 이미 승인된 수강증을 또 올렸다 (2026-10-02 Alan — 승인 뒤 같은 캡처를 다시 올려 검토 대기에 쌓이던 것):
   // 같은 캡처가 전에 승인됐고 그 반에 이미 배정돼 있으면 검토 대기에 넣지 않고 바로 닫는다. 기록은 남긴다
   const alreadyApproved = !rejected && !!flags && flags.decidedBefore === "approved" && flags.alreadyEnrolled.length > 0;
@@ -309,6 +316,7 @@ export async function submitVerification(input: { filePath: string }): Promise<S
               nameMatches: read?.nameMatches ?? null,
               flags,
               ...(blockers ? { blockers } : {}),
+              ...(changeLog ? { classChange: changeLog } : {}),
               ...(held != null ? { hold: held } : {}),
               // 스위치가 꺼져 있을 때 올라온 것 — 켜져 있었다면 거절했을 건은 그 사유를 스태프에게 보여 준다
               ...(auto.on ? {} : { autoOff: auto.reason, ...(decision.kind === "reject" ? { wouldReject: { code: decision.code, reason: decision.reason } } : {}) }),
@@ -337,9 +345,10 @@ export async function submitVerification(input: { filePath: string }): Promise<S
       sectionIds: matched.sectionIds,
       mode: read.parsed.mode,
       confidence: 100,
+      ...(replace ? { replace: { absorb: replace.absorb, remove: replace.remove } } : {}),
     });
     if (approved.ok) {
-      notifyAutoApproved(admin, user.id, approved.status);
+      notifyAutoApproved(admin, user.id, approved.status, !!replace && replace.remove.length > 0);
       // 불라방이면 그 달 내 반 교재비를 팝업과 알림함에 (그 달 이미 안내했거나 교재 · 계좌가 아직 없으면 없다)
       const textbook = read.parsed.mode === "live" ? await sendTextbookNotice(admin, user.id, approved.termId) : null;
       done();
@@ -348,6 +357,10 @@ export async function submitVerification(input: { filePath: string }): Promise<S
         approved: true,
         preliminary: approved.status === "preliminary",
         assigned: assignedLabels(sections, matched.sectionIds, read.parsed.mode),
+        // 뺀 이전 반 — 같은 반을 다시 캡처했거나 수강 방식만 바뀌었으면 뺀 반이 없다
+        ...(replace && replace.remove.length > 0
+          ? { replaced: assignedLabels(sections, replace.remove.map((e) => e.section.id), replace.remove[0].mode === "live" ? "live" : "onsite") }
+          : {}),
         ...(textbook ? { textbook } : {}),
       };
     }

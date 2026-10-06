@@ -27,7 +27,7 @@ export function ReceiptGuide() {
         </span>
         <div className="min-w-0">
           <h2 id="receipt-guide-title" className="text-lg font-black sm:text-xl">
-            {/* "파란색" 은 말 그대로 수강증 카드의 파랑이다 (#3e89e3 — 위조 검사 팔레트 `receipt-forensics.ts` 와 같은 색) */}
+            {/* "파란색" 은 말 그대로 수강증 카드의 파랑이다 (#3e89e3 — YBM 앱 수강증 카드 색) */}
             꼭 <span className="rounded-md bg-[#3e89e3] px-1.5 text-white ring-2 ring-white/70">파란색 수강증</span>을 올려 주세요
           </h2>
           <p className="mt-0.5 text-sm font-semibold text-white/90">결제 영수증 · 카카오톡 대화 캡처 · 다른 화면은 등업이 안 돼요.</p>

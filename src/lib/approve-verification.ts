@@ -1,6 +1,7 @@
 import "server-only";
 import type { createAdminClient } from "./supabase/admin";
 import { assignableError, orderWindow } from "./enrollment-window";
+import type { ChangeEnrollment } from "./class-change";
 import { planManualApproval, type AssignmentPlan } from "./final-assignment";
 import { closeSamePendingReceipts } from "./pending-receipts";
 import { capturedAtOf, seatOfSections } from "./receipt-seat";
@@ -24,6 +25,12 @@ export type ApproveInput = {
    * OCR 자동 승인 · 받아 둔 수강증 다시 맞추기는 false(기본) — 기존 배정이 있으면 멈추고 검토로 넘긴다 (기계는 사람의 배정을 바꾸지 않는다).
    */
   final?: boolean;
+  /**
+   * **반을 바꾼 수강증** (2026-10-06 Alan — "마지막에 올린 수강증을 기반으로 등업처리", `planClassChange`). 그 달 옛 등록(수강증 한 장)의 배정 중
+   * 새 반과 같은 반은 이 등록으로 옮겨 오고(absorb — 수강 방식은 새 수강증 것으로) 나머지는 뺀다(remove). 비게 된 옛 등록은 지운다.
+   * 무엇을 바꿀지는 부르는 쪽이 정해 넘긴다 — 바꾼 것이 분명할 때만 (`class-change.ts`). `final` 과 함께 쓰지 않는다
+   */
+  replace?: { absorb: ChangeEnrollment[]; remove: ChangeEnrollment[] };
 };
 
 /** termId = 배정한 달(기수) — 한 등록에는 한 달의 반만 들어간다 (`assignableError`) */
@@ -58,7 +65,17 @@ export async function approveVerificationWith(admin: Admin, input: ApproveInput)
   // 수동 승인이면 같은 달 기존 배정을 읽어 무엇을 옮기고 · 넣고 · 뺄지 정한다. 자동 승인은 늘 전부 새로 넣는다
   let plan: AssignmentPlan = { absorb: [], insert: sections.map((s) => s.id), remove: [] };
   const oldMode = new Map<number, string>();
-  if (input.final) {
+  if (input.replace) {
+    const term = sections[0].term_id;
+    const asExisting = (e: ChangeEnrollment) => ({ id: e.id, order_id: e.order_id, section_id: e.section.id, term_id: term });
+    const absorbed = new Set(input.replace.absorb.map((e) => e.section.id));
+    plan = {
+      absorb: input.replace.absorb.map(asExisting),
+      insert: sections.map((s) => s.id).filter((id) => !absorbed.has(id)),
+      remove: input.replace.remove.map(asExisting),
+    };
+    for (const e of input.replace.absorb) oldMode.set(e.id, e.mode);
+  } else if (input.final) {
     const [{ data: mine, error: mineErr }, { data: open, error: openErr }] = await Promise.all([
       admin
         .from("enrollments")
@@ -150,7 +167,7 @@ export async function approveVerificationWith(admin: Admin, input: ApproveInput)
     ),
   );
 
-  // 승인은 끝났다 — 체크를 뺀 같은 달 배정을 빼고, 비게 된 옛 등록을 지운다.
+  // 승인은 끝났다 — 체크를 뺀 같은 달 배정(반을 바꾼 수강증이면 옛 반)을 빼고, 비게 된 옛 등록을 지운다.
   // 여기서 실패해도 되돌리지 않는다: 학생은 반을 잃지 않고(옛 반이 남을 뿐) 승인은 그대로다
   if (plan.remove.length > 0) {
     const { error } = await admin.from("enrollments").delete().in("id", plan.remove.map((e) => e.id));

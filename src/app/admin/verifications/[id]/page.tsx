@@ -135,8 +135,6 @@ export default async function VerificationDetailPage({
       duplicateImage?: boolean;
       staleCapture?: boolean;
       sameCapture?: boolean;
-      paletteOff?: boolean;
-      paletteNote?: string;
       alreadyEnrolled?: number[];
       decidedBefore?: "approved" | "rejected" | null;
     };
@@ -149,6 +147,8 @@ export default async function VerificationDetailPage({
     wouldReject?: { code?: string; reason?: string };
     /** 자동 승인을 막은 까닭 (`autoApproveBlockers`, 2026-09-22) */
     blockers?: string[];
+    /** 반을 바꾼 수강증인지 본 기록 (2026-10-06 — `class-change.ts`). replace = 이전 등록을 빼고 바꿔 넣었다 · review = 강사에게 넘겼다 */
+    classChange?: { kind?: string; reason?: string; receipts?: number[]; removed?: number[] };
   } | null;
   // 자동 승인 뒤 학생이 "반이 달라요" 로 낸 정정 요청 — 새로 승인하면 등록이 두 건 생기니 기존 승인의 배정 수정으로 보낸다 (2026-09-18)
   const correctionOf = typeof matchLog?.correctionOf === "number" ? matchLog.correctionOf : null;
@@ -170,10 +170,7 @@ export default async function VerificationDetailPage({
     !ownTwin && matchLog?.flags?.sameCapture
       ? `다른 계정에 같은 초에 캡처된 수강증이 있어요 — 한쪽이 상대의 그림을 받아 쓴 것일 수 있어요 (글자를 고쳐도 캡처 시각은 남아요). ${showPhone ? "두 계정을 확인해 주세요." : "강사 · 관리자에게 두 계정 확인을 부탁해 주세요."}`
       : null,
-    // 색 팔레트 — AI 로 만들었거나 손으로 그린 그림, 다른 학원 수강증이 걸린다 (2026-09-19)
-    matchLog?.flags?.paletteOff
-      ? `화면 색이 YBM 수강증 팔레트와 달라요 — 만들어 낸 그림이거나 다른 곳의 수강증일 수 있어요. 그림을 직접 봐 주세요.${matchLog.flags.paletteNote ? ` (${matchLog.flags.paletteNote})` : ""}`
-      : null,
+    // 화면 색(팔레트) 경고는 2026-10-06 에 뺐다 (Alan — "화면색상으로 위조를 잡아내는거는 안해도 괜찮을 것 같아"). 옛 기록에 남은 값도 적지 않는다
   ].filter((s): s is string => !!s);
   const suggested = matchLog?.result?.kind === "match" ? (matchLog.result.sectionIds ?? []).filter((n) => typeof n === "number") : [];
   const requested = requestedManual.length > 0 ? requestedManual : suggested;
@@ -225,7 +222,24 @@ export default async function VerificationDetailPage({
   const heldMonthNow = heldMonthOf(matchLog?.hold);
   // 반을 못 맞췄으면 그 까닭 문장을 적는다 — "딱 맞는 반을 못 찾음" 만으로는 반이 없어서인지 둘이라 못 고른 것인지 모른다 (2026-10-02 운영 #17)
   const blockerLabels = blockerLines(matchLog?.blockers ?? [], typeof matchLog?.result?.reason === "string" ? matchLog.result.reason : null);
+  // 반을 바꾼 수강증 (2026-10-06 Alan "마지막에 올린 수강증을 기반으로 등업처리") — 무엇을 뺐는지 · 왜 강사에게 넘겼는지
+  const change = matchLog?.classChange;
+  const removedLabels = (change?.removed ?? []).map((id) => candidates.find((c) => c.id === id)?.label ?? `반 #${id}`);
+  const fromReceipts = (change?.receipts ?? []).filter((n) => typeof n === "number" && n !== v.id);
+  const changeNote =
+    change?.kind === "replace"
+      ? v.result === "approved"
+        ? `반을 바꾼 수강증으로 보고 자동 등업했어요 — 이 달 이전 등록${fromReceipts.length > 0 ? `(수강증 ${fromReceipts.map((r) => `#${r}`).join(", ")})` : ""}${
+            removedLabels.length > 0 ? `의 ${removedLabels.join(" / ")} 을 빼고` : "을"
+          } 이 수강증의 반으로 바꿨어요. 두 반을 함께 듣는 학생이면 학생 관리에서 이전 반을 다시 배정해 주세요.`
+        : v.result === null
+          ? "반을 바꾼 수강증으로 보고 바꿔 넣으려 했지만 승인 단계에서 막혔어요 — 지금 배정을 보고 직접 처리해 주세요."
+          : null
+      : change?.kind === "review" && change.reason && v.result === null
+        ? `반을 바꾼 수강증인지 기계가 가리지 못했어요 — ${change.reason}.`
+        : null;
   const systemNotes = [
+    changeNote,
     matchLog?.autoOff
       ? `자동 판정이 ${matchLog.autoOff === "off" ? "멈춰" : "읽히지 않아 멈춰"} 있어 기계가 승인도 거절도 하지 않았어요.${
           matchLog.wouldReject?.reason ? ` 켜져 있었다면 이 사유로 자동 거절했을 거예요: “${matchLog.wouldReject.reason}”` : ""
@@ -282,8 +296,6 @@ export default async function VerificationDetailPage({
         ["주 · 트랙", [parsed.weekly ? `주${parsed.weekly}일` : "-", (parsed.tracks as string[] | undefined)?.map((t) => (t === "mwf" ? "월수금" : "화목금")).join("+") || "-"].join(" · ")],
         ["수강 시간", (parsed.time as { timeBlock?: string } | null)?.timeBlock ?? "-"],
         ["이름 일치", parsed.nameMatches === true ? "일치" : parsed.nameMatches === false ? "다름 — 확인 필요" : "확인 못 함"],
-        // 화면 색 — 통과해도 적는다. "왜 자동으로 됐나" 를 스태프가 볼 수 있어야 한다 (2026-09-19)
-        ["화면 색", matchLog?.flags?.paletteNote ?? "재지 못함"],
         ["캡처 시각", typeof parsed.capturedAt === "string" ? parsed.capturedAt.replace("T", " ") : typeof parsed.capturedOn === "string" ? parsed.capturedOn : "-"],
       ]
     : [];

@@ -2,7 +2,6 @@ import "server-only";
 import type { createAdminClient } from "./supabase/admin";
 import type { Json } from "./supabase/database.types";
 import { isCaptureFresh } from "./verify-decision";
-import { paletteVerdict, type PaletteShares } from "./receipt-forensics";
 import { todayKST } from "./utils";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -11,14 +10,15 @@ type Admin = ReturnType<typeof createAdminClient>;
  * 자동 승인을 막는 신호들 — 승인 화면에 까닭으로 적는다. **거절하지 않는다** (진짜 학생일 수 있다).
  * 수강증만 올리기 · 수동 등업신청 · 예비 접수 다시 맞추기가 **같은 검사**를 한다 (2026-09-22 — 예전에는 수동 신청에 아무 검사가 없어 그 길로 다 비껴갔다).
  * 서버 액션 파일(`"use server"`)에 두면 내보낸 함수가 모두 호출 가능한 액션이 되므로 여기 따로 둔다.
+ *
+ * **화면 색(팔레트) 검사는 2026-10-06 에 뺐다** (Alan — "화면색상으로 위조를 잡아내는거는 안해도 괜찮을 것 같아. 괜히 번거로운 것 같아").
+ * 그날 하루 진짜 수강증 7장이 이 검사로 검토 대기에 갔다 — 아이폰이 넓은 색 공간(16비트 · 색 프로필)으로 저장한 캡처는 YBM 파랑과 **값이 정확히** 같은
+ * 픽셀이 0% 로 나왔다. 옛 기록의 `paletteOff` · `paletteNote` · `palette` 칸은 그대로 남아 있지만 아무도 읽지 않는다.
  */
 export type VerifyFlags = {
   duplicateImage: boolean;
   staleCapture: boolean;
   sameCapture: boolean;
-  paletteOff: boolean;
-  paletteNote: string;
-  palette: PaletteShares | null;
   /** 이미 그 달(기수) 반에 배정돼 있다 — 새로 승인하면 등록이 두 건 생긴다 (2026-09-22). 배정된 반 id */
   alreadyEnrolled: number[];
   /**
@@ -37,8 +37,6 @@ export type FlagInput = {
   /** 수강증 맨 위 `현재시간` — 날짜 · 초까지 */
   capturedOn: string | null;
   capturedAt: string | null;
-  /** 화면 색 (`measurePalette`). 못 쟀으면 null */
-  palette: PaletteShares | null;
   /** 배정하려는 반 — 그 달 반에 이미 있는지 본다 */
   sectionIds: readonly number[];
 };
@@ -70,17 +68,10 @@ export async function receiptFlags(admin: Admin, input: FlagInput): Promise<Veri
     sameCapture = (count ?? 0) > 0;
   }
 
-  // 4. **색 팔레트** — YBM 수강증 화면의 색(파란 티켓 카드 · 노란 과정 배지)이 큰 면적을 차지하는가. 못 쟀으면 판단하지 않는다.
-  // 실측: 진짜 37.8~40.0%(카톡 JPEG q70 · 1080px 축소 포함) vs 생성물·다른 사진 0.00~0.05% (`src/lib/receipt-forensics.ts`)
-  const palette = paletteVerdict(input.palette);
-
   return {
     duplicateImage,
     staleCapture,
     sameCapture,
-    paletteOff: !palette.ok,
-    paletteNote: palette.note,
-    palette: input.palette,
     alreadyEnrolled: await enrolledInSameTerm(admin, userId, input.sectionIds),
     decidedBefore: await decidedBefore(admin, userId, hash, capturedAt),
   };

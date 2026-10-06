@@ -51,7 +51,6 @@ export function planRenameRecheck(row: StoredVerification, newName: string): Ren
     duplicateImage: c.flags.duplicateImage === true,
     staleCapture: c.flags.staleCapture === true,
     sameCapture: c.flags.sameCapture === true,
-    paletteOff: c.flags.paletteOff === true,
     alreadyEnrolled: c.flags.alreadyEnrolled ?? [],
     decidedBefore: c.flags.decidedBefore ?? null,
   };

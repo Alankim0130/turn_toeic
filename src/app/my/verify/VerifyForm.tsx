@@ -120,8 +120,13 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
   const [textbook, setTextbook] = useState<TextbookNotice | null>(null);
   // 결과 팝업 (2026-09-18 Alan — "반려 문구가 바로 보여야 하고, 승인이면 어떤 반인지 팝업으로 보여 주고 맞으면 확인, 아니면 수동신청")
   const [popup, setPopup] = useState<
-    null | { kind: "approved" | "preliminary"; assigned: string[] } | { kind: "rejected"; reason: string } | ({ kind: "name" } & NameMismatch)
+    | null
+    | { kind: "approved" | "preliminary"; assigned: string[]; replaced: string[] }
+    | { kind: "rejected"; reason: string }
+    | ({ kind: "name" } & NameMismatch)
   >(null);
+  /** 반을 바꾼 수강증이라 뺀 이전 반 (2026-10-06) — 팝업을 닫아도 안내에 남긴다 */
+  const [replaced, setReplaced] = useState<string[]>([]);
   const [pending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -239,9 +244,10 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
           setHeld(res.held ?? null);
           setNameMismatch(res.nameMismatch ?? null);
           setTextbook(res.textbook ?? null);
+          setReplaced(res.replaced ?? []);
           const kind = res.approved ? (res.preliminary ? "preliminary" : "approved") : res.held ? "held" : manual ? "manual" : "auto";
           setDone(kind);
-          if (kind === "approved" || kind === "preliminary") setPopup({ kind, assigned: res.assigned ?? [] });
+          if (kind === "approved" || kind === "preliminary") setPopup({ kind, assigned: res.assigned ?? [], replaced: res.replaced ?? [] });
           // 이름이 다르면 접수는 됐지만 자동으로 등업되지 않는다 — 바로 알려 준다
           else if (res.nameMismatch) setPopup({ kind: "name", ...res.nameMismatch });
           return;
@@ -365,6 +371,17 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
               ))
             )}
           </ul>
+          {popup.replaced.length > 0 && (
+            <div className="mt-3 rounded-xl border border-line bg-surface p-3">
+              <p className="text-sm font-bold text-ink">반을 바꾼 수강증으로 보고 이전 반은 뺐어요</p>
+              <ul className="mt-1.5 space-y-1">
+                {popup.replaced.map((r) => (
+                  <li key={r} className="text-sm text-slate line-through decoration-slate/60">{r}</li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-slate">두 반을 모두 듣는다면 아래 <b>반이 달라요 — 수동신청</b>으로 알려 주세요.</p>
+            </div>
+          )}
           <p className="mt-3 text-slate">
             {popup.kind === "approved" ? "이제 불라방·다시보기·숙제업로드를 쓸 수 있어요." : "개강일에 수강생으로 자동 전환되고, 그때부터 불라방·다시보기가 열려요."}
           </p>
@@ -388,6 +405,7 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
       {resultPopup}
       <Alert kind="success" title={done === "approved" ? "등업이 완료됐어요" : "예비등록이 완료됐어요"}>
         수강증을 읽어 반을 바로 배정했어요.{" "}
+        {replaced.length > 0 && <>반을 바꾼 수강증이라 이전 반({replaced.join(" / ")})은 뺐어요.{" "}</>}
         {done === "approved"
           ? "이제 불라방·다시보기·숙제업로드를 쓸 수 있어요. 내 시간표에서 배정된 반을 확인해 주세요."
           : "개강일에 수강생으로 자동 전환되고, 그때부터 불라방·다시보기가 열려요."}{" "}
