@@ -2,6 +2,8 @@ import "server-only";
 import type { createAdminClient } from "./supabase/admin";
 import { assignableError, orderWindow } from "./enrollment-window";
 import { planManualApproval, type AssignmentPlan } from "./final-assignment";
+import { closeSamePendingReceipts } from "./pending-receipts";
+import { capturedAtOf, seatOfSections } from "./receipt-seat";
 import type { Json, TablesInsert, TablesUpdate } from "./supabase/database.types";
 import { promoteToStudent } from "./student-role";
 import { todayKST } from "./utils";
@@ -42,7 +44,10 @@ export async function approveVerificationWith(admin: Admin, input: ApproveInput)
   const sectionIds = [...new Set(input.sectionIds)];
   if (sectionIds.length === 0) return { ok: false, error: "배정할 반이 없습니다." };
 
-  const { data: sections } = await admin.from("class_sections").select("id, term_id, enrollment_opens_at, closes_at").in("id", sectionIds);
+  const { data: sections } = await admin
+    .from("class_sections")
+    .select("id, term_id, enrollment_opens_at, closes_at, track, time_block, term:terms(month)")
+    .in("id", sectionIds);
   if (!sections || sections.length !== sectionIds.length) return { ok: false, error: "선택한 반을 찾을 수 없습니다." };
 
   const today = todayKST();
@@ -57,14 +62,25 @@ export async function approveVerificationWith(admin: Admin, input: ApproveInput)
     const [{ data: mine, error: mineErr }, { data: open, error: openErr }] = await Promise.all([
       admin
         .from("enrollments")
-        .select("id, order_id, section_id, mode, section:class_sections!enrollments_section_id_fkey(term_id)")
+        .select("id, order_id, section_id, mode, section:class_sections!enrollments_section_id_fkey(term_id), order:enrollment_orders!enrollments_order_id_fkey(verification_id)")
         .eq("student_id", input.userId),
       // 승인 화면의 반 고르기와 같은 조건 — 화면에 뜰 수 없던 반은 체크가 없어도 빼지 않는다
       admin.from("class_sections").select("id").eq("status", "open").gte("closes_at", today),
     ]);
     if (mineErr || openErr) return { ok: false, error: `지금 배정을 읽지 못했습니다. ${(mineErr ?? openErr)?.message ?? ""}` };
+    // 다른 수강증으로 승인된 등록의 배정인가 — 단과를 둘 산 학생의 첫째 수강증 반 (2026-10-06). 체크돼 있으면 그 등록에 그대로 둔다
     const existing = (mine ?? []).flatMap((e) =>
-      e.section && e.section_id != null && e.order_id != null ? [{ id: e.id, order_id: e.order_id, section_id: e.section_id, term_id: e.section.term_id }] : [],
+      e.section && e.section_id != null && e.order_id != null
+        ? [
+            {
+              id: e.id,
+              order_id: e.order_id,
+              section_id: e.section_id,
+              term_id: e.section.term_id,
+              otherReceipt: e.order?.verification_id != null && e.order.verification_id !== input.verificationId,
+            },
+          ]
+        : [],
     );
     for (const e of mine ?? []) oldMode.set(e.id, e.mode);
     plan = planManualApproval({ chosen: sections, existing, selectable: new Set((open ?? []).map((s) => s.id)) });
@@ -108,24 +124,31 @@ export async function approveVerificationWith(admin: Admin, input: ApproveInput)
   const patch: TablesUpdate<"enrollment_verifications"> = { result: "approved", matched_section: sections[0].id, reject_reason: null };
   if (input.candidates !== undefined) patch.candidates = input.candidates;
   if (input.confidence !== undefined) patch.confidence = input.confidence;
-  const { error: verErr } = await admin.from("enrollment_verifications").update(patch).eq("id", input.verificationId);
+  const { data: approvedRow, error: verErr } = await admin
+    .from("enrollment_verifications")
+    .update(patch)
+    .eq("id", input.verificationId)
+    .select("file_path, file_hash, parsed")
+    .maybeSingle();
   if (verErr) {
     for (const e of plan.absorb) await admin.from("enrollments").update({ order_id: e.order_id, mode: oldMode.get(e.id) ?? input.mode }).eq("id", e.id);
     await admin.from("enrollment_orders").delete().eq("id", order.id);
     return { ok: false, error: `승인 기록 저장에 실패했습니다. ${verErr.message}` };
   }
 
-  // 같은 학생의 다른 검토 대기 건은 닫는다 (2026-10-02 Alan — "다시 제대로 올려서 승인이 되고 나면 수동처리 목록에서 빼주면").
+  // 같은 학생의 확인 중 수강증 중 **같은 등록을 다시 낸 것**은 닫는다 (2026-10-02 Alan — "다시 제대로 올려서 승인이 되고 나면 수동처리 목록에서 빼주면").
+  // 같은 그림 · 같은 반 · 같은 달 같은 트랙에 시간이 겹치는 것만 — 단과 둘째 수강증처럼 다른 강좌의 수강증은 남긴다 (2026-10-06, `pending-receipts.ts`).
   // 다음 달 수강증(hold)과 "반이 달라요" 정정 요청(correctionOf)은 그대로 둔다 — 아직 할 일이다
-  const { error: closeErr } = await admin
-    .from("enrollment_verifications")
-    .update({ result: "closed", reject_reason: "다른 수강증이 승인돼 닫았어요" })
-    .eq("user_id", input.userId)
-    .is("result", null)
-    .is("candidates->hold", null)
-    .is("candidates->correctionOf", null)
-    .neq("id", input.verificationId);
-  if (closeErr) console.error("[approve] 남은 검토 대기 건을 닫지 못했어요", closeErr.message);
+  await closeSamePendingReceipts(
+    admin,
+    input.userId,
+    input.verificationId,
+    seatOfSections(
+      sections,
+      { path: approvedRow?.file_path ?? null, hash: approvedRow?.file_hash ?? null, capturedAt: capturedAtOf(approvedRow?.parsed) },
+      approvedRow?.parsed,
+    ),
+  );
 
   // 승인은 끝났다 — 체크를 뺀 같은 달 배정을 빼고, 비게 된 옛 등록을 지운다.
   // 여기서 실패해도 되돌리지 않는다: 학생은 반을 잃지 않고(옛 반이 남을 뿐) 승인은 그대로다

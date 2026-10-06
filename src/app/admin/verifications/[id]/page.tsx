@@ -51,7 +51,7 @@ export default async function VerificationDetailPage({
   const { data: v } = await supabase.from("enrollment_verifications").select("*").eq("id", id).maybeSingle();
   if (!v) notFound();
 
-  const [{ data: signed }, { data: sections }, { data: order }, { data: myEnrollments }, names, phones, { data: twinRows }, { data: courseRows }] = await Promise.all([
+  const [{ data: signed }, { data: sections }, { data: order }, { data: myEnrollments }, names, phones, { data: twinRows }, { data: courseRows }, { data: otherPending }] = await Promise.all([
     // 보관 기간이 지나 지운 파일은 서명 URL 을 만들 이유가 없다 (2026-09-20)
     v.file_deleted_at
       ? Promise.resolve({ data: null as { signedUrl: string } | null })
@@ -71,7 +71,9 @@ export default async function VerificationDetailPage({
     // 이 학생의 지금 배정 — 승인은 체크한 반이 그 달의 최종 배정이 되므로(2026-09-23) 같은 달 배정을 미리 체크해 두고 보여 준다
     supabase
       .from("enrollments")
-      .select("id, mode, section:class_sections!enrollments_section_id_fkey(id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(name))")
+      .select(
+        "id, mode, section:class_sections!enrollments_section_id_fkey(id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(name)), order:enrollment_orders!enrollments_order_id_fkey(verification_id)",
+      )
       .eq("student_id", v.user_id),
     // 학생 이름 · 등급 — 이름 · 등급만 주는 함수로 (`profile-names.ts`)
     getProfileNames(supabase, [v.user_id]),
@@ -80,6 +82,8 @@ export default async function VerificationDetailPage({
     supabase.rpc("verification_twins", { p_id: id }),
     // 강좌 이름 — 수강증의 반이 아직 안 열렸을 때 그 반을 이름으로 적는다 (열린 반 목록에는 없으니까, 2026-10-06 `missingClassOf`)
     supabase.from("courses").select("name, program, target_score").eq("is_active", true),
+    // 같은 학생의 다른 확인 중 수강증 — 단과를 둘 산 학생은 수강증이 두 장이고 하나씩 승인한다 (2026-10-06 RC단과 두 장)
+    supabase.from("enrollment_verifications").select("id, candidates").eq("user_id", v.user_id).is("result", null).neq("id", id).order("id"),
   ]);
   const student = names.get(v.user_id);
   const phone = phones.get(v.user_id);
@@ -182,7 +186,17 @@ export default async function VerificationDetailPage({
   // **같은 달 기존 배정도 함께 체크한다** (2026-09-23) — 승인은 체크한 반이 그 달의 최종 배정이라, 안 체크해 두면 그대로 눌렀을 때 빠진다
   const mine = (myEnrollments ?? []).flatMap((e) =>
     e.section
-      ? [{ section_id: e.section.id, term_id: e.section.term_id, opens_at: e.section.enrollment_opens_at, closes_at: e.section.closes_at, label: sectionSummary(e.section, e.mode) }]
+      ? [
+          {
+            section_id: e.section.id,
+            term_id: e.section.term_id,
+            opens_at: e.section.enrollment_opens_at,
+            closes_at: e.section.closes_at,
+            label: sectionSummary(e.section, e.mode),
+            // 이 반을 준 수강증 (스태프 배정이면 null) — 단과를 둘 산 학생의 첫째 수강증 반은 둘째를 승인해도 그 등록에 그대로 남는다 (2026-10-06)
+            receipt: e.order?.verification_id ?? null,
+          },
+        ]
       : [],
   );
   const preselected = preselectForApproval({
@@ -194,6 +208,10 @@ export default async function VerificationDetailPage({
   const currentLabels = mine.filter((e) => e.closes_at >= today).map((e) => e.label);
   // 이미 그 달 반에 배정돼 있다 — 새로 승인하면 등록이 두 건 생긴다 (2026-09-22). 정정 요청은 아래 안내가 따로 있다
   const alreadyEnrolled = correctionOf ? [] : (matchLog?.flags?.alreadyEnrolled ?? []).filter((n) => typeof n === "number");
+  // 같은 학생의 다른 확인 중 수강증 — 받아 둔 다음 달 수강증(반 개설 대기)은 빼고
+  const waiting = (otherPending ?? []).filter((o) => (o.candidates as { hold?: unknown } | null)?.hold == null);
+  // 이미 있는 반 중 다른 수강증으로 승인된 반 — 단과 두 장처럼 반을 **더하는** 수강증일 수 있다 (2026-10-06 Alan — 한 학생이 RC단과를 두 개 등록했다)
+  const otherReceipts = [...new Set(mine.filter((e) => alreadyEnrolled.includes(e.section_id) && e.receipt != null && e.receipt !== v.id).map((e) => e.receipt as number))];
   // 같은 캡처를 전에 사람이 판정했다 (2026-09-22, firsttoeic 사고 5). 승인됐던 캡처인데 지금 배정이 없으면 환불·회수일 수 있다
   const decidedBefore = matchLog?.flags?.decidedBefore;
   const humanNotes = [
@@ -335,9 +353,39 @@ export default async function VerificationDetailPage({
           <section className="card p-5">
             {alreadyEnrolled.length > 0 && v.result === null && (
               <Alert kind="warning" className="mb-3">
-                이 학생은 이 달 반에 <b>이미 배정</b>돼 있어요 ({alreadyEnrolled.map((id) => candidates.find((c) => c.id === id)?.label ?? `반 #${id}`).join(" / ")}).
-                그래서 자동 등업하지 않았습니다. 아래에서 승인하면 <b>체크한 반이 이 달의 최종 배정</b>이 돼요 — 지금 배정은 미리 체크해 두었으니,
-                반을 바꾸는 것이면 옛 반의 체크를 풀고 새 반을 고르세요.
+                이 학생은 이 달 반에 <b>이미 배정</b>돼 있어요 ({alreadyEnrolled.map((id) => candidates.find((c) => c.id === id)?.label ?? `반 #${id}`).join(" / ")}
+                {otherReceipts.length > 0 && (
+                  <>
+                    {" "}— 승인된 수강증{" "}
+                    {otherReceipts.map((r, i) => (
+                      <span key={r}>
+                        {i > 0 && ", "}
+                        <Link href={`/admin/verifications/${r}`} className="font-bold underline">#{r}</Link>
+                      </span>
+                    ))}
+                  </>
+                )}
+                ). 그래서 자동 등업하지 않았습니다. 아래에서 승인하면 <b>체크한 반이 이 달의 최종 배정</b>이 돼요 — 지금 배정은 미리 체크해 두었어요.
+                {otherReceipts.length > 0 ? (
+                  <>
+                    {" "}<b>단과를 두 개 산 것처럼 반을 더하는 수강증이면 그대로 승인</b>하세요 — 두 반이 모두 남고, 먼저 승인된 반은 그 수강증의 등록 · 수강 방식 그대로예요.
+                    반을 바꾼 것이면 옛 반의 체크를 풀고 승인하세요.
+                  </>
+                ) : (
+                  <> 반을 바꾸는 것이면 옛 반의 체크를 풀고 새 반을 고르세요.</>
+                )}
+              </Alert>
+            )}
+            {v.result === null && waiting.length > 0 && (
+              <Alert kind="info" className="mb-3">
+                이 학생이 올린 수강증이 하나 더 확인을 기다리고 있어요 (
+                {waiting.map((o, i) => (
+                  <span key={o.id}>
+                    {i > 0 && ", "}
+                    <Link href={`/admin/verifications/${o.id}`} className="font-bold underline">#{o.id}</Link>
+                  </span>
+                ))}
+                ). 단과를 두 개 산 학생처럼 강좌마다 수강증이 따로 있으면 <b>하나씩 승인</b>해 주세요 — 하나를 승인해도 다른 강좌의 수강증은 닫히지 않아요.
               </Alert>
             )}
             {correctionOf && (

@@ -11,9 +11,22 @@
  * - 다른 달의 배정은 건드리지 않는다
  * 승인 화면은 같은 달 기존 배정을 **미리 체크해 둔다** — 아무것도 안 건드리면 기존 배정이 그대로 남는다.
  *
+ * **다른 수강증으로 승인된 반은 그 등록에 그대로 둔다** (2026-10-06 Alan — 한 학생이 RC단과를 두 개 등록했다). 단과를 둘 산 학생은 수강증이 두 장이고
+ * 둘째를 승인할 때 첫째 반도 체크돼 있다(같은 달 기존 배정). 예전에는 그 반까지 새 등록으로 옮겨 와서 **첫째 수강증의 등록이 비어 지워지고**
+ * 수강 방식도 둘째 수강증 것으로 바뀌었다 — 학생 관리 "올린 수강증" 에 첫째가 `배정 없음` 으로 보였다. 이제 체크된 그 반은 제자리 · 제 방식 그대로다.
+ * 단 체크한 반이 **모두** 다른 수강증의 반이면(같은 수강증을 또 올림) 예전처럼 옮겨 온다 — 이 승인의 등록이 빈 채로 남으면 안 된다.
+ * 체크를 뺀 반은 다른 수강증의 반이어도 뺀다 — 스태프가 정한 그 달의 최종 배정이다.
+ *
  * **OCR 자동 승인 · 받아 둔 수강증 다시 맞추기에는 쓰지 않는다** — 기계는 기존 배정을 바꾸지 않고 검토로 넘긴다.
  */
-export type ExistingEnrollment = { id: number; order_id: number; section_id: number; term_id: number };
+export type ExistingEnrollment = {
+  id: number;
+  order_id: number;
+  section_id: number;
+  term_id: number;
+  /** 다른 승인된 수강증의 등록에 든 배정 (2026-10-06) — 체크돼 있으면 옮기지 않고 그대로 둔다 */
+  otherReceipt?: boolean;
+};
 
 export type AssignmentPlan = {
   /** 이 승인의 등록으로 옮겨 올 기존 배정 (enrollments.id) */
@@ -36,9 +49,13 @@ export function planManualApproval(input: {
   const chosen = new Set(input.chosen.map((s) => s.id));
   const sameTerm = input.existing.filter((e) => e.term_id === term);
   const have = new Set(sameTerm.map((e) => e.section_id));
+  const kept = sameTerm.filter((e) => chosen.has(e.section_id));
+  const insert = [...chosen].filter((id) => !have.has(id));
+  // 다른 수강증의 반은 제자리에 둔다 — 단 이 승인에 남는 반이 하나도 없으면(같은 수강증을 또 올림) 예전처럼 옮겨 온다
+  const own = kept.filter((e) => !e.otherReceipt);
   return {
-    absorb: sameTerm.filter((e) => chosen.has(e.section_id)),
-    insert: [...chosen].filter((id) => !have.has(id)),
+    absorb: insert.length === 0 && own.length === 0 ? kept : own,
+    insert,
     remove: sameTerm.filter((e) => !chosen.has(e.section_id) && input.selectable.has(e.section_id)),
   };
 }
