@@ -35,6 +35,9 @@ export async function recheckAfterRename(userId: string, from: string, to: strin
   ]);
 
   let pending = 0;
+  // 승인한 수강증들 — 단과를 둘 산 학생은 확인 중 수강증이 두 장일 수 있어 하나를 승인해도 나머지를 마저 본다 (2026-10-06).
+  // 함께 남아 있는 확인 중 수강증은 서로 다른 강좌다 (같은 등록이면 올릴 때 바꿔 넣었다 — `replacePendingReceipts`)
+  const approvedAll: { sectionIds: number[]; mode: "onsite" | "live"; preliminary: boolean }[] = [];
   for (const row of rows ?? []) {
     const ocrText = (row.ocr_raw as { text?: unknown } | null)?.text;
     const candidates = (row.candidates ?? null) as StoredCandidates | null;
@@ -53,6 +56,11 @@ export async function recheckAfterRename(userId: string, from: string, to: strin
     const base = (candidates ?? {}) as Record<string, unknown>;
 
     if (plan.kind === "approve" && auto.on) {
+      // 앞에서 승인한 수강증이 같은 등록이라 이 줄을 닫았을 수 있다 (`closeSamePendingReceipts`) — 닫힌 것은 다시 승인하지 않는다
+      if (approvedAll.length > 0) {
+        const { data: still } = await admin.from("enrollment_verifications").select("result").eq("id", row.id).eq("user_id", userId).maybeSingle();
+        if (still?.result != null) continue;
+      }
       const approved = await approveVerificationWith(admin, {
         verificationId: row.id,
         userId,
@@ -71,8 +79,8 @@ export async function recheckAfterRename(userId: string, from: string, to: strin
             url: "/admin/verifications?status=approved",
           });
         });
-        const sections = await getOpenEnrollSections();
-        return { approved: true, preliminary: approved.status === "preliminary", assigned: assignedLabels(sections, plan.sectionIds, plan.mode) };
+        approvedAll.push({ sectionIds: plan.sectionIds, mode: plan.mode, preliminary: approved.status === "preliminary" });
+        continue;
       }
       // 승인이 막혔다(반이 닫혔거나 이미 배정) — 검토 대기로 남긴다
     }
@@ -85,5 +93,13 @@ export async function recheckAfterRename(userId: string, from: string, to: strin
     pending++;
   }
 
+  if (approvedAll.length > 0) {
+    const sections = await getOpenEnrollSections();
+    return {
+      approved: true,
+      preliminary: approvedAll.every((a) => a.preliminary),
+      assigned: approvedAll.flatMap((a) => assignedLabels(sections, a.sectionIds, a.mode)),
+    };
+  }
   return { approved: false, pending };
 }

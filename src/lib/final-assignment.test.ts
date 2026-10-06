@@ -44,6 +44,37 @@ describe("수동 승인 = 그 달의 최종 배정 (2026-09-23 Alan — '이미 
   });
 });
 
+// 2026-10-06 Alan — 한 학생이 RC단과를 두 개 등록했다 — 10월 650 월수금 10:00 RC(301) 를 첫째 수강증으로 승인받았고,
+// 둘째 수강증(화목금 11:10 RC, 304)을 스태프가 승인한다. 첫째 반은 같은 달 기존 배정이라 미리 체크돼 있다
+describe("단과 두 장 — 다른 수강증으로 승인된 반은 그 등록에 그대로 둔다", () => {
+  const first = { id: 501, order_id: 91, section_id: 301, term_id: OCT, otherReceipt: true };
+  const octOpen = new Set([301, 302, 303, 304]);
+
+  it("둘째 수강증을 승인하면 둘째 반만 새로 넣고 첫째 반은 옮기지 않는다 (첫째 등록 · 수강 방식 그대로)", () => {
+    const plan = planManualApproval({ chosen: [{ id: 301, term_id: OCT }, { id: 304, term_id: OCT }], existing: [first], selectable: octOpen });
+    expect(plan).toEqual({ absorb: [], insert: [304], remove: [] });
+  });
+
+  it("같은 수강증을 또 올려 승인하면(체크한 반이 모두 다른 수강증의 반) 예전처럼 옮겨 온다 — 이 승인의 등록이 비면 안 된다", () => {
+    const plan = planManualApproval({ chosen: [{ id: 301, term_id: OCT }], existing: [first], selectable: octOpen });
+    expect(plan.absorb.map((e) => e.id)).toEqual([501]);
+    expect(plan.insert).toEqual([]);
+  });
+
+  it("스태프 배정(수강증 없음)은 예전처럼 이 승인으로 옮겨 온다 — 다른 수강증의 반만 제자리에 둔다", () => {
+    const staff = { id: 502, order_id: 92, section_id: 302, term_id: OCT };
+    const plan = planManualApproval({ chosen: [{ id: 301, term_id: OCT }, { id: 302, term_id: OCT }], existing: [first, staff], selectable: octOpen });
+    expect(plan.absorb.map((e) => e.id)).toEqual([502]);
+    expect(plan.insert).toEqual([]);
+    expect(plan.remove).toEqual([]);
+  });
+
+  it("다른 수강증의 반이라도 체크를 빼면 뺀다 — 스태프가 정한 그 달의 최종 배정이다 (반을 바꾼 경우)", () => {
+    const plan = planManualApproval({ chosen: [{ id: 304, term_id: OCT }], existing: [first], selectable: octOpen });
+    expect(plan).toEqual({ absorb: [], insert: [304], remove: [first] });
+  });
+});
+
 describe("승인 화면에 미리 체크해 둘 반", () => {
   const sel = [
     { id: 97, term_id: SEPT },

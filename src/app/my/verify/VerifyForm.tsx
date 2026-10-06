@@ -270,7 +270,10 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
     setManual(true);
   };
 
-  /** 다른 수강증으로 다시 올리기 — 확인 중인 신청은 새 수강증이 들어오면 저절로 바뀐다 (2026-09-18 "새로 올리면 새 정보로 자동 교체") */
+  /**
+   * 다른 수강증으로 다시 올리기 — 확인 중인 신청은 **같은 등록**(같은 그림 · 같은 반 · 같은 시간)의 새 수강증이 들어오면 저절로 바뀐다
+   * (2026-09-18 "새로 올리면 새 정보로 자동 교체" → 2026-10-06 단과 두 장처럼 함께 듣는 다른 강좌의 수강증은 남는다 — `replacePendingReceipts`)
+   */
   const reupload = () => {
     setPopup(null);
     setDone(null);
