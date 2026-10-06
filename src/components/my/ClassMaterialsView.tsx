@@ -4,17 +4,26 @@ import { Icon } from "@/components/ui/Icon";
 import { cn, formatDate } from "@/lib/utils";
 import { formatBytes } from "@/lib/study";
 import { shortDay } from "@/lib/study-rounds";
-import { fileKindLabel, MATERIAL_SUBJECT_LABEL, MATERIAL_SUBJECTS, type MaterialSubject } from "@/lib/class-materials";
+import {
+  fileKindLabel,
+  isViewableKind,
+  MATERIAL_SUBJECT_LABEL,
+  MATERIAL_SUBJECTS,
+  materialBadge,
+  sortMaterialFiles,
+  type MaterialFile,
+  type MaterialSubject,
+} from "@/lib/class-materials";
 import { ROUND_SET_LABEL, type RoundSet } from "@/lib/class-rounds";
 import { MaterialNote } from "@/components/class-materials/MaterialNote";
+import { MaterialFileList } from "@/components/class-materials/MaterialFileList";
 
 export type MyClassMaterial = {
   id: number;
   title: string;
   note: string | null;
-  file_name: string;
-  file_size: number | null;
-  content_type: string | null;
+  /** 붙은 파일 0 ~ 20개 (2026-10-06) — 0이면 강사가 글만 올린 자료 */
+  files: MaterialFile[] | null;
   created_at: string;
 };
 
@@ -23,9 +32,6 @@ export type MaterialRound = { key: string; date: string; set: RoundSet; seq: num
 
 /** 다음 수업일은 이만큼만 펼친다 — 주5일 120분이면 한 달에 열몇 줄이라 다 펴면 받을 자료가 아래로 밀린다 */
 const UPCOMING_SHOWN = 3;
-
-/** 브라우저가 그 자리에서 보여 주는 형식 — 나머지(한글 · 워드 · 압축 …)는 어차피 내려받아지므로 `받기` 하나만 둔다 */
-const VIEWABLE = new Set(["PDF", "그림"]);
 
 /**
  * 학생 수업자료실의 레벨 칸 · RC/LC 칸 · **일정표** (2026-10-05). 데이터는 `/my/materials` 가 내 과정 칸 · 열린 회차로 좁혀 넘긴다 —
@@ -186,37 +192,52 @@ export function ClassMaterialsView({
   );
 }
 
+/**
+ * 자료 한 장 — **파일 0 ~ 20개** (2026-10-06): 하나면 제목 줄 오른쪽에 `열기`(PDF · 그림) · `받기`, 여럿이면 안내 아래 파일 목록(파일마다),
+ * 없으면 강사가 글(안내 · 스크립트)만 올린 것이라 버튼이 없다
+ */
 function MaterialCard({ m }: { m: MyClassMaterial }) {
-  const kind = fileKindLabel(m.file_name, m.content_type);
-  const viewable = VIEWABLE.has(kind);
+  const files = sortMaterialFiles(m.files);
+  const single = files.length === 1 ? files[0] : null;
+  const viewable = single ? isViewableKind(fileKindLabel(single.file_name, single.content_type)) : false;
   return (
-    // 휴대폰: 제목 → 안내 → 버튼. 넓은 화면: 제목 줄 오른쪽에 버튼, 안내는 그 아래 한 줄 전체 (버튼만 따로 한 줄을 먹지 않게)
+    // 휴대폰: 제목 → 안내 → 파일 · 버튼. 넓은 화면: 제목 줄 오른쪽에 버튼, 안내 · 파일 목록은 그 아래 한 줄 전체 (버튼만 따로 한 줄을 먹지 않게)
     <li className="card grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-5">
       <div className="flex min-w-0 items-start gap-3 sm:col-start-1 sm:row-start-1">
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-[11px] font-black text-brand-700 ring-1 ring-brand-100">
-          {kind}
+        <span
+          className={cn(
+            "flex size-11 shrink-0 items-center justify-center rounded-xl text-[11px] font-black ring-1",
+            files.length === 0 ? "bg-surface text-slate ring-line" : "bg-brand-50 text-brand-700 ring-brand-100",
+          )}
+        >
+          {materialBadge(files)}
         </span>
         <div className="min-w-0 flex-1">
           <p className="font-black leading-snug text-ink [overflow-wrap:anywhere]">{m.title}</p>
           <p className="mt-0.5 text-xs text-slate">
             {formatDate(new Date(m.created_at), { month: "long", day: "numeric" })} 올림
-            {m.file_size != null && <> · {formatBytes(m.file_size)}</>}
+            {single?.file_size != null && <> · {formatBytes(single.file_size)}</>}
+            {files.length > 1 && <> · 파일 {files.length}개</>}
           </p>
         </div>
       </div>
       {/* 강사가 적은 안내 · 스크립트 — 짧으면 펼쳐 두고, 길면 앞 네 줄 + 전체 보기 (2026-10-05) */}
       {m.note && <MaterialNote note={m.note} className="bg-brand-50 sm:col-span-2 sm:row-start-2" />}
-      <div className={cn("grid gap-2 sm:col-start-2 sm:row-start-1 sm:flex", viewable ? "grid-cols-2" : "grid-cols-1")}>
-        {viewable && (
-          <a href={`/files/class/${m.id}`} target="_blank" rel="noopener" className="btn-secondary !px-4 !py-2 text-sm">
-            열기
+      {/* 안내가 없으면 둘째 줄로 올린다 — 빈 줄이 남으면 격자 간격이 두 번 들어간다 */}
+      {files.length > 1 && <MaterialFileList files={files} className={cn("sm:col-span-2", m.note ? "sm:row-start-3" : "sm:row-start-2")} />}
+      {single && (
+        <div className={cn("grid gap-2 sm:col-start-2 sm:row-start-1 sm:flex", viewable ? "grid-cols-2" : "grid-cols-1")}>
+          {viewable && (
+            <a href={`/files/class/${single.id}`} target="_blank" rel="noopener" className="btn-secondary !px-4 !py-2 text-sm">
+              열기
+            </a>
+          )}
+          <a href={`/files/class/${single.id}?download=1`} className="btn-primary !px-4 !py-2 text-sm">
+            <Icon name="download" size={18} className="brightness-0 invert" />
+            받기
           </a>
-        )}
-        <a href={`/files/class/${m.id}?download=1`} className="btn-primary !px-4 !py-2 text-sm">
-          <Icon name="download" size={18} className="brightness-0 invert" />
-          받기
-        </a>
-      </div>
+        </div>
+      )}
     </li>
   );
 }

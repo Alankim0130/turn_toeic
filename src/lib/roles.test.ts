@@ -315,7 +315,7 @@ describe("LC 교재 · 음원 · 수업자료실 조회는 내 과정 칸 · 열
       .join("\n");
   const live = new Map<string, string>();
   for (const f of readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort()) {
-    for (const [, verb, name, table, body] of sqlOf(f).matchAll(/(create|drop) policy (?:if exists )?"([^"]+)" on public\.(lc_books|lc_audio_tracks|class_materials)([^;]*);/g)) {
+    for (const [, verb, name, table, body] of sqlOf(f).matchAll(/(create|drop) policy (?:if exists )?"([^"]+)" on public\.(lc_books|lc_audio_tracks|class_materials|class_material_files)([^;]*);/g)) {
       if (verb === "create") live.set(`${table} · ${name}`, body);
       else live.delete(`${table} · ${name}`);
     }
@@ -351,6 +351,33 @@ describe("LC 교재 · 음원 · 수업자료실 조회는 내 과정 칸 · 열
       expect(flat, `${key}`).toContain("book_set is not null and seq is not null");
       expect(flat, `${key}`).toContain("array[format('%s:%s:%s:%s', level, subject, book_set, seq)] <@ (select private.my_open_rounds())");
     }
+  });
+
+  it("class_material_files — 파일 행은 부모 자료가 보일 때만 (2026-10-06 — 자료 하나에 파일 여러 개). 그래야 위 열린 회차 규칙이 파일에도 걸린다", () => {
+    for (const [key, body] of selectsOf("class_material_files")) {
+      expect(body.replace(/\s+/g, " "), `${key}`).toContain("exists (select 1 from public.class_materials m where m.id = class_material_files.material_id)");
+    }
+    // 쓰기는 강사·관리자만 (조교 화면이 아니다)
+    const writes = [...live].filter(([key, body]) => key.startsWith("class_material_files ·") && /for (insert|update|delete)/.test(body));
+    expect(writes.length).toBe(3);
+    for (const [key, body] of writes) expect(body, key).toMatch(/^[^]*private\.is_staff\(\)[^]*$/);
+  });
+
+  it("저장소 class-materials — 강사·관리자, 아니면 보이는 파일 행이 있어야 서명 URL 이 나온다 (2026-10-06)", () => {
+    const storage = new Map<string, string>();
+    for (const f of readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort()) {
+      for (const [, verb, name, body] of sqlOf(f).matchAll(/(create|drop) policy (?:if exists )?"(class-materials:[^"]+)" on storage\.objects([^;]*);/g)) {
+        if (verb === "create") storage.set(name, body);
+        else storage.delete(name);
+      }
+    }
+    const selects = [...storage].filter(([, body]) => /for select/.test(body));
+    expect(selects.length, "class-materials 저장소 조회 정책을 못 찾았다").toBe(1);
+    const flat = selects[0][1].replace(/\s+/g, " ");
+    expect(flat).toContain("bucket_id = 'class-materials'");
+    expect(flat).toContain("(select private.is_staff())");
+    expect(flat).toContain("exists (select 1 from public.class_material_files f where f.file_path = objects.name)");
+    expect(flat).not.toMatch(/has_term_access|has_section_access|using\s*\(\s*true\s*\)/);
   });
 
   /** 함수는 마지막 create or replace 가 진짜다 */

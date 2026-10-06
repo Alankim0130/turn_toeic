@@ -13,6 +13,9 @@ import { parseDoc, parseNote, runsText, sliceRuns, trimDoc, trimRuns, type NoteA
  * - 여기 값은 DB 와 같아야 한다 — 과목 check(`subject in ('rc','lc')`) · 제목 1~100자 · 안내 5만 자 · 버킷 50MB (`class-materials.test.ts` 가 본다).
  * - **안내 칸에 스크립트를 올린다** (2026-10-05 Alan — "여기 안내에 스크립트를 올려줄예정이야. 그래서 글을 쫌 길게 적을 수 있어야해" — 500자 → 5만 자,
  *   마이그레이션 20261005150000). 짧은 안내는 예전처럼 펼쳐 두고, 길면 앞 몇 줄만 보이고 `전체 보기` 로 편다 (`notePreview` · `MaterialNote`).
+ * - **자료 하나 = 제목 + 안내 + 파일 0 ~ 20개 — 게시판 글 하나** (2026-10-06 Alan — "게시판이 파일업로드를 안하면 글 올리기 버튼을 눌러도 계속 오류가 나 …
+ *   파일업로드를 안하고 글만 적어서 올릴수도 있도록 … 파일을 한번에 여러개 올릴 수 있도록", 마이그레이션 20261006100000). 파일은 `class_material_files` 에 두고,
+ *   파일이 없으면 안내에 글이 있어야 한다(`noteHasText`). 제목을 비우면 `defaultMaterialTitle` 이 짓는다.
  */
 
 export const CLASS_MATERIAL_BUCKET = "class-materials";
@@ -91,6 +94,60 @@ export function titleFromFileName(name: string): string {
   const base = name.replace(/\.[^./\\]{1,8}$/, "").replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
   return (base || name.trim() || "수업 자료").slice(0, CLASS_MATERIAL_TITLE_MAX);
 }
+
+/**
+ * 자료 하나에 붙이는 파일 수 상한 (2026-10-06 — "파일을 한번에 여러개"). DB 에는 상한이 없다 — 폼과 서버 액션이 본다.
+ * 한 회차 자료(교재 PDF · 스크립트 · 해설 · 음원 몇 개)에는 넉넉하고, 한 글에 50MB × 수십 개를 쌓지는 않게
+ */
+export const CLASS_MATERIAL_FILES_MAX = 20;
+
+/** 자료에 붙은 파일 한 개 — 관리자 · 학생 화면이 쓰는 칸 (`/files/class/{id}` 의 id 가 이 파일 id 다) */
+export type MaterialFile = { id: number; file_name: string; file_size: number | null; content_type: string | null; sort_order: number };
+
+/** 파일 순서 — 올린 순서(sort_order) 그대로, 같으면 먼저 넣은 것 */
+export function sortMaterialFiles<T extends { id: number; sort_order: number }>(files: readonly T[] | null | undefined): T[] {
+  return [...(files ?? [])].sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
+}
+
+/** 안내에 보이는 글자가 있나 — 서식 태그만 남은 빈 글은 없는 것으로 본다. **파일 없이 글만 올리는 자료의 조건**이다 (폼 · 서버 액션) */
+export function noteHasText(note: string | null | undefined): boolean {
+  return !!note && runsText(parseNote(note)).trim().length > 0;
+}
+
+/** 안내 첫 줄로 제목을 지을 때 이보다 길면 줄인다 — 스크립트 첫 줄이 통째로 제목이 되지 않게 */
+export const NOTE_TITLE_CHARS = 40;
+
+/**
+ * 제목을 비워 두면 (2026-10-06) — 파일이 있으면 첫 파일 이름(여럿이면 `… 외 N개`), 글만 있으면 안내의 첫 줄(길면 줄임), 그것도 없으면 `수업 자료`.
+ * 폼의 자리 표시(placeholder)와 서버 액션이 같은 것을 쓴다 — 화면에 비친 제목이 그대로 저장된다. 늘 1~100자다 (DB check)
+ */
+export function defaultMaterialTitle(fileNames: readonly string[], note: string | null | undefined): string {
+  if (fileNames.length > 0) {
+    const first = titleFromFileName(fileNames[0]);
+    if (fileNames.length === 1) return first;
+    const tail = ` 외 ${fileNames.length - 1}개`;
+    return Array.from(first).slice(0, CLASS_MATERIAL_TITLE_MAX - tail.length).join("").trimEnd() + tail;
+  }
+  const line = note
+    ? runsText(parseNote(note))
+        .split("\n")
+        .map((l) => l.trim())
+        .find(Boolean)
+    : undefined;
+  if (!line) return "수업 자료";
+  const chars = Array.from(line);
+  return chars.length > NOTE_TITLE_CHARS ? `${chars.slice(0, NOTE_TITLE_CHARS).join("").trimEnd()}…` : line;
+}
+
+/** 자료 줄 왼쪽 네모에 적는 말 — 글만이면 `글`, 파일 하나면 그 종류(`PDF`), 여럿이면 `파일 3` */
+export function materialBadge(files: readonly { file_name: string; content_type: string | null }[]): string {
+  if (files.length === 0) return "글";
+  if (files.length === 1) return fileKindLabel(files[0].file_name, files[0].content_type);
+  return `파일 ${files.length}`;
+}
+
+/** 브라우저가 그 자리에서 보여 주는 형식 — 나머지(한글 · 워드 · 압축 …)는 어차피 내려받아지므로 `받기` 하나만 둔다 */
+export const isViewableKind = (kind: string) => kind === "PDF" || kind === "그림";
 
 /** 학생 · 강사 화면의 파일 종류 이름 — 무엇이 열리는지 미리 보이게 */
 export function fileKindLabel(name: string, type?: string | null): string {
