@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import Link from "next/link";
 import { approveVerification, rejectVerification, updateEnrollment, type ActionState } from "../actions";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
@@ -25,6 +26,7 @@ export function DecisionForms({
   requested = [],
   current = [],
   ocrMode = null,
+  missing = null,
 }: {
   verificationId: number;
   result: string | null;
@@ -39,6 +41,11 @@ export function DecisionForms({
   current?: string[];
   /** OCR 이 수강증에서 읽은 수강 방식 (강의실 `온라인 강의` · 호실 · `라이브방송`). 미리 골라 둔다 — 못 읽었으면 null */
   ocrMode?: "onsite" | "live" | null;
+  /**
+   * 수강증에 적힌 반이 아직 열리지 않아 반 고르기에 없다 (2026-10-06, `missingClassOf`). href = 그 달 새 반 개설 — 반을 여는 강사 · 관리자에게만
+   * (조교에게는 null — 반 편성 화면이 닫혀 있다)
+   */
+  missing?: { label: string; href: string | null } | null;
 }) {
   const [approveState, approveAction] = useActionState<ActionState, FormData>(approveVerification, {});
   const [rejectState, rejectAction] = useActionState<ActionState, FormData>(rejectVerification, {});
@@ -87,6 +94,23 @@ export function DecisionForms({
 
           <fieldset>
             <legend className="label">배정할 반 (열려 있는 반만 표시)</legend>
+            {/* 2026-10-06 — 첫 2주완성 수강증이 왔는데 10월 2주완성 반을 안 열어 고를 칸이 없었다. 무엇을 열어야 하는지 여기서 말한다 */}
+            {missing && (
+              <Alert kind="warning" className="mb-2">
+                {/* 줄이 `·` 로 시작하지 않게 점 앞은 붙여 둔다 (`주5일 ·` / `12:30~15:00`) */}
+                수강증에 적힌 <b>{missing.label.replaceAll(" · ", "\u00a0· ")}</b> 반이 아직 열리지 않아 아래 목록에 없어요.{" "}
+                {missing.href ? (
+                  <>
+                    새 반 개설에서 이 반을 열면 바로 여기에 나와요.{" "}
+                    <Link href={missing.href} className="whitespace-nowrap font-black underline">
+                      새 반 개설에서 열기 →
+                    </Link>
+                  </>
+                ) : (
+                  "반 개설은 강사 · 관리자가 해요 — 열어 달라고 부탁해 주세요."
+                )}
+              </Alert>
+            )}
             {pickerSections.length === 0 ? (
               <p className="rounded-xl bg-brand-50/60 px-4 py-4 text-sm text-slate">열려 있는 반이 없습니다. 먼저 반 편성에서 반을 개설해 주세요.</p>
             ) : (

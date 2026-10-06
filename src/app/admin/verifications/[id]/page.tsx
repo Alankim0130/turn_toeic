@@ -15,6 +15,7 @@ import { blockerLines } from "@/lib/auto-approve";
 import { heldMonth as heldMonthOf } from "@/lib/verify-decision";
 import { preselectForApproval } from "@/lib/final-assignment";
 import { getProfileNames, getStaffPhones } from "../../_lib/profile-names";
+import { missingClassOf } from "@/lib/missing-class";
 
 export const metadata: Metadata = { title: "등업 검토", robots: { index: false } };
 
@@ -49,7 +50,7 @@ export default async function VerificationDetailPage({
   const { data: v } = await supabase.from("enrollment_verifications").select("*").eq("id", id).maybeSingle();
   if (!v) notFound();
 
-  const [{ data: signed }, { data: sections }, { data: order }, { data: myEnrollments }, names, phones, { data: twinRows }] = await Promise.all([
+  const [{ data: signed }, { data: sections }, { data: order }, { data: myEnrollments }, names, phones, { data: twinRows }, { data: courseRows }] = await Promise.all([
     // 보관 기간이 지나 지운 파일은 서명 URL 을 만들 이유가 없다 (2026-09-20)
     v.file_deleted_at
       ? Promise.resolve({ data: null as { signedUrl: string } | null })
@@ -76,6 +77,8 @@ export default async function VerificationDetailPage({
     showPhone ? getStaffPhones(supabase, [v.user_id]) : Promise.resolve(new Map<string, string>()),
     // 같은 파일 · 같은 초 캡처를 올린 다른 계정과, 그 계정이 이름 · 전화번호가 같은 사람인지 (업로드 때 남긴 신호가 있을 때만 찾는다)
     supabase.rpc("verification_twins", { p_id: id }),
+    // 강좌 이름 — 수강증의 반이 아직 안 열렸을 때 그 반을 이름으로 적는다 (열린 반 목록에는 없으니까, 2026-10-06 `missingClassOf`)
+    supabase.from("courses").select("name, program, target_score").eq("is_active", true),
   ]);
   const student = names.get(v.user_id);
   const phone = phones.get(v.user_id);
@@ -218,6 +221,13 @@ export default async function VerificationDetailPage({
 
   const isImage = /\.(png|jpe?g|webp|gif)$/i.test(v.file_path);
   const parsed = v.parsed as Record<string, unknown> | null;
+  // 수강증에 적힌 반이 아직 열리지 않아 아래 반 고르기에 없다 (2026-10-06 Alan "850 2주 수강증 올라왔어. 근데 수동등업에서 선택란이 없어" —
+  // 10월 2주완성 반을 안 열어서였다). 반 고르기 위에 그 반을 적고 강사 · 관리자에게는 그 달 새 반 개설로 가는 길을 준다.
+  // 받아 둔 다음 달 수강증은 반이 열리면 저절로 다시 맞추므로(위 안내) 적지 않는다
+  const missingClass = v.result !== "approved" && heldMonthNow == null ? missingClassOf(parsed, sections ?? [], courseRows ?? [], today) : null;
+  const missing = missingClass
+    ? { label: missingClass.label, href: isStaff(me.role) ? `/admin/sections/new${missingClass.term ? `?term=${missingClass.term}` : ""}` : null }
+    : null;
   // OCR 이 실패했으면 사유가 ocr_raw.error 에 있다 (2026-09-18 — 조용히 비어 있으면 원인을 알 수 없다)
   const ocrErrorRaw = (v.ocr_raw as { error?: unknown } | null)?.error;
   const ocrError = typeof ocrErrorRaw === "string" ? ocrErrorRaw : null;
@@ -394,6 +404,7 @@ export default async function VerificationDetailPage({
             requested={preselected}
             current={currentLabels}
             ocrMode={ocrMode}
+            missing={missing}
           />
         </div>
       </div>
