@@ -24,6 +24,8 @@ import { autoApproveBlockers } from "@/lib/auto-approve";
 import { readAutoVerify } from "@/lib/auto-verify";
 import { sendTextbookNotice } from "@/lib/textbook-guide";
 import type { TextbookNotice } from "@/lib/textbook";
+import { replacePendingReceipts } from "@/lib/pending-receipts";
+import { seatOfSections, type ReceiptSeat } from "@/lib/receipt-seat";
 
 export type SubmitVerificationResult =
   /**
@@ -78,28 +80,9 @@ async function guardUpload(filePath: string): Promise<Guard> {
     return { ok: false, error: "업로드된 파일을 찾을 수 없어요. 다시 시도해 주세요." };
   }
 
-  // 확인 중인 신청이 있으면 **새 수강증으로 바꿔 넣는다** (2026-09-18 Alan — "잘못 올린 경우 새로 올릴 수 있고,
-  // 예전 기록이 새로 업로드하면 새 정보로 자동 교체". 그전에는 "처리가 끝난 뒤 다시 올려 주세요" 로 막아 시간이 낭비됐다).
-  // 대기 중인 건은 등록·배정이 아직 없어 지워도 남는 것이 없고, 파일도 함께 지운다 (원본은 필요한 동안만 둔다 — 개인정보).
-  // 승인·거절이 끝난 건은 그대로 둔다 (기록이다).
-  //
-  // **다른 신청이 아직 가리키는 파일은 지우지 않는다** (2026-09-22). 수동 등업신청은 거절·승인된 신청의 파일을 그대로 다시 쓴다
-  // (거절 뒤 수동으로 내기 · 자동 승인 뒤 "반이 달라요"). 그 대기 건을 지우며 파일까지 지우면 **승인·거절 기록의 수강증 그림이
-  // 사라져** 스태프가 다시 볼 수 없었다. 확인 조회가 실패하면 지우지 않는다 — 고아 파일이 남는 편이 기록의 그림을 지우는 것보다 낫다.
-  const { data: pending } = await admin.from("enrollment_verifications").select("id, file_path").eq("user_id", user.id).is("result", null);
-  const pendingIds = (pending ?? []).map((p) => p.id);
-  const oldPaths = [...new Set((pending ?? []).map((p) => p.file_path).filter((p) => !!p && p !== filePath))];
-  let removable: string[] = [];
-  if (oldPaths.length > 0) {
-    const { data: refs, error: refError } = await admin.from("enrollment_verifications").select("id, file_path").in("file_path", oldPaths);
-    if (!refError) {
-      const stillUsed = new Set((refs ?? []).filter((r) => !pendingIds.includes(r.id)).map((r) => r.file_path));
-      removable = oldPaths.filter((p) => !stillUsed.has(p));
-    }
-  }
-  if (removable.length > 0) await admin.storage.from("receipts").remove(removable);
-  if (pendingIds.length > 0) await admin.from("enrollment_verifications").delete().in("id", pendingIds);
-
+  // 확인 중인 옛 수강증을 바꿔 넣는 일은 **새 수강증을 읽은 뒤** 한다 (`replacePendingReceipts`, 2026-10-06) —
+  // 같은 등록을 다시 낸 것일 때만 바꿔 넣고, 단과 두 개처럼 함께 들을 수 있는 다른 강좌의 수강증은 남긴다.
+  // 그전에는 읽기 전에 여기서 확인 중인 것을 모두 지워서, 둘째 수강증을 올리면 첫째가 사라졌다.
   return { ok: true, user, admin };
 }
 
@@ -204,6 +187,19 @@ function parsedSummary({ parsed, nameMatches }: ReadOk) {
   };
 }
 
+/**
+ * 새로 올린 수강증의 자리 — 확인 중인 옛 수강증 중 **같은 등록을 다시 낸 것**만 바꿔 넣으려고 잰다 (`replacePendingReceipts`).
+ * 반(대조가 찾은 반 · 학생이 고른 반)이 있으면 그 반들, 없으면 수강증에서 읽은 시간 · 트랙 · 수강월. 그림 자체(경로 · 해시 · 캡처 초)도 함께
+ */
+function uploadSeat(filePath: string, read: ReadReceipt, sections: EnrollSection[], sectionIds: readonly number[]): ReceiptSeat {
+  const capture = { path: filePath, hash: read.hash, capturedAt: read.ok ? read.parsed.capturedAt : null };
+  return seatOfSections(
+    sections.filter((s) => sectionIds.includes(s.id)),
+    capture,
+    read.ok ? read.parsed : null,
+  );
+}
+
 /** 올라온 수강증 한 장 → 위조 신호 검사 입력 (`receiptFlags`, 한곳에서 잰다 — `src/lib/verify-flags.ts`) */
 function flagInput(userId: string, read: ReadReceipt, sectionIds: readonly number[]): FlagInput {
   const parsed = read.ok ? read.parsed : null;
@@ -285,6 +281,10 @@ export async function submitVerification(input: { filePath: string }): Promise<S
   // 이미 승인된 수강증을 또 올렸다 (2026-10-02 Alan — 승인 뒤 같은 캡처를 다시 올려 검토 대기에 쌓이던 것):
   // 같은 캡처가 전에 승인됐고 그 반에 이미 배정돼 있으면 검토 대기에 넣지 않고 바로 닫는다. 기록은 남긴다
   const alreadyApproved = !rejected && !!flags && flags.decidedBefore === "approved" && flags.alreadyEnrolled.length > 0;
+
+  // 같은 등록을 다시 낸 것이면 확인 중인 옛 수강증을 지우고 바꿔 넣는다 (2026-09-18 → 2026-10-06 같은 등록일 때만).
+  // 바로 거절한 것은 바꿔 넣지 않는다 — 접수되지 않았으니 확인 중이던 수강증을 대신하지 못한다
+  if (!rejected) await replacePendingReceipts(admin, user.id, filePath, uploadSeat(filePath, outcome, sections, matched?.sectionIds ?? []));
 
   const { data: inserted, error } = await admin
     .from("enrollment_verifications")
@@ -371,7 +371,7 @@ export async function submitVerification(input: { filePath: string }): Promise<S
     : decision.kind === "review" && decision.note
       ? "수강증 글자를 거의 읽지 못했어요. 강사가 직접 확인해 드려요."
       : flags && flags.alreadyEnrolled.length > 0
-        ? "이미 이 달 반에 배정돼 있어서, 강사가 확인한 뒤 반영해 드려요."
+        ? "이 달 반이 이미 있어서, 반을 더하는 건지(단과 두 개 등) 바꾸는 건지 강사가 확인한 뒤 반영해 드려요."
         : undefined;
   return { ok: true, ocrNote, nameMismatch };
 }
@@ -426,6 +426,9 @@ export async function submitManualVerification(input: {
   const outcome = await readReceipt(admin, filePath, profile?.name ?? null, twoWeekSpots(sections, twoWeekSlots));
   const read = outcome.ok ? outcome : null;
   const flags = await receiptFlags(admin, flagInput(user.id, outcome, resolved.sectionIds));
+
+  // 같은 등록(같은 그림 · 같은 반 · 같은 시간)을 다시 낸 것만 바꿔 넣는다 — 단과를 둘 산 학생이 수동 신청을 두 번 내도 첫째가 남는다 (2026-10-06)
+  await replacePendingReceipts(admin, user.id, filePath, uploadSeat(filePath, outcome, sections, resolved.sectionIds));
 
   const { error } = await admin.from("enrollment_verifications").insert({
     user_id: user.id,
