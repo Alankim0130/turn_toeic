@@ -16,7 +16,8 @@ import { todayKST, TRACK_LABEL } from "@/lib/utils";
 import { requireStaff } from "@/lib/auth";
 import Link from "next/link";
 import { NoticeList } from "@/components/class-materials/NoticeList";
-import { noticeCovers, scopeLabel, scopeOf } from "@/lib/class-notices";
+import { NoticePublishToggle } from "@/components/admin/class-notices/NoticePublishToggle";
+import { noticeCovers, partitionNotices, scopeLabel, scopeOf } from "@/lib/class-notices";
 import { pickTerm, termLabel, TERM_COLUMNS } from "../_lib/queries";
 
 export const metadata: Metadata = { title: "수업자료실", robots: { index: false } };
@@ -96,11 +97,14 @@ export default async function ClassMaterialsAdminPage({ searchParams }: { search
           .eq("course.target_score", level)
           .or(`subject.is.null,subject.eq.${subject}`)
       : Promise.resolve({ data: [] as never[] }),
-    supabase.from("class_notices").select("id, title, levels, subjects, author_name, created_at").order("created_at", { ascending: false }).limit(200),
+    supabase.from("class_notices").select("id, title, levels, subjects, author_name, created_at, published").order("created_at", { ascending: false }).limit(200),
   ]);
-  // 공지 — 지금 보고 있는 레벨 · 과목 학생에게도 보이는 것 (전체 공지 포함). 다른 범위 공지는 그 레벨 · 과목에서 보인다
+  // 공지 — 지금 보고 있는 레벨 · 과목 학생에게도 보이는 것 (전체 공지 포함). 다른 범위 공지는 그 레벨 · 과목에서 보인다.
+  // 내린 공지(published = false)는 따로 모아 아래에 접어 둔다 (2026-10-06 Alan — 다음 달에 다시 올린다)
   const allNotices = noticeRows ?? [];
-  const notices = allNotices.filter((n) => noticeCovers(scopeOf(n), level, subject)).map((n) => ({ ...n, scope: scopeLabel(scopeOf(n)) }));
+  const covering = allNotices.filter((n) => noticeCovers(scopeOf(n), level, subject)).map((n) => ({ ...n, scope: scopeLabel(scopeOf(n)) }));
+  const { live: notices, down: downNotices } = partitionNotices(covering);
+  const allLive = allNotices.filter((n) => n.published);
   const byLevel = new Map(levelCounts);
   const byCell = new Map(cellCounts);
   const list = rows ?? [];
@@ -199,7 +203,7 @@ export default async function ClassMaterialsAdminPage({ searchParams }: { search
             </h2>
             <span className="text-xs text-mist">
               {level} {MATERIAL_SUBJECT_LABEL[subject]} 학생에게 보이는 공지 {notices.length}개
-              {allNotices.length > notices.length && <> · 다른 범위 {allNotices.length - notices.length}개</>}
+              {allLive.length > notices.length && <> · 다른 범위 {allLive.length - notices.length}개</>}
             </span>
             {!testing && (
               <Link href={`/admin/class-materials/notices/new?${new URLSearchParams({ ...keep, term: termKey ?? "" }).toString()}`} className="btn-primary ml-auto !px-3 !py-1.5 text-sm">
@@ -208,9 +212,27 @@ export default async function ClassMaterialsAdminPage({ searchParams }: { search
             )}
           </div>
           {notices.length > 0 ? (
-            <NoticeList items={notices} hrefOf={(id) => `/admin/class-materials/notices/${id}?${new URLSearchParams({ ...keep, term: termKey ?? "" }).toString()}`} />
+            <NoticeList
+              items={notices}
+              hrefOf={(id) => `/admin/class-materials/notices/${id}?${new URLSearchParams({ ...keep, term: termKey ?? "" }).toString()}`}
+              trailing={testing ? undefined : (n) => <NoticePublishToggle id={n.id} published title={n.title} />}
+            />
           ) : (
             <p className="rounded-xl2 border border-dashed border-line px-4 py-3 text-sm text-mist">올린 공지가 없어요. 공지는 범위(전체 · 레벨 · RC/LC)를 골라 올리고, 학생 수업자료실 맨 위에 보여요.</p>
+          )}
+          {/* 내린 공지 — 학생에게 안 보인다. 글·사진은 그대로라 "다시 올리기" 로 되살린다 (2026-10-06 Alan "공지가 달마다 바뀌는 경우") */}
+          {downNotices.length > 0 && (
+            <details className="group rounded-xl2 border border-dashed border-line bg-surface/60 px-3 py-2 sm:px-4">
+              <summary className="cursor-pointer select-none text-sm font-bold text-slate">
+                내린 공지 {downNotices.length}개 <span className="font-semibold text-mist">— 학생에게 보이지 않아요. 다시 올리면 그대로 보여요</span>
+              </summary>
+              <NoticeList
+                className="mt-2"
+                items={downNotices}
+                hrefOf={(id) => `/admin/class-materials/notices/${id}?${new URLSearchParams({ ...keep, term: termKey ?? "" }).toString()}`}
+                trailing={testing ? undefined : (n) => <NoticePublishToggle id={n.id} published={false} title={n.title} />}
+              />
+            </details>
           )}
         </section>
 

@@ -65,6 +65,26 @@ export async function saveClassNotice(input: { id?: number | null; title: string
   return { ok: true, id };
 }
 
+/**
+ * 공지 내리기 · 다시 올리기 (2026-10-06 Alan — "공지가 달마다 바뀌는 경우가 있어 … 등록했다가 내리기 … 내려간 게시글에 다시 올리기 토글").
+ * 지우지 않고 `published` 만 바꾼다 — 글·사진은 그대로고 학생 화면에서만 빠진다. 로그인한 세션으로 UPDATE 해 RLS 가 한 번 더 막는다.
+ */
+export async function setClassNoticePublished(id: number, published: boolean): Promise<NoticeResult> {
+  const { profile } = await requireStaff();
+  if (profile.test_role) return { ok: false, error: "테스트 등급을 켠 동안에는 공지를 내리거나 올릴 수 없어요. 위 띠에서 테스트를 끝낸 뒤 해 주세요." };
+  if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "잘못된 요청이에요." };
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("class_notices")
+    .update({ published: !!published, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("id");
+  if (error) return { ok: false, error: error.code === "42501" ? "권한이 없어요. 강사·관리자 계정으로 다시 로그인해 주세요." : "바꾸지 못했어요. 잠시 후 다시 시도해 주세요." };
+  if (!data?.length) return { ok: false, error: "공지를 찾을 수 없어요. 새로고침해 주세요." };
+  revalidateNotices(id);
+  return { ok: true, id };
+}
+
 /** 공지 삭제 — 글과 사진을 함께 지운다. 학생 화면에서도 바로 빠진다 */
 export async function deleteClassNotice(id: number): Promise<NoticeResult> {
   const { profile } = await requireStaff();
