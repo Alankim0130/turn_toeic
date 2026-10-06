@@ -39,6 +39,8 @@ const SQL = readFileSync("supabase/migrations/20261005100000_class_materials.sql
 const NOTE_SQL = readFileSync("supabase/migrations/20261005150000_class_material_note_long.sql", "utf8");
 /** 자료 하나에 파일 여러 개 · 글만 (2026-10-06 Alan — "파일업로드를 안하고 글만 적어서 올릴수도 … 파일을 한번에 여러개") */
 const FILES_SQL = readFileSync("supabase/migrations/20261006100000_class_material_files.sql", "utf8");
+/** 그 다음 단계 (contract) — 새 앱이 뜬 뒤 옛 파일 칸을 지운다 */
+const CONTRACT_SQL = readFileSync("supabase/migrations/20261006110000_class_material_files_contract.sql", "utf8");
 
 describe("DB 와 같은 값", () => {
   it("과목은 rc · lc 둘이고 순서는 RC 먼저 (DB check 와 같다)", () => {
@@ -105,6 +107,18 @@ describe("파일 여러 개 · 글만 (마이그레이션 20261006100000)", () =
 
   it("파일 수 상한 — 서버 액션 본문(1MB)에 경로 · 이름 20개는 넉넉하다", () => {
     expect(CLASS_MATERIAL_FILES_MAX).toBe(20);
+  });
+
+  it("마무리(20261006110000) — 배포 사이 옛 앱이 올린 파일을 옮기고, 저장소 정책을 먼저 바꾼 뒤 옛 칸을 지운다", () => {
+    const copy = CONTRACT_SQL.indexOf("insert into public.class_material_files");
+    const policy = CONTRACT_SQL.indexOf('create policy "class-materials: 자료가 보이는 사람·스태프 조회" on storage.objects');
+    const drop = CONTRACT_SQL.indexOf("drop column if exists file_path");
+    expect(copy).toBeGreaterThan(-1);
+    // 옛 칸을 쓰는 정책이 남아 있으면 칸을 지울 수 없다 (정책이 칸에 기대고 있다) — 순서가 곧 배포 성공 여부다
+    expect(policy).toBeGreaterThan(copy);
+    expect(drop).toBeGreaterThan(policy);
+    expect(CONTRACT_SQL).not.toMatch(/public\.class_materials m where m\.file_path = objects\.name/);
+    for (const col of ["file_path", "file_name", "file_size", "content_type"]) expect(CONTRACT_SQL).toContain(`drop column if exists ${col}`);
   });
 });
 

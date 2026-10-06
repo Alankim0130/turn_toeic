@@ -378,6 +378,8 @@ describe("LC 교재 · 음원 · 수업자료실 조회는 내 과정 칸 · 열
     expect(flat).toContain("(select private.is_staff())");
     expect(flat).toContain("exists (select 1 from public.class_material_files f where f.file_path = objects.name)");
     expect(flat).not.toMatch(/has_term_access|has_section_access|using\s*\(\s*true\s*\)/);
+    // 옛 갈래(class_materials.file_path)는 20261006110000 이 뺐다 — 그 칸은 지워졌다
+    expect(flat).not.toContain("public.class_materials m where m.file_path");
   });
 
   /** 함수는 마지막 create or replace 가 진짜다 */

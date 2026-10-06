@@ -2213,8 +2213,10 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
     이름 칸이 7rem 보다 좁아지면 버튼이 다음 줄 오른쪽으로 내려간다 — 휴대폰 관리자 줄 · 320px 에서 이름이 `1강` / `해설.pdf` 로 쪼개지지 않게), 글만이면 버튼이 없다.
   - **`/files/class/{id}` 의 id 는 파일 id 다.** 2026-10-05 에 올린 파일은 마이그레이션이 **자료와 같은 id 로** 옮겨서 그날 받은 링크가 그대로 같은 파일을 연다.
   - **두 번에 나눠 배포했다(expand → contract)**: 20261006100000 이 새 표를 만들어 옮기고 `class_materials` 의 파일 칸을 비울 수 있게만 둔다(배포하는 몇 분 동안 옛 앱이 그 칸을 쓴다 —
-    저장소 정책도 두 갈래를 함께 본다). 새 앱이 뜬 뒤 다음 마이그레이션이 그 사이 옛 앱이 올린 파일을 옮기고 **파일 칸(file_path · file_name · file_size · content_type)을 지우고**
-    저장소 정책에서 옛 갈래를 뺀다. **`class_materials` 에서 파일 칸을 다시 읽지 말 것** — 파일은 `class_material_files` 다.
+    저장소 정책도 두 갈래를 함께 본다). 새 앱이 뜬 것을 확인한 뒤 **20261006110000** 이 그 사이 옛 앱이 올린 파일을 옮기고, 저장소 정책에서 옛 갈래를 뺀 다음
+    **파일 칸(file_path · file_name · file_size · content_type)을 지웠다** (정책이 칸에 기대고 있으면 칸을 못 지운다 — 순서를 `class-materials.test.ts` 가 본다).
+    파일은 `class_material_files` 에만 있다. 로컬 재생 DB 로 확인(2026-10-06): 옛 자료 30건이 같은 id 로 옮겨지고 · 배포 사이 옛 앱 모양으로 넣은 1건도 옮겨지고 ·
+    글만 · 파일 셋 · 아직 안 열린 회차 자료가 사람마다 맞게 보였다(회원 · 예비등록 · 졸업생 · 배정 없는 조교 0, RC 단과 650 은 열린 회차의 글만 · 파일 셋 · 옛 앱 자료, 강사 · 관리자 전부).
   - **안내 칸에 스크립트를 올린다** (2026-10-05 Alan — "여기 안내에 스크립트를 올려줄예정이야. 그래서 글을 쫌 길게 적을 수 있어야해" — 500자 → 5만 자,
     마이그레이션 20261005150000 이 처음 check 를 **정의로 찾아** 지우고 새로 건다). LC 한 회차 스크립트에 해석을 붙여도 들어가고, 서버 액션 본문 한도(1MB)에도 한참 못 미친다.
   - 글자 수는 **DB 의 `char_length` 와 같은 셈**(코드 포인트 — `charCount`)으로 입력칸 · 폼 · 서버 액션이 모두 센다. 입력칸(`NoteTextarea`, 여섯 줄 · 늘릴 수 있음)은
@@ -2904,7 +2906,7 @@ create table class_materials (             -- 레벨 × 과목 × 과정 × 회�
   title text not null,                     -- 1~100자 (비우면 defaultMaterialTitle — 파일 이름 · 안내 첫 줄)
   note text,                               -- 안내 · 스크립트 5만 자 (20261005150000 — 처음엔 500자). 파일이 없으면 글이 있어야 한다 (서버 액션)
   uploaded_by uuid references profiles, created_at timestamptz, updated_at timestamptz
-  -- 파일 칸(file_path · file_name · file_size · content_type)은 2026-10-06 class_material_files 로 옮겼다 — 칸은 다음 마이그레이션(contract)이 지운다. 읽지 말 것 (도메인 규칙 7-4)
+  -- 파일 칸(file_path · file_name · file_size · content_type)은 2026-10-06 class_material_files 로 옮기고 지웠다 (20261006100000 → 20261006110000, 도메인 규칙 7-4)
 );
 create table class_material_files (        -- 수업자료실 자료의 파일 0 ~ 20개 (20261006100000). 조회 = 부모 자료가 보이는 사람, 쓰기는 강사·관리자
   id bigint primary key,                   -- /files/class/{id} 의 id. 10-05 에 올린 파일은 자료와 같은 id 로 옮겼다
