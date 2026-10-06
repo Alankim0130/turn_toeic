@@ -446,6 +446,7 @@ export type Database = {
           created_at: string
           id: number
           levels: number[]
+          published: boolean
           subjects: string[]
           title: string
           updated_at: string
@@ -457,6 +458,7 @@ export type Database = {
           created_at?: string
           id?: number
           levels?: number[]
+          published?: boolean
           subjects?: string[]
           title: string
           updated_at?: string
@@ -468,6 +470,7 @@ export type Database = {
           created_at?: string
           id?: number
           levels?: number[]
+          published?: boolean
           subjects?: string[]
           title?: string
           updated_at?: string

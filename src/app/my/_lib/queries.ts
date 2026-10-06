@@ -572,7 +572,7 @@ export async function getMyClassMaterials() {
   return { access, dates, materials };
 }
 
-const NOTICE_LIST_COLS = "id, title, levels, subjects, author_name, created_at, updated_at";
+const NOTICE_LIST_COLS = "id, title, levels, subjects, author_name, created_at, updated_at, published";
 
 /**
  * 수업자료실 공지 (2026-10-05) — **내 범위 공지만**: 지금 수강 중이고, 범위 공지면 내 과정 칸이 레벨 · 과목에 맞는다 (`noticeVisible`).
@@ -584,7 +584,8 @@ export async function getMyClassNotices() {
   const cells = [...roundCells(sections)];
   const enrolled = accessTerms.size > 0;
   if (!enrolled) return [];
-  const { data } = await supabase.from("class_notices").select(NOTICE_LIST_COLS).order("created_at", { ascending: false }).limit(200);
+  // 내린 공지(published = false)는 학생에게 없다 (2026-10-06 Alan) — RLS 도 거르지만 스태프가 학생 모드로 볼 때를 위해 여기서도 (등급 체계 10)
+  const { data } = await supabase.from("class_notices").select(NOTICE_LIST_COLS).eq("published", true).order("created_at", { ascending: false }).limit(200);
   return (data ?? []).filter((n) => noticeVisible(scopeOf(n), cells, enrolled));
 }
 
@@ -594,7 +595,7 @@ export async function getMyClassNotice(id: number) {
   const supabase = await createClient();
   const [sections, { accessTerms }] = await Promise.all([getMyAccessibleSections(), getMyStudyEligibility()]);
   const cells = [...roundCells(sections)];
-  const { data } = await supabase.from("class_notices").select(`${NOTICE_LIST_COLS}, body`).eq("id", id).maybeSingle();
+  const { data } = await supabase.from("class_notices").select(`${NOTICE_LIST_COLS}, body`).eq("id", id).eq("published", true).maybeSingle();
   return data && noticeVisible(scopeOf(data), cells, accessTerms.size > 0) ? data : null;
 }
 

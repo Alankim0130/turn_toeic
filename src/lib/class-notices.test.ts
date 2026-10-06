@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { CLASS_NOTICE_BODY_MAX, CLASS_NOTICE_IMAGE_MAX_BYTES, noticeCovers, noticeError, noticeVisible, scopeLabel } from "./class-notices";
+import { CLASS_NOTICE_BODY_MAX, CLASS_NOTICE_IMAGE_MAX_BYTES, noticeCovers, noticeError, noticeVisible, partitionNotices, publishToggleLabel, scopeLabel } from "./class-notices";
 
 const SQL = readFileSync("supabase/migrations/20261005170000_class_notices.sql", "utf8");
 
@@ -50,5 +50,21 @@ describe("noticeError", () => {
     expect(noticeError({ ...ok, subjects: ["xx"] }, [650])).toBe("RC · LC 를 다시 골라 주세요.");
     expect(noticeError({ ...ok, body: "[img=other/a.png]" }, [650])).toContain("사진");
     expect(noticeError({ ...ok, body: "[img=images/a.png w=50]" }, [650])).toBeNull();
+  });
+});
+
+describe("partitionNotices — 내린 공지는 따로 (2026-10-06 Alan)", () => {
+  it("published 로 가르고 순서를 지킨다", () => {
+    const { live, down } = partitionNotices([
+      { id: 1, published: true },
+      { id: 2, published: false },
+      { id: 3, published: true },
+    ]);
+    expect(live.map((n) => n.id)).toEqual([1, 3]);
+    expect(down.map((n) => n.id)).toEqual([2]);
+  });
+  it("토글 글자는 지금 상태의 반대 동작이다", () => {
+    expect(publishToggleLabel(true)).toBe("공지 내리기");
+    expect(publishToggleLabel(false)).toBe("다시 올리기");
   });
 });

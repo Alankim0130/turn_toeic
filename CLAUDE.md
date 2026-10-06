@@ -2326,6 +2326,11 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   쓰기는 강사·관리자 (조교 아님). 작성자 이름은 박아 둔다(학생은 profiles 를 못 읽는다).
 - **관리자**: `/admin/class-materials` 의 정보 카드 아래 · 1회차 위 `공지사항` — 지금 보는 레벨 · 과목 학생에게도 보이는 공지(전체 포함)를 `공지 · 제목 · 범위 · 작성자 · 날짜` 줄로(`NoticeList`),
   `공지 올리기` → `/admin/class-materials/notices/new`(보던 레벨이 미리 골라짐), 줄을 누르면 `/admin/class-materials/notices/[id]` 고치기 · 지우기. 편집기가 곧 학생 모양이라 보기 화면은 따로 없다.
+- **공지 내리기 · 다시 올리기** (2026-10-06 Alan — "공지가 달마다 바뀌는 경우가 있어. 이런 경우 공지를 등록했다가 내리기도 있으면 좋겠어. 그리고 내려간 게시글에
+  다시 공지사항올리기 토글", 마이그레이션 20261006150000): `class_notices.published`(기본 참). **지우는 것이 아니다** — 내리면 글·사진은 그대로고 학생 화면에서만 빠진다
+  (조회 정책 + `getMyClassNotices` · `getMyClassNotice` 의 `published` 거르기 — 스태프가 학생 모드로 봐도 안 보인다). 관리자 공지 줄 오른쪽의 토글(`NoticePublishToggle`,
+  링크 밖 형제로 둔다 — 링크 안에 버튼을 넣으면 HTML 이 깨진다)과 공지 고치기 화면 맨 위 상태 줄에서 `공지 내리기` ↔ `다시 올리기`. 내린 공지는 목록 아래
+  `내린 공지 N개` 로 접어 두고(`partitionNotices`, 회색 `내림` 배지), "학생에게 보이는 공지 N개" 는 올라가 있는 것만 센다. 서버 액션 `setClassNoticePublished` 는 세션 UPDATE.
 - **학생**: `/my/materials` 맨 위(레벨 칸 위)에 내 공지 목록, 누르면 **공지 페이지** `/my/materials/notices/[id]`(남의 범위면 404).
 - **본문 = 안내와 같은 `NoteEditor`** + 사진. 사진은 브라우저가 private 버킷 `class-notices/images/{uuid}` 에 바로 올리고(10MB · jpg/png/webp/gif · 한 공지 30장) 글에는 `[img=경로 w=너비%]` 만 든다.
   사진은 한 줄에 하나로 들어가고(앞뒤 줄바꿈), 누르면 크기 25 · 50 · 75 · 100% · 밀어서 10~100% · 지우기. 붙여 넣은 그림 파일도 올린다.

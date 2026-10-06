@@ -47,6 +47,20 @@ export function scopeLabel(scope: NoticeScope): string {
   return sub ? `${lv} ${sub}` : lv;
 }
 
+/**
+ * 올라가 있는 공지와 내린 공지 (2026-10-06 Alan — "공지를 등록했다가 내리기 … 내려간 게시글에 다시 공지사항올리기 토글").
+ * 내린 공지(`published = false`)는 학생에게 안 보이고 관리자 수업자료실의 "내린 공지" 묶음에 남는다 — 글·사진은 그대로라 다음 달에 다시 올린다.
+ */
+export function partitionNotices<T extends { published: boolean }>(rows: readonly T[]): { live: T[]; down: T[] } {
+  const live: T[] = [];
+  const down: T[] = [];
+  for (const r of rows) (r.published ? live : down).push(r);
+  return { live, down };
+}
+
+/** 토글 글자 — 올라가 있으면 `공지 내리기`, 내려 있으면 `다시 올리기` */
+export const publishToggleLabel = (published: boolean) => (published ? "공지 내리기" : "다시 올리기");
+
 /** DB 에서 읽은 행 → 범위 (모르는 값은 버린다) */
 export const scopeOf = (row: { levels: number[] | null; subjects: string[] | null }): NoticeScope => ({
   levels: (row.levels ?? []).filter((l) => Number.isInteger(l)),
