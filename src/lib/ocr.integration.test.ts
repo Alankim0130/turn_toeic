@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
+import sharp from "sharp";
 import { closeOcrWorker, readReceiptText } from "./ocr";
 import { parseReceipt, readEnoughFor } from "./receipt";
 import { matchSections } from "./match-sections";
@@ -121,5 +122,64 @@ describe("실물 수강증 OCR (휴대폰 전체 캡처)", () => {
 
     const after = await readReceiptText({ bytes: fs.readFileSync(FIXTURE), mimeType: "image/png", enough: readEnoughFor(null) });
     expect(after.ok).toBe(true);
+  }, 60_000);
+});
+
+/**
+ * **PC · 태블릿으로 캡처한 실물 수강증** (2026-10-06 Alan — "테블릿이나 pc로 올린학생들은 이런형태의 수강증이야. 이것들도 등업으로 인정해줘. 검토로 보내지말고").
+ * 카드만 잘라 캡처한 524×554 — 저녁 750 주5일 120분 현장, `[4주-10/06]`, 이름은 가렸다. 휴대폰 앱과 같은 카드인데 가로로 넓어 글자가 작다.
+ * 예전 변형(원본 크기 흑백)은 카드 칸 · 배지 · 개강일을 못 읽어 검토로 갔다 — 지금은 카드를 잘라 키운 변형을 먼저 읽는다 (`receipt-card.ts`).
+ * 화면 전체 캡처 · 태블릿(2배)은 같은 그림을 다른 바탕에 얹어 만든다.
+ */
+describe("실물 수강증 OCR (PC · 태블릿 — 카드가 가로로 넓은 화면)", () => {
+  const PC = fs.readFileSync(path.join(__dirname, "__fixtures__", "receipt-pc-card.png"));
+  const c750 = { id: 3, name: "750", program: "score", target_score: 750 };
+  // 10월 · 11월 반이 함께 열린 때 — 수강월을 읽어야 고른다
+  const sections: EnrollSection[] = [
+    { id: 61, track: "mwf", time_block: "18:30~20:40", term: { year: 2026, month: 10 }, course: c750 },
+    { id: 62, track: "ttf", time_block: "18:30~20:40", term: { year: 2026, month: 10 }, course: c750 },
+    { id: 63, track: "mwf", time_block: "18:30~19:30", term: { year: 2026, month: 10 }, course: c750 },
+    { id: 71, track: "mwf", time_block: "18:30~20:40", term: { year: 2026, month: 11 }, course: c750 },
+    { id: 72, track: "ttf", time_block: "18:30~20:40", term: { year: 2026, month: 11 }, course: c750 },
+  ];
+
+  async function readPc(bytes: Buffer) {
+    const out = await readReceiptText({ bytes, mimeType: "image/png", enough: readEnoughFor(null) });
+    expect(out.ok).toBe(true);
+    if (!out.ok) throw new Error(out.reason);
+    const variants = (out.result.raw as { variants: string[] }).variants;
+    const p = parseReceipt(out.result.text);
+    // 카드 변형부터 읽고, 그 안에서 판정 키가 다 나와 멈춘다 — 예전 변형까지 가지 않는다
+    expect(variants[0]).toBe("card_h800");
+    expect(variants.every((v) => v.startsWith("card_"))).toBe(true);
+    expect(p.gates).toEqual({ academy: true, brand: true });
+    expect(p.brandExact).toBe(true);
+    expect(p.card).toBe(true);
+    expect(p.levels).toEqual([750]);
+    expect(p.weekly).toBe(5);
+    expect(p.time?.timeBlock).toBe("18:30~20:40");
+    expect(p.modeEvidence).toBe("room");
+    expect(p.courseMonth).toBe(10);
+    expect(p.capturedAt).toBe("2026-10-06T19:01:58");
+    expect(matchSections(p, sections).result).toEqual({ kind: "match", sectionIds: [61, 62], term: "2026-10" });
+  }
+
+  it("카드만 자른 캡처 — 판정 키가 전부 나오고 10월 저녁 반에 붙는다", () => readPc(PC), 60_000);
+
+  it("PC 화면 전체 캡처(1920×1080, 카드가 화면 가운데 일부)", async () => {
+    const screen = await sharp({ create: { width: 1920, height: 1080, channels: 3, background: "#f5f6f8" } })
+      .composite([{ input: PC, left: 700, top: 260 }])
+      .png()
+      .toBuffer();
+    await readPc(screen);
+  }, 60_000);
+
+  it("태블릿(2배 화면, 2048×1536)", async () => {
+    const x2 = await sharp(PC).resize({ width: 1048 }).png().toBuffer();
+    const tablet = await sharp({ create: { width: 2048, height: 1536, channels: 3, background: "#ffffff" } })
+      .composite([{ input: x2, left: 500, top: 214 }])
+      .png()
+      .toBuffer();
+    await readPc(tablet);
   }, 60_000);
 });
