@@ -29,27 +29,27 @@ describe("대시보드 등록생 위젯 — 강좌마다 지금 수강 중인 �
 
   it("주5일(월수금 + 화목금 두 반)은 한 사람이다", () => {
     const rows = [
-      { student_id: "a", role: "student", course_id: 68 },
-      { student_id: "a", role: "student", course_id: 68 },
-      { student_id: "b", role: "student", course_id: 68 },
+      { student_id: "a", role: "student", course_id: 68, mode: "onsite" },
+      { student_id: "a", role: "student", course_id: 68, mode: "onsite" },
+      { student_id: "b", role: "student", course_id: 68, mode: "onsite" },
     ];
     expect(courseHeadcounts(COURSES, rows).find((h) => h.id === 68)?.count).toBe(2);
   });
 
   it("테스터(강사·관리자 계정)의 테스트용 배정은 세지 않는다 · 조교는 센다 (학생명단 등록생 수와 같은 규칙)", () => {
     const rows = [
-      { student_id: "t1", role: "admin", course_id: 71 },
-      { student_id: "t2", role: "instructor", course_id: 71 },
-      { student_id: "s1", role: "student", course_id: 71 },
-      { student_id: "x1", role: "assistant", course_id: 71 },
+      { student_id: "t1", role: "admin", course_id: 71, mode: "onsite" },
+      { student_id: "t2", role: "instructor", course_id: 71, mode: "onsite" },
+      { student_id: "s1", role: "student", course_id: 71, mode: "onsite" },
+      { student_id: "x1", role: "assistant", course_id: 71, mode: "onsite" },
     ];
     expect(courseHeadcounts(COURSES, rows).find((h) => h.id === 71)?.count).toBe(2);
   });
 
   it("두 강좌를 함께 듣는 사람은 강좌마다 한 번씩 센다", () => {
     const rows = [
-      { student_id: "a", role: "student", course_id: 68 },
-      { student_id: "a", role: "student", course_id: 70 },
+      { student_id: "a", role: "student", course_id: 68, mode: "onsite" },
+      { student_id: "a", role: "student", course_id: 70, mode: "onsite" },
     ];
     const byId = new Map(courseHeadcounts(COURSES, rows).map((h) => [h.id, h.count]));
     expect([byId.get(68), byId.get(70)]).toEqual([1, 1]);
@@ -57,20 +57,50 @@ describe("대시보드 등록생 위젯 — 강좌마다 지금 수강 중인 �
 
   it("총인원은 강좌 칸의 합이 아니라 사람 수다 — 두 강좌·주5일 두 반이어도 한 명, 테스터는 뺀다", () => {
     const rows = [
-      { student_id: "a", role: "student", course_id: 68 },
-      { student_id: "a", role: "student", course_id: 68 },
-      { student_id: "a", role: "student", course_id: 70 },
-      { student_id: "b", role: "student", course_id: 71 },
-      { student_id: "t", role: "admin", course_id: 71 },
-      { student_id: "x", role: "student", course_id: null },
+      { student_id: "a", role: "student", course_id: 68, mode: "onsite" },
+      { student_id: "a", role: "student", course_id: 68, mode: "onsite" },
+      { student_id: "a", role: "student", course_id: 70, mode: "onsite" },
+      { student_id: "b", role: "student", course_id: 71, mode: "onsite" },
+      { student_id: "t", role: "admin", course_id: 71, mode: "onsite" },
+      { student_id: "x", role: "student", course_id: null, mode: "onsite" },
     ];
-    expect(headcountTotal(rows)).toBe(2);
-    expect(headcountTotal([])).toBe(0);
+    expect(headcountTotal(rows).count).toBe(2);
+    expect(headcountTotal([])).toEqual({ count: 0, live: 0 });
+  });
+
+  it("그중 불라방 인원 (2026-10-06) — 사람마다 한 번, 큰 숫자(전체)는 그대로", () => {
+    const rows = [
+      // 주5일 불라방 — 두 반이어도 한 사람
+      { student_id: "a", role: "student", course_id: 70, mode: "live" },
+      { student_id: "a", role: "student", course_id: 70, mode: "live" },
+      // 현장
+      { student_id: "b", role: "student", course_id: 70, mode: "onsite" },
+      // 주5일인데 월수금 현장 · 화목금 불라방 — 반 배정 하나라도 불라방이면 불라방
+      { student_id: "c", role: "student", course_id: 70, mode: "onsite" },
+      { student_id: "c", role: "student", course_id: 70, mode: "live" },
+      // 테스터의 불라방 배정은 세지 않는다
+      { student_id: "t", role: "admin", course_id: 70, mode: "live" },
+    ];
+    const h850 = courseHeadcounts(COURSES, rows).find((h) => h.id === 70);
+    expect([h850?.count, h850?.live]).toEqual([3, 2]);
+    expect(courseHeadcounts(COURSES, rows).find((h) => h.id === 68)).toMatchObject({ count: 0, live: 0 });
+  });
+
+  it("총인원의 불라방도 사람 수다 — 두 강좌에서 불라방이어도 한 명, 강좌를 모르는 줄 · 테스터는 뺀다", () => {
+    const rows = [
+      { student_id: "a", role: "student", course_id: 68, mode: "live" },
+      { student_id: "a", role: "student", course_id: 70, mode: "live" },
+      { student_id: "b", role: "student", course_id: 71, mode: "onsite" },
+      { student_id: "c", role: "student", course_id: 69, mode: "live" },
+      { student_id: "x", role: "student", course_id: null, mode: "live" },
+      { student_id: "t", role: "instructor", course_id: 71, mode: "live" },
+    ];
+    expect(headcountTotal(rows)).toEqual({ count: 3, live: 2 });
   });
 
   it("쓰지 않는 강좌는 숨기되, 그 강좌에 학생이 있으면 보인다 (사람이 사라지지 않게)", () => {
     const old: HeadcountCourse = { id: 1, name: "예전 강좌", program: "score", target_score: 900, is_active: false };
     expect(courseHeadcounts([...COURSES, old], []).some((h) => h.id === 1)).toBe(false);
-    expect(courseHeadcounts([...COURSES, old], [{ student_id: "a", role: "student", course_id: 1 }]).find((h) => h.id === 1)?.count).toBe(1);
+    expect(courseHeadcounts([...COURSES, old], [{ student_id: "a", role: "student", course_id: 1, mode: "onsite" }]).find((h) => h.id === 1)?.count).toBe(1);
   });
 });
