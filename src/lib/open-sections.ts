@@ -15,7 +15,8 @@ type Client = Pick<ReturnType<typeof createAdminClient>, "from">;
 export async function fetchOpenEnrollSections(client: Client): Promise<EnrollSection[]> {
   const { data } = await client
     .from("class_sections")
-    .select("id, track, time_block, term:terms(year, month), course:courses(id, name, program, target_score)")
+    // subject · course_type = 종합 · 단과를 가린다 (2026-10-06 — 수동 등업신청의 단과 고르기 · 승인 팝업의 RC단과 이름표)
+    .select("id, track, time_block, subject, term:terms(year, month), course:courses(id, name, program, target_score, course_type)")
     .eq("status", "open")
     .gte("closes_at", todayKST())
     .order("enrollment_opens_at")
