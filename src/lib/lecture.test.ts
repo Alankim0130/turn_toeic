@@ -58,4 +58,16 @@ describe("lectureCameo — 강사와 종류에 맞는 캐리커처", () => {
     expect(lectureCameo(null, ["rc"])).toBeNull();
     expect(lectureCameo("알런", ["rc"])).toBeNull();
   });
+  it("말풍선은 응원만 — 학생이 따라 할 준비물 · 오라는 말 · 점수 약속은 없다 (2026-10-07 Alan)", () => {
+    const lines = [
+      lectureCameo("이혜영", ["lc"]),
+      lectureCameo("이혜영", ["mock1"]),
+      lectureCameo("이영수", ["rc"]),
+      lectureCameo("이영수", ["mock2"]),
+    ].map((c) => c?.line ?? "");
+    for (const line of lines) {
+      expect(line).not.toBe("");
+      expect(line).not.toMatch(/챙기|가져오|준비물|오기만|올려 드릴/);
+    }
+  });
 });

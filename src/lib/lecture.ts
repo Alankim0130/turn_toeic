@@ -60,6 +60,10 @@ export const ddayLabel = (dday: number) => (dday === 0 ? "D-DAY" : `D-${dday}`);
  * 특강 카드의 강사 캐리커처와 한마디 (2026-10-02 Alan "강사에 맞춰서 케릭커쳐도 같이 웃기게"). 자세는 종류를 따른다 —
  * 이혜영 LC특강 = 헤드폰 건 노트 컷, 모의고사만이면 윙크 가리키기 · 이영수 RC특강 = 태블릿 설명 컷, 모의고사만이면 엄지척.
  * 그림은 site.instructors[].caricatures (InstructorCameo) — 새 자세를 지어내지 않는다. 이름이 두 강사가 아니면 그리지 않는다.
+ *
+ * **말풍선은 응원만이다** (2026-10-07 Alan — "헤드폰 가져오세요 라고 적혀있는데 진짜 가져올 수 있어! 이거 아닌데 말이야. 오해를 불러일으키는 문구는 빼줘").
+ * 강사님이 하신 말이 아니라 지어낸 한마디라, 학생이 그대로 따라 할 말(준비물 · "오기만 하세요")이나 강의 내용 · 점수 약속은 넣지 않는다.
+ * 그날 바꾼 것: "헤드폰 챙기세요!" · "버릴 문제까지 알려 드려요. 오기만 하세요!" · "점수는 제가 올려 드릴게요!"
  */
 export function lectureCameo(
   lecturer: string | null | undefined,
@@ -68,12 +72,12 @@ export function lectureCameo(
   const k = new Set(kinds ?? []);
   if (lecturer === "이혜영") {
     return k.has("lc")
-      ? { name: "이혜영", pose: "notebook", line: "귀가 뚫리는 날이에요. 헤드폰 챙기세요!" }
-      : { name: "이혜영", pose: "point", line: "실전처럼 풀어요. 점수는 제가 올려 드릴게요!" };
+      ? { name: "이혜영", pose: "notebook", line: "귀가 뻥 뚫리는 날이에요. 기대하세요!" }
+      : { name: "이혜영", pose: "point", line: "실전처럼 풀어 봐요. 끝까지 응원할게요!" };
   }
   if (lecturer === "이영수") {
     return k.has("rc")
-      ? { name: "이영수", pose: "tablet", line: "버릴 문제까지 알려 드려요. 오기만 하세요!" }
+      ? { name: "이영수", pose: "tablet", line: "지문이 술술 읽히는 날이에요. 놓치지 마세요!" }
       : { name: "이영수", pose: "thumbsup", line: "찍지 말고 풀어요. 제가 다 보고 있어요!" };
   }
   return null;
