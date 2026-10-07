@@ -36,14 +36,15 @@ describe("관리자 메뉴 묶음 (NAV_ADMIN_SECTIONS)", () => {
   });
 
   /**
-   * 조교가 쓰는 화면은 여섯 (2026-10-03 Alan — "조교의 권한 1. 수동등업 수락 2. 불라방 교재주문 3. 스터디 신청자
-   * 4. 불라방 링크 올리기 5. 숙제점검 6. 출석확인 / 없는 권한 1. 학생명단(개인정보) 2. 반배정 3. 이하 다른 관리자페이지").
+   * 조교가 쓰는 화면은 일곱 (2026-10-03 Alan — "조교의 권한 1. 수동등업 수락 2. 불라방 교재주문 3. 스터디 신청자
+   * 4. 불라방 링크 올리기 5. 숙제점검 6. 출석확인 / 없는 권한 1. 학생명단(개인정보) 2. 반배정 3. 이하 다른 관리자페이지"
+   * → 2026-10-07 Alan "비대면자료를 조교들이 올릴 수 있으면 좋겠어" 로 비대면 자료가 일곱째).
    * 여기에 하나를 더하면 proxy 입구(canEnterAdminPath)와 화면 가드까지 같이 열린다 — Alan 에게 확인하고 더할 것.
-   * DB 쪽 같은 집합은 마이그레이션 20261003100000.
+   * DB 쪽 같은 집합은 마이그레이션 20261003100000 · 20261007100000.
    */
-  it("조교 화면은 Alan 이 정한 여섯 개뿐이다 — 학생명단은 없다", () => {
+  it("조교 화면은 Alan 이 정한 일곱 개뿐이다 — 학생명단은 없다", () => {
     expect(navAdminFor("assistant").map((i) => i.href).sort()).toEqual(
-      ["/admin/attendance", "/admin/homework", "/admin/live", "/admin/study", "/admin/textbook-orders", "/admin/verifications"].sort(),
+      ["/admin/attendance", "/admin/homework", "/admin/live", "/admin/study", "/admin/study-materials", "/admin/textbook-orders", "/admin/verifications"].sort(),
     );
   });
 

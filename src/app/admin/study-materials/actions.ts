@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireStaff } from "@/lib/auth";
+import { requireCrew } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { isSafeObjectPath, type UploadedFile } from "@/lib/upload";
 import { studyErrorMessage } from "@/lib/study";
@@ -62,7 +62,8 @@ export async function saveMaterialItem(input: {
   itemId?: number | null;
   file?: UploadedFile | null;
 }): Promise<MaterialResult> {
-  const { user } = await requireStaff();
+  // 조교도 올린다 (2026-10-07 Alan) — DB 정책(study_material_items · 버킷 study-materials)도 crew 다 (마이그레이션 20261007100000)
+  const { user } = await requireCrew();
   const seq = Number(input.seq);
   const title = String(input.title ?? "").trim();
   const note = String(input.note ?? "").trim();
@@ -121,7 +122,7 @@ export async function saveMaterialItem(input: {
 
 /** 회차 자료 삭제 — 그 달 적용분도 빠진다 (학생 인증이 붙은 회차는 DB 가 남긴다) */
 export async function deleteMaterialItem(id: number): Promise<MaterialResult> {
-  await requireStaff();
+  await requireCrew();
   if (!Number.isInteger(id)) return { ok: false, error: "잘못된 요청이에요." };
 
   const supabase = await createClient();

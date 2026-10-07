@@ -403,7 +403,8 @@ export const NAV_ADMIN_SECTIONS: NavSection[] = [
       { href: "/admin/study", label: "스터디 신청자", icon: "study", crew: true },
       // 스터디 시간 설정 — 반 편성 화면에서 떼어 낸 전용 화면 (2026-10-02 Alan "스터디 생성도 별도의 페이지로")
       { href: "/admin/study/plan", label: "스터디 시간 설정", icon: "study" },
-      { href: "/admin/study-materials", label: "비대면 자료", icon: "online" },
+      // 조교도 올린다 (2026-10-07 Alan "비대면자료를 조교들이 올릴 수 있으면 좋겠어") — 일곱째 조교 화면
+      { href: "/admin/study-materials", label: "비대면 자료", icon: "online", crew: true },
       // 조교도 점검한다 (2026-10-03 Alan "숙제점검") — 점검완료 알림도 조교 이름으로 간다
       { href: "/admin/homework", label: "숙제점검", icon: "homework", crew: true },
     ],

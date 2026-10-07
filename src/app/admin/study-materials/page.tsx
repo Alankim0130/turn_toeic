@@ -10,7 +10,7 @@ import { MaterialRow } from "@/components/admin/studies/MaterialRow";
 import { STUDY_STATUS_LABEL, termParam } from "@/lib/study";
 import { classDayRounds, onlineStudyWindow, roundRowCount, shortDay } from "@/lib/study-rounds";
 import { pickTerm, termLabel, TERM_COLUMNS } from "../_lib/queries";
-import { requireStaff } from "@/lib/auth";
+import { isStaff, requireCrew } from "@/lib/auth";
 import { signNoteImages } from "@/lib/note-images";
 import { STUDY_MATERIAL_BUCKET } from "@/lib/study-note";
 
@@ -25,8 +25,9 @@ export const metadata: Metadata = { title: "비대면 자료", robots: { index: 
  * 위 달 칩은 "그 달엔 몇 회차가 며칠에 열리나" 를 미리 보는 것이다 — 자료는 달마다 따로 올리지 않는다.
  */
 export default async function StudyMaterialsPage({ searchParams }: { searchParams: Promise<{ term?: string }> }) {
-  // 조교는 이 화면을 쓸 수 없다 — 레이아웃이 조교를 통과시키므로 화면마다 막는다
-  await requireStaff();
+  // 조교도 올린다 (2026-10-07 Alan "비대면자료를 조교들이 올릴 수 있으면") — 일곱째 조교 화면. 그 달 비대면 열기 · 반 편성은 스태프라 그 조각만 가린다
+  const { profile } = await requireCrew();
+  const staff = isStaff(profile.role);
   const sp = await searchParams;
   const supabase = await createClient();
   const today = todayKST();
@@ -88,15 +89,25 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
                 {days.length > 0 && open < days.length && <> · 이 달엔 {open + 1}회차부터 자료가 비어 있어요</>}
               </p>
             </div>
-            <Link href={`/admin/sections?term=${termKey}`} className="btn-ghost !py-2 text-xs">
-              수업일 바꾸기 (반 편성) →
-            </Link>
+            {staff && (
+              <Link href={`/admin/sections?term=${termKey}`} className="btn-ghost !py-2 text-xs">
+                수업일 바꾸기 (반 편성) →
+              </Link>
+            )}
           </section>
         )}
 
         {term && !study && (
           <div className="grid gap-4 md:grid-cols-2">
-            <CreateStudyCard kind="online" termId={term.id} termLabel={termLabel(term)} />
+            {/* 그 달 비대면 스터디를 여는 것은 스태프 — 조교에게는 카드 대신 안내 (조교는 draft 스터디를 못 읽어 열려 있어도 여기 올 수 있다) */}
+            {staff ? (
+              <CreateStudyCard kind="online" termId={term.id} termLabel={termLabel(term)} />
+            ) : (
+              <div className="card flex flex-col justify-center gap-2 p-5 text-sm text-slate">
+                <p className="font-bold text-ink">{termLabel(term)} 비대면스터디 열기는 강사님이 해요</p>
+                <p>자료는 지금 올려 두어도 돼요 — 강사님이 그 달 비대면스터디를 열면 회차 자료가 수업일에 바로 들어가요.</p>
+              </div>
+            )}
             <div className="card flex flex-col justify-center gap-2 p-5 text-sm text-slate">
               <p className="font-bold text-ink">{termLabel(term)} 비대면스터디가 아직 열리지 않았어요</p>
               <p>열면 아래 회차 자료가 이 달 수업일에 바로 들어가요. 반 편성 화면에서 공개 상태를 &ldquo;신청 받기&rdquo;로 바꾸면 수강생이 신청할 수 있어요.</p>
