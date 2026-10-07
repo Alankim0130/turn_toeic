@@ -5,6 +5,7 @@ import { todayKST } from "./utils";
 import {
   booksForSections,
   ownedItemIds,
+  textbookAccountMissing,
   textbookGuide,
   textbookNotice,
   textbookNoticeMessage,
@@ -20,6 +21,20 @@ type Client = Pick<ReturnType<typeof createAdminClient>, "from" | "rpc">;
 
 export const TEXTBOOK_ITEM_COLS = "id, name, level, price, account_id, note, active, sort_order, subject, book_set";
 export const TEXTBOOK_ACCOUNT_COLS = "id, bank_name, account_no, holder, label, active, sort_order";
+
+/**
+ * 쓰는 중인 입금 계좌가 없어 **불라방 학생이 교재를 주문할 수 없는가** (`textbookAccountMissing`) — 대시보드 · 교재주문 목록의 경고 (2026-10-07).
+ * 로그인한 사람의 세션으로 읽는다 (강사 · 관리자 · 조교는 계좌 · 교재를 다 읽는다). **읽지 못하면 false** — 모르는 채로 경고를 띄우지 않는다
+ */
+export async function isTextbookAccountMissing(client: Client): Promise<boolean> {
+  const [items, accounts, settings] = await Promise.all([
+    client.from("textbook_items").select(TEXTBOOK_ITEM_COLS).eq("active", true),
+    client.from("textbook_accounts").select(TEXTBOOK_ACCOUNT_COLS).eq("active", true),
+    client.from("textbook_settings").select("shipping_fee, default_account_id, notice").maybeSingle(),
+  ]);
+  if (items.error || accounts.error || settings.error) return false;
+  return textbookAccountMissing((items.data ?? []) as TextbookItem[], (accounts.data ?? []) as TextbookAccount[], (settings.data ?? null) as TextbookSettings | null);
+}
 
 /** 직접 배정된 반 한 개 — 교재 칸(과목 · 과정)과 레벨 */
 export type DirectBookSection = {

@@ -27,6 +27,7 @@ import {
   TEXTBOOK_PICKUP_ADMIN_STATUS,
   TEXTBOOK_PICKUP_STATUS,
   TEXTBOOK_STATUS,
+  textbookAccountMissing,
   textbookAdminStatus,
   textbookStatus,
   type BookSection,
@@ -106,6 +107,23 @@ describe("합계와 계좌별 입금액 (DB 함수 create_textbook_order 와 같
 
   it("무료 교재만이면 계좌가 없어도 된다", () => {
     expect(textbookQuote([item(1, { price: 0 })], [], { shipping_fee: 0, default_account_id: null, notice: null }).missingAccount).toBe(false);
+  });
+
+  it("강사 화면 경고 — 쓰는 중인 계좌가 없어 학생이 주문할 수 없는 상태 (2026-10-07 학생 캡처)", () => {
+    const fee = { shipping_fee: 4500, default_account_id: null, notice: null };
+    // 교재 · 배송비는 있는데 계좌가 하나도 없다 — 학생 화면에 "입금 계좌가 아직 등록되지 않았어요"
+    expect(textbookAccountMissing([item(1), item(2)], [], fee)).toBe(true);
+    // 계좌를 '쓰지 않기' 로 둔 것뿐이어도 같다
+    expect(textbookAccountMissing([item(1)], [{ ...LC, active: false }], fee)).toBe(true);
+    // 계좌가 하나면 그것이 기본 계좌 — 기본 계좌를 따로 안 골라도 된다
+    expect(textbookAccountMissing([item(1)], [LC], fee)).toBe(false);
+    expect(textbookAccountMissing([item(1, { account_id: 2 })], [LC, { ...RC, active: false }], fee)).toBe(false);
+    // 쓰는 중인 교재가 없거나(숨김) 낼 돈이 없으면 경고하지 않는다
+    expect(textbookAccountMissing([], [], fee)).toBe(false);
+    expect(textbookAccountMissing([item(1, { active: false })], [], fee)).toBe(false);
+    expect(textbookAccountMissing([item(1, { price: 0 })], [], { ...fee, shipping_fee: 0 })).toBe(false);
+    // 교재가 무료여도 배송비가 있으면 택배 주문은 막힌다
+    expect(textbookAccountMissing([item(1, { price: 0 })], [], fee)).toBe(true);
   });
 
   it("현장수령은 배송비가 없다 — 계좌별 금액에서도 빠진다 (2026-10-07 Alan)", () => {

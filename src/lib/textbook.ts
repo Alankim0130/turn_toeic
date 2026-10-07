@@ -71,6 +71,17 @@ export function textbookQuote(chosen: TextbookItem[], accounts: TextbookAccount[
   };
 }
 
+/**
+ * **불라방 학생이 교재를 주문할 수 없는 상태**인가 — 낼 돈이 있는 교재가 있는데 쓰는 중인 입금 계좌가 하나도 없다.
+ * 학생 주문 화면의 "입금 계좌가 아직 등록되지 않았어요"(`missingAccount`)와 같은 규칙이다 — 쓰는 중인 교재를 다 고른 셈으로 잰다.
+ * 강사 화면(대시보드 교재주문 · 교재주문 목록 · 교재·입금 계좌 설정)이 이것으로 경고를 띄운다 (2026-10-07 — 학생이 그 화면을 캡처해
+ * 보내고서야 알았다. 계좌가 없으면 주문이 한 건도 안 들어와 강사 쪽에는 아무 표시가 없었고, 교재비 안내도 조용히 안 나갔다)
+ */
+export function textbookAccountMissing(items: TextbookItem[], accounts: TextbookAccount[], settings: TextbookSettings | null): boolean {
+  const live = items.filter((i) => i.active);
+  return live.length > 0 && textbookQuote(live, accounts, settings).missingAccount;
+}
+
 // ─── 현장수령 (2026-10-07) ────────────────────────────────────────────────
 
 /**

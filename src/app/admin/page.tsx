@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { cn, todayKST, formatDate, formatTimeRange } from "@/lib/utils";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Alert } from "@/components/ui/Alert";
 import { DonutChart } from "@/components/admin/charts/DonutChart";
 import { BarChart } from "@/components/admin/charts/BarChart";
 import { courseHeadcounts, headcountTotal } from "@/lib/course-headcount";
@@ -14,6 +15,7 @@ import { getLiveLinkSessions } from "./_lib/live-links";
 import { forInstructor, linkKindLabel, nowKst, pickFocus } from "@/lib/live-links";
 import { requireStaff } from "@/lib/auth";
 import { isPickup, pickupLabel } from "@/lib/textbook";
+import { isTextbookAccountMissing } from "@/lib/textbook-guide";
 
 export const metadata: Metadata = { title: "대시보드", robots: { index: false } };
 
@@ -48,7 +50,7 @@ export default async function AdminDashboardPage() {
   const today = todayKST();
   const tomorrow = shiftDate(today, 1);
 
-  const [courseRows, courseList, term, textbook, textbookCount, profiles, pendingVer, pendingHomework, newContacts, naver, naverStatus, liveSessions] = await Promise.all([
+  const [courseRows, courseList, term, textbook, textbookCount, profiles, pendingVer, pendingHomework, newContacts, naver, naverStatus, liveSessions, textbookAccountMissing] = await Promise.all([
     // 등록생 위젯 — 지금 수강 중인 등록의 반 배정을 강좌마다 사람 수로 센다 (2026-09-23 Alan)
     getActiveCourseRows(supabase, today),
     supabase.from("courses").select("id, name, program, target_score, is_active"),
@@ -77,6 +79,8 @@ export default async function AdminDashboardPage() {
     supabase.from("naver_sync_status").select("last_success_at, consecutive_failures").maybeSingle(),
     // 불라방 링크 위젯 — 지금(또는 다음) 수업의 링크 (2026-09-30 Alan "강사 대시보드에서 불라방 위젯")
     getLiveLinkSessions(supabase, { from: today, to: shiftDate(today, 13) }),
+    // 입금 계좌가 없어 학생이 교재를 주문하지 못하는가 (2026-10-07 — 학생이 캡처해 보내고서야 알았다. 주문이 안 들어와 아래 위젯은 조용했다)
+    isTextbookAccountMissing(supabase),
   ]);
 
   /* 수업시간대별 인원수 — 강좌(행) × 시간대(열) 표 */
@@ -160,6 +164,17 @@ export default async function AdminDashboardPage() {
   return (
     <>
       <PageHeader icon="analytics" title="대시보드" description={`${formatDate(today, { year: "numeric", month: "long", day: "numeric", weekday: "short" })} 기준 현황`} />
+
+      {/* 입금 계좌가 없으면 맨 위에 (2026-10-07) — 학생 주문 화면이 막혀 있는데 주문이 안 들어오니 아래 칸들은 0 으로 조용하다 */}
+      {textbookAccountMissing && (
+        <Alert kind="warning" title="입금 계좌가 없어 불라방 학생이 교재를 주문하지 못해요" className="mb-6">
+          학생 주문 화면에 &lsquo;입금 계좌가 아직 등록되지 않았어요&rsquo; 가 떠요.{" "}
+          <Link href="/admin/textbook-orders/setup#accounts" className="font-bold text-brand-700 underline decoration-brand-200 underline-offset-2 hover:decoration-brand-500">
+            교재·입금 계좌 설정
+          </Link>
+          에서 은행 · 계좌번호 · 예금주를 넣어 주세요.
+        </Alert>
+      )}
 
       {/* 처리 대기 — 손이 가야 하는 것부터 */}
       <section aria-labelledby="todo-title" className="mb-8">

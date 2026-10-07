@@ -13,6 +13,7 @@ import { getProfileNames } from "../_lib/profile-names";
 import { confirmTextbookPayment, markTextbookPickedUp, markTextbookShipped, updateTextbookOrder } from "./actions";
 import { isStaff, requireCrew } from "@/lib/auth";
 import { isPickup, pickupLabel, TEXTBOOK_ADMIN_STATUS, textbookAdminStatus } from "@/lib/textbook";
+import { isTextbookAccountMissing } from "@/lib/textbook-guide";
 
 export const metadata: Metadata = { title: "교재주문", robots: { index: false } };
 
@@ -56,7 +57,7 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
     .limit(300);
   if (status !== "all") query = query.eq("status", status);
 
-  const [{ data: rows }, { data: pickups }, ...countRes] = await Promise.all([
+  const [{ data: rows }, { data: pickups }, accountMissing, ...countRes] = await Promise.all([
     query,
     // 현장수령 예정 (2026-10-07) — 아직 건네지 않은 것(금액확인 전 · 수령 대기)을 받으러 올 날짜 · 시각 순으로. 탭과 상관없이 맨 위에 선다
     supabase
@@ -67,6 +68,8 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
       .order("pickup_date", { ascending: true })
       .order("pickup_time", { ascending: true })
       .limit(50),
+    // 입금 계좌가 없어 학생이 주문하지 못하는가 (2026-10-07) — 그동안은 주문이 안 들어와 이 화면이 빈 채로 조용했다
+    isTextbookAccountMissing(supabase),
     ...["requested", "confirmed", "shipped", "cancelled"].map((s) => supabase.from("textbook_orders").select("id", { count: "exact", head: true }).eq("status", s)),
   ]);
   const today = todayKST();
@@ -108,6 +111,21 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
         </Alert>
       )}
       {error && <Alert kind="warning" className="mb-4">{ERROR_TEXT[error] ?? "저장에 실패했습니다. 다시 시도해 주세요."}</Alert>}
+      {accountMissing && (
+        <Alert kind="warning" title="입금 계좌가 없어 불라방 학생이 교재를 주문하지 못해요" className="mb-4">
+          학생 주문 화면에 &lsquo;입금 계좌가 아직 등록되지 않았어요&rsquo; 가 떠요.{" "}
+          {staff ? (
+            <>
+              <Link href="/admin/textbook-orders/setup#accounts" className="font-bold text-brand-700 underline decoration-brand-200 underline-offset-2 hover:decoration-brand-500">
+                교재·입금 계좌 설정
+              </Link>
+              에서 은행 · 계좌번호 · 예금주를 넣어 주세요.
+            </>
+          ) : (
+            "강사님께 교재·입금 계좌 설정에서 계좌를 넣어 달라고 부탁해 주세요."
+          )}
+        </Alert>
+      )}
 
       {/* 현장수령 예정 (2026-10-07 Alan — "무슨날짜에 올껀지, 몇시쯤 올껀지") — 탭을 넘기지 않아도 누가 언제 오는지 보이게 */}
       {(pickups ?? []).length > 0 && (

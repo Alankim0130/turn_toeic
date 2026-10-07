@@ -5,7 +5,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { defaultAccount, type TextbookAccount, type TextbookSettings } from "@/lib/textbook";
+import { defaultAccount, textbookAccountMissing, type TextbookAccount, type TextbookItem, type TextbookSettings } from "@/lib/textbook";
 import { cn, formatWon } from "@/lib/utils";
 import {
   deleteTextbookAccount,
@@ -44,7 +44,7 @@ export default async function TextbookSetupPage({ searchParams }: { searchParams
   await requireStaff();
   const { ok, error } = await searchParams;
   const supabase = await createClient();
-  const [{ data: accounts }, { data: items }, { data: settings }, { data: levels }] = await Promise.all([
+  const [{ data: accounts, error: accountsError }, { data: items, error: itemsError }, { data: settings }, { data: levels }] = await Promise.all([
     supabase.from("textbook_accounts").select("*").order("sort_order").order("id"),
     supabase.from("textbook_items").select("*").order("level", { ascending: true, nullsFirst: true }).order("sort_order").order("id"),
     supabase.from("textbook_settings").select("shipping_fee, default_account_id, notice").maybeSingle(),
@@ -53,6 +53,10 @@ export default async function TextbookSetupPage({ searchParams }: { searchParams
   const accs = (accounts ?? []) as TextbookAccount[];
   const active = accs.filter((a) => a.active);
   const fallback = defaultAccount(accs, (settings ?? null) as TextbookSettings | null);
+  // 쓰는 중인 계좌가 없어 학생이 주문하지 못하는 상태 (2026-10-07 — 학생 주문 화면에 "입금 계좌가 아직 등록되지 않았어요").
+  // 계좌 · 교재를 다 읽었을 때만 판정한다 — 못 읽은 채로 "없어요" 라고 하지 않는다
+  const accountMissing =
+    !accountsError && !itemsError && textbookAccountMissing((items ?? []) as TextbookItem[], accs, (settings ?? null) as TextbookSettings | null);
   const accountName = (a: TextbookAccount) => `${a.label ? `${a.label} · ` : ""}${a.bank_name} ${a.account_no} (${a.holder})`;
 
   return (
@@ -77,6 +81,13 @@ export default async function TextbookSetupPage({ searchParams }: { searchParams
             <Icon name="orders" size={26} />입금 계좌
           </h2>
           <p className="mt-1 text-sm text-slate">학생은 주문할 때 여기 계좌로 입금하고 입금자명을 적어요. 계좌가 하나면 모든 교재와 배송비가 그 계좌로 가요.</p>
+          {accountMissing && (
+            <Alert kind="warning" title="쓰는 중인 입금 계좌가 없어요 — 지금은 불라방 학생이 교재를 주문할 수 없어요" className="mt-3">
+              {accs.length > 0
+                ? "아래 계좌를 '다시 쓰기' 하거나, 맨 아래 칸에 은행 · 계좌번호 · 예금주를 적고 '계좌 더하기' 를 눌러 주세요."
+                : "맨 아래 칸에 은행 · 계좌번호 · 예금주를 적고 '계좌 더하기' 를 눌러 주세요. 계좌가 하나면 그 계좌가 기본 계좌예요 — 따로 고르지 않아도 돼요."}
+            </Alert>
+          )}
 
           {accs.length > 0 && (
             <ul className="mt-4 space-y-3">
