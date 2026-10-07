@@ -363,6 +363,8 @@ export function textbookOrderError(message: string | undefined): string {
   if (m.includes("recipient")) return "받는 분 이름을 확인해 주세요.";
   if (m.includes("phone")) return "휴대폰 번호를 확인해 주세요.";
   if (m.includes("postal")) return "우편번호는 숫자 5자리예요.";
+  // 상세 주소는 택배에 꼭 있어야 한다 (2026-10-07 Alan) — "address" 보다 먼저 본다 (이름에 address 가 들어 있다)
+  if (m.includes("address_detail")) return "상세 주소(동 · 호수)를 적어 주세요. 그래야 교재를 보낼 수 있어요.";
   if (m.includes("address")) return "배송 주소를 확인해 주세요.";
   if (m.includes("memo")) return "요청사항은 200자까지예요.";
   if (m.includes("depositor")) return "입금자명을 적어 주세요. 통장에 찍히는 이름이에요.";

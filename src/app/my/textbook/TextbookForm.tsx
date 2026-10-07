@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 import { submitTextbookOrder, type TextbookState } from "./actions";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
@@ -108,7 +108,19 @@ export function TextbookForm({
   }
 
   return (
-    <form action={action} className="space-y-6">
+    <form
+      action={action}
+      // 보내기는 직접 한다 (2026-10-07 확인). `<form action>` 으로만 보내면 React 19 가 action 이 끝난 뒤 폼을 초기화(form.reset())해서
+      // 교재 체크 · 받는 방법 · 시각 칸이 처음 그린 모양으로 돌아간다 — 분홍 카드 · 합계는 고른 그대로인데 실제로 보내는 값은 비어,
+      // 휴대폰 번호 오타 같은 오류 뒤 고쳐 다시 누르면 "주문할 교재를 하나 이상 골라 주세요" 가 떴다. 같은 이벤트 안에서 전환을 열면
+      // React 는 초기화하지 않고 버튼의 '주문하는 중…'(useFormStatus)은 그대로 켠다. 자바스크립트가 아직 없을 때는 위 action 으로 보낸다
+      onSubmit={(e) => {
+        e.preventDefault();
+        const formData = new FormData(e.currentTarget);
+        startTransition(() => action(formData));
+      }}
+      className="space-y-6"
+    >
       {state.error && <Alert kind="warning">{state.error}</Alert>}
 
       {open.length > 1 ? (
@@ -246,21 +258,24 @@ export function TextbookForm({
           </div>
         </div>
 
-        {/* 택배 — 배송지. 현장수령이면 숨기기만 한다 (적어 둔 주소가 남게) */}
+        {/* 택배 — 배송지는 주소 + 상세 주소 둘 다 (2026-10-07 Alan — "우편번호 필요없고 본인 주소만 기입하게 해줘. 그리고 상세주소는 선택이 아니라
+            필수로 들어가야해. 그래야지 배송을 할 수 있지"). 우편번호 칸은 없앴다. 현장수령이면 숨기기만 한다 (적어 둔 주소가 남게 — 숨긴 칸은 required 를 끈다) */}
         <div className={cn("space-y-4", pickup && "hidden")}>
-          <div className="grid gap-4 sm:grid-cols-[8rem_1fr]">
-            <div>
-              <label htmlFor="postal_code" className="label">우편번호 <span className="font-normal text-mist">(선택)</span></label>
-              <input id="postal_code" name="postal_code" inputMode="numeric" maxLength={5} className="input" placeholder="12345" defaultValue={v.postal_code} />
-            </div>
-            <div>
-              <label htmlFor="address" className="label">주소</label>
-              <input id="address" name="address" required={!pickup} maxLength={200} className="input" placeholder="도로명 주소" defaultValue={v.address} />
-            </div>
+          <div>
+            <label htmlFor="address" className="label">주소</label>
+            <input id="address" name="address" required={!pickup} maxLength={200} className="input" placeholder="도로명 주소" defaultValue={v.address} />
           </div>
           <div>
-            <label htmlFor="address_detail" className="label">상세 주소 <span className="font-normal text-mist">(선택)</span></label>
-            <input id="address_detail" name="address_detail" maxLength={100} className="input" placeholder="동·호수, 공동현관 비밀번호 등" defaultValue={v.address_detail} />
+            <label htmlFor="address_detail" className="label">상세 주소</label>
+            <input
+              id="address_detail"
+              name="address_detail"
+              required={!pickup}
+              maxLength={100}
+              className="input"
+              placeholder="동·호수, 공동현관 비밀번호 등"
+              defaultValue={v.address_detail}
+            />
           </div>
         </div>
 
@@ -302,11 +317,7 @@ export function TextbookForm({
                 : `오늘부터 ${PICKUP_DAYS_AHEAD}일 안에서 날짜를 골라 주세요. 강사님이 입금을 확인하면 그 날 학원에서 받아 가요.`}
           </p>
         </div>
-
-        <div>
-          <label htmlFor="memo" className="label">요청사항 <span className="font-normal text-mist">(선택)</span></label>
-          <input id="memo" name="memo" maxLength={200} className="input" placeholder={pickup ? "전할 말 (예: 수업 끝나고 들를게요)" : "배송 시 요청사항"} defaultValue={v.memo} />
-        </div>
+        {/* 요청사항 칸은 없앴다 (2026-10-07 Alan "요청사항도 없애줘") — 예전 주문의 메모는 강사 · 조교 화면에 그대로 보인다 */}
       </div>
 
       <section aria-labelledby="pay-title" className="rounded-xl2 border border-brand-200 bg-brand-50/50 p-4 sm:p-5">

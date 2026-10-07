@@ -153,6 +153,11 @@ describe("주문 오류 문구", () => {
     expect(textbookOrderError("delivery")).toContain("받는 방법");
   });
 
+  it("택배 배송지 — 상세 주소는 꼭 받는다 (2026-10-07 Alan) · 주소 칸 이름이 겹쳐도 각자 문구로", () => {
+    expect(textbookOrderError("address_detail")).toBe("상세 주소(동 · 호수)를 적어 주세요. 그래야 교재를 보낼 수 있어요.");
+    expect(textbookOrderError("address")).toBe("배송 주소를 확인해 주세요.");
+  });
+
   it("배포 사이 함수 모양이 달라 생긴 오류는 칸 이름(p_address · p_delivery)에 속지 않는다", () => {
     const m = "Could not find the function public.create_textbook_order(p_address, p_address_detail, p_delivery, p_depositor) in the schema cache";
     expect(textbookOrderError(m)).toContain("다시 시도");

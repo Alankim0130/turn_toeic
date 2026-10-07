@@ -19,6 +19,10 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
  *
  * 받는 방법(2026-10-07): 택배면 예전 그대로 아홉 칸만 보낸다. **현장수령일 때만** p_delivery · p_pickup_date · p_pickup_time 을 더한다 —
  * 배포 사이에 DB 함수가 아직 예전 모양이어도 택배 주문은 그대로 들어간다 (새 칸은 함수에 기본값이 있다).
+ *
+ * 배송지는 주소 + 상세 주소 둘 다 받는다 (2026-10-07 Alan — "우편번호 필요없고 본인 주소만 기입하게 해줘. 그리고 상세주소는 선택이 아니라 필수로
+ * 들어가야해. 그래야지 배송을 할 수 있지" · "요청사항도 없애줘"). 우편번호 · 요청사항 칸은 화면에서 없앴고 함수에는 빈 값을 보낸다 (함수 인자는 그대로).
+ * **상세 주소를 반드시 받는 것은 여기서 본다** — DB 함수는 예전처럼 비워도 받는다 (현장수령 시각 범위와 같은 규칙. 주문 함수는 금액 · 자격을 지키는 곳이라 건드리지 않았다).
  */
 export async function submitTextbookOrder(_prev: TextbookState, formData: FormData): Promise<TextbookState> {
   const v = (k: string) => String(formData.get(k) ?? "").trim();
@@ -26,10 +30,8 @@ export async function submitTextbookOrder(_prev: TextbookState, formData: FormDa
     term_id: v("term_id"),
     recipient_name: v("recipient_name"),
     phone: v("phone"),
-    postal_code: v("postal_code"),
     address: v("address"),
     address_detail: v("address_detail"),
-    memo: v("memo"),
     depositor_name: v("depositor_name"),
     delivery: v("delivery") === "pickup" ? "pickup" : "parcel",
     pickup_date: v("pickup_date"),
@@ -46,6 +48,8 @@ export async function submitTextbookOrder(_prev: TextbookState, formData: FormDa
   if (itemIds.length === 0) return { error: "주문할 교재를 하나 이상 골라 주세요.", values };
   if (pickup && !DATE.test(values.pickup_date)) return { error: textbookOrderError("pickup_date"), values };
   if (pickup && !PICKUP_TIMES.includes(values.pickup_time)) return { error: textbookOrderError("pickup_time"), values };
+  if (!pickup && !values.address) return { error: textbookOrderError("address"), values };
+  if (!pickup && !values.address_detail) return { error: textbookOrderError("address_detail"), values };
   if (!values.depositor_name) return { error: textbookOrderError("depositor"), values };
 
   const supabase = await createClient();
@@ -54,10 +58,10 @@ export async function submitTextbookOrder(_prev: TextbookState, formData: FormDa
     p_item_ids: itemIds,
     p_recipient: values.recipient_name,
     p_phone: values.phone,
-    p_postal_code: pickup ? "" : values.postal_code,
+    p_postal_code: "",
     p_address: pickup ? "" : values.address,
     p_address_detail: pickup ? "" : values.address_detail,
-    p_memo: values.memo,
+    p_memo: "",
     p_depositor: values.depositor_name,
     ...(pickup ? { p_delivery: "pickup", p_pickup_date: values.pickup_date, p_pickup_time: values.pickup_time } : {}),
   });
