@@ -131,7 +131,7 @@ describe("주문 오류 문구", () => {
 
   it("현장수령 — 날짜 · 시각 · 받는 방법 (2026-10-07)", () => {
     expect(textbookOrderError("pickup_date")).toContain(`${PICKUP_DAYS_AHEAD}일`);
-    expect(textbookOrderError("pickup_time")).toContain("시각");
+    expect(textbookOrderError("pickup_time")).toBe("받으러 올 시각은 오전 10시 ~ 오후 8시 사이에서 골라 주세요.");
     expect(textbookOrderError("delivery")).toContain("받는 방법");
   });
 
@@ -371,10 +371,14 @@ describe("현장수령 — 받는 방법 · 날짜 · 시각 · 상태 이름 (2
     expect(DELIVERY_LABEL).toEqual({ parcel: "택배", pickup: "현장수령" });
   });
 
-  it("몇 시쯤 — 오전 9시부터 밤 10시까지 30분 간격", () => {
-    expect(PICKUP_TIMES[0]).toBe("09:00");
-    expect(PICKUP_TIMES.at(-1)).toBe("22:00");
-    expect(PICKUP_TIMES).toHaveLength(27);
+  it("몇 시쯤 — 오전 10시부터 밤 8시까지 30분 간격 (2026-10-07 Alan)", () => {
+    expect(PICKUP_TIMES[0]).toBe("10:00");
+    expect(PICKUP_TIMES.at(-1)).toBe("20:00");
+    expect(PICKUP_TIMES).toHaveLength(21);
+    expect(PICKUP_TIMES).not.toContain("09:30");
+    expect(PICKUP_TIMES).not.toContain("20:30");
+    expect(pickupTimeLabel(PICKUP_TIMES[0])).toBe("오전 10시");
+    expect(pickupTimeLabel(PICKUP_TIMES[PICKUP_TIMES.length - 1])).toBe("오후 8시");
     expect(PICKUP_TIMES).toContain("12:30");
     expect(new Set(PICKUP_TIMES).size).toBe(PICKUP_TIMES.length);
   });

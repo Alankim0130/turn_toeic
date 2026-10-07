@@ -88,11 +88,11 @@ export const isPickup = (o: { delivery_method?: string | null }) => o.delivery_m
 export const PICKUP_DAYS_AHEAD = 60;
 
 /**
- * "몇 시쯤" 고르는 칸 — 오전 9시부터 밤 10시까지 30분 간격.
- * 학원 문 여는 시간을 받은 것은 아니고 수업(오전 10시 ~ 밤 8시 40분) 앞뒤를 넉넉히 덮었다. 바꾸면 여기만 (DB 는 시각을 거르지 않는다)
+ * "몇 시쯤" 고르는 칸 — 오전 10시부터 밤 8시까지 30분 간격 (2026-10-07 Alan "수령시간은 오전 10시부터 밤 8시까지 설정해줘").
+ * 바꾸면 여기만 — DB 는 시각을 거르지 않고 서버 액션이 이 목록 안의 값만 받는다 (이미 들어온 주문의 시각은 범위 밖이어도 그대로 보인다)
  */
-export const PICKUP_TIMES: readonly string[] = Array.from({ length: (22 - 9) * 2 + 1 }, (_, i) => {
-  const minutes = 9 * 60 + i * 30;
+export const PICKUP_TIMES: readonly string[] = Array.from({ length: (20 - 10) * 2 + 1 }, (_, i) => {
+  const minutes = 10 * 60 + i * 30;
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 });
 
@@ -347,7 +347,7 @@ export function textbookOrderError(message: string | undefined): string {
   if (m.includes("invalid_items")) return "고른 교재를 다시 확인해 주세요. 목록이 바뀌었을 수 있어요.";
   if (m.includes("no_account")) return "입금 계좌가 아직 등록되지 않았어요. 강사님께 문의해 주세요.";
   if (m.includes("pickup_date")) return `받으러 올 날짜는 오늘부터 ${PICKUP_DAYS_AHEAD}일 안에서 골라 주세요.`;
-  if (m.includes("pickup_time")) return "받으러 올 시각을 골라 주세요.";
+  if (m.includes("pickup_time")) return `받으러 올 시각은 ${pickupTimeLabel(PICKUP_TIMES[0])} ~ ${pickupTimeLabel(PICKUP_TIMES[PICKUP_TIMES.length - 1])} 사이에서 골라 주세요.`;
   if (m.includes("delivery")) return "받는 방법(택배 · 현장수령)을 골라 주세요.";
   if (m.includes("recipient")) return "받는 분 이름을 확인해 주세요.";
   if (m.includes("phone")) return "휴대폰 번호를 확인해 주세요.";
