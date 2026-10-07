@@ -183,6 +183,9 @@
   `20261001130000_ybm_review_stats.sql` 을 올려 둔 것을 못 보고 같은 번호로 `youtube_stream_replay` 를 만들어 머지했더니, 배포는 성공으로
   뜨는데 표가 안 생겨 **반 상세 수업일 표가 빈 채로** 떴다. `20261001140000` 으로 바꿔 다시 머지했다). 파일을 만들기 전에
   `ls supabase/migrations | tail` 로 마지막 번호를 보고 그보다 뒤 번호를 쓸 것 — 같은 테스트가 겹침도 잡는다.
+  **main 에 합친 뒤 push 하기 전에도 다시 본다** (2026-10-07 — 만들 때는 비어 있던 `20261007100000` 을 그 사이 다른 세션이 main 에 먼저 올려,
+  합치는 순간 겹쳤다. Supabase 가 그 push 의 적용을 `schema_migrations_pkey` 중복으로 멈췄고(사이트는 이미 새 코드로 떠 있었다) 번호를 `20261007110000` 으로 옮겨 다시 올렸다).
+  합친 결과에서 `npx vitest run src/lib/migrations.test.ts` 한 번이면 잡힌다 — 브랜치에서만 돌린 테스트는 합친 뒤의 겹침을 못 본다.
   **미리보기 브랜치(Preview branches)는 켜지 않는다** — Branching Compute 는 별도 과금이다.
 - OCR: **tesseract.js 한국어, 서버에서 자체 실행** (`src/lib/ocr.ts` — 미확정 5 에서 확정됐다).
   외부 OCR API 를 부르지 않는다 — 수강증의 실명이 밖으로 나가지 않게 하려는 것이다
