@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  * 줄마다 `<div>` 하나라 줄 정렬(왼쪽 · 가운데 · 오른쪽)이 줄마다 다르게 선다. 빈 줄은 `<br>` 로 높이를 지킨다.
  * 그림은 `images`(저장소 경로 → 서명 주소)에 있는 것만 그린다 — 주소를 못 만든 그림(권한 없음 · 지워짐)은 자리만 남긴다.
  * 너비는 줄 폭의 몇 % 이고 휴대폰에서도 같은 비율이다.
- * 표(2026-10-07 — 다른 블로그에서 붙여 넣은 표)는 합친 칸 · 칸 정렬 · 머리칸까지 그대로 서고, 칸 글자는 글자로만 넣는다(`NoteTableView`).
+ * 표(2026-10-07 — 다른 블로그에서 붙여 넣은 표 · 같은 날 직접 만든 표)는 합친 칸 · 칸 정렬 · 머리칸까지 그대로 서고, 칸 글자는 글자로만 넣는다(`NoteTableView`).
  */
 export function NoteBody({
   runs,
@@ -80,7 +80,8 @@ export function NoteTableView({ table }: { table: NoteTable }) {
                 const Cell = cell.head ? "th" : "td";
                 return (
                   <Cell key={j} rowSpan={cell.rowspan} colSpan={cell.colspan} className={cellClassName(cell)}>
-                    {cell.text}
+                    {/* 빈 셀도 한 줄 높이 — 안 그러면 빈칸 채우기 표처럼 빈 줄이 납작하게 접힌다 */}
+                    {cell.text === "" ? <br /> : cell.text}
                   </Cell>
                 );
               })}

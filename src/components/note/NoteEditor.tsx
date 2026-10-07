@@ -49,6 +49,7 @@ import { isImageType, MB, objectName } from "@/lib/upload";
 import { uploadFile } from "@/lib/upload-client";
 import { cn } from "@/lib/utils";
 import { TableEditDialog } from "./TableEditDialog";
+import { AlignGlyph, Divider, TableGlyph, Tool } from "./tools";
 
 const fmt = (n: number) => n.toLocaleString("ko-KR");
 
@@ -79,9 +80,10 @@ export type NoteEditorImages = {
  *   (그 사이에 저장하면 사진이 빠진 글이 저장되고, 다 올라간 사진은 어디에도 안 붙는다).
  * - 붙여 넣기는 글자만 받는다(다른 곳의 색 · 글꼴이 딸려 오지 않게). 버튼은 누르는 순간 칸의 선택을 빼앗지 않게 `pointerdown` 기본 동작을 막고,
  *   그래도 놓치는 휴대폰을 위해 마지막 선택을 기억해 둔다.
- * - **표**(2026-10-07 Alan — "안내사항에 이런표도 넣고싶어 … 다른 블로그에서 복사 붙여넣기로 했을때 표를 그대로 가져오는게 가능할까?") —
+ * - **표**(2026-10-07 Alan — "안내사항에 이런표도 넣고싶어 … 다른 블로그에서 복사 붙여넣기로 했을때 표를 그대로 가져오는게 가능할까?" →
+ *   같은 날 "표를 직접 만드는 것도 넣어주면 좋겠어") — `표 넣기` 로 만들거나(크기 → 셀 채우기 · 줄 · 칸 · 합치기 팝업, `TableEditDialog`),
  *   붙여 넣은 HTML 에 표가 있으면 표로 받는다(`note-paste.ts` — 합친 칸 · 칸 정렬 · 머리칸 · 칸 안 줄바꿈, 색 · 글꼴은 글자처럼 빠진다). 표는 그림처럼 한 줄에 하나 ·
- *   한 글자(`OBJ`)이고, 누르면 `칸 글자 고치기`(팝업) · `표 지우기` 가 뜬다. 클립보드에 표 HTML 과 그림 파일이 함께 있으면(엑셀 · 워드가 표 그림을 같이 싣는다) 표가 먼저다.
+ *   한 글자(`OBJ`)이고, 누르면 `표 고치기`(같은 팝업) · `표 지우기` 가 뜬다. 클립보드에 표 HTML 과 그림 파일이 함께 있으면(엑셀 · 워드가 표 그림을 같이 싣는다) 표가 먼저다.
  */
 export function NoteEditor({
   id,
@@ -116,8 +118,8 @@ export function NoteEditor({
   const [active, setActive] = useState<NoteStyle>({});
   const [activeAlign, setActiveAlign] = useState<NoteAlign>("left");
   const [picked, setPicked] = useState<Picked | null>(null);
-  /** 칸 글자 고치기 팝업에 띄운 표 (picked 의 표) */
-  const [tableEdit, setTableEdit] = useState<NoteTable | null>(null);
+  /** 표 팝업 — `table` 이 있으면 누른 표 고치기, 없으면 새 표 만들기 */
+  const [tableEdit, setTableEdit] = useState<{ table: NoteTable | null } | null>(null);
   // 팝업이 다시 그려질 때마다 닫기 함수가 바뀌면 팝업이 제목으로 포커스를 다시 가져간다 — 한 번만 만든다
   const closeTableEdit = useCallback(() => setTableEdit(null), []);
   const [uploading, setUploading] = useState(0);
@@ -290,7 +292,7 @@ export function NoteEditor({
     commit(next);
   }
 
-  /** 칸 글자 고치기 팝업의 `적용` — 팝업이 화면을 덮고 있어 그동안 표 자리(offset)가 바뀌지 않는다 */
+  /** 표 고치기 팝업의 `적용` — 팝업이 화면을 덮고 있어 그동안 표 자리(offset)가 바뀌지 않는다 */
   function applyTable(table: NoteTable) {
     const el = editor.current;
     setTableEdit(null);
@@ -302,10 +304,10 @@ export function NoteEditor({
   }
 
   /**
-   * 붙여 넣은 표 (`note-paste.ts`) — 표는 한 줄에 하나: 앞 글자가 줄 끝이 아니면 줄을 바꾸고, 뒤에도 줄을 바꿔 둔다 (사진 넣기와 같은 규칙).
-   * 함께 고른 앞뒤 글은 서식 없는 글자로 들어간다
+   * 표(와 글자)를 커서 자리에 — 붙여 넣은 표 · 새로 만든 표. 표는 한 줄에 하나: 앞 글자가 줄 끝이 아니면 줄을 바꾸고, 뒤에도 줄을 바꿔 둔다 (사진 넣기와 같은 규칙).
+   * 함께 고른 앞뒤 글은 서식 없는 글자로 들어간다. 팝업이 열려 있던 동안에는 칸의 선택이 팝업에 가 있어 마지막으로 기억한 커서 자리(`lastRange`)에 넣는다
    */
-  function insertPasted({ parts, truncated }: PastedTables) {
+  function insertBlocks(parts: PastedTables["parts"]) {
     const el = editor.current;
     if (!el || disabled) return;
     const text = Array.from(runsText(scan(el).doc.runs));
@@ -325,11 +327,25 @@ export function NoteEditor({
     // 표로 끝나고 그 자리 뒤가 이미 줄 끝이면 줄을 또 바꾸지 않는다
     if (runs.at(-2)?.style.table && text[r[1]] === "\n") runs.pop();
     insert(runs, runsLength(runs));
+  }
+
+  /** 붙여 넣은 표 (`note-paste.ts`) */
+  function insertPasted({ parts, truncated }: PastedTables) {
+    if (!editor.current || disabled) return;
+    insertBlocks(parts);
     setHint(
       truncated
-        ? `표가 커서 앞 ${TABLE_MAX_ROWS}줄 · ${TABLE_MAX_COLS}칸까지만 넣었어요. 표를 누르면 칸 글자를 고치거나 지울 수 있어요.`
-        : "표를 붙여 넣었어요. 표를 누르면 칸 글자를 고치거나 지울 수 있어요.",
+        ? `표가 커서 앞 ${TABLE_MAX_ROWS}줄 · ${TABLE_MAX_COLS}칸까지만 넣었어요. 표를 누르면 고치거나 지울 수 있어요.`
+        : "표를 붙여 넣었어요. 표를 누르면 고치거나 지울 수 있어요.",
     );
+  }
+
+  /** 표 만들기 팝업의 `표 넣기` */
+  function insertNewTable(table: NoteTable) {
+    setTableEdit(null);
+    if (!editor.current || disabled) return;
+    insertBlocks([{ kind: "table", table }]);
+    setHint("표를 넣었어요. 표를 누르면 고치거나 지울 수 있어요.");
   }
 
   function removePicked() {
@@ -380,9 +396,9 @@ export function NoteEditor({
             <AlignGlyph align={a} />
           </Tool>
         ))}
+        <Divider />
         {images && (
           <>
-            <Divider />
             <Tool label="사진 넣기" onUse={() => fileInput.current?.click()} disabled={disabled || uploading > 0} wide>
               <span className="inline-flex items-center gap-1">
                 <svg viewBox="0 0 24 24" aria-hidden className="size-4 fill-none stroke-current stroke-2">
@@ -407,6 +423,12 @@ export function NoteEditor({
             />
           </>
         )}
+        <Tool label="표 넣기" onUse={() => setTableEdit({ table: null })} disabled={disabled} wide>
+          <span className="inline-flex items-center gap-1">
+            <TableGlyph />
+            표 넣기
+          </span>
+        </Tool>
       </div>
 
       {images && picked?.kind === "img" && (
@@ -441,15 +463,15 @@ export function NoteEditor({
             {pickedTable.size.rows}줄 · {pickedTable.size.cols}칸
           </span>
           <span className="flex-1" />
-          <Tool label="표 칸 글자 고치기" onUse={() => setTableEdit(pickedTable.table)} wide>
-            칸 글자 고치기
+          <Tool label="표 고치기 — 셀 글자 · 줄 · 칸 · 셀 합치기" onUse={() => setTableEdit({ table: pickedTable.table })} wide>
+            표 고치기
           </Tool>
           <Tool label="표 지우기" onUse={removePicked} wide>
             표 지우기
           </Tool>
         </div>
       )}
-      {tableEdit && <TableEditDialog table={tableEdit} onApply={applyTable} onClose={closeTableEdit} />}
+      {tableEdit && <TableEditDialog table={tableEdit.table} onApply={tableEdit.table ? applyTable : insertNewTable} onClose={closeTableEdit} />}
 
       <div
         id={id}
@@ -526,8 +548,8 @@ export function NoteEditor({
         <span className={cn(hint && "font-bold text-brand-700")}>
           {hint ??
             (images
-              ? "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 사진을 누르면 크기를 바꿔요. 다른 곳의 표는 복사해 붙여 넣으면 표로 들어가요."
-              : "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 한 번 더 누르면 풀려요. 다른 곳의 표는 복사해 붙여 넣으면 표로 들어가요.")}
+              ? "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 사진 · 표를 누르면 고칠 수 있어요. 다른 곳의 표는 복사해 붙여 넣어도 돼요."
+              : "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 한 번 더 누르면 풀려요. 표를 누르면 고칠 수 있어요. 다른 곳의 표는 복사해 붙여 넣어도 돼요.")}
         </span>
         <span className="shrink-0">
           {over && <>{fmt(length - max)}자를 줄여 주세요 · </>}
@@ -540,19 +562,6 @@ export function NoteEditor({
 
 /** 누른 그림 · 표 — 그 자리(offset)와 지금 값 */
 type Picked = { offset: number; kind: "img"; img: NoteImage } | { offset: number; kind: "table"; table: NoteTable };
-
-const Divider = () => <span aria-hidden className="mx-0.5 h-5 w-px bg-line" />;
-
-function AlignGlyph({ align }: { align: NoteAlign }) {
-  const rows: [number, number][] = align === "left" ? [[4, 20], [4, 14], [4, 18]] : align === "center" ? [[4, 20], [7, 17], [5, 19]] : [[4, 20], [10, 20], [6, 20]];
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden className="size-4 fill-none stroke-current stroke-2">
-      {rows.map(([x1, x2], i) => (
-        <path key={i} d={`M${x1} ${7 + i * 5}H${x2}`} strokeLinecap="round" />
-      ))}
-    </svg>
-  );
-}
 
 function offsetOfRun(runs: NoteRun[], index: number) {
   let n = 0;
@@ -593,9 +602,11 @@ function tableElement(t: NoteTable): HTMLTableElement {
       if (c.rowspan) cell.rowSpan = c.rowspan;
       if (c.colspan) cell.colSpan = c.colspan;
       cell.className = cellClassName(c);
+      // 빈 셀은 <br> 하나로 한 줄 높이 (학생 화면과 같다 — 붙여 넣기는 이것을 빈 셀로 읽는다)
+      if (c.text === "") cell.append(document.createElement("br"));
       c.text.split("\n").forEach((line, k) => {
         if (k > 0) cell.append(document.createElement("br"));
-        cell.append(line);
+        if (line) cell.append(line);
       });
       tr.append(cell);
     }
@@ -813,40 +824,4 @@ function writeSelection(root: HTMLElement, start: number, end: number) {
   range.setEnd(en, eo);
   sel.removeAllRanges();
   sel.addRange(range);
-}
-
-function Tool({
-  label,
-  on = false,
-  onUse,
-  disabled,
-  wide,
-  children,
-}: {
-  label: string;
-  on?: boolean;
-  onUse: () => void;
-  disabled?: boolean;
-  wide?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      aria-pressed={on}
-      disabled={disabled}
-      onPointerDown={(e) => e.preventDefault()}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onUse}
-      className={cn(
-        "inline-flex h-8 items-center justify-center rounded-lg border text-sm text-ink transition disabled:opacity-50",
-        on ? "border-brand-600 bg-brand-100 ring-2 ring-brand-500" : "border-line bg-white hover:border-brand-300 hover:bg-brand-50",
-        wide ? "px-2 text-xs font-bold" : "w-8",
-      )}
-    >
-      {children}
-    </button>
-  );
 }

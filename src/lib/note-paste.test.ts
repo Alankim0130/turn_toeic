@@ -91,9 +91,10 @@ describe("붙여 넣은 표 → 안내 글의 표 (2026-10-07 Alan — 다른 �
 
   it("우리 편집기에서 복사한 표(<br> 줄바꿈 · text-center 클래스)도 그대로 돌아온다", () => {
     const t = onlyTable(
-      `<div data-table="x" contenteditable="false" class="my-1"><table class="w-full"><tbody><tr><td rowspan="2" class="border px-3 text-center">When<br>Who</td><td class="border text-right">x</td></tr><tr><th class="border bg-brand-50 font-bold">h</th></tr></tbody></table></div>`,
+      `<div data-table="x" contenteditable="false" class="my-1"><table class="w-full"><tbody><tr><td rowspan="2" class="border px-3 text-center">When<br>Who</td><td class="border text-right">x</td></tr><tr><th class="border bg-brand-50 font-bold">h</th></tr><tr><td class="border"><br></td><td class="border"><br></td></tr></tbody></table></div>`,
     );
-    expect(t.rows).toEqual([[{ text: "When\nWho", rowspan: 2, align: "center" }, { text: "x", align: "right" }], [{ text: "h", head: true }]]);
+    // 빈 셀은 한 줄 높이를 지키려고 <br> 하나를 품는다 — 붙여 넣으면 다시 빈 셀이다
+    expect(t.rows).toEqual([[{ text: "When\nWho", rowspan: 2, align: "center" }, { text: "x", align: "right" }], [{ text: "h", head: true }], [{ text: "" }, { text: "" }]]);
   });
 
   it("칸 안 빈칸 · 줄바꿈을 지키는 글(pre-wrap) · 숨긴 글(blind) · 칸 속 표", () => {

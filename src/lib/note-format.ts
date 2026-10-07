@@ -517,7 +517,7 @@ export function tableSize(t: NoteTable): { rows: number; cols: number } {
   return { rows: t.rows.length, cols };
 }
 
-/** `offset` 자리의 표를 바꾼다 (칸 글자 고치기) */
+/** `offset` 자리의 표를 바꾼다 (표 고치기 팝업의 적용) */
 export function replaceTable(doc: NoteDoc, offset: number, table: NoteTable): NoteDoc {
   let pos = 0;
   const runs = doc.runs.map((r) => {
