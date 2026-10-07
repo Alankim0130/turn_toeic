@@ -1,4 +1,4 @@
-import { alignClassName, runClassName, splitLines, type NoteAlign, type NoteRun } from "@/lib/note-format";
+import { NOTE_TABLE, NOTE_TABLE_WRAP, alignClassName, cellClassName, runClassName, splitLines, type NoteAlign, type NoteRun, type NoteTable } from "@/lib/note-format";
 import { cn } from "@/lib/utils";
 
 /**
@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
  * 줄마다 `<div>` 하나라 줄 정렬(왼쪽 · 가운데 · 오른쪽)이 줄마다 다르게 선다. 빈 줄은 `<br>` 로 높이를 지킨다.
  * 그림은 `images`(저장소 경로 → 서명 주소)에 있는 것만 그린다 — 주소를 못 만든 그림(권한 없음 · 지워짐)은 자리만 남긴다.
  * 너비는 줄 폭의 몇 % 이고 휴대폰에서도 같은 비율이다.
+ * 표(2026-10-07 — 다른 블로그에서 붙여 넣은 표)는 합친 칸 · 칸 정렬 · 머리칸까지 그대로 서고, 칸 글자는 글자로만 넣는다(`NoteTableView`).
  */
 export function NoteBody({
   runs,
@@ -42,6 +43,7 @@ export function NoteBody({
 /** 서식 조각 — 서식이 없는 조각은 글자 그대로 */
 export function Runs({ runs, images }: { runs: NoteRun[]; images?: Record<string, string> }) {
   return runs.map((r, i) => {
+    if (r.style.table) return <NoteTableView key={i} table={r.style.table} />;
     const img = r.style.img;
     if (img) {
       const src = images?.[img.path];
@@ -64,4 +66,28 @@ export function Runs({ runs, images }: { runs: NoteRun[]; images?: Record<string
       r.text
     );
   });
+}
+
+/** 안내 · 공지 속 표 — 칸이 모자라면 표만 옆으로 민다 (화면 전체가 밀리지 않게) */
+export function NoteTableView({ table }: { table: NoteTable }) {
+  return (
+    <div className={NOTE_TABLE_WRAP}>
+      <table className={NOTE_TABLE}>
+        <tbody>
+          {table.rows.map((row, i) => (
+            <tr key={i}>
+              {row.map((cell, j) => {
+                const Cell = cell.head ? "th" : "td";
+                return (
+                  <Cell key={j} rowSpan={cell.rowspan} colSpan={cell.colspan} className={cellClassName(cell)}>
+                    {cell.text}
+                  </Cell>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }

@@ -1,5 +1,5 @@
 import { fileExt, MB, objectName } from "./upload";
-import { parseDoc, parseNote, runsText, sliceRuns, trimDoc, trimRuns, type NoteAlign, type NoteRun } from "./note-format";
+import { OBJ, parseDoc, parseNote, runsText, sliceRuns, trimDoc, trimRuns, type NoteAlign, type NoteRun } from "./note-format";
 import { isYoutubeUrl, linkKindLabel } from "./live-links";
 import { youtubeVideo } from "./youtube-video";
 
@@ -256,10 +256,11 @@ export function defaultMaterialTitle(fileNames: readonly string[], note: string 
   if (fileNames.length > 0) return withMore(titleFromFileName(fileNames[0]), fileNames.length - 1);
   const named = links.find((l) => l.label);
   if (named?.label) return withMore(named.label, links.length - 1);
+  // 그림 · 표(한 글자 OBJ)만 있는 줄은 건너뛴다 — 표로 시작하는 안내의 제목이 보이지 않는 글자 하나가 되지 않게
   const line = note
     ? runsText(parseNote(note))
         .split("\n")
-        .map((l) => l.trim())
+        .map((l) => l.replaceAll(OBJ, "").trim())
         .find(Boolean)
     : undefined;
   if (line) {

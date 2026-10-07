@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { charCount } from "@/lib/class-materials";
 import {
   IMAGE_WIDTHS,
@@ -8,21 +8,31 @@ import {
   NOTE_ALIGNS,
   NOTE_COLORS,
   NOTE_SIZES,
+  NOTE_TABLE,
+  NOTE_TABLE_WRAP,
   OBJ,
+  TABLE_MAX_COLS,
+  TABLE_MAX_ROWS,
   alignClassName,
   alignDoc,
   applyNoteChange,
+  asNoteTable,
+  cellClassName,
   docToNote,
   imageRun,
   lineOf,
   normalizeRuns,
   parseDoc,
+  replaceTable,
   resizeImage,
   runClassName,
+  runsLength,
   runsText,
   spliceDoc,
   splitLines,
   styleAt,
+  tableRun,
+  tableSize,
   wordRangeAt,
   type NoteAlign,
   type NoteChange,
@@ -32,10 +42,13 @@ import {
   type NoteRun,
   type NoteSize,
   type NoteStyle,
+  type NoteTable,
 } from "@/lib/note-format";
+import { pasteParts, type PastedTables } from "@/lib/note-paste";
 import { isImageType, MB, objectName } from "@/lib/upload";
 import { uploadFile } from "@/lib/upload-client";
 import { cn } from "@/lib/utils";
+import { TableEditDialog } from "./TableEditDialog";
 
 const fmt = (n: number) => n.toLocaleString("ko-KR");
 
@@ -66,6 +79,9 @@ export type NoteEditorImages = {
  *   (그 사이에 저장하면 사진이 빠진 글이 저장되고, 다 올라간 사진은 어디에도 안 붙는다).
  * - 붙여 넣기는 글자만 받는다(다른 곳의 색 · 글꼴이 딸려 오지 않게). 버튼은 누르는 순간 칸의 선택을 빼앗지 않게 `pointerdown` 기본 동작을 막고,
  *   그래도 놓치는 휴대폰을 위해 마지막 선택을 기억해 둔다.
+ * - **표**(2026-10-07 Alan — "안내사항에 이런표도 넣고싶어 … 다른 블로그에서 복사 붙여넣기로 했을때 표를 그대로 가져오는게 가능할까?") —
+ *   붙여 넣은 HTML 에 표가 있으면 표로 받는다(`note-paste.ts` — 합친 칸 · 칸 정렬 · 머리칸 · 칸 안 줄바꿈, 색 · 글꼴은 글자처럼 빠진다). 표는 그림처럼 한 줄에 하나 ·
+ *   한 글자(`OBJ`)이고, 누르면 `칸 글자 고치기`(팝업) · `표 지우기` 가 뜬다. 클립보드에 표 HTML 과 그림 파일이 함께 있으면(엑셀 · 워드가 표 그림을 같이 싣는다) 표가 먼저다.
  */
 export function NoteEditor({
   id,
@@ -99,7 +115,11 @@ export function NoteEditor({
   const [hint, setHint] = useState<string | null>(null);
   const [active, setActive] = useState<NoteStyle>({});
   const [activeAlign, setActiveAlign] = useState<NoteAlign>("left");
-  const [picked, setPicked] = useState<{ offset: number; img: NoteImage } | null>(null);
+  const [picked, setPicked] = useState<Picked | null>(null);
+  /** 칸 글자 고치기 팝업에 띄운 표 (picked 의 표) */
+  const [tableEdit, setTableEdit] = useState<NoteTable | null>(null);
+  // 팝업이 다시 그려질 때마다 닫기 함수가 바뀌면 팝업이 제목으로 포커스를 다시 가져간다 — 한 번만 만든다
+  const closeTableEdit = useCallback(() => setTableEdit(null), []);
   const [uploading, setUploading] = useState(0);
   const uploadingRef = useRef(0);
   function trackUpload(delta: 1 | -1) {
@@ -237,25 +257,79 @@ export function NoteEditor({
     }
   }
 
-  function pickImage(img: HTMLImageElement) {
+  /**
+   * 그림 · 표를 누르면 고르고 그 도구줄을 띄운다. 커서는 그 바로 뒤에 둔다 — 표 칸 글자를 누르면 브라우저가 커서를 고칠 수 없는 표 안에 두어,
+   * 그대로 두면 치는 글자가 어디에도 안 들어가고 Ctrl+A 가 화면 전체를 고른다
+   */
+  function pickObj(node: HTMLElement) {
     const el = editor.current;
     if (!el || disabled) return;
-    const { entries } = scan(el);
-    const e = entries.find((x) => x.node === img);
-    const data = readImg(img);
-    if (!e || !data) return;
-    setPicked({ offset: e.start, img: data });
-    markPicked(el, img);
+    const e = scan(el).entries.find((x) => x.node === node);
+    if (!e) return;
+    if (node.dataset.table !== undefined) {
+      const table = readTable(node);
+      if (!table) return;
+      setPicked({ offset: e.start, kind: "table", table });
+    } else {
+      const img = readImg(node);
+      if (!img) return;
+      setPicked({ offset: e.start, kind: "img", img });
+    }
+    markPicked(el, node);
+    el.focus({ preventScroll: true });
+    writeSelection(el, e.start + 1, e.start + 1);
   }
 
   function resizePicked(w: number) {
     const el = editor.current;
-    if (!el || !picked) return;
+    if (!el || picked?.kind !== "img") return;
     const next = resizeImage(scan(el).doc, picked.offset, w);
     const img = next.runs.find((_, i, all) => offsetOfRun(all, i) === picked.offset)?.style.img;
     repaint(next, picked.offset);
-    if (img) setPicked({ offset: picked.offset, img });
+    if (img) setPicked({ offset: picked.offset, kind: "img", img });
     commit(next);
+  }
+
+  /** 칸 글자 고치기 팝업의 `적용` — 팝업이 화면을 덮고 있어 그동안 표 자리(offset)가 바뀌지 않는다 */
+  function applyTable(table: NoteTable) {
+    const el = editor.current;
+    setTableEdit(null);
+    if (!el || picked?.kind !== "table") return;
+    const next = replaceTable(scan(el).doc, picked.offset, table);
+    repaint(next, picked.offset);
+    setPicked({ offset: picked.offset, kind: "table", table });
+    commit(next);
+  }
+
+  /**
+   * 붙여 넣은 표 (`note-paste.ts`) — 표는 한 줄에 하나: 앞 글자가 줄 끝이 아니면 줄을 바꾸고, 뒤에도 줄을 바꿔 둔다 (사진 넣기와 같은 규칙).
+   * 함께 고른 앞뒤 글은 서식 없는 글자로 들어간다
+   */
+  function insertPasted({ parts, truncated }: PastedTables) {
+    const el = editor.current;
+    if (!el || disabled) return;
+    const text = Array.from(runsText(scan(el).doc.runs));
+    const r = range() ?? [text.length, text.length];
+    const runs: NoteRun[] = [];
+    let lineStart = r[0] === 0 || text[r[0] - 1] === "\n";
+    for (const part of parts) {
+      if (part.kind === "table") {
+        if (!lineStart) runs.push({ text: "\n", style: {} });
+        runs.push(tableRun(part.table), { text: "\n", style: {} });
+        lineStart = true;
+      } else {
+        runs.push({ text: part.text, style: {} });
+        lineStart = false;
+      }
+    }
+    // 표로 끝나고 그 자리 뒤가 이미 줄 끝이면 줄을 또 바꾸지 않는다
+    if (runs.at(-2)?.style.table && text[r[1]] === "\n") runs.pop();
+    insert(runs, runsLength(runs));
+    setHint(
+      truncated
+        ? `표가 커서 앞 ${TABLE_MAX_ROWS}줄 · ${TABLE_MAX_COLS}칸까지만 넣었어요. 표를 누르면 칸 글자를 고치거나 지울 수 있어요.`
+        : "표를 붙여 넣었어요. 표를 누르면 칸 글자를 고치거나 지울 수 있어요.",
+    );
   }
 
   function removePicked() {
@@ -266,6 +340,8 @@ export function NoteEditor({
     repaint(next, null);
     commit(next);
   }
+
+  const pickedTable = picked?.kind === "table" ? { table: picked.table, size: tableSize(picked.table) } : null;
 
   return (
     <>
@@ -333,7 +409,7 @@ export function NoteEditor({
         )}
       </div>
 
-      {images && picked && (
+      {images && picked?.kind === "img" && (
         <div className="mb-1.5 flex flex-wrap items-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 px-2.5 py-2 text-xs">
           <span className="font-bold text-brand-700">사진 크기</span>
           {IMAGE_WIDTHS.map((w) => (
@@ -358,6 +434,23 @@ export function NoteEditor({
         </div>
       )}
 
+      {pickedTable && (
+        <div className="mb-1.5 flex flex-wrap items-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 px-2.5 py-2 text-xs">
+          <span className="font-bold text-brand-700">표</span>
+          <span className="text-slate">
+            {pickedTable.size.rows}줄 · {pickedTable.size.cols}칸
+          </span>
+          <span className="flex-1" />
+          <Tool label="표 칸 글자 고치기" onUse={() => setTableEdit(pickedTable.table)} wide>
+            칸 글자 고치기
+          </Tool>
+          <Tool label="표 지우기" onUse={removePicked} wide>
+            표 지우기
+          </Tool>
+        </div>
+      )}
+      {tableEdit && <TableEditDialog table={tableEdit} onApply={applyTable} onClose={closeTableEdit} />}
+
       <div
         id={id}
         ref={editor}
@@ -377,7 +470,8 @@ export function NoteEditor({
         }}
         onClick={(e) => {
           const t = e.target;
-          if (t instanceof HTMLImageElement && t.dataset.img) pickImage(t);
+          const obj = t instanceof Element ? t.closest<HTMLElement>("[data-img],[data-table]") : null;
+          if (obj && e.currentTarget.contains(obj)) pickObj(obj);
           else if (picked) {
             setPicked(null);
             if (editor.current) markPicked(editor.current, null);
@@ -400,6 +494,13 @@ export function NoteEditor({
         }}
         onPaste={(e) => {
           e.preventDefault();
+          // 표가 먼저 — 엑셀 · 워드는 표 HTML 과 함께 표를 찍은 그림도 싣는다
+          const html = e.clipboardData.getData("text/html");
+          const pasted = html ? pasteParts(html) : null;
+          if (pasted) {
+            insertPasted(pasted);
+            return;
+          }
           const files = [...e.clipboardData.files].filter((f) => isImageType(f.type));
           if (images && files.length) {
             void addImages(files);
@@ -423,7 +524,10 @@ export function NoteEditor({
       />
       <p id={`${id}-count`} className={cn("mt-1 flex justify-between gap-2 text-[11px] tabular-nums", over ? "font-bold text-red-600" : "text-mist")}>
         <span className={cn(hint && "font-bold text-brand-700")}>
-          {hint ?? (images ? "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 사진을 누르면 크기를 바꿔요." : "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 한 번 더 누르면 풀려요.")}
+          {hint ??
+            (images
+              ? "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 사진을 누르면 크기를 바꿔요. 다른 곳의 표는 복사해 붙여 넣으면 표로 들어가요."
+              : "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 한 번 더 누르면 풀려요. 다른 곳의 표는 복사해 붙여 넣으면 표로 들어가요.")}
         </span>
         <span className="shrink-0">
           {over && <>{fmt(length - max)}자를 줄여 주세요 · </>}
@@ -433,6 +537,9 @@ export function NoteEditor({
     </>
   );
 }
+
+/** 누른 그림 · 표 — 그 자리(offset)와 지금 값 */
+type Picked = { offset: number; kind: "img"; img: NoteImage } | { offset: number; kind: "table"; table: NoteTable };
 
 const Divider = () => <span aria-hidden className="mx-0.5 h-5 w-px bg-line" />;
 
@@ -466,6 +573,42 @@ function readImg(el: HTMLElement): NoteImage | null {
   }
 }
 
+function readTable(el: HTMLElement): NoteTable | null {
+  try {
+    return asNoteTable(JSON.parse(el.dataset.table ?? ""));
+  } catch {
+    return null;
+  }
+}
+
+/** 표를 칸에 그린다 — 학생 화면(`NoteTableView`)과 같은 클래스. 칸 안 줄바꿈은 `<br>` (편집기에서 복사해 다시 붙여 넣어도 줄이 남게) */
+function tableElement(t: NoteTable): HTMLTableElement {
+  const table = document.createElement("table");
+  table.className = NOTE_TABLE;
+  const body = document.createElement("tbody");
+  for (const row of t.rows) {
+    const tr = document.createElement("tr");
+    for (const c of row) {
+      const cell = document.createElement(c.head ? "th" : "td");
+      if (c.rowspan) cell.rowSpan = c.rowspan;
+      if (c.colspan) cell.colSpan = c.colspan;
+      cell.className = cellClassName(c);
+      c.text.split("\n").forEach((line, k) => {
+        if (k > 0) cell.append(document.createElement("br"));
+        cell.append(line);
+      });
+      tr.append(cell);
+    }
+    body.append(tr);
+  }
+  table.append(body);
+  return table;
+}
+
+/** 누른 그림 · 표의 테두리 */
+const PICKED = "outline outline-2 outline-offset-2 outline-brand-500";
+const PICKED_CLASSES = PICKED.split(" ");
+
 /** 줄마다 `<div>` — 서식은 data-note 로 적어 두어 다시 읽을 때 쓴다 (클래스는 보이는 모양만) */
 function paint(root: HTMLElement, doc: NoteDoc, urls: Record<string, string>, selected: number | null) {
   root.replaceChildren();
@@ -484,8 +627,16 @@ function paint(root: HTMLElement, doc: NoteDoc, urls: Record<string, string>, se
         img.draggable = false;
         img.contentEditable = "false";
         img.style.width = `${r.style.img.w}%`;
-        img.className = cn("inline-block h-auto max-w-full cursor-pointer rounded-lg align-middle", pos === selected && "outline outline-2 outline-offset-2 outline-brand-500");
+        img.className = cn("inline-block h-auto max-w-full cursor-pointer rounded-lg align-middle", pos === selected && PICKED);
         div.append(img);
+      } else if (r.style.table) {
+        // 그림처럼 줄 안의 한 덩어리(inline-block) — 줄 끝 받침 <br> 이 표 아래 빈 줄을 만들지 않게
+        const wrap = document.createElement("div");
+        wrap.dataset.table = JSON.stringify(r.style.table);
+        wrap.contentEditable = "false";
+        wrap.className = cn(NOTE_TABLE_WRAP, "inline-block w-full cursor-pointer rounded-sm align-top", pos === selected && PICKED);
+        wrap.append(tableElement(r.style.table));
+        div.append(wrap);
       } else {
         const cls = runClassName(r.style);
         if (!cls) div.append(document.createTextNode(r.text));
@@ -500,8 +651,8 @@ function paint(root: HTMLElement, doc: NoteDoc, urls: Record<string, string>, se
       pos += Array.from(r.text).length;
     }
     pos += 1; // 줄바꿈
-    // 빈 줄 · 그림으로 끝나는 줄은 커서를 둘 자리가 있도록 받침 하나 (글자로 세지 않는다)
-    if (line.length === 0 || line.at(-1)?.style.img) {
+    // 빈 줄 · 그림 · 표로 끝나는 줄은 커서를 둘 자리가 있도록 받침 하나 (글자로 세지 않는다)
+    if (line.length === 0 || line.at(-1)?.style.img || line.at(-1)?.style.table) {
       const br = document.createElement("br");
       br.dataset[SENTINEL] = "1";
       div.append(br);
@@ -510,9 +661,9 @@ function paint(root: HTMLElement, doc: NoteDoc, urls: Record<string, string>, se
   });
 }
 
-function markPicked(root: HTMLElement, img: HTMLImageElement | null) {
-  root.querySelectorAll("img[data-img]").forEach((el) => el.classList.remove("outline", "outline-2", "outline-offset-2", "outline-brand-500"));
-  img?.classList.add("outline", "outline-2", "outline-offset-2", "outline-brand-500");
+function markPicked(root: HTMLElement, node: HTMLElement | null) {
+  root.querySelectorAll("[data-img],[data-table]").forEach((el) => el.classList.remove(...PICKED_CLASSES));
+  node?.classList.add(...PICKED_CLASSES);
 }
 
 function styleOfNode(node: Node, root: HTMLElement): NoteStyle {
@@ -530,11 +681,12 @@ function styleOfNode(node: Node, root: HTMLElement): NoteStyle {
 const isBlock = (n: Node) => n instanceof HTMLElement && /^(DIV|P|LI|H[1-6])$/.test(n.tagName);
 const asAlign = (v: string | undefined): NoteAlign | null => (v === "center" || v === "right" || v === "left" ? v : null);
 
-type Entry = { kind: "text"; node: Text; start: number; len: number } | { kind: "img"; node: HTMLElement; start: number } | { kind: "nl"; node: Node; start: number; block: boolean };
+/** 칸을 훑은 자리 — 글자 · 그림이나 표(한 글자) · 줄바꿈 */
+type Entry = { kind: "text"; node: Text; start: number; len: number } | { kind: "obj"; node: HTMLElement; start: number } | { kind: "nl"; node: Node; start: number; block: boolean };
 const entryLen = (e: Entry) => (e.kind === "text" ? e.len : 1);
 
 /**
- * 칸을 차례로 훑어 글 모델로 — 줄 `<div>` 사이 · `<br>` 은 줄바꿈, 그림은 한 글자.
+ * 칸을 차례로 훑어 글 모델로 — 줄 `<div>` 사이 · `<br>` 은 줄바꿈, 그림 · 표는 한 글자.
  * 브라우저가 지우기 · 합치기로 만든 모양(줄 밖 글자, 채움 `<br>`)도 같은 글로 읽는다. entries 는 선택 자리를 셀 때 쓴다
  */
 function scan(root: HTMLElement): { doc: NoteDoc; entries: Entry[] } {
@@ -565,8 +717,18 @@ function scan(root: HTMLElement): { doc: NoteDoc; entries: Entry[] } {
       const img = readImg(node);
       if (!img) return;
       started = true;
-      entries.push({ kind: "img", node, start: count });
+      entries.push({ kind: "obj", node, start: count });
       runs.push({ text: OBJ, style: { img } });
+      count += 1;
+      return;
+    }
+    // 표 — 한 글자. 안의 칸 글자는 편집기 글이 아니다 (들어가 훑지 않는다). 블록(div)이라도 줄바꿈이 아니다
+    if (node.dataset.table !== undefined) {
+      const table = readTable(node);
+      if (!table) return;
+      started = true;
+      entries.push({ kind: "obj", node, start: count });
+      runs.push(tableRun(table));
       count += 1;
       return;
     }
@@ -629,8 +791,8 @@ function writeSelection(root: HTMLElement, start: number, end: number) {
   const point = (target: number): [Node, number] => {
     for (const e of entries) {
       if (e.kind === "text" && target >= e.start && target <= e.start + e.len) return [e.node, Array.from(e.node.data).slice(0, target - e.start).join("").length];
-      if (e.kind === "img" && target === e.start) return [e.node.parentNode!, indexIn(e.node)];
-      if (e.kind === "img" && target === e.start + 1) return [e.node.parentNode!, indexIn(e.node) + 1];
+      if (e.kind === "obj" && target === e.start) return [e.node.parentNode!, indexIn(e.node)];
+      if (e.kind === "obj" && target === e.start + 1) return [e.node.parentNode!, indexIn(e.node) + 1];
       if (e.kind === "nl" && target === e.start + 1) return e.block ? [e.node, 0] : [e.node.parentNode!, indexIn(e.node) + 1];
     }
     // 빈 첫 줄 · 끝

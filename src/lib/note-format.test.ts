@@ -173,3 +173,106 @@ describe("줄 정렬 · 그림 (2026-10-05 공지)", () => {
     expect(trimDoc(parseDoc("\n\n[center]가\n")).aligns).toEqual(["center"]);
   });
 });
+
+import { TABLE_MAX_COLS, applyNoteChange as change, asNoteTable, replaceTable, tableRun, tableSize, tableToNote, type NoteTable } from "./note-format";
+import { defaultMaterialTitle, noteHasText } from "./class-materials";
+
+describe("표 (2026-10-07 Alan — 다른 블로그에서 붙여 넣은 표)", () => {
+  /** Alan 이 보여 준 표 — 첫 칸 · 끝 칸이 네 줄을 합쳤다 */
+  const ALAN: NoteTable = {
+    rows: [
+      [{ text: "의문사", align: "center", head: true }, { text: "be 동사", align: "center", head: true }, { text: "주어", head: true }, { text: "동사ing", head: true }],
+      [{ text: "When\nWho\nWhere", rowspan: 4, align: "center" }, { text: "am" }, { text: "I" }, { text: "running", rowspan: 4, align: "right" }],
+      [{ text: "are" }, { text: "you" }],
+      [{ text: "is" }, { text: "he/ she/ it" }],
+      [{ text: "are" }, { text: "we/ you and I/ you/ they" }],
+    ],
+  };
+
+  it("한 줄 글로 저장되고 다시 읽으면 같다 — 합친 칸 · 정렬 · 머리칸 · 칸 안 줄바꿈", () => {
+    const note = tableToNote(ALAN);
+    expect(note).not.toContain("\n");
+    expect(note.startsWith("[table][tr][th align=center]의문사[/th]")).toBe(true);
+    expect(note).toContain("[td rowspan=4 align=center]When\\nWho\\nWhere[/td]");
+    const d = parseDoc(`위 문장\n[center]${note}\n아래`);
+    expect(d.runs.map((r) => r.text).join("")).toBe(`위 문장\n${OBJ}\n아래`);
+    expect(d.runs[1].style.table).toEqual(ALAN);
+    expect(d.aligns).toEqual(["left", "center", "left"]);
+    expect(docToNote(d)).toBe(`위 문장\n[center]${note}\n아래`);
+  });
+
+  it("칸 글자의 [ · \\ · [/table] · 태그 글자는 칸 안에 글자로 남는다", () => {
+    const t: NoteTable = { rows: [[{ text: "[b]굵게?[/b] [/td] [/table] \\n" }, { text: "[img=images/a.png]" }]] };
+    const note = tableToNote(t);
+    expect(parseDoc(note).runs).toEqual([tableRun(t)]);
+    // 칸 안의 그림 글자는 그림이 아니다 — 서명 주소를 만들거나 지울 그림으로 세지 않는다
+    expect(noteImagePaths(note)).toEqual([]);
+  });
+
+  it("꼴이 틀린 표는 글자 그대로 보인다 (모르는 태그와 같은 규칙)", () => {
+    const bad = [
+      "[table][tr][td]x[/td][/table]", // 줄 닫기 없음
+      "[table][tr][td style=red]x[/td][/tr][/table]", // 모르는 값
+      "[table][tr][td]x[/th][/tr][/table]", // 짝이 다른 닫기
+      "[table][tr][td]a\\qb[/td][/tr][/table]", // 모르는 이스케이프
+      "[table][/table]", // 칸 없음
+      `[table][tr]${"[td]x[/td]".repeat(TABLE_MAX_COLS + 1)}[/tr][/table]`, // 칸이 너무 많다
+    ];
+    for (const s of bad) {
+      expect(parseDoc(s).runs.every((r) => !r.style.table)).toBe(true);
+      expect(runsText(parseDoc(s).runs)).toBe(s);
+    }
+    // 칸 글자에 줄바꿈이 그대로 있으면(손으로 고친 글) 표가 아니다 — 줄 단위 정렬이 무너지지 않게
+    expect(parseDoc("[table][tr][td]a\nb[/td][/tr][/table]").runs.some((r) => r.style.table)).toBe(false);
+  });
+
+  it("서식 버튼은 표를 건너뛴다 — 글자와 표를 함께 골라 굵게를 두 번 누르면 풀린다", () => {
+    const runs = [{ text: "앞", style: {} }, tableRun(ALAN), { text: "뒤", style: {} }];
+    const on = change(runs, 0, 3, { kind: "flag", flag: "bold" });
+    expect(on[1]).toEqual(tableRun(ALAN));
+    expect(styleAt(on, 0, 3)).toEqual({ bold: true });
+    const off = change(on, 0, 3, { kind: "flag", flag: "bold" });
+    expect(runsToNote(off)).toBe(`앞${tableToNote(ALAN)}뒤`);
+    // 표만 골랐으면 아무것도 바뀌지 않는다 · 서식 지우기도 표는 그대로
+    expect(change(runs, 1, 2, { kind: "flag", flag: "bold" })).toEqual(runs);
+    expect(change(on, 0, 3, { kind: "clear" })[1]).toEqual(tableRun(ALAN));
+  });
+
+  it("표 옆에 친 글자는 표가 되지 않는다 · 표 바꾸기 · 지우기", () => {
+    let d = parseDoc(tableToNote(ALAN));
+    d = spliceDoc(d, 1, 1, "글");
+    expect(d.runs[1]).toEqual({ text: "글", style: {} });
+    const fixed: NoteTable = { rows: ALAN.rows.map((row, i) => row.map((c, j) => (i === 2 && j === 1 ? { ...c, text: "you (너)" } : c))) };
+    d = replaceTable(d, 0, fixed);
+    expect(d.runs[0].style.table).toEqual(fixed);
+    expect(replaceTable(d, 1, ALAN)).toEqual(d); // 그 자리에 표가 없으면 그대로
+    expect(docToNote(spliceDoc(d, 0, 1, ""))).toBe("글");
+  });
+
+  it("크기 — 합친 칸을 펼쳐 센다", () => {
+    expect(tableSize(ALAN)).toEqual({ rows: 5, cols: 4 });
+    expect(tableSize({ rows: [[{ text: "머리", colspan: 3 }], [{ text: "a" }, { text: "b" }, { text: "c" }]] })).toEqual({ rows: 2, cols: 3 });
+  });
+
+  it("밖에서 온 값(편집기 칸 · 붙여 넣기)은 꼴을 다시 본다", () => {
+    expect(asNoteTable(JSON.parse(JSON.stringify(ALAN)))).toEqual(ALAN);
+    expect(asNoteTable({ rows: [[{ text: `a${OBJ}b\r\nc`, rowspan: 1, colspan: 999, align: "justify", head: "yes", x: 1 }]] })).toEqual({
+      rows: [[{ text: "ab\nc", colspan: TABLE_MAX_COLS }]],
+    });
+    for (const v of [null, "x", {}, { rows: "x" }, { rows: [] }, { rows: [[]] }, { rows: [[{ text: 1 }]] }, { rows: [[null]] }]) expect(asNoteTable(v)).toBeNull();
+  });
+
+  it("표만 있는 안내도 내용이 있는 글이다 · 제목은 표를 건너뛴 첫 글줄", () => {
+    const note = `${tableToNote(ALAN)}\n의문문 만들기`;
+    expect(noteHasText(tableToNote(ALAN))).toBe(true);
+    expect(defaultMaterialTitle([], note)).toBe("의문문 만들기");
+    expect(defaultMaterialTitle([], tableToNote(ALAN))).toBe("수업 자료");
+  });
+
+  it("접기 — 표는 한 줄 · 한 글자로 세어 짧은 안내 + 표는 펼쳐 둔다", () => {
+    const v = noteView(`아래 표를 외워 오세요\n${tableToNote(ALAN)}`);
+    expect(v.folded).toBe(false);
+    expect(v.full[1].style.table).toEqual(ALAN);
+    expect(v.chars).toBe("아래 표를 외워 오세요\n".length + 1);
+  });
+});

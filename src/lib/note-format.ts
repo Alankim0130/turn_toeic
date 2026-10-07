@@ -11,6 +11,10 @@
  * - **줄 정렬**(같은 날 Alan "줄 단위로 왼쪽정렬, 가운데정렬, 오른쪽 정렬") — 줄 맨 앞의 `[center]` · `[right]` (왼쪽은 표시 없음). 줄 가운데에 있으면 글자다.
  * - **이미지**(같은 날 — 수업자료실 공지 "블로그랑 같다고 생각하면") — `[img=images/….webp w=50]`. 글에서는 한 글자(`OBJ`)로 세고 너비는 칸의 몇 %(10~100)다.
  *   그림 주소는 글에 없다 — 저장소 경로만 두고 보여 줄 때 보는 사람의 세션으로 서명 주소를 만든다(남이 주소를 들고 가도 곧 만료된다).
+ * - **표**(2026-10-07 Alan — "안내사항에 이런표도 넣고싶어 … 다른 블로그에서 복사 붙여넣기로 했을때 표를 그대로 가져오는게 가능할까?") —
+ *   `[table][tr][td rowspan=4 align=center]When\nWho[/td]…[/tr][/table]` 한 줄. 그림처럼 글에서는 한 글자(`OBJ`)다.
+ *   칸에는 글자만(줄바꿈은 `\n`, `[` · `\` 는 앞에 `\`) · 합친 칸(rowspan · colspan) · 정렬(가운데 · 오른쪽) · 머리칸(`th`)만 둔다 — 색 · 굵기 · 글꼴은 글자 붙여 넣기처럼 따라오지 않는다.
+ *   못 읽는 표는 글자 그대로 보인다(태그와 같은 규칙). 붙여 넣은 HTML 을 표로 바꾸는 일은 `note-paste.ts`.
  */
 
 export const NOTE_COLORS = {
@@ -41,8 +45,19 @@ export const IMAGE_WIDTHS = [25, 50, 75, 100] as const;
 export const IMAGE_MIN_W = 10;
 const clampWidth = (w: number) => (Number.isFinite(w) ? Math.min(100, Math.max(IMAGE_MIN_W, Math.round(w))) : 100);
 
+/** 표 한 칸의 정렬 — 왼쪽은 표시 없음 */
+export type NoteCellAlign = "center" | "right";
+/** 표 한 칸 — 글자(줄바꿈만, 서식 없음) · 합친 칸 · 정렬 · 머리칸(th) */
+export type NoteCell = { text: string; rowspan?: number; colspan?: number; align?: NoteCellAlign; head?: boolean };
+/** 표 — 줄마다 칸. 위 줄에서 합쳐 내려온 칸 자리는 그 줄에 없다 (HTML 표와 같다) */
+export type NoteTable = { rows: NoteCell[][] };
+/** 한 표의 줄 · 칸 상한 — 붙여 넣을 때 넘치는 줄 · 칸은 잘라 넣고 알린다 (`note-paste.ts`) */
+export const TABLE_MAX_ROWS = 100;
+export const TABLE_MAX_COLS = 12;
+
 export type NoteStyle = {
   img?: NoteImage;
+  table?: NoteTable;
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
@@ -57,6 +72,12 @@ const FLAGS = { b: "bold", i: "italic", u: "underline", mark: "mark" } as const;
 type FlagTag = keyof typeof FLAGS;
 
 const TAG = /\[(\/?)(b|i|u|mark|color|size|center|right)(?:=([a-z]+))?\]|\[img=([a-z0-9][a-z0-9/._-]{0,200})(?: w=(\d{1,3}))?\]/g;
+/**
+ * 글을 훑는 토큰 — 표 한 덩어리(`[table]…[/table]`, 줄바꿈 없이 한 줄) 또는 위의 태그.
+ * 표 안은 `\.`(이스케이프) · `[` 가 아닌 글자 · `[/table]` 이 아닌 `[` 만 — 칸 글자의 `[` 는 늘 `\[` 라 칸 안의 `[/table]` 에서 끊기지 않는다
+ */
+const TABLE_BLOCK = /\[table\]((?:\\.|[^\\[\n]|\[(?!\/table\]))*)\[\/table\]/;
+const TOKEN = new RegExp(`${TABLE_BLOCK.source}|${TAG.source}`, "g");
 
 type Open = { tag: string; style: NoteStyle };
 
@@ -69,14 +90,17 @@ function styleOf(stack: Open[]): NoteStyle {
   return s;
 }
 
+/** 그림 · 표 — 글에서 한 글자(`OBJ`)를 차지하는 덩어리. 서식이 붙지 않고 옆 조각과 합치지 않는다 */
+export const isObjStyle = (s: NoteStyle) => !!(s.img || s.table);
+
 const sameStyle = (a: NoteStyle, b: NoteStyle) =>
-  !a.img &&
-  !b.img &&
+  !isObjStyle(a) &&
+  !isObjStyle(b) &&
   !!a.bold === !!b.bold && !!a.italic === !!b.italic && !!a.underline === !!b.underline && !!a.mark === !!b.mark && a.color === b.color && a.size === b.size;
 
 function push(runs: NoteRun[], text: string, style: NoteStyle) {
   if (!text) return;
-  if (style.img) {
+  if (isObjStyle(style)) {
     runs.push({ text: OBJ, style });
     return;
   }
@@ -107,11 +131,19 @@ export function parseDoc(note: string): NoteDoc {
     lineEmpty = parts.length > 1 ? parts.at(-1) === "" : lineEmpty && text === "";
   };
   let at = 0;
-  for (const m of note.matchAll(TAG)) {
-    const [whole, close, tag, value, imgPath, imgW] = m;
+  for (const m of note.matchAll(TOKEN)) {
+    const [whole, tableBody, close, tag, value, imgPath, imgW] = m;
     emit(note.slice(at, m.index), styleOf(stack));
     at = m.index + whole.length;
 
+    if (tableBody !== undefined) {
+      const table = parseTableBody(tableBody);
+      if (table) {
+        runs.push({ text: OBJ, style: { table } });
+        lineEmpty = false;
+      } else emit(whole, styleOf(stack)); // 못 읽는 표는 글자 그대로 (태그와 같은 규칙)
+      continue;
+    }
     if (imgPath !== undefined) {
       runs.push({ text: OBJ, style: { img: { path: imgPath, w: imgW === undefined ? 100 : clampWidth(Number(imgW)) } } });
       lineEmpty = false;
@@ -245,6 +277,10 @@ export function runsToNote(runs: NoteRun[]): string {
       out += `[img=${s.img.path}${s.img.w === 100 ? "" : ` w=${s.img.w}`}]`;
       continue;
     }
+    if (s.table) {
+      out += tableToNote(s.table);
+      continue;
+    }
     const wraps: NoteWrap[] = [];
     if (s.bold) wraps.push(noteWrap.bold);
     if (s.italic) wraps.push(noteWrap.italic);
@@ -298,9 +334,9 @@ export function spliceRuns(runs: NoteRun[], start: number, end: number, insert: 
   const [a, i] = splitAt(runs, start);
   const [b, j] = splitAt(a, end);
   const before = b.slice(0, i);
-  // 그림 옆에 친 글자가 그림이 되지 않게 — 그림의 서식은 잇지 않는다
-  const near = [...before].reverse().find((r) => !r.style.img)?.style ?? b.slice(i).find((r) => !r.style.img)?.style ?? {};
-  const added = typeof insert === "string" ? [{ text: insert, style: { ...near, img: undefined } }] : insert;
+  // 그림 · 표 옆에 친 글자가 그림 · 표가 되지 않게 — 그 서식은 잇지 않는다
+  const near = [...before].reverse().find((r) => !isObjStyle(r.style))?.style ?? b.slice(i).find((r) => !isObjStyle(r.style))?.style ?? {};
+  const added = typeof insert === "string" ? [{ text: insert, style: { ...near, img: undefined, table: undefined } }] : insert;
   return normalizeRuns([...before, ...added, ...b.slice(j)].map((r) => ({ text: r.text, style: stripUndefined(r.style) })));
 }
 
@@ -344,6 +380,172 @@ export function resizeImage(doc: NoteDoc, offset: number, w: number): NoteDoc {
 /** 그림 한 장 조각 */
 export const imageRun = (path: string, w = 100): NoteRun => ({ text: OBJ, style: { img: { path, w: clampWidth(w) } } });
 
+/* ── 표 (2026-10-07) ── */
+
+/** 칸 글자 → 글. `\` · `[` 앞에 `\`, 줄바꿈은 `\n` — 표가 한 줄로 남고 칸 안의 `[/td]` · `[/table]` 이 태그로 읽히지 않는다 */
+const escapeCell = (s: string) => s.replace(/[\\[\n]/g, (c) => (c === "\n" ? "\\n" : `\\${c}`));
+
+/** 표 → 저장할 글 (한 줄). 기본값(rowspan · colspan 1 · 왼쪽 정렬 · td)은 적지 않는다 */
+export function tableToNote(t: NoteTable): string {
+  let out = "[table]";
+  for (const row of t.rows) {
+    out += "[tr]";
+    for (const c of row) {
+      const tag = c.head ? "th" : "td";
+      const attrs =
+        (c.rowspan && c.rowspan > 1 ? ` rowspan=${c.rowspan}` : "") + (c.colspan && c.colspan > 1 ? ` colspan=${c.colspan}` : "") + (c.align ? ` align=${c.align}` : "");
+      out += `[${tag}${attrs}]${escapeCell(c.text)}[/${tag}]`;
+    }
+    out += "[/tr]";
+  }
+  return `${out}[/table]`;
+}
+
+const CELL_OPEN = /\[(td|th)((?: [a-z]+=[a-z0-9]+)*)\]/y;
+
+/** 칸 여는 태그의 값 — 아는 것(rowspan · colspan · align)만 한 번씩. 모르는 값이면 null (그 표는 글자 그대로 보인다) */
+function cellAttrs(src: string): Omit<NoteCell, "text"> | null {
+  const out: Omit<NoteCell, "text"> = {};
+  for (const part of src.split(" ")) {
+    if (!part) continue;
+    const [k, v] = part.split("=");
+    const n = /^\d{1,3}$/.test(v) ? Number(v) : 0;
+    if (k === "rowspan" && out.rowspan === undefined && n >= 1 && n <= TABLE_MAX_ROWS) out.rowspan = n;
+    else if (k === "colspan" && out.colspan === undefined && n >= 1 && n <= TABLE_MAX_COLS) out.colspan = n;
+    else if (k === "align" && out.align === undefined && (v === "center" || v === "right")) out.align = v;
+    else return null;
+  }
+  if (out.rowspan === 1) delete out.rowspan;
+  if (out.colspan === 1) delete out.colspan;
+  return out;
+}
+
+/** `[table]` 과 `[/table]` 사이 → 표. 꼴이 틀리거나 상한을 넘으면 null */
+export function parseTableBody(src: string): NoteTable | null {
+  const rows: NoteCell[][] = [];
+  let cells = 0;
+  let i = 0;
+  while (i < src.length) {
+    if (!src.startsWith("[tr]", i)) return null;
+    i += 4;
+    const row: NoteCell[] = [];
+    while (!src.startsWith("[/tr]", i)) {
+      CELL_OPEN.lastIndex = i;
+      const m = CELL_OPEN.exec(src);
+      const attrs = m && cellAttrs(m[2]);
+      if (!m || !attrs) return null;
+      i = CELL_OPEN.lastIndex;
+      const close = `[/${m[1]}]`;
+      let text = "";
+      for (;;) {
+        const ch = src[i];
+        if (ch === undefined) return null;
+        if (ch === "\\") {
+          const next = src[i + 1];
+          if (next === "n") text += "\n";
+          else if (next === "\\" || next === "[") text += next;
+          else return null;
+          i += 2;
+        } else if (ch === "[") {
+          if (!src.startsWith(close, i)) return null;
+          i += close.length;
+          break;
+        } else {
+          text += ch;
+          i += 1;
+        }
+      }
+      row.push({ text, ...attrs, ...(m[1] === "th" ? { head: true } : {}) });
+      if (row.length > TABLE_MAX_COLS) return null;
+    }
+    i += 5;
+    rows.push(row);
+    cells += row.length;
+    if (rows.length > TABLE_MAX_ROWS) return null;
+  }
+  return cells > 0 ? { rows } : null;
+}
+
+/** 칸 글자 다듬기 — 줄바꿈을 `\n` 하나로, 글 속 덩어리 글자(`OBJ`)는 뺀다 (칸 글자는 서식 없는 글자뿐이다) */
+export const cleanCellText = (s: string) => s.replace(/\r\n?/g, "\n").replaceAll(OBJ, "");
+
+/**
+ * 밖에서 온 값(편집기 칸의 data-table · 붙여 넣기) → 표. 꼴이 틀리면 null.
+ * 줄 · 칸 수가 상한을 넘으면 받지 않는다 — 붙여 넣기는 그 전에 잘라 둔다(`note-paste.ts`)
+ */
+export function asNoteTable(v: unknown): NoteTable | null {
+  if (!v || typeof v !== "object" || !Array.isArray((v as NoteTable).rows)) return null;
+  const rows: NoteCell[][] = [];
+  let cells = 0;
+  for (const row of (v as NoteTable).rows) {
+    if (!Array.isArray(row) || row.length > TABLE_MAX_COLS) return null;
+    const out: NoteCell[] = [];
+    for (const c of row as unknown[]) {
+      if (!c || typeof c !== "object" || typeof (c as NoteCell).text !== "string") return null;
+      const { text, rowspan, colspan, align, head } = c as NoteCell;
+      const cell: NoteCell = { text: cleanCellText(text) };
+      if (Number.isInteger(rowspan) && rowspan! > 1) cell.rowspan = Math.min(rowspan!, TABLE_MAX_ROWS);
+      if (Number.isInteger(colspan) && colspan! > 1) cell.colspan = Math.min(colspan!, TABLE_MAX_COLS);
+      if (align === "center" || align === "right") cell.align = align;
+      if (head === true) cell.head = true;
+      out.push(cell);
+    }
+    rows.push(out);
+    cells += out.length;
+  }
+  return cells > 0 && rows.length <= TABLE_MAX_ROWS ? { rows } : null;
+}
+
+/** 표 한 개 조각 */
+export const tableRun = (table: NoteTable): NoteRun => ({ text: OBJ, style: { table } });
+
+/** 표의 크기 — 합친 칸을 펼친 줄 수 · 칸 수 (`2줄 · 4칸`) */
+export function tableSize(t: NoteTable): { rows: number; cols: number } {
+  const taken: number[] = [];
+  let cols = 0;
+  for (const row of t.rows) {
+    let c = 0;
+    for (const cell of row) {
+      while ((taken[c] ?? 0) > 0) c++;
+      const span = cell.colspan ?? 1;
+      for (let k = 0; k < span; k++) taken[c + k] = cell.rowspan ?? 1;
+      c += span;
+      cols = Math.max(cols, c);
+    }
+    for (let k = 0; k < taken.length; k++) if ((taken[k] ?? 0) > 0) taken[k]--;
+  }
+  return { rows: t.rows.length, cols };
+}
+
+/** `offset` 자리의 표를 바꾼다 (칸 글자 고치기) */
+export function replaceTable(doc: NoteDoc, offset: number, table: NoteTable): NoteDoc {
+  let pos = 0;
+  const runs = doc.runs.map((r) => {
+    const here = pos;
+    pos += runLength(r);
+    return here === offset && r.style.table ? { text: r.text, style: { table } } : r;
+  });
+  return { runs, aligns: doc.aligns };
+}
+
+/**
+ * 표 모양 — 학생 화면(`NoteBody`)과 편집기가 같은 클래스를 쓴다. 표는 칸 폭을 꽉 채우고, 휴대폰에서 칸이 모자라면 표만 옆으로 민다
+ * (낱말 가운데서 끊지 않는다 — 안내 글의 `overflow-wrap:anywhere` 를 표 안에서는 끈다). 줄 정렬이 표 칸에 번지지 않게 왼쪽이 기본이다.
+ * 휴대폰에서는 칸 여백을 줄인다 — 네 칸 표가 320px 에 들어가야 한다
+ */
+export const NOTE_TABLE_WRAP = "my-1 max-w-full overflow-x-auto";
+export const NOTE_TABLE = "w-full border-collapse text-left break-keep [overflow-wrap:break-word]";
+export function cellClassName(c: NoteCell): string {
+  return [
+    "border border-slate-300 px-2 py-1.5 align-middle whitespace-pre-wrap sm:px-3",
+    c.head && "bg-brand-50 font-bold text-ink",
+    c.align === "center" && "text-center",
+    c.align === "right" && "text-right",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 export type NoteChange =
   | { kind: "flag"; flag: "bold" | "italic" | "underline" | "mark" }
   | { kind: "color"; color: NoteColor }
@@ -356,9 +558,12 @@ export function applyNoteChange(runs: NoteRun[], start: number, end: number, cha
   const [a, i] = splitAt(runs, start);
   const [b, j] = splitAt(a, end);
   const middle = b.slice(i, j);
-  const all = (pred: (s: NoteStyle) => boolean) => middle.every((r) => pred(r.style));
+  // 그림 · 표는 서식을 받지 않고, 켜졌나를 셀 때도 빠진다 — 글자와 표를 함께 골라 굵게를 두 번 누르면 풀려야 한다
+  const texts = middle.filter((r) => !isObjStyle(r.style));
+  if (texts.length === 0) return runs;
+  const all = (pred: (s: NoteStyle) => boolean) => texts.every((r) => pred(r.style));
   let next: (s: NoteStyle) => NoteStyle;
-  if (change.kind === "clear") next = (s) => (s.img ? { img: s.img } : {});
+  if (change.kind === "clear") next = () => ({});
   else if (change.kind === "flag") {
     const off = all((s) => !!s[change.flag]);
     next = (s) => ({ ...s, [change.flag]: off ? undefined : true });
@@ -369,7 +574,11 @@ export function applyNoteChange(runs: NoteRun[], start: number, end: number, cha
     const off = all((s) => s.size === change.size);
     next = (s) => ({ ...s, size: off ? undefined : change.size });
   }
-  return normalizeRuns([...b.slice(0, i), ...middle.map((r) => ({ text: r.text, style: stripUndefined(next(r.style)) })), ...b.slice(j)]);
+  return normalizeRuns([
+    ...b.slice(0, i),
+    ...middle.map((r) => (isObjStyle(r.style) ? r : { text: r.text, style: stripUndefined(next(r.style)) })),
+    ...b.slice(j),
+  ]);
 }
 
 /** 조각 전체 글자 수 (코드 포인트) */
@@ -401,7 +610,7 @@ export function styleAt(runs: NoteRun[], start: number, end: number): NoteStyle 
   const to = end > start ? end : from + 1;
   for (const r of runs) {
     const len = runLength(r);
-    if (pos < to && pos + len > from) styles.push(r.style);
+    if (pos < to && pos + len > from && !isObjStyle(r.style)) styles.push(r.style);
     pos += len;
   }
   if (!styles.length) return {};

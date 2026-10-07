@@ -7,8 +7,23 @@ import { useEffect, useRef } from "react";
  * - ESC · 배경 클릭으로 닫힌다. 열려 있는 동안 뒤 화면 스크롤을 막는다 (후기 팝업과 같은 규칙).
  * - 열릴 때 제목에 포커스를 준다 — 화면 낭독기가 팝업이 뜬 것을 안다.
  * 버튼은 호출하는 쪽이 children 으로 넣는다 (팝업마다 다르다).
+ * `wide` — 표 칸 고치기처럼 넓어야 하는 팝업 (2026-10-07)
  */
-export function Dialog({ open, title, onClose, children, tone = "info" }: { open: boolean; title: string; onClose: () => void; children: React.ReactNode; tone?: "success" | "warning" | "info" }) {
+export function Dialog({
+  open,
+  title,
+  onClose,
+  children,
+  tone = "info",
+  wide = false,
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+  tone?: "success" | "warning" | "info";
+  wide?: boolean;
+}) {
   const titleRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -38,7 +53,7 @@ export function Dialog({ open, title, onClose, children, tone = "info" }: { open
         role="dialog"
         aria-modal="true"
         aria-labelledby="dialog-title"
-        className="card relative flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden p-0 shadow-pink"
+        className={`card relative flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden p-0 shadow-pink ${wide ? "max-w-3xl" : "max-w-md"}`}
       >
         <div className={`h-1.5 shrink-0 ${bar}`} />
         <div className="overflow-y-auto overscroll-contain p-5 sm:p-6">
