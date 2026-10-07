@@ -211,7 +211,7 @@ export const STUDENT_FEATURES: StudentFeature[] = [
     icon: "replay",
     summary: "놓친 수업 녹화본",
     desc: "놓친 수업이나 다시 듣고 싶은 부분을 녹화본으로 봐요.",
-    points: ["회차별로 정리된 녹화본", "강사가 정한 종강일까지 시청"],
+    points: ["수업 달력에서 날짜를 누르면 그 날 녹화본", "강사가 정한 종강일까지 시청"],
     access: "active",
   },
   {
