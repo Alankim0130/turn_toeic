@@ -1,7 +1,7 @@
+import { AudioPlayer } from "@/components/lc/AudioPlayer";
 import { Icon } from "@/components/ui/Icon";
 import { cn, formatDate } from "@/lib/utils";
-import { classDayLabel, HOMEWORK_STATUS_LABEL, homeworkLabel } from "@/lib/homework";
-import { isImageType } from "@/lib/upload";
+import { classDayLabel, HOMEWORK_STATUS_LABEL, homeworkFileKind, homeworkFilesLabel, homeworkLabel } from "@/lib/homework";
 import { DeleteSubmissionButton } from "./DeleteSubmissionButton";
 
 export type SubmissionLite = {
@@ -30,6 +30,7 @@ export type SubmissionLite = {
  * **지킬 것**
  * - 사진은 **접어 두되 없애지 않는다** — 내가 무엇을 냈는지 되볼 길은 여기뿐이다.
  *   `<details>` 라 자바스크립트 없이 열리고 이 카드는 서버 컴포넌트로 남는다.
+ *   **음성 파일(2026-10-07)도 같은 자리에 접어 둔다** — 열면 LC 음원과 같은 플레이어로 듣는다 (플레이어만 클라이언트 조각이다).
  * - **질문과 강사 코멘트는 접지 않는다** — 강사가 답을 적어 준 자리라 접으면 읽히지 않는다.
  * - 상태 문구는 `HOMEWORK_STATUS_LABEL`(`src/lib/homework.ts`) 한곳이다. 점검 상태를 **배지로 또 적지 않는다** —
  *   같은 말이 한 카드에 두 번 나온다.
@@ -37,6 +38,9 @@ export type SubmissionLite = {
 export function SubmissionCard({ submission: s, highlight = false }: { submission: SubmissionLite; highlight?: boolean }) {
   const checked = s.status === "checked";
   const files = [...(s.homework_files ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id);
+  // 음성은 플레이어로, 나머지(사진 · 옛 첨부)는 예전처럼 칸으로 — 가르는 곳은 `homeworkFileKind` 한곳이다
+  const audios = files.filter((f) => homeworkFileKind(f.content_type) === "audio");
+  const tiles = files.filter((f) => homeworkFileKind(f.content_type) !== "audio");
 
   return (
     <article className={cn("card p-3.5 sm:p-4", checked && "border-brand-200 bg-brand-50/30", highlight && "ring-2 ring-brand-300")}>
@@ -85,29 +89,46 @@ export function SubmissionCard({ submission: s, highlight = false }: { submissio
             <svg viewBox="0 0 24 24" aria-hidden className="size-3.5 fill-none stroke-current stroke-[3] transition group-open:rotate-90">
               <path d="m9 5 7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            내가 올린 사진 {files.length}장 보기
+            내가 올린 {homeworkFilesLabel(files)} 보기
           </summary>
-          <ul className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
-            {files.map((f, i) => (
-              <li key={f.id}>
-                <a
-                  href={`/files/homework/${f.id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex aspect-square items-center justify-center overflow-hidden rounded-xl border border-line bg-surface"
-                  title={`${f.file_name} 크게 보기`}
-                >
-                  {isImageType(f.content_type) ? (
-                    // 비공개 서명 URL 로 리다이렉트되는 썸네일이라 next/image 최적화를 쓰지 않는다
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={`/files/homework/${f.id}?w=300`} alt={`제출한 사진 ${i + 1}`} loading="lazy" className="h-full w-full object-cover" />
-                  ) : (
-                    <Icon name="camera" size={28} />
-                  )}
-                </a>
-              </li>
-            ))}
-          </ul>
+          {tiles.length > 0 && (
+            <ul className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
+              {tiles.map((f, i) => (
+                <li key={f.id}>
+                  <a
+                    href={`/files/homework/${f.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex aspect-square items-center justify-center overflow-hidden rounded-xl border border-line bg-surface"
+                    title={`${f.file_name} 크게 보기`}
+                  >
+                    {homeworkFileKind(f.content_type) === "photo" ? (
+                      // 비공개 서명 URL 로 리다이렉트되는 썸네일이라 next/image 최적화를 쓰지 않는다
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={`/files/homework/${f.id}?w=300`} alt={`제출한 사진 ${i + 1}`} loading="lazy" className="h-full w-full object-cover" />
+                    ) : (
+                      <Icon name="camera" size={28} />
+                    )}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+          {audios.length > 0 && (
+            <ul className="mt-2 space-y-2">
+              {audios.map((f, i) => (
+                <li key={f.id}>
+                  <AudioPlayer
+                    src={`/files/homework/${f.id}`}
+                    title={f.file_name}
+                    note={audios.length > 1 ? `음성 ${i + 1}` : null}
+                    download={`/files/homework/${f.id}?download=1`}
+                    className="!p-3"
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
         </details>
       )}
     </article>

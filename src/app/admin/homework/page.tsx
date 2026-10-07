@@ -6,8 +6,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { HomeworkList, type HomeworkRow } from "@/components/admin/homework/HomeworkList";
-import { classDayLabel, HOMEWORK_SUBJECTS, type HomeworkSubject, homeworkLabel, isSubject, SUBJECT_LABEL } from "@/lib/homework";
-import { isImageType } from "@/lib/upload";
+import { classDayLabel, HOMEWORK_SUBJECTS, type HomeworkSubject, homeworkFileKind, homeworkFilesLabel, homeworkLabel, isSubject, SUBJECT_LABEL } from "@/lib/homework";
 import { isStaff, requireCrew } from "@/lib/auth";
 import { getProfileNames, getStaffPhones } from "../_lib/profile-names";
 
@@ -99,14 +98,10 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
   /** 목록 한 줄에 들어갈 글자는 **서버가 다 만든다** (클라이언트에서 날짜 문구를 다시 짓지 않는다) */
   const rows: HomeworkRow[] = (subs ?? []).map((s) => {
     const files = [...(s.homework_files ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id);
-    const images = files.filter((f) => isImageType(f.content_type));
-    const others = files.filter((f) => !isImageType(f.content_type));
+    // 사진(넘겨 보기) · 음성(플레이어, 2026-10-07) · 그 밖(옛 첨부, 링크) — 가르는 곳은 `homeworkFileKind` 한곳이다
+    const ofKind = (k: ReturnType<typeof homeworkFileKind>) => files.filter((f) => homeworkFileKind(f.content_type) === k).map((f) => ({ id: f.id, name: f.file_name }));
     const at = formatDate(s.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-    const parts = [
-      s.class_date ? `${classDayLabel(s.class_date)} 수업` : null,
-      images.length ? `사진 ${images.length}장` : null,
-      others.length ? `첨부 ${others.length}개` : null,
-    ].filter(Boolean) as string[];
+    const parts = [s.class_date ? `${classDayLabel(s.class_date)} 수업` : null, homeworkFilesLabel(files) || null].filter(Boolean) as string[];
     const checked = s.status === "checked";
     const checker = s.checked_by ? names.get(s.checked_by)?.name : undefined;
     return {
@@ -126,8 +121,9 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
       checked,
       question: s.question,
       feedback: s.feedback,
-      photos: images.map((f) => ({ id: f.id, name: f.file_name })),
-      files: others.map((f) => ({ id: f.id, name: f.file_name })),
+      photos: ofKind("photo"),
+      audios: ofKind("audio"),
+      files: ofKind("other"),
     };
   });
 
@@ -138,7 +134,7 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
       <PageHeader
         icon="homework"
         title="숙제점검"
-        description="정규 수업 숙제입니다. 강사(과목) → 레벨로 좁힌 뒤, 학생 줄을 누르면 숙제 사진을 넘겨 보면서 질문에 답하고 점검완료할 수 있어요."
+        description="정규 수업 숙제입니다. 강사(과목) → 레벨로 좁힌 뒤, 학생 줄을 누르면 숙제 사진을 넘겨 보고 음성 파일을 들으면서 질문에 답하고 점검완료할 수 있어요."
       />
 
       {/* **과목이 먼저, 그 안에서 레벨** (2026-09-19 Alan — "RC와 LC가 구분되어 있고 과목안에서도 레벨까지만 구분이 되면 좋겠어").
@@ -195,7 +191,7 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
         <EmptyState
           icon="homework"
           title={done ? "해당하는 숙제가 없어요" : "점검할 숙제가 없어요"}
-          description="수강생이 숙제업로드에서 사진을 올리면 여기에 모여요. 다른 과목·레벨 칸의 숫자도 확인해 보세요."
+          description="수강생이 숙제업로드에서 사진 · 음성 파일을 올리면 여기에 모여요. 다른 과목·레벨 칸의 숫자도 확인해 보세요."
         />
       ) : (
         <>

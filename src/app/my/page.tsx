@@ -44,7 +44,7 @@ const QUICK: { href: string; label: string; desc: string; icon: IconName }[] = [
   { href: "/my/replay", label: "다시보기", desc: "종강일까지 시청", icon: "replay" },
   // 두 칸은 서로 다른 일이다 — 비대면 인증은 내 스터디, 정규 수업 숙제는 숙제업로드 (2026-09-23 Alan)
   { href: "/my/study", label: "내 스터디", desc: "신청 · 자료 · 인증", icon: "study" },
-  { href: "/my/homework", label: "숙제업로드", desc: "수업 숙제 사진", icon: "homework" },
+  { href: "/my/homework", label: "숙제업로드", desc: "수업 숙제 사진·음성", icon: "homework" },
   // 수업자료실 (2026-10-05 Alan) — 내 레벨의 RC · LC 자료
   { href: "/my/materials", label: "수업자료실", desc: "레벨별 RC·LC 자료", icon: "download" },
   { href: "/my/lc-audio", label: "LC음원듣기", desc: "레벨별 음원", icon: "headphones" },

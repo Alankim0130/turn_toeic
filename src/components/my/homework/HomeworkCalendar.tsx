@@ -133,7 +133,7 @@ export function HomeworkCalendar({
                 {target && (
                   <div className="animate-fade-up border-t border-line pt-4">
                     <p className="mb-3 text-sm font-black text-ink">
-                      <span className="text-brand-600">{homeworkLabel(target.level, target.subject)}</span> 풀이 사진 올리기
+                      <span className="text-brand-600">{homeworkLabel(target.level, target.subject)}</span> 숙제 올리기 (사진 · 음성)
                     </p>
                     <HomeworkUploadForm
                       key={`${day.date}-${target.level}-${target.subject}`}

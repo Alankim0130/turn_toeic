@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { isImageType } from "@/lib/upload";
+import { isAudioType, isImageType } from "@/lib/upload";
 
 /**
  * 비공개 파일 열기: /files/material/12 · /files/homework/34 · /files/audio/56 · /files/textbook/78 · /files/item/9 · /files/class/3
@@ -10,7 +10,7 @@ import { isImageType } from "@/lib/upload";
  *    2026-10-05 에 올린 파일은 자료와 같은 id 로 옮겼다 — 그날 받은 링크가 그대로 같은 파일이다 (마이그레이션 20261006100000)
  *  - 사용자 세션으로 행을 조회하므로 RLS 가 접근 권한을 정한다 (못 보면 404).
  *  - 저장소 서명 URL 도 사용자 세션으로 만들어 storage 정책을 한 번 더 통과한다.
- *  - ?download=1 은 원본 파일명으로 내려받기, 숙제 사진·교재 이미지는 ?w=400 으로 썸네일.
+ *  - ?download=1 은 원본 파일명으로 내려받기, 숙제 사진·교재 이미지는 ?w=400 으로 썸네일 (숙제 음성 파일은 ?w 를 무시하고 그대로 준다).
  */
 const BUCKET = {
   material: "study-materials",
@@ -59,8 +59,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const sp = request.nextUrl.searchParams;
   const width = Number(sp.get("w"));
   const thumb = (kind === "homework" || kind === "textbook") && isImageType(row.content_type) && width >= 80 && width <= 1200;
-  // 음원은 재생 중 구간 요청이 이어지므로 넉넉히, 나머지는 짧게
-  const expiresIn = kind === "audio" ? 6 * 60 * 60 : 10 * 60;
+  // 음원은 재생 중 구간 요청이 이어지므로 넉넉히, 나머지는 짧게 — 숙제 음성 파일(2026-10-07)도 플레이어로 듣는 음원이다
+  const expiresIn = kind === "audio" || (kind === "homework" && isAudioType(row.content_type)) ? 6 * 60 * 60 : 10 * 60;
 
   const { data, error } = await supabase.storage.from(BUCKET[kind]).createSignedUrl(row.file_path, expiresIn, {
     transform: thumb ? { width, resize: "contain", quality: 70 } : undefined,

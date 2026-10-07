@@ -1,5 +1,21 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { classDayLabel, homeworkCheckedMessage, homeworkLabel, levelsOfDay } from "./homework";
+import {
+  classDayLabel,
+  HOMEWORK_AUDIO_ACCEPT,
+  homeworkAudioType,
+  homeworkCheckedMessage,
+  homeworkFileKind,
+  homeworkFilesError,
+  homeworkFilesLabel,
+  homeworkLabel,
+  levelsOfDay,
+  MAX_AUDIO_MB,
+  MAX_AUDIOS,
+  MAX_PHOTO_MB,
+  MAX_PHOTOS,
+} from "./homework";
+import { MB } from "./upload";
 
 describe("levelsOfDay — 달력에서 고른 날 낼 수 있는 레벨", () => {
   it("점수보장반은 그 레벨 하나", () => {
@@ -51,5 +67,105 @@ describe("라벨", () => {
   });
   it("classDayLabel 은 월·일", () => {
     expect(classDayLabel("2026-09-03")).toBe("9월 3일");
+  });
+});
+
+describe("음성 파일 (2026-10-07 Alan — 숙제에 음성 파일도)", () => {
+  it("브라우저가 audio/… 로 알려 주면 그 형식 그대로", () => {
+    expect(homeworkAudioType({ name: "새로운 녹음 3.m4a", type: "audio/x-m4a" })).toBe("audio/x-m4a");
+    expect(homeworkAudioType({ name: "a.mp3", type: "audio/mpeg" })).toBe("audio/mpeg");
+  });
+
+  it("형식을 비워 주거나 엉뚱하게 알려 주면 녹음 앱 확장자로 정한다", () => {
+    expect(homeworkAudioType({ name: "녹음.m4a", type: "" })).toBe("audio/mp4");
+    expect(homeworkAudioType({ name: "녹음.M4A", type: "" })).toBe("audio/mp4");
+    expect(homeworkAudioType({ name: "voice.mp3", type: "application/octet-stream" })).toBe("audio/mpeg");
+    expect(homeworkAudioType({ name: "Voice 001.3ga", type: "" })).toBe("audio/3gpp");
+    expect(homeworkAudioType({ name: "rec.amr", type: "" })).toBe("audio/amr");
+  });
+
+  it("영상일 수도 있는 확장자(.mp4 · .3gp · .webm)와 사진은 음성으로 보지 않는다", () => {
+    expect(homeworkAudioType({ name: "clip.mp4", type: "video/mp4" })).toBeNull();
+    expect(homeworkAudioType({ name: "clip.3gp", type: "video/3gpp" })).toBeNull();
+    expect(homeworkAudioType({ name: "clip.webm", type: "" })).toBeNull();
+    expect(homeworkAudioType({ name: "page.jpg", type: "image/jpeg" })).toBeNull();
+    expect(homeworkAudioType({ name: "notes.pdf", type: "application/pdf" })).toBeNull();
+  });
+
+  it("고르기 칸의 accept 는 audio/* 와 녹음 확장자", () => {
+    const parts = HOMEWORK_AUDIO_ACCEPT.split(",");
+    expect(parts[0]).toBe("audio/*");
+    expect(parts).toContain(".m4a");
+    expect(parts).not.toContain(".mp4");
+  });
+
+  it("저장된 파일 가르기 — 사진 · 음성 · 그 밖(옛 첨부)", () => {
+    expect(homeworkFileKind("image/jpeg")).toBe("photo");
+    expect(homeworkFileKind("audio/mp4")).toBe("audio");
+    expect(homeworkFileKind("audio/x-m4a")).toBe("audio");
+    expect(homeworkFileKind("application/pdf")).toBe("other");
+    expect(homeworkFileKind(null)).toBe("other");
+  });
+
+  it("건수 문구는 학생 카드 · 강사 목록이 같은 말을 쓴다", () => {
+    const f = (content_type: string) => ({ content_type });
+    expect(homeworkFilesLabel([f("image/jpeg"), f("image/png"), f("audio/mp4")])).toBe("사진 2장 · 음성 1개");
+    expect(homeworkFilesLabel([f("audio/mpeg")])).toBe("음성 1개");
+    expect(homeworkFilesLabel([f("image/jpeg")])).toBe("사진 1장");
+    expect(homeworkFilesLabel([f("application/pdf")])).toBe("첨부 1개");
+    expect(homeworkFilesLabel([])).toBe("");
+  });
+});
+
+describe("homeworkFilesError — 폼과 서버 액션이 같은 규칙", () => {
+  const photo = (size = 1000) => ({ type: "image/jpeg", size });
+  const audio = (size = 1000) => ({ type: "audio/mp4", size });
+
+  it("하나도 없으면 막는다 — 사진이든 음성이든 하나는 있어야 한다", () => {
+    expect(homeworkFilesError([])).toContain("하나 이상");
+  });
+
+  it("음성만, 사진만, 섞어서 모두 낼 수 있다", () => {
+    expect(homeworkFilesError([audio()])).toBeNull();
+    expect(homeworkFilesError([photo()])).toBeNull();
+    expect(homeworkFilesError([...Array.from({ length: MAX_PHOTOS }, () => photo()), ...Array.from({ length: MAX_AUDIOS }, () => audio())])).toBeNull();
+  });
+
+  it("사진 한도는 예전 그대로 10장 — 음성은 따로 센다", () => {
+    expect(MAX_PHOTOS).toBe(10);
+    expect(homeworkFilesError(Array.from({ length: MAX_PHOTOS + 1 }, () => photo()))).toContain(`${MAX_PHOTOS}장까지`);
+    expect(homeworkFilesError(Array.from({ length: MAX_AUDIOS + 1 }, () => audio()))).toContain(`${MAX_AUDIOS}개까지`);
+  });
+
+  it("크기 — 사진 20MB · 음성 50MB (끝값은 들어간다)", () => {
+    expect(homeworkFilesError([photo(MAX_PHOTO_MB * MB)])).toBeNull();
+    expect(homeworkFilesError([photo(MAX_PHOTO_MB * MB + 1)])).toContain(`${MAX_PHOTO_MB}MB`);
+    expect(homeworkFilesError([audio(MAX_AUDIO_MB * MB)])).toBeNull();
+    expect(homeworkFilesError([audio(MAX_AUDIO_MB * MB + 1)])).toContain(`${MAX_AUDIO_MB}MB`);
+    expect(homeworkFilesError([audio(0)])).toContain(`${MAX_AUDIO_MB}MB`);
+  });
+
+  it("사진 · 음성이 아닌 형식은 받지 않는다 (영상 · 문서)", () => {
+    expect(homeworkFilesError([photo(), { type: "video/mp4", size: 1000 }])).toBe("사진이나 음성 파일만 올릴 수 있어요.");
+    expect(homeworkFilesError([{ type: "application/pdf", size: 1000 }])).toBe("사진이나 음성 파일만 올릴 수 있어요.");
+    expect(homeworkFilesError([{ type: null, size: 1000 }])).toBe("사진이나 음성 파일만 올릴 수 있어요.");
+  });
+});
+
+describe("homework 버킷 — 마이그레이션과 같은 값", () => {
+  const dir = "supabase/migrations";
+  const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
+  /** 버킷 설정을 바꾸는 마지막 파일(한 문장 안에 storage.buckets 와 'homework')이 이 값을 정한다 — 나중 파일이 또 바꾸면 이 테스트를 함께 고친다 */
+  const touching = files.filter((f) => /storage\.buckets[^;]*'homework'/.test(readFileSync(`${dir}/${f}`, "utf8")));
+  const last = readFileSync(`${dir}/${touching.at(-1)}`, "utf8");
+
+  it("마지막으로 바꾼 파일은 음성을 연 20261007120000 이다", () => {
+    expect(touching.at(-1)).toBe("20261007120000_homework_audio.sql");
+  });
+
+  it("사진 · 음성을 받고, 한도는 음성 한도(50MB) — 사진 20MB 는 앱이 본다", () => {
+    expect(last).toContain("allowed_mime_types = array['image/*', 'audio/*']");
+    expect(last).toContain(`file_size_limit    = ${MAX_AUDIO_MB} * 1024 * 1024`);
+    expect(MAX_PHOTO_MB).toBeLessThanOrEqual(MAX_AUDIO_MB);
   });
 });

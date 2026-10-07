@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { HomeworkCheckForm } from "@/components/admin/homework/HomeworkCheckForm";
 import { HomeworkPhotos } from "@/components/admin/homework/HomeworkPhotos";
 import type { HomeworkRow } from "@/components/admin/homework/HomeworkList";
+import { AudioPlayer } from "@/components/lc/AudioPlayer";
 import { Icon } from "@/components/ui/Icon";
 
 /**
@@ -13,7 +14,10 @@ import { Icon } from "@/components/ui/Icon";
  * 학생카드를 클릭하면 숙제이미지가 나와서 확인할 수 있도록 하자").
  *
  * 그전에는 카드마다 사진·질문·점검 칸이 **전부 펼쳐져** 있어 한 화면에 두세 건밖에 안 들어왔다.
- * 지금은 목록이 한 줄짜리 카드이고, 누르면 여기서 **사진 → 질문 → 코멘트 · 점검완료**를 한 번에 끝낸다.
+ * 지금은 목록이 한 줄짜리 카드이고, 누르면 여기서 **사진 → 음성 → 질문 → 코멘트 · 점검완료**를 한 번에 끝낸다.
+ * 음성 파일(2026-10-07 Alan — "학생들이 숙제제출할때 음성파일도 올릴수 있도록 부탁해!")은 LC 음원과 같은 플레이어로 듣는다 —
+ * 배속 · 구간반복이 녹음 점검에도 쓸모 있다. 이 기기에서 못 트는 형식이면 `받기` 로 내려받는다.
+ * 사진이 없는 제출(음성만)은 사진 칸을 그리지 않는다.
  *
  * **점검완료 버튼은 여기 한곳뿐이다** — 목록 줄에는 없다 (같은 일을 두 군데서 하지 않는다).
  * 점검을 보내면 팝업을 닫는다 — 목록에서 그 줄이 빠지는 것이 곧 확인이고, 다음 건으로 바로 넘어간다.
@@ -89,7 +93,26 @@ export function HomeworkDetail({ row, onClose }: { row: HomeworkRow; onClose: ()
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
-          <HomeworkPhotos photos={row.photos} student={row.name} />
+          {row.photos.length > 0 && <HomeworkPhotos photos={row.photos} student={row.name} />}
+
+          {row.audios.length > 0 && (
+            <ul className={row.photos.length > 0 ? "mt-4 space-y-2" : "space-y-2"} aria-label="음성 파일">
+              {row.audios.map((a, i) => (
+                <li key={a.id}>
+                  <AudioPlayer
+                    src={`/files/homework/${a.id}`}
+                    title={a.name}
+                    note={row.audios.length > 1 ? `음성 ${i + 1}` : "음성"}
+                    download={`/files/homework/${a.id}?download=1`}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {row.photos.length === 0 && row.audios.length === 0 && row.files.length === 0 && (
+            <p className="rounded-xl2 bg-surface px-4 py-6 text-center text-sm text-mist">올린 파일이 없어요.</p>
+          )}
 
           {row.question && (
             <div className="mt-4 rounded-xl2 border border-brand-100 bg-brand-50/60 px-3 py-2 text-sm">

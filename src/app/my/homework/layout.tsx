@@ -16,7 +16,7 @@ export default async function HomeworkLayout({ children }: { children: React.Rea
       <PageHeader
         icon="homework"
         title="숙제업로드"
-        description="정규 수업 숙제예요. 달력에서 수업 날짜를 고르고 RC·LC 풀이 사진을 올리면, 강사가 확인해 코멘트와 함께 점검완료 알림을 보내 줍니다."
+        description="정규 수업 숙제예요. 달력에서 수업 날짜를 고르고 RC·LC 풀이 사진이나 음성 파일을 올리면, 강사가 확인해 코멘트와 함께 점검완료 알림을 보내 줍니다."
       />
       {children}
     </div>

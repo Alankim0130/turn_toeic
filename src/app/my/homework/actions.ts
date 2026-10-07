@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { homeworkFolder, isSubject, levelsOfDay, MAX_PHOTO_MB, MAX_PHOTOS, MAX_QUESTION } from "@/lib/homework";
-import { isSafeObjectPath, MB, type UploadedFile } from "@/lib/upload";
+import { homeworkFilesError, homeworkFolder, isSubject, levelsOfDay, MAX_QUESTION } from "@/lib/homework";
+import { isSafeObjectPath, type UploadedFile } from "@/lib/upload";
 
 export type HomeworkResult = { ok: boolean; error?: string; id?: number };
 
@@ -16,7 +16,8 @@ function revalidateHomework() {
 }
 
 /**
- * 브라우저가 homework/{내 id}/{레벨}-{과목}/ 에 올린 사진을 제출 1건으로 등록한다.
+ * 브라우저가 homework/{내 id}/{레벨}-{과목}/ 에 올린 사진 · 음성 파일을 제출 1건으로 등록한다.
+ * 음성 파일은 2026-10-07 Alan 요청("학생들이 숙제제출할때 음성파일도 올릴수 있도록 부탁해!") — 개수 · 크기 규칙은 `homeworkFilesError` 한곳이다.
  * 지금 수강 중인지는 RLS(private.has_term_access)가 확인한다.
  *
  * `classDate` 는 학생이 달력에서 고른 **수업 날짜**다 (2026-09-19 Alan). 화면이 보낸 값을 믿지 않고
@@ -46,7 +47,8 @@ export async function submitHomework(input: {
   const files = Array.isArray(input.files) ? input.files : [];
   if (!Number.isInteger(level) || !isSubject(subject)) return { ok: false, error: "레벨과 과목을 다시 골라 주세요." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(classDate)) return { ok: false, error: "수업 날짜를 달력에서 골라 주세요." };
-  if (files.length === 0 || files.length > MAX_PHOTOS) return { ok: false, error: `사진은 1~${MAX_PHOTOS}장 올릴 수 있어요.` };
+  const badFiles = homeworkFilesError(files);
+  if (badFiles) return { ok: false, error: badFiles };
   if (question.length > MAX_QUESTION) return { ok: false, error: `질문은 ${MAX_QUESTION}자 이내로 적어 주세요.` };
 
   // 내 수업일이 맞는지 + 그 날 내 반의 레벨이 맞는지 — 판정은 화면과 같은 `levelsOfDay` 한곳이다
@@ -67,11 +69,9 @@ export async function submitHomework(input: {
   const prefix = `${folder}/`;
   for (const f of files) {
     if (!isSafeObjectPath(f.path, prefix) || f.path.slice(prefix.length).includes("/")) return { ok: false, error: "파일 경로가 올바르지 않아요." };
-    if (!f.type?.startsWith("image/")) return { ok: false, error: "사진 파일만 올릴 수 있어요." };
-    if (!(f.size > 0 && f.size <= MAX_PHOTO_MB * MB)) return { ok: false, error: `사진은 ${MAX_PHOTO_MB}MB 이하만 올릴 수 있어요.` };
   }
 
-  // 실제로 올라간 파일인지 확인 (폴더에 예전 제출 사진이 쌓이므로 이름으로 찾는다)
+  // 실제로 올라간 파일인지 확인 (폴더에 예전 제출 파일이 쌓이므로 이름으로 찾는다)
   const found = await Promise.all(
     files.map(async (f) => {
       const name = f.path.slice(prefix.length);
@@ -79,7 +79,7 @@ export async function submitHomework(input: {
       return (data ?? []).some((o) => o.name === name);
     }),
   );
-  if (found.some((ok) => !ok)) return { ok: false, error: "올린 사진을 찾을 수 없어요. 다시 시도해 주세요." };
+  if (found.some((ok) => !ok)) return { ok: false, error: "올린 파일을 찾을 수 없어요. 다시 시도해 주세요." };
 
   const { data: created, error } = await supabase
     .from("homework_submissions")
@@ -110,7 +110,7 @@ export async function submitHomework(input: {
   return { ok: true, id: created.id };
 }
 
-/** 점검 전 제출 취소. 사진 파일도 함께 지운다 (점검이 끝난 제출은 RLS 가 삭제를 막는다) */
+/** 점검 전 제출 취소. 사진 · 음성 파일도 함께 지운다 (점검이 끝난 제출은 RLS 가 삭제를 막는다) */
 export async function deleteHomeworkSubmission(id: number): Promise<HomeworkResult> {
   const supabase = await createClient();
   const {

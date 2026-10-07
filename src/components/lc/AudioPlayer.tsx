@@ -12,9 +12,14 @@ import { cn } from "@/lib/utils";
  *
  * 파일은 재생을 누를 때 처음 받는다 (preload="none") — 학생 수가 많아 전송량을 아낀다.
  * 한 화면에서 여러 음원을 눌러도 동시에 울리지 않게, 재생을 시작하면 다른 플레이어는 멈춘다.
+ *
+ * 숙제 음성 파일(2026-10-07)도 이 플레이어로 듣는다 — 그때만 `download`(받기 주소)를 준다. 학생이 올린 녹음은 형식이 제각각이라
+ * 이 기기에서 못 트는 파일(옛 안드로이드의 amr 등)은 받아서 듣게 한다. **LC 음원에는 주지 않는다** — LC 음원은 페이지에서 재생만 한다(CLAUDE.md).
  */
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+/** 받기 주소가 있는 플레이어(숙제 음성)가 못 틀 때 — 다시 눌러도 같으니 받아서 듣게 한다 */
+const CANT_PLAY_DOWNLOAD = "재생하지 못했어요. 이 기기에서 열 수 없는 형식이면 받기로 내려받아 들어 주세요.";
 const PLAY_EVENT = "lc-audio-play";
 
 /**
@@ -64,7 +69,20 @@ export const formatTime = (s: number) => {
   return h > 0 ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
 };
 
-export function AudioPlayer({ src, title, note, className }: { src: string; title: string; note?: string | null; className?: string }) {
+export function AudioPlayer({
+  src,
+  title,
+  note,
+  download,
+  className,
+}: {
+  src: string;
+  title: string;
+  note?: string | null;
+  /** 받기 주소 — 숙제 음성 파일에만 준다 (위 머리말) */
+  download?: string | null;
+  className?: string;
+}) {
   const id = useId();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -104,9 +122,10 @@ export function AudioPlayer({ src, title, note, className }: { src: string; titl
       await a.play();
     } catch {
       setLoading(false);
-      setError("재생하지 못했어요. 잠시 뒤 다시 눌러 주세요.");
+      // 형식을 못 트는 파일이면 onError 와 이 catch 가 함께 온다 — 숙제 음성은 둘 다 `받기` 를 권한다 (다시 눌러도 같다)
+      setError(download ? CANT_PLAY_DOWNLOAD : "재생하지 못했어요. 잠시 뒤 다시 눌러 주세요.");
     }
-  }, [id, rate]);
+  }, [id, rate, download]);
 
   const toggle = () => {
     const a = el();
@@ -169,7 +188,7 @@ export function AudioPlayer({ src, title, note, className }: { src: string; titl
         }}
         onError={() => {
           setLoading(false);
-          setError("음원을 불러오지 못했어요.");
+          setError(download ? CANT_PLAY_DOWNLOAD : "음원을 불러오지 못했어요.");
         }}
         onTimeUpdate={(e) => {
           const a = e.currentTarget;
@@ -189,6 +208,11 @@ export function AudioPlayer({ src, title, note, className }: { src: string; titl
         <Icon name="headphones" size={18} />
         <p className="min-w-0 flex-1 truncate text-sm font-black text-ink">{title}</p>
         {note && <span className="shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand-700">{note}</span>}
+        {download && (
+          <a href={download} className="shrink-0 text-xs font-bold text-ink-soft underline decoration-brand-200 hover:text-brand-600" aria-label={`${title} 받기`}>
+            받기
+          </a>
+        )}
       </div>
 
       {/* 진행바 */}
@@ -260,8 +284,8 @@ export function AudioPlayer({ src, title, note, className }: { src: string; titl
           </button>
         )}
 
-        {/* 배속 */}
-        <span className="ml-auto flex items-center gap-1 rounded-full bg-surface p-1 ring-1 ring-line">
+        {/* 배속 — 좁은 화면(320px · 카드 안에 든 숙제 음성)에서는 칸 사이를 좁혀 한 줄에 둔다. 글자는 접히지 않는다 (`0.75x` 가 두 줄로 쪼개졌다) */}
+        <span className="ml-auto flex items-center gap-0.5 rounded-full bg-surface p-1 ring-1 ring-line sm:gap-1">
           {RATES.map((r) => (
             <button
               key={r}
@@ -270,7 +294,7 @@ export function AudioPlayer({ src, title, note, className }: { src: string; titl
               aria-pressed={rate === r}
               aria-label={`재생 속도 ${r}배`}
               className={cn(
-                "rounded-full px-2 py-1 text-[11px] font-black tabular-nums transition",
+                "whitespace-nowrap rounded-full px-1.5 py-1 text-[11px] font-black tabular-nums transition sm:px-2",
                 rate === r ? "bg-brand-500 text-white" : "text-slate hover:text-brand-600",
               )}
             >

@@ -12,7 +12,7 @@ export type HomeworkRow = {
   phone: string | null;
   /** `650 RC` — 레벨 + 과목 */
   label: string | null;
-  /** 줄 둘째 칸: `9월 15일 수업 · 사진 4장` */
+  /** 줄 둘째 칸: `9월 15일 수업 · 사진 4장 · 음성 1개` */
   sub: string;
   /** 줄 오른쪽: 제출 시각 `9/18 07:34` */
   at: string;
@@ -22,7 +22,9 @@ export type HomeworkRow = {
   question: string | null;
   feedback: string | null;
   photos: HomeworkPhoto[];
-  /** 사진이 아닌 첨부 */
+  /** 음성 파일 (2026-10-07) — 팝업에서 플레이어로 듣는다 */
+  audios: { id: number; name: string }[];
+  /** 사진도 음성도 아닌 첨부 (옛 제출) */
   files: { id: number; name: string }[];
 };
 
