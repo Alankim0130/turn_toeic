@@ -13,6 +13,7 @@ import { countBy, GENDER_LABEL, getActiveCourseRows, getCurrentOrUpcomingTerm, t
 import { getLiveLinkSessions } from "./_lib/live-links";
 import { forInstructor, linkKindLabel, nowKst, pickFocus } from "@/lib/live-links";
 import { requireStaff } from "@/lib/auth";
+import { isPickup, pickupLabel } from "@/lib/textbook";
 
 export const metadata: Metadata = { title: "대시보드", robots: { index: false } };
 
@@ -54,7 +55,7 @@ export default async function AdminDashboardPage() {
     getCurrentOrUpcomingTerm(supabase, today),
     supabase
       .from("textbook_orders")
-      .select("id, recipient_name, quantity, items, total_amount, created_at, section:class_sections(track, course:courses(name), term:terms(year, month))")
+      .select("id, recipient_name, quantity, items, total_amount, created_at, delivery_method, pickup_date, pickup_time, section:class_sections(track, course:courses(name), term:terms(year, month))")
       .eq("status", "requested")
       .order("created_at", { ascending: false })
       .limit(5),
@@ -436,6 +437,10 @@ export default async function AdminDashboardPage() {
                       </span>
                     </p>
                     <p className="truncate text-xs text-slate">
+                      {/* 현장수령 (2026-10-07) — 받으러 올 날짜 · 시각을 먼저 */}
+                      {isPickup(o) && o.pickup_date && o.pickup_time && (
+                        <span className="font-bold text-brand-700">현장수령 {pickupLabel(o.pickup_date, o.pickup_time)} · </span>
+                      )}
                       {termLabel(o.section?.term, true)} · {o.section?.course?.name ?? "강좌"}
                     </p>
                   </div>

@@ -2127,8 +2127,9 @@ export type Database = {
       textbook_orders: {
         Row: {
           address_detail: string | null
-          address: string
+          address: string | null
           created_at: string
+          delivery_method: string
           depositor_name: string | null
           id: number
           items_total: number
@@ -2136,6 +2137,8 @@ export type Database = {
           memo: string | null
           pay_to: Json
           phone: string
+          pickup_date: string | null
+          pickup_time: string | null
           postal_code: string | null
           quantity: number
           received_at: string | null
@@ -2151,8 +2154,9 @@ export type Database = {
         }
         Insert: {
           address_detail?: string | null
-          address: string
+          address?: string | null
           created_at?: string
+          delivery_method?: string
           depositor_name?: string | null
           id?: number
           items_total?: number
@@ -2160,6 +2164,8 @@ export type Database = {
           memo?: string | null
           pay_to?: Json
           phone: string
+          pickup_date?: string | null
+          pickup_time?: string | null
           postal_code?: string | null
           quantity?: number
           received_at?: string | null
@@ -2175,8 +2181,9 @@ export type Database = {
         }
         Update: {
           address_detail?: string | null
-          address?: string
+          address?: string | null
           created_at?: string
+          delivery_method?: string
           depositor_name?: string | null
           id?: number
           items_total?: number
@@ -2184,6 +2191,8 @@ export type Database = {
           memo?: string | null
           pay_to?: Json
           phone?: string
+          pickup_date?: string | null
+          pickup_time?: string | null
           postal_code?: string | null
           quantity?: number
           received_at?: string | null
@@ -2469,7 +2478,20 @@ export type Database = {
         Returns: number
       }
       create_textbook_order: {
-        Args: { p_address: string; p_address_detail: string; p_depositor: string; p_item_ids: number[]; p_memo: string; p_phone: string; p_postal_code: string; p_recipient: string; p_term_id: number }
+        Args: {
+          p_address: string
+          p_address_detail: string
+          p_delivery?: string
+          p_depositor: string
+          p_item_ids: number[]
+          p_memo: string
+          p_phone: string
+          p_pickup_date?: string
+          p_pickup_time?: string
+          p_postal_code: string
+          p_recipient: string
+          p_term_id: number
+        }
         Returns: number
       }
       cancel_textbook_order: {

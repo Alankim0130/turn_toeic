@@ -1,21 +1,34 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   booksForSections,
   bookLabel,
   defaultAccount,
+  DELIVERY_LABEL,
   guideReady,
   itemsForBooks,
   itemsForLevels,
+  orderHint,
   orderPreset,
   orderStepIndex,
   ownedItemIds,
+  PICKUP_DAYS_AHEAD,
+  PICKUP_TIMES,
+  pickupDateLabel,
+  pickupLabel,
+  pickupTimeLabel,
   textbookGuide,
   textbookNotice,
   textbookNoticeMessage,
   textbookOrderError,
   textbookQuote,
   TEXTBOOK_ADMIN_STATUS,
+  TEXTBOOK_PICKUP_ADMIN_STATUS,
+  TEXTBOOK_PICKUP_STATUS,
   TEXTBOOK_STATUS,
+  textbookAdminStatus,
+  textbookStatus,
   type BookSection,
   type TextbookAccount,
   type TextbookItem,
@@ -94,6 +107,17 @@ describe("합계와 계좌별 입금액 (DB 함수 create_textbook_order 와 같
   it("무료 교재만이면 계좌가 없어도 된다", () => {
     expect(textbookQuote([item(1, { price: 0 })], [], { shipping_fee: 0, default_account_id: null, notice: null }).missingAccount).toBe(false);
   });
+
+  it("현장수령은 배송비가 없다 — 계좌별 금액에서도 빠진다 (2026-10-07 Alan)", () => {
+    const q = textbookQuote([item(1, { account_id: 1 }), item(2, { price: 8000, account_id: 2 })], [LC, RC], settings, { pickup: true });
+    expect(q).toMatchObject({ itemsTotal: 18000, shipping: 0, total: 18000, missingAccount: false });
+    expect(q.lines).toEqual([
+      { account: LC, amount: 10000 },
+      { account: RC, amount: 8000 },
+    ]);
+    // 택배는 그대로 배송비가 기본 계좌로
+    expect(textbookQuote([item(1)], [LC], settings, { pickup: false }).total).toBe(13000);
+  });
 });
 
 describe("주문 오류 문구", () => {
@@ -103,6 +127,17 @@ describe("주문 오류 문구", () => {
     expect(textbookOrderError("no_account")).toContain("계좌");
     expect(textbookOrderError("depositor")).toContain("입금자명");
     expect(textbookOrderError(undefined)).toContain("다시 시도");
+  });
+
+  it("현장수령 — 날짜 · 시각 · 받는 방법 (2026-10-07)", () => {
+    expect(textbookOrderError("pickup_date")).toContain(`${PICKUP_DAYS_AHEAD}일`);
+    expect(textbookOrderError("pickup_time")).toContain("시각");
+    expect(textbookOrderError("delivery")).toContain("받는 방법");
+  });
+
+  it("배포 사이 함수 모양이 달라 생긴 오류는 칸 이름(p_address · p_delivery)에 속지 않는다", () => {
+    const m = "Could not find the function public.create_textbook_order(p_address, p_address_detail, p_delivery, p_depositor) in the schema cache";
+    expect(textbookOrderError(m)).toContain("다시 시도");
   });
 });
 
@@ -256,15 +291,17 @@ describe("교재비 안내 — 등록 교재 · 지난 주문 · 계좌", () => 
   it("안내 글 — 권수 · 금액 · 계좌를 적고 알림함 길이(제목 80 · 본문 1,000자)를 넘지 않는다", () => {
     const g = textbookGuide({ books: week5, items: seeded, accounts: [ACC], settings, ownedItemIds: new Set() });
     const n = textbookNotice(10, g)!;
-    expect(n).toMatchObject({ month: 10, itemsTotal: 40000, shipping: 4500, total: 44500, owned: 0 });
-    expect(n.pay).toEqual([{ bank: "하나은행", accountNo: "000-000000-00000", holder: "이영수", label: null, amount: 44500 }]);
+    expect(n).toMatchObject({ month: 10, itemsTotal: 40000, shipping: 4500, total: 44500, pickupTotal: 40000, owned: 0 });
+    expect(n.pay).toEqual([{ bank: "하나은행", accountNo: "000-000000-00000", holder: "이영수", label: null, amount: 44500, pickupAmount: 40000 }]);
 
     const m = textbookNoticeMessage(n);
     expect(m.title).toBe("10월 불라방 교재비 안내");
     expect(m.body).toContain("교재 4권 · 40,000원");
-    expect(m.body).toContain("배송비 4,500원");
-    expect(m.body).toContain("합계 44,500원");
-    expect(m.body).toContain("하나은행 000-000000-00000 · 예금주 이영수 · 44,500원");
+    expect(m.body).toContain("택배: 배송비 4,500원 · 합계 44,500원");
+    // 현장수령은 배송비가 없다 (2026-10-07 Alan) — 받는 방법은 주문할 때 고르니 둘 다 적는다
+    expect(m.body).toContain("현장수령: 배송비 없이 합계 40,000원");
+    expect(m.body).toContain("하나은행 000-000000-00000 · 예금주 이영수 · 택배 44,500원 · 현장수령 40,000원");
+    expect(m.body).toContain("받으러 올 날짜와 시각");
 
     // 가장 긴 경우 — 속성반 8권 + 계좌 둘
     const two = { ...ACC, id: 8, label: "배송비", account_no: "111-111111-11111" };
@@ -273,6 +310,16 @@ describe("교재비 안내 — 등록 교재 · 지난 주문 · 계좌", () => 
     expect(long.body.length).toBeLessThanOrEqual(1000);
     expect(long.body).toContain("[배송비]");
     expect(long.body).toContain("지난 주문에서 받은 교재 2권은 뺐어요");
+  });
+
+  it("배송비가 0 이면 금액이 하나뿐이다 — 택배 · 현장수령을 나눠 적지 않는다", () => {
+    const g = textbookGuide({ books: week5, items: seeded, accounts: [ACC], settings: { ...settings, shipping_fee: 0 }, ownedItemIds: new Set() });
+    const n = textbookNotice(10, g)!;
+    expect(n).toMatchObject({ shipping: 0, total: 40000, pickupTotal: 40000 });
+    const m = textbookNoticeMessage(n);
+    expect(m.body).toContain("합계 40,000원");
+    expect(m.body).not.toContain("택배:");
+    expect(m.body).toContain("하나은행 000-000000-00000 · 예금주 이영수 · 40,000원");
   });
 
   it("보낼 수 없는 안내는 만들지 않는다", () => {
@@ -316,5 +363,63 @@ describe("주문 단계 — 강사 금액확인 → 조교 배송완료 → 학�
 
   it("강사 · 조교 화면은 하는 일의 이름으로 — 금액확인 전 · 배송 대기 · 배송완료", () => {
     expect(TEXTBOOK_ADMIN_STATUS).toEqual({ requested: "금액확인 전", confirmed: "배송 대기", shipped: "배송완료", cancelled: "취소" });
+  });
+});
+
+describe("현장수령 — 받는 방법 · 날짜 · 시각 · 상태 이름 (2026-10-07 Alan)", () => {
+  it("받는 방법은 택배 · 현장수령 둘 — DB check 와 같은 값", () => {
+    expect(DELIVERY_LABEL).toEqual({ parcel: "택배", pickup: "현장수령" });
+  });
+
+  it("몇 시쯤 — 오전 9시부터 밤 10시까지 30분 간격", () => {
+    expect(PICKUP_TIMES[0]).toBe("09:00");
+    expect(PICKUP_TIMES.at(-1)).toBe("22:00");
+    expect(PICKUP_TIMES).toHaveLength(27);
+    expect(PICKUP_TIMES).toContain("12:30");
+    expect(new Set(PICKUP_TIMES).size).toBe(PICKUP_TIMES.length);
+  });
+
+  it("날짜 · 시각을 사람 말로 — 요일까지 (DB time 의 초는 떼고)", () => {
+    expect(pickupDateLabel("2026-10-12")).toBe("10월 12일 (월)");
+    expect(pickupDateLabel("2026-10-18")).toBe("10월 18일 (일)");
+    expect(pickupTimeLabel("09:00")).toBe("오전 9시");
+    expect(pickupTimeLabel("12:00")).toBe("오후 12시");
+    expect(pickupTimeLabel("14:30:00")).toBe("오후 2시 30분");
+    expect(pickupTimeLabel("22:00")).toBe("오후 10시");
+    expect(pickupLabel("2026-10-12", "14:00:00")).toBe("10월 12일 (월) 오후 2시쯤");
+  });
+
+  it("학생 화면은 주문완료 → 입금확인 → 수령완료 — 보내지 않으니 '배송' 이라고 부르지 않는다", () => {
+    expect(["requested", "confirmed", "shipped"].map((s) => TEXTBOOK_PICKUP_STATUS[s].label)).toEqual(["주문완료", "입금확인", "수령완료"]);
+    expect(textbookStatus("confirmed", true).label).toBe("입금확인");
+    expect(textbookStatus("confirmed", false).label).toBe("배송확인");
+    expect(Object.values(TEXTBOOK_PICKUP_STATUS).some((s) => s.label.includes("배송"))).toBe(false);
+  });
+
+  it("강사 · 조교 화면은 금액확인 전 · 수령 대기 · 수령완료", () => {
+    expect(TEXTBOOK_PICKUP_ADMIN_STATUS).toEqual({ requested: "금액확인 전", confirmed: "수령 대기", shipped: "수령완료", cancelled: "취소" });
+    expect(textbookAdminStatus("shipped", true)).toBe("수령완료");
+    expect(textbookAdminStatus("shipped", false)).toBe("배송완료");
+  });
+
+  it("금액이 확인되면 학생 안내에 받으러 올 날짜 · 시각을 그대로 적는다", () => {
+    const o = { status: "confirmed", delivery_method: "pickup", pickup_date: "2026-10-12", pickup_time: "14:00:00" };
+    expect(orderHint(o)).toBe("금액이 확인됐어요. 10월 12일 (월) 오후 2시쯤 학원에서 받아 가세요");
+    expect(orderHint({ ...o, status: "requested" })).toBe(TEXTBOOK_PICKUP_STATUS.requested.hint);
+    expect(orderHint({ status: "confirmed", delivery_method: "parcel" })).toBe(TEXTBOOK_STATUS.confirmed.hint);
+    // 예전 주문(칸이 없던 때)은 택배다
+    expect(orderHint({ status: "shipped" })).toBe(TEXTBOOK_STATUS.shipped.hint);
+  });
+
+  // 앱과 DB 함수가 같은 규칙이어야 화면의 금액 · 날짜 범위와 주문이 어긋나지 않는다 (마이그레이션 20261007100000)
+  it("DB 함수와 같은 규칙 — 배송비 0 · 날짜 범위 · 받는 방법 값", () => {
+    const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261007100000_textbook_pickup.sql"), "utf8");
+    expect(sql).toContain(`p_pickup_date > v_today + ${PICKUP_DAYS_AHEAD}`);
+    expect(sql).toContain("v_ship := case when v_method = 'pickup' then 0 else coalesce(v_ship, 0) end;");
+    expect(sql).toContain(`check (delivery_method in (${Object.keys(DELIVERY_LABEL).map((k) => `'${k}'`).join(", ")}))`);
+    // 예전 9개 인자 호출(옛 앱 · 택배)이 그대로 되도록 새 인자에는 기본값이 있다
+    expect(sql).toMatch(/p_delivery\s+text default 'parcel'/);
+    expect(sql).toMatch(/p_pickup_date\s+date default null/);
+    expect(sql).toMatch(/p_pickup_time\s+time default null/);
   });
 });

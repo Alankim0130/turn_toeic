@@ -84,6 +84,33 @@ export async function markTextbookShipped(formData: FormData) {
 }
 
 /**
+ * **수령완료** — 현장수령 주문(2026-10-07)을 학원에서 건넨 뒤 누른다. 조교도.
+ * 상태는 택배의 배송완료와 같은 shipped 이고, 학생이 그 자리에서 받았으니 `received_at` 도 함께 찍는다 — 그 주문은 학생 내역에서 사라진다
+ * (택배는 학생이 받고 직접 누른다). 금액확인된 현장수령 주문만 — 조교의 금액확인 건너뛰기는 DB 트리거도 막는다.
+ */
+export async function markTextbookPickedUp(formData: FormData) {
+  await requireCrew();
+  const back = backOf(formData);
+  const id = orderIdOf(formData);
+  if (!id) go(back, "error=invalid");
+
+  const supabase = await createClient();
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("textbook_orders")
+    .update({ status: "shipped", received_at: now, tracking_no: null, updated_at: now })
+    .eq("id", id)
+    .eq("status", "confirmed")
+    .eq("delivery_method", "pickup")
+    .select("id");
+  if (error) go(back, "error=save");
+  if (!data || data.length === 0) go(back, "error=stale");
+
+  refresh();
+  go(back, `ok=${id}&did=picked`);
+}
+
+/**
  * 상태 직접 바꾸기 — 잘못 누른 것 되돌리기 · 취소 · 송장번호 고치기. 조교도 한다.
  * 단 **금액확인 전(또는 취소) → 배송 대기 · 배송완료** 는 강사 · 관리자만이다 — 배송완료로 바로 건너뛰면 금액확인을 비껴간다
  * (위 금액확인과 같은 규칙 — DB 트리거도 막는다).

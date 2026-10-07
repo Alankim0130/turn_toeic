@@ -183,6 +183,18 @@ export const STUDENT_HUB = { href: "/student", label: "수강생전용", icon: "
 
 export const STUDENT_FEATURES: StudentFeature[] = [
   {
+    // 맨 앞이다 (2026-10-07 Alan — "불라방 교재주문을 맨 위로 올려줘"). 수강생전용 소개(/student) 카드 · PC 수강생전용 메뉴가 이 순서다.
+    // 예비등록생도 쓴다 (2026-09-21) — 개강 전에 등업한 불라방 학생이 개강 전에 교재를 받아야 한다
+    key: "textbook",
+    href: "/my/textbook",
+    label: "불라방교재주문",
+    icon: "textbook",
+    summary: "교재 택배 · 현장수령",
+    desc: "불라방으로 듣는 수강생은 교재를 택배로 받거나 학원에 와서 직접 받아요. 현장수령은 배송비가 없어요. 개강 전에도 주문할 수 있어요.",
+    points: ["내 반 교재를 골라 입금하고 주문", "택배 또는 현장수령 — 현장수령은 받으러 올 날짜 · 시각만 남겨요"],
+    access: "enrollee",
+  },
+  {
     key: "live",
     href: "/my/live",
     label: "불라방",
@@ -235,17 +247,6 @@ export const STUDENT_FEATURES: StudentFeature[] = [
     points: ["특강 7일 전부터 하나씩 열려요 — 그 전엔 D-day 표시", "신청 받는 중에는 언제든 취소"],
     // 개강일~종강일만 (2026-10-02 Alan) — 교재주문만 예비등록생도 쓴다
     access: "active",
-  },
-  {
-    key: "textbook",
-    href: "/my/textbook",
-    label: "불라방교재주문",
-    icon: "textbook",
-    summary: "교재 집으로 받기",
-    desc: "불라방으로 듣는 수강생은 교재를 집으로 받아볼 수 있어요. 개강 전에도 주문할 수 있어요.",
-    points: ["내 레벨 교재를 골라 입금하고 주문", "주문완료 → 배송확인 → 배송시작 · 송장번호 확인"],
-    // 예비등록생도 쓴다 (2026-09-21) — 개강 전에 등업한 불라방 학생이 개강 전에 교재를 받아야 한다
-    access: "enrollee",
   },
   {
     // 수업자료실 (2026-10-05 Alan — "레벨별 구분과 RC, LC가 구분되어야해"). 학생에게는 내 레벨만 — DB 가 막는다 (LC 음원과 같은 규칙)

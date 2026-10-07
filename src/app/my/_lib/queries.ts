@@ -365,7 +365,7 @@ export async function getMyTextbookOrders() {
     .from("textbook_orders")
     .select(
       `id, recipient_name, phone, postal_code, address, address_detail, quantity, memo, status, tracking_no, created_at,
-       term_id, items, items_total, shipping_fee, total_amount, depositor_name, pay_to, received_at,
+       term_id, items, items_total, shipping_fee, total_amount, depositor_name, pay_to, received_at, delivery_method, pickup_date, pickup_time,
        section:class_sections(id, track, course:courses(name), term:terms(year, month))`,
     )
     .eq("user_id", user.id)
