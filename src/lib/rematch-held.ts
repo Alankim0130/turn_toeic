@@ -10,9 +10,10 @@ import { readAutoVerify } from "./auto-verify";
 import { assignedLabels } from "./assigned-label";
 import { heldReady, toMatchInput, type StoredParsed } from "./held-receipt";
 import { heldMonth } from "./verify-decision";
-import type { PaletteShares } from "./receipt-forensics";
 import { notifyStaff } from "./push";
 import { sendTextbookNotice } from "./textbook-guide";
+import { planClassChangeFor } from "./class-change-db";
+import { classChangeLog } from "./class-change";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -70,17 +71,20 @@ export async function rematchHeldVerifications(admin: Admin, opts: { notify?: bo
       // 수강월은 받아 둔 그 달로 못박는다 — 날짜로만 달을 읽은 수강증은 대조가 다른 달(열려 있는 이번 달) 반을 고를 수 있다
       const match = matchSections({ ...toMatchInput(parsed), courseMonth: month }, sections, { twoWeekSpots: spots });
       const matched = match.result.kind === "match" ? match.result : null;
-      const storedFlags = asRecord((candidates.flags ?? null) as Json);
       const flags = await receiptFlags(admin, {
         userId: v.user_id,
         hash: v.file_hash,
         capturedOn: parsed.capturedOn ?? null,
         capturedAt: parsed.capturedAt ?? null,
-        palette: (storedFlags.palette ?? null) as PaletteShares | null,
         sectionIds: matched?.sectionIds ?? [],
       });
       const nameMatches = typeof candidates.nameMatches === "boolean" ? candidates.nameMatches : null;
       const blockers = autoApproveBlockers({ parsed, nameMatches, flags, matched: !!matched, periodUnclear: matched?.periodUnclear === true });
+      // 반을 바꾼 수강증 (2026-10-06 — 올릴 때와 같은 규칙, `class-change.ts`). 오래된 것부터 맞추므로 나중에 올린 수강증이 남는다
+      const onlyEnrolled = blockers.length > 0 && blockers.every((b) => b === "already_enrolled");
+      const change = auto.on && matched && onlyEnrolled ? await planClassChangeFor(admin, v.user_id, matched.sectionIds) : null;
+      const replace = change?.kind === "replace" ? change : null;
+      const changeLog = change ? classChangeLog(change) : null;
 
       // `hold` 는 지운다 (키째로 — JSON null 로 두면 `candidates->hold is null` 에 안 걸려 계속 기다리는 것으로 보인다)
       const rest = { ...candidates };
@@ -91,12 +95,13 @@ export async function rematchHeldVerifications(admin: Admin, opts: { notify?: bo
         log: match.log,
         flags,
         blockers,
+        ...(changeLog ? { classChange: changeLog } : {}),
         heldFor: month,
         rematchedAt: new Date().toISOString(),
         ...(auto.on ? {} : { autoOff: auto.reason }),
       } as unknown as Json;
 
-      if (auto.on && matched && blockers.length === 0) {
+      if (auto.on && matched && (blockers.length === 0 || replace)) {
         const mode = parsed.mode === "live" ? "live" : "onsite";
         const approved = await approveVerificationWith(admin, {
           verificationId: v.id,
@@ -105,6 +110,7 @@ export async function rematchHeldVerifications(admin: Admin, opts: { notify?: bo
           mode,
           confidence: 100,
           candidates: next,
+          ...(replace ? { replace: { absorb: replace.absorb, remove: replace.remove } } : {}),
         });
         if (approved.ok) {
           summary.approved++;

@@ -27,8 +27,12 @@ export type AutoApproveBlocker =
   | "duplicate_image"
   | "stale_capture"
   | "same_capture"
+  /**
+   * (옛 기록용) 화면 색이 YBM 수강증 팔레트와 달랐다 — **2026-10-06 에 이 검사를 뺐다** (Alan "화면색상으로 위조를 잡아내는거는 안해도 괜찮을 것 같아").
+   * 아이폰 넓은 색 공간 캡처의 진짜 수강증이 하루 7장 걸렸다. 더는 붙이지 않고 옛 기록의 까닭을 읽으려고 이름만 둔다
+   */
   | "palette"
-  /** 그 달 반에 이미 배정돼 있다 — 새로 넣으면 등록이 두 건 */
+  /** 그 달 반에 이미 배정돼 있다 — 새로 넣으면 등록이 두 건. 반을 바꾼 수강증이면 바꿔 넣는다 (`class-change.ts`, 2026-10-06) */
   | "already_enrolled"
   /** 같은 캡처를 전에 사람이 판정했다 (firsttoeic 사고 5) */
   | "decided_before"
@@ -47,7 +51,6 @@ export type AutoApproveFlags = {
   duplicateImage: boolean;
   staleCapture: boolean;
   sameCapture: boolean;
-  paletteOff: boolean;
   alreadyEnrolled: readonly number[];
   decidedBefore: "approved" | "rejected" | null;
 };
@@ -75,7 +78,6 @@ export function autoApproveBlockers({ parsed, nameMatches, flags, matched, perio
   if (flags.duplicateImage) out.push("duplicate_image");
   if (flags.staleCapture) out.push("stale_capture");
   if (flags.sameCapture) out.push("same_capture");
-  if (flags.paletteOff) out.push("palette");
   if (flags.alreadyEnrolled.length > 0) out.push("already_enrolled");
   if (flags.decidedBefore !== null) out.push("decided_before");
   return out;
@@ -92,7 +94,7 @@ export const BLOCKER_LABEL: Record<AutoApproveBlocker, string> = {
   duplicate_image: "다른 계정과 같은 파일",
   stale_capture: "45일 넘은 캡처",
   same_capture: "다른 계정과 같은 초에 캡처",
-  palette: "화면 색이 YBM 수강증과 다름",
+  palette: "화면 색이 YBM 수강증과 다름 (2026-10-06 부터 보지 않는 검사)",
   already_enrolled: "이미 그 달 반에 배정됨",
   decided_before: "같은 캡처를 전에 사람이 판정함",
   period_unclear: "수강 기간 숫자(4주 · 2주)를 또렷이 못 읽음 — 같은 시간에 2주완성반이 있어 한 달 반이 맞는지 강사가 확인",

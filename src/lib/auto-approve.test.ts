@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { autoApproveBlockers, BLOCKER_LABEL, blockerLines, type AutoApproveBlocker, type AutoApproveInput } from "./auto-approve";
 
-const quiet = { duplicateImage: false, staleCapture: false, sameCapture: false, paletteOff: false, alreadyEnrolled: [], decidedBefore: null } as const;
+const quiet = { duplicateImage: false, staleCapture: false, sameCapture: false, alreadyEnrolled: [], decidedBefore: null } as const;
 const ok: AutoApproveInput = {
   parsed: { gates: { academy: true, brand: true }, brandExact: true, card: true, modeEvidence: "online" },
   nameMatches: true,
@@ -23,7 +23,9 @@ describe("자동 승인 조건 — 수강증을 올린 자리와 예비 접수 �
     expect(autoApproveBlockers({ ...ok, parsed: { ...ok.parsed, modeEvidence: "live" } })).toEqual(["mode"]);
     expect(autoApproveBlockers({ ...ok, flags: { ...quiet, alreadyEnrolled: [12] } })).toEqual(["already_enrolled"]);
     expect(autoApproveBlockers({ ...ok, flags: { ...quiet, decidedBefore: "rejected" } })).toEqual(["decided_before"]);
-    expect(autoApproveBlockers({ ...ok, flags: { ...quiet, sameCapture: true, paletteOff: true } })).toEqual(["same_capture", "palette"]);
+    expect(autoApproveBlockers({ ...ok, flags: { ...quiet, sameCapture: true, duplicateImage: true } })).toEqual(["duplicate_image", "same_capture"]);
+    // 화면 색은 2026-10-06 부터 보지 않는다 — 옛 기록의 flags 에 paletteOff 가 남아 있어도 막지 않는다
+    expect(autoApproveBlockers({ ...ok, flags: { ...quiet, paletteOff: true } as never })).toEqual([]);
   });
 
   it("기간 숫자(4주 · 2주)를 못 가렸을 때만 막는다 — 2주완성 수강증도 다른 수강증처럼 본다 (2026-10-05 Alan \"2주 라는 글자가 있을거야\")", () => {
@@ -41,12 +43,12 @@ describe("자동 승인 조건 — 수강증을 올린 자리와 예비 접수 �
 
 describe("막은 까닭의 이름", () => {
   it("모든 까닭에 화면에 적을 말이 있다", () => {
-    const flags = { duplicateImage: true, staleCapture: true, sameCapture: true, paletteOff: true, alreadyEnrolled: [1], decidedBefore: "approved" } as const;
+    const flags = { duplicateImage: true, staleCapture: true, sameCapture: true, alreadyEnrolled: [1], decidedBefore: "approved" } as const;
     // no_match 와 period_unclear 는 함께 붙지 않는다 (반을 찾았을 때만 기간을 본다) — 두 번 불러 모은다
     const unmatched = autoApproveBlockers({ parsed: {}, nameMatches: false, matched: false, flags });
     const unclear = autoApproveBlockers({ parsed: {}, nameMatches: false, matched: true, periodUnclear: true, flags });
-    // two_week 는 2026-10-05 몇 시간 동안 남은 옛 기록의 까닭이라 지금은 붙지 않는다 — 그 기록을 읽을 이름표만 둔다
-    const all = new Set<AutoApproveBlocker>([...unmatched, ...unclear, "two_week"]);
+    // two_week · palette 는 옛 기록의 까닭이라 지금은 붙지 않는다 — 그 기록을 읽을 이름표만 둔다 (palette 는 2026-10-06 에 뺀 검사)
+    const all = new Set<AutoApproveBlocker>([...unmatched, ...unclear, "two_week", "palette"]);
     expect([...all].sort()).toEqual(Object.keys(BLOCKER_LABEL).sort());
     for (const b of all) expect(BLOCKER_LABEL[b]?.length, b).toBeGreaterThan(0);
   });

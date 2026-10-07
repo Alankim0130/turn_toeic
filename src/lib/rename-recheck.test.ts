@@ -15,7 +15,7 @@ const good = (): StoredVerification => ({
   candidates: {
     result: { kind: "match", sectionIds: [101, 102] },
     nameMatches: false,
-    flags: { duplicateImage: false, staleCapture: false, sameCapture: false, paletteOff: false, alreadyEnrolled: [], decidedBefore: null },
+    flags: { duplicateImage: false, staleCapture: false, sameCapture: false, alreadyEnrolled: [], decidedBefore: null },
     blockers: ["name"],
   },
 });
@@ -33,7 +33,7 @@ describe("planRenameRecheck", () => {
 
   it("이름 때문에 멈춘 것이 아니면 손대지 않는다 (다른 이유로 검토 중인 수강증)", () => {
     const row = good();
-    row.candidates!.blockers = ["palette"];
+    row.candidates!.blockers = ["same_capture"];
     expect(planRenameRecheck(row, "김민서")).toEqual({ kind: "skip", why: "no_name_blocker" });
     const noText = good();
     noText.ocrText = null;
@@ -42,14 +42,21 @@ describe("planRenameRecheck", () => {
 
   it("이름은 맞지만 다른 이유가 남으면 검토 대기 — 남은 이유만 적는다", () => {
     const row = good();
-    row.candidates!.blockers = ["name", "palette"];
-    row.candidates!.flags = { ...row.candidates!.flags!, paletteOff: true };
-    expect(planRenameRecheck(row, "김민서")).toEqual({ kind: "review", blockers: ["palette"] });
+    row.candidates!.blockers = ["name", "same_capture"];
+    row.candidates!.flags = { ...row.candidates!.flags!, sameCapture: true };
+    expect(planRenameRecheck(row, "김민서")).toEqual({ kind: "review", blockers: ["same_capture"] });
 
     const noMatch = good();
     noMatch.candidates!.result = { kind: "none" };
     noMatch.candidates!.blockers = ["no_match", "name"];
     expect(planRenameRecheck(noMatch, "김민서")).toEqual({ kind: "review", blockers: ["no_match"] });
+  });
+
+  it("옛 기록에 남은 화면 색 막음(palette)은 이제 세지 않는다 — 이름이 풀리면 승인한다 (2026-10-06 검사를 뺐다)", () => {
+    const row = good();
+    row.candidates!.blockers = ["name", "palette"];
+    row.candidates!.flags = { ...row.candidates!.flags!, paletteOff: true } as never;
+    expect(planRenameRecheck(row, "김민서")).toEqual({ kind: "approve", sectionIds: [101, 102], mode: "onsite" });
   });
 
   it("받아 둔 다음 달 수강증은 여기서 승인하지 않는다 — 그 달 반이 열릴 때 다시 맞춘다", () => {

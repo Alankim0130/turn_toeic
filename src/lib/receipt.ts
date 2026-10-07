@@ -196,6 +196,44 @@ export function fuzzyIncludes(hay: string, needle: string, maxDist = 1): boolean
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
+/*
+ * ─── 휴대폰 글꼴을 바꾼 화면 (2026-10-06 Alan — "학생들이 본인 휴대폰 글꼴을 변경한 상태로 올리는 경우 … 다 인정해주면 좋겠어") ───
+ * 둥근 글꼴로 바꾼 아이폰 화면(#91)은 어느 전처리로 읽어도 같은 자리가 늘 같은 꼴로 비틀렸다 (흑백 · 확대 · 문턱값 아홉 가지를 실측 — 글꼴 자체를 엔진이 못 읽는다):
+ *   `강` → `남` · `감` (수남생 · 수남센터 · 수남시반 · 감의실 · 감사) · `간` → `반` (시간 → 시반) · 받침이 빠진다 (역전토익 → 여저토익, 본관 → 보관) ·
+ *   `7` 이 `ㄱ` 처럼 그려져 `1` · `]` · `디` 로 읽힌다 (750 목표 → `"150 목표` · 레벨 750+ → `디50+`).
+ * 그래서 **판정에 쓰는 칸 라벨 · 브랜드 낱말 · 레벨 숫자만** 이 꼴들을 봐준다 (아래 상수). 이름(G3)은 봐주지 않는다 — 그대로 읽혔다.
+ * 저장된 수강증 134장을 옛 판독기와 새 판독기로 함께 읽어 달라진 것이 이 글꼴 수강증뿐인 것을 확인했다.
+ */
+
+/** 둥근 글꼴에서 `강` 이 읽히는 꼴 — 칸 라벨 안에서만 쓴다 */
+const GANG = "[강남감]";
+/**
+ * `시간` 이 읽히는 꼴 — 그대로 · 둥근 글꼴의 `시반` · **PC · 태블릿 화면 글꼴의 `신관`** (2026-10-06 실측 — PC 수강증을 원본 크기로 읽어도,
+ * 카드를 키워 읽어도 `수강신관` 이 나왔다. `수강시간` 과 두 글자가 달라 편집거리 1 로는 못 받는다). 메뉴의 `수강신청` 은 여기 들지 않는다
+ */
+const SIGAN = "(?:시[간반]|신관)";
+/** `수강시간` 칸 라벨 — 그대로 또는 글꼴 오인식(`수남시반` · `수강신관`) */
+const STUDY_TIME_LABEL = new RegExp(`수${GANG}${SIGAN}`);
+/** `강의실` 칸 라벨 — 그대로 또는 글꼴 오인식(`감의실`) */
+const ROOM_LABEL = new RegExp(`${GANG}의실`, "g");
+
+/** 받침을 뗀 글자 — 받침이 흐린 글꼴에서 OCR 이 떨어뜨린 받침을 비교에서 뺀다 (`역전토익` · `여저토익` → `여저토이`) */
+export function dropFinals(s: string): string {
+  return s.replace(/[가-힣]/g, (ch) => {
+    const code = ch.charCodeAt(0) - 0xac00;
+    return String.fromCharCode(0xac00 + code - (code % 28));
+  });
+}
+
+/**
+ * 레벨 칸의 `7` 이 둥근 글꼴 때문에 비틀려 읽힌 꼴 (`"150 목표` · `"]50 목표` · `레벨 디50+`). 레벨에 150 은 없다.
+ * **두 칸(제목 줄 `NNN 목표` · 레벨 칸 `NNN+`) 모두에서** 이렇게 읽히고 제대로 된 레벨을 하나도 못 읽었을 때만 750 으로 본다 (`parseLevels`) —
+ * 한 칸의 우연한 오인식으로 레벨을 정하지 않는다
+ */
+const SEVEN_LOOKALIKE = String.raw`(?:[1\]|lIㄱ]|디)`;
+const TITLE_SEVEN = new RegExp(String.raw`(?<![\d:,])${SEVEN_LOOKALIKE}50(?=목표)`);
+const FIELD_SEVEN = new RegExp(String.raw`레벨[^\d가-힣]{0,3}${SEVEN_LOOKALIKE}50(?=\+)`);
+
 /**
  * 정규화 (CLAUDE.md 파이프라인):
  *  - 전각 → 반각 (NFKC: ０→0, （→(, ：→:)
@@ -343,13 +381,15 @@ function parseTimes(compact: string): ReceiptTime[] {
  * 변형 여러 장을 이어 붙인 원문이라 한 장이 `850 목표` 를 `650 곡표` 로 잘못 읽으면 레벨이 [650, 850] 으로 흔들려 멀쩡한 850 수강증이
  * 검토로 갔다. 칸에서 읽은 숫자가 있으면 그것만 쓰고(칸끼리 다르면 여전히 여럿 — 대조가 멈춘다), 없을 때만 원문 전체의 숫자를 쓴다.
  * 칸 밖의 숫자(광고 배너 `550+ 1단계` 따위)가 레벨을 흔들지 못하게 되는 덤도 있다.
+ * 칸에서 못 읽었으면 다음은 **둥근 글꼴의 7** (`SEVEN_LOOKALIKE` — 두 칸 모두 `150` 꼴로 읽혔을 때만 750, 2026-10-06), 그다음이 원문 전체다.
  */
-function parseLevels(compact: string): number[] {
+function parseLevels(compact: string): { levels: number[]; font7: boolean } {
   const fielded = new Set<number>();
   for (const m of compact.matchAll(/(?<![\d:,])(650|750|850)(?=목표)/g)) fielded.add(Number(m[1]));
   for (const m of compact.matchAll(/레벨[^\d가-힣]{0,3}(650|750|850)(?![\d:,원])/g)) fielded.add(Number(m[1]));
-  if (fielded.size > 0) return LEVELS.filter((l) => fielded.has(l));
-  return anyLevels(compact);
+  if (fielded.size > 0) return { levels: LEVELS.filter((l) => fielded.has(l)), font7: false };
+  if (TITLE_SEVEN.test(compact) && FIELD_SEVEN.test(compact)) return { levels: [750], font7: true };
+  return { levels: anyLevels(compact), font7: false };
 }
 
 /** 원문 어디든 적힌 레벨 숫자 (카드 칸을 못 읽었을 때) */
@@ -396,9 +436,11 @@ export function parseReceiptMonths(text: string): { year: number; month: number 
  * `09월 과정` · `9월과정` → 9. 수강증 화면 맨 위 배지 (2026-09-16 샘플).
  * 공백을 지운 원문에서는 바로 앞 줄의 캡처 시각 초(`…19:27:43`)가 `09` 에 붙어 `4309월과정` 이 되므로
  * "앞에 숫자가 없어야 한다" 는 조건을 두면 못 읽는다 — 가장 왼쪽에서 `월 과정` 에 붙는 한두 자리만 본다.
+ * **PC · 태블릿 화면의 배지는 `월` 이 `뭘` 로 자주 읽힌다** (2026-10-06 실측 — 카드 변형을 여러 크기로 읽으면 절반쯤 `10뭘 과정`).
+ * 숫자 뒤 `뭘 과정` 은 배지 말고는 나올 곳이 없어 같은 낱말로 본다. `개`(3개 과정) 같은 다른 글자는 여전히 아니다
  */
 export function parseCourseMonth(text: string): number | null {
-  const m = text.match(/(\d{1,2})\s*월\s*과정/);
+  const m = text.match(/(\d{1,2})\s*[월뭘]\s*과정/);
   if (!m) return null;
   const month = Number(m[1]);
   return month >= 1 && month <= 12 ? month : null;
@@ -474,10 +516,14 @@ function parseTuition(compact: string): number | null {
 /** 수강증 카드에만 있는 칸 라벨 — 셋 다 보여야 카드를 읽은 것이다 (`ParsedReceipt.card`) */
 const CARD_LABELS = ["수강생", "수강센터", "수강시간"] as const;
 
-/** 강의실 칸의 값이 `온라인 강의` 인가 — 라벨 바로 뒤(잡점 몇 자 허용)만 본다. 한 글자 오인식(`온라인 강으`)은 봐준다 */
+/**
+ * 강의실 칸의 값이 `온라인 강의` 인가 — 라벨 바로 뒤(잡점 몇 자 허용)만 본다. 한 글자 오인식(`온라인 강으`)은 봐준다.
+ * 라벨은 둥근 글꼴의 `감의실` 도 받는다 (`ROOM_LABEL`, 2026-10-06)
+ */
 function roomValueIsOnline(compact: string): boolean {
-  for (let i = compact.indexOf("강의실"); i >= 0; i = compact.indexOf("강의실", i + 1)) {
-    if (fuzzyIncludes(compact.slice(i + 3, i + 3 + 8), RECEIPT_KEYWORDS.online, 1)) return true;
+  for (const m of compact.matchAll(ROOM_LABEL)) {
+    const at = m.index + m[0].length;
+    if (fuzzyIncludes(compact.slice(at, at + 8), RECEIPT_KEYWORDS.online, 1)) return true;
   }
   return false;
 }
@@ -501,8 +547,8 @@ export function parseReceipt(raw: string): ParsedReceipt {
   // **강의실 칸의 값이 먼저다** (2026-09-22) — 칸 밖의 글자(광고 배너 `온라인 강의 무료체험` 등)가 현장 학생을 불라방으로 바꾸지 못하게.
   // 칸의 값을 못 읽었을 때만 칸 밖의 `라이브방송`·`온라인 강의` 글자로 정하고(`live`), 그때는 자동 승인하지 않는다.
   const online = roomValueIsOnline(compact);
-  // 현장이라는 **읽은 근거** — 강의실 칸의 호실 (`본관 701호`). 없으면 현장은 그냥 기본값이다
-  const room = /강의실.{0,8}?\d{3,4}호/.test(compact);
+  // 현장이라는 **읽은 근거** — 강의실 칸의 호실 (`본관 701호`). 없으면 현장은 그냥 기본값이다. 라벨은 둥근 글꼴의 `감의실` 도 받는다
+  const room = new RegExp(String.raw`${GANG}의실.{0,8}?\d{3,4}호`).test(compact);
   const liveWords = fuzzyIncludes(compact, RECEIPT_KEYWORDS.live, 1) || fuzzyIncludes(compact, RECEIPT_KEYWORDS.online, 1);
   const modeEvidence: ParsedReceipt["modeEvidence"] = online ? "online" : room ? "room" : liveWords ? "live" : null;
   const mode: EnrollMode = modeEvidence === "online" || modeEvidence === "live" ? "live" : "onsite";
@@ -510,12 +556,16 @@ export function parseReceipt(raw: string): ParsedReceipt {
   else if (modeEvidence === "live") warnings.push("강의실 칸을 못 읽어 칸 밖의 글자로 불라방으로 봤어요");
 
   // 한 글자 오인식은 봐준다 (2026-09-30 실측 `수갈생` · `수강시관`) — 수강생은 줄 첫머리 규칙(`studentLabelEnd`), 네 글자 라벨은 편집거리 1.
-  // `수강센터` ↔ `수강시간` 은 두 글자가 달라 서로를 대신하지 못한다
+  // `수강센터` ↔ `수강시간` 은 두 글자가 달라 서로를 대신하지 못한다. 둥근 글꼴의 `수남시반` · PC 글꼴의 `수강신관` 은 `STUDY_TIME_LABEL` 이 받는다 (2026-10-06 — 두 글자가 달라 편집거리 1 로는 못 받는다)
   const card =
     text.split("\n").some((l) => studentLabelEnd(l.replace(/\s+/g, "")) >= 0) &&
-    CARD_LABELS.filter((label) => label !== "수강생").every((label) => fuzzyIncludes(compact, label, 1));
+    CARD_LABELS.filter((label) => label !== "수강생").every(
+      (label) => fuzzyIncludes(compact, label, 1) || (label === "수강시간" && STUDY_TIME_LABEL.test(compact)),
+    );
   if (!card) warnings.push(`수강증 카드의 칸(${CARD_LABELS.join("·")})이 다 보이지 않아요`);
-  const brandExact = compact.includes(RECEIPT_KEYWORDS.brand);
+  // `역전토익` 을 그대로 읽었나 — 둥근 글꼴이 떨어뜨린 받침만 다른 꼴(`여저토익`)도 같은 낱말로 본다 (2026-10-06).
+  // 받침 말고 다른 글자가 다른 이름(`실전토익`)은 여전히 아니다 — 다른 과정 수강증을 받지 않으려는 검사다 (firsttoeic 사고 3)
+  const brandExact = compact.includes(RECEIPT_KEYWORDS.brand) || dropFinals(compact).includes(dropFinals(RECEIPT_KEYWORDS.brand));
   // 다시보기권 같은 "등업이 아닌 상품" 은 따로 보지 않는다 (2026-09-22 Alan "역전토익은 다시보기권 없어") —
   // firsttoeic 사고 4 의 차단을 옮겨 왔다가 뺐다. 없는 상품을 찾으면 앱 화면의 `다시보기` 메뉴 글자가 멀쩡한 수강증의 자동 승인을 막을 뿐이다
 
@@ -558,7 +608,8 @@ export function parseReceipt(raw: string): ParsedReceipt {
   const courseLevel =
     Object.entries(RECEIPT_KEYWORDS.spartaLevelWords).find(([word]) => fuzzyIncludes(compact, word, 1))?.[1] ?? null;
 
-  const levels = parseLevels(compact);
+  const { levels, font7 } = parseLevels(compact);
+  if (font7) warnings.push("레벨 칸의 7 이 글꼴 때문에 비틀려 읽혀(150 꼴) 750 으로 봤어요");
   let level = levels[0] ?? null;
   if (level == null && courseLevel != null) {
     level = courseLevel;
@@ -574,7 +625,7 @@ export function parseReceipt(raw: string): ParsedReceipt {
   // 수업 시간은 **수강시간 칸의 값**이다 (2026-09-22). 칸을 못 읽었을 때 시간이 하나뿐이면 그것을 쓰고,
   // 여럿이면(배너·다른 글자) 어느 것인지 모르니 비워 둔다 — 첫 번째를 골라 엉뚱한 시간대 반에 붙이지 않게
   const times = parseTimes(compact);
-  const labeled = compact.match(/수강시간[^\d]{0,3}(\d{1,2}:\d{2}~\d{1,2}:\d{2})/);
+  const labeled = compact.match(new RegExp(String.raw`수${GANG}${SIGAN}[^\d]{0,3}(\d{1,2}:\d{2}~\d{1,2}:\d{2})`));
   const time = (labeled ? parseTimes(labeled[1])[0] : undefined) ?? (times.length === 1 ? times[0] : null);
   if (times.length === 0) warnings.push("수업 시간(HH:MM~HH:MM)을 찾지 못했어요");
   else if (!time) warnings.push(`수업 시간이 여러 개라 어느 것인지 모르겠어요: ${times.map((t) => t.timeBlock).join(", ")}`);

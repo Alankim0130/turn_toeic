@@ -25,6 +25,8 @@ import { RETENTION_LABEL } from "@/lib/receipt-retention";
 import type { NameMismatch } from "@/lib/name-mismatch";
 import type { TextbookNotice } from "@/lib/textbook";
 import { TextbookNoticeCard } from "@/components/my/TextbookNoticeCard";
+import type { VerifyStage } from "@/lib/verify-progress";
+import { VerifyProgress } from "./VerifyProgress";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPT = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
@@ -120,10 +122,26 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
   const [textbook, setTextbook] = useState<TextbookNotice | null>(null);
   // 결과 팝업 (2026-09-18 Alan — "반려 문구가 바로 보여야 하고, 승인이면 어떤 반인지 팝업으로 보여 주고 맞으면 확인, 아니면 수동신청")
   const [popup, setPopup] = useState<
-    null | { kind: "approved" | "preliminary"; assigned: string[] } | { kind: "rejected"; reason: string } | ({ kind: "name" } & NameMismatch)
+    | null
+    | { kind: "approved" | "preliminary"; assigned: string[]; replaced: string[] }
+    | { kind: "rejected"; reason: string }
+    | ({ kind: "name" } & NameMismatch)
   >(null);
+  /** 반을 바꾼 수강증이라 뺀 이전 반 (2026-10-06) — 팝업을 닫아도 안내에 남긴다 */
+  const [replaced, setReplaced] = useState<string[]>([]);
   const [pending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
+  /**
+   * 판별 중 화면 (2026-10-06 Alan "아, 지금 판별중이구나 를 알 수 있도록") — 버튼을 누른 순간부터 결과가 올 때까지.
+   * `pending`(useTransition) 대신 따로 둔다 — 올리기 → 판별로 넘어가는 순간 두 값이 한 번에 바뀌지 않으면 카드가 깜빡 사라졌다 다시 뜬다
+   */
+  const [progress, setProgress] = useState<{ stage: VerifyStage; at: number } | null>(null);
+  /** 판별이 끝난 횟수 — 끝나면 결과(안내 · 오류)가 있는 폼 맨 위로 화면을 옮긴다. 폼이 길어 학생은 맨 아래 버튼 앞에 있다 */
+  const [settled, setSettled] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (settled > 0) rootRef.current?.scrollIntoView({ block: "start" });
+  }, [settled]);
 
   // 고른 것 (수동)
   const terms = useMemo(() => enrollTerms(sections), [sections]);
@@ -221,40 +239,50 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
     if (missing) return setError(missing);
 
     setUploading(true);
+    setProgress({ stage: "upload", at: Date.now() });
     try {
       const path = await ensureUploaded();
+      setProgress({ stage: "judge", at: Date.now() });
       startTransition(async () => {
-        const res = manual
-          ? await submitManualVerification({ filePath: path, term: term!, courseId: courseId!, kind: kindValue!, track: track!, timeBlock: block! })
-          : await submitVerification({ filePath: path });
+        try {
+          const res = manual
+            ? await submitManualVerification({ filePath: path, term: term!, courseId: courseId!, kind: kindValue!, track: track!, timeBlock: block! })
+            : await submitVerification({ filePath: path });
 
-        if (res.ok) {
-          // 이미 승인된 수강증을 또 올렸다 — 접수된 것이 아니다 (2026-10-02)
-          if (res.alreadyApproved) {
-            setDone("already");
+          if (res.ok) {
+            // 이미 승인된 수강증을 또 올렸다 — 접수된 것이 아니다 (2026-10-02)
+            if (res.alreadyApproved) {
+              setDone("already");
+              return;
+            }
+            // OCR 이 반을 찾아 바로 등업했으면 그렇게 말한다 (2026-09-18 자동 승인)
+            setOcrNote(res.ocrNote ?? null);
+            setHeld(res.held ?? null);
+            setNameMismatch(res.nameMismatch ?? null);
+            setTextbook(res.textbook ?? null);
+            setReplaced(res.replaced ?? []);
+            const kind = res.approved ? (res.preliminary ? "preliminary" : "approved") : res.held ? "held" : manual ? "manual" : "auto";
+            setDone(kind);
+            if (kind === "approved" || kind === "preliminary") setPopup({ kind, assigned: res.assigned ?? [], replaced: res.replaced ?? [] });
+            // 이름이 다르면 접수는 됐지만 자동으로 등업되지 않는다 — 바로 알려 준다
+            else if (res.nameMismatch) setPopup({ kind: "name", ...res.nameMismatch });
             return;
           }
-          // OCR 이 반을 찾아 바로 등업했으면 그렇게 말한다 (2026-09-18 자동 승인)
-          setOcrNote(res.ocrNote ?? null);
-          setHeld(res.held ?? null);
-          setNameMismatch(res.nameMismatch ?? null);
-          setTextbook(res.textbook ?? null);
-          const kind = res.approved ? (res.preliminary ? "preliminary" : "approved") : res.held ? "held" : manual ? "manual" : "auto";
-          setDone(kind);
-          if (kind === "approved" || kind === "preliminary") setPopup({ kind, assigned: res.assigned ?? [] });
-          // 이름이 다르면 접수는 됐지만 자동으로 등업되지 않는다 — 바로 알려 준다
-          else if (res.nameMismatch) setPopup({ kind: "name", ...res.nameMismatch });
-          return;
+          if ("rejected" in res) {
+            // 바로 거절 — 팝업으로 이유를 보여 주고 수동 등업신청으로 갈 수 있게 한다. 닫아도 폼 위에 같은 문구가 남는다
+            setRejected(res.reason);
+            setPopup({ kind: "rejected", reason: res.reason });
+            return;
+          }
+          setError(res.error);
+        } finally {
+          setProgress(null);
+          setSettled((n) => n + 1);
         }
-        if ("rejected" in res) {
-          // 바로 거절 — 팝업으로 이유를 보여 주고 수동 등업신청으로 갈 수 있게 한다. 닫아도 폼 위에 같은 문구가 남는다
-          setRejected(res.reason);
-          setPopup({ kind: "rejected", reason: res.reason });
-          return;
-        }
-        setError(res.error);
       });
     } catch (err) {
+      setProgress(null);
+      setSettled((n) => n + 1);
       setError(err instanceof Error ? err.message : "문제가 생겼어요. 잠시 후 다시 시도해 주세요.");
     } finally {
       setUploading(false);
@@ -365,6 +393,17 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
               ))
             )}
           </ul>
+          {popup.replaced.length > 0 && (
+            <div className="mt-3 rounded-xl border border-line bg-surface p-3">
+              <p className="text-sm font-bold text-ink">반을 바꾼 수강증으로 보고 이전 반은 뺐어요</p>
+              <ul className="mt-1.5 space-y-1">
+                {popup.replaced.map((r) => (
+                  <li key={r} className="text-sm text-slate line-through decoration-slate/60">{r}</li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-slate">두 반을 모두 듣는다면 아래 <b>반이 달라요 — 수동신청</b>으로 알려 주세요.</p>
+            </div>
+          )}
           <p className="mt-3 text-slate">
             {popup.kind === "approved" ? "이제 불라방·다시보기·숙제업로드를 쓸 수 있어요." : "개강일에 수강생으로 자동 전환되고, 그때부터 불라방·다시보기가 열려요."}
           </p>
@@ -382,12 +421,20 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
     </Dialog>
   );
 
+  /** 어느 결과 화면이든 같은 바깥 상자 — 판별이 끝나면 여기로 화면을 옮긴다 (머리 메뉴에 가리지 않게 scroll-mt) */
+  const wrap = (node: React.ReactNode) => (
+    <div ref={rootRef} className="scroll-mt-24">
+      {node}
+    </div>
+  );
+
   if (done === "approved" || done === "preliminary") {
-    return (
+    return wrap(
       <>
       {resultPopup}
       <Alert kind="success" title={done === "approved" ? "등업이 완료됐어요" : "예비등록이 완료됐어요"}>
         수강증을 읽어 반을 바로 배정했어요.{" "}
+        {replaced.length > 0 && <>반을 바꾼 수강증이라 이전 반({replaced.join(" / ")})은 뺐어요.{" "}</>}
         {done === "approved"
           ? "이제 불라방·다시보기·숙제업로드를 쓸 수 있어요. 내 시간표에서 배정된 반을 확인해 주세요."
           : "개강일에 수강생으로 자동 전환되고, 그때부터 불라방·다시보기가 열려요."}{" "}
@@ -399,7 +446,7 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
           <TextbookNoticeCard notice={textbook} />
         </div>
       )}
-      </>
+      </>,
     );
   }
 
@@ -421,30 +468,30 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
 
   // 다음 달 수강증 — 거절하지 않고 받아 뒀다. 그 달 반이 열리면 저절로 배정되니 다시 올릴 필요가 없다 (2026-09-22 Alan)
   if (done === "held" && held) {
-    return (
+    return wrap(
       <>
         {resultPopup}
         <Alert kind="success" title={`${held.month}월 수강증을 받아 뒀어요`}>
           {held.note}
         </Alert>
         {nameNote}
-      </>
+      </>,
     );
   }
 
   // 이미 승인된 수강증 (2026-10-02 Alan — 승인 뒤 같은 수강증을 또 올려 검토 대기에 쌓이던 것). 접수하지 않았다
   if (done === "already") {
-    return (
+    return wrap(
       <Alert kind="info" title="이미 승인된 수강증이에요">
         이 수강증으로 이미 반이 배정돼 있어요. 다시 올리지 않으셔도 돼요 —{" "}
         <Link href="/my/class" className="font-bold underline">내 시간표</Link>에서 확인해 주세요. 반이 다르면{" "}
         <button type="button" onClick={toManual} className="font-bold underline">수동 등업신청</button>으로 알려 주세요.
-      </Alert>
+      </Alert>,
     );
   }
 
   if (done) {
-    return (
+    return wrap(
       <>
         {resultPopup}
         <Alert kind="success" title="접수됐어요. 확인 후 등업됩니다.">
@@ -455,15 +502,17 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
           {ocrNote && <span className="mt-2 block font-bold text-ink">{ocrNote}</span>}
         </Alert>
         {nameNote}
-      </>
+      </>,
     );
   }
 
   const busy = uploading || pending;
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+  return wrap(
+    <form onSubmit={handleSubmit} className="space-y-5" aria-busy={busy}>
       {resultPopup}
+      {/* 판별 중 — 결과 팝업이 뜨면 비켜 준다 (팝업이 같은 자리에 겹치지 않게) */}
+      {progress && !popup && <VerifyProgress stage={progress.stage} manual={manual} preview={preview} since={progress.at} />}
       {error && <Alert kind="warning">{error}</Alert>}
 
       {rejected && (
@@ -633,10 +682,10 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
 
       <div className="flex flex-wrap items-center gap-3">
         <button type="submit" disabled={busy || !!missing} className="btn-primary w-full sm:w-auto" aria-busy={busy}>
-          {uploading ? "업로드 중…" : pending ? (manual ? "접수 중…" : "수강증을 읽는 중…") : manual ? "수동 등업신청 접수" : "등업신청 접수"}
+          {uploading ? "올리는 중…" : pending ? (manual ? "접수 중…" : "판별 중…") : manual ? "수동 등업신청 접수" : "등업신청 접수"}
         </button>
         {missing && <span className="text-xs text-mist">{missing}</span>}
       </div>
-    </form>
+    </form>,
   );
 }

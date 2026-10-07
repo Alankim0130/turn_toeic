@@ -76,7 +76,7 @@ describe("첫 실물 2주완성 수강증 (2026-10-06) — 850 · 주5일 · 현
       autoApproveBlockers({
         parsed: p,
         nameMatches: true,
-        flags: { duplicateImage: false, staleCapture: false, sameCapture: false, paletteOff: false, alreadyEnrolled: [], decidedBefore: null },
+        flags: { duplicateImage: false, staleCapture: false, sameCapture: false, alreadyEnrolled: [], decidedBefore: null },
         matched: true,
         periodUnclear: m.result.kind === "match" && !!m.result.periodUnclear,
       }),

@@ -1,5 +1,5 @@
-import sharp from "sharp";
-import { PALETTE_SAMPLE_WIDTH, PALETTE_TOLERANCE, paletteColors, type PaletteShares } from "./receipt-forensics";
+import sharp, { type Sharp } from "sharp";
+import { cardCrop, cardFirst, cardOf, cardScale, largestBlueBlob } from "./receipt-card";
 
 /**
  * 수강증 이미지 전처리 — OCR 전에 **흑백으로** 바꾼 변형 여러 장을 만든다 (2026-09-18 실물 수강증으로 실측).
@@ -14,6 +14,11 @@ import { PALETTE_SAMPLE_WIDTH, PALETTE_TOLERANCE, paletteColors, type PaletteSha
  *  1. 원본 크기 — 작은 라벨 줄(수강생·수강센터·수강시간·수강료)
  *  2. 폭 700px — 큰 제목·레벨 줄
  *  3. 흰 글자만 남김(밝은 픽셀만 검게) — 파란 카드 안 글자를 한 번 더 (라이브방송처럼 한 번 놓친 단어를 건짐)
+ *
+ * **PC · 태블릿 수강증은 카드만 잘라 키운 변형을 먼저 읽는다** (2026-10-06 Alan — "테블릿이나 pc로 올린학생들은 이런형태의 수강증이야 … 검토로 보내지말고").
+ * 그 화면의 카드는 가로로 넓어 글자가 작고(카드만 자른 캡처의 라벨이 13px 남짓), 위 세 변형으로는 카드 칸 · 수강월을 못 읽었다 (`receipt-card.ts`).
+ * 카드를 찾아 잘라 카드 높이 800 · 1100 으로 맞춘 흑백 두 장 + 배지(`10월 과정`)의 검은 글자만 남긴 한 장을 **앞에** 둔다.
+ * 휴대폰 화면 캡처(세로로 긴 카드가 화면 폭을 채운다)는 이 변형을 만들지 않는다 — 예전 순서 그대로다 (`cardFirst`).
  *
  * sharp 는 next/image 가 쓰는 것과 같은 라이브러리라 Vercel 에서 그대로 돈다.
  */
@@ -41,49 +46,56 @@ export async function receiptVariants(input: Uint8Array): Promise<OcrVariant[]> 
   out.push({ name: "white_only", bytes: await gray().threshold(WHITE_THRESHOLD).negate().png().toBuffer() });
   out.push({ name: "gray", bytes: await gray().png().toBuffer() });
 
-  return out;
+  // PC · 태블릿 모양의 카드면 카드 변형을 맨 앞에 — 찾다가 실패해도 예전 변형은 그대로 읽는다
+  const firstScale = width > TITLE_WIDTH * 1.2 ? TITLE_WIDTH / width : 1;
+  const card = await cardVariants(src, firstScale).catch((err: unknown) => {
+    console.error(`[ocr] 수강증 카드를 찾다 실패했어요: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  });
+  return [...card, ...out];
 }
 
+/** 카드를 찾을 때 줄이는 폭 — 덩어리만 보면 되므로 작게. 실측 1242×2688 휴대폰 캡처에서 50ms 안팎 */
+const FIND_WIDTH = 320;
 /**
- * 수강증 화면의 **색 팔레트**를 잰다 (2026-09-19, 위조 신호 — `src/lib/receipt-forensics.ts`).
- *
- * 팔레트에 든 색마다 "화면에서 몇 %를 차지하나" 를 돌려준다. 판정은 하지 않는다 (`paletteVerdict` 가 한다).
- * **폭 480px 으로 줄여서 센다** — 비율이라 값이 안 변하고(실측 39.99% → 39.98%) 시간이 절반이 된다 (실측 72ms → 54ms).
- * 줄일 때 `kernel: "nearest"` 를 쓰는 것이 중요하다 — 기본값(보간)은 이웃 픽셀을 섞어 **평평한 색을 흐려 놓아**
- * 정확히 같은 값이 아니게 만든다. 그러면 진짜 화면도 색이 안 맞는 것으로 나온다.
- *
- * 못 재면 **null** 이다 (이미지가 아니거나 sharp 가 실패). 판정 쪽이 null 을 통과로 본다 — 근거 없이 막지 않는다.
+ * 카드 변형의 카드 높이. 이 높이에서 라벨 글자가 20px 남짓이 된다 (2026-10-06 실측 — PC 카드 497px 를 700~1100 으로 키워 읽어 봤다:
+ * 800 · 1000 · 1100 은 판정 키가 전부 나오고, 750 · 850 · 900 은 카드 칸이나 주5일을 한두 개씩 놓쳤다). 높이 둘을 함께 읽어 서로 메운다
  */
-export async function measurePalette(input: Uint8Array): Promise<PaletteShares | null> {
-  try {
-    const { data, info } = await sharp(Buffer.from(input), { failOn: "none", limitInputPixels: MAX_PIXELS })
-      .rotate()
-      .removeAlpha()
-      .resize({ width: PALETTE_SAMPLE_WIDTH, kernel: "nearest", fit: "inside", withoutEnlargement: true })
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+const CARD_HEIGHTS = [800, 1100] as const;
+/**
+ * 배지 `10월 과정` 만 남기는 문턱 — 노란 배지의 검은 글자만 검게, 카드 파랑(밝기 약 125) · 흰 글자 · 배지 노랑은 희게.
+ * 흑백 변형에서는 작은 배지를 못 읽었다 (실측 — PC 카드에서 한 번도). 카드가 더 어두우면 카드보다 조금 어두운 것만 검게 한다
+ */
+const BADGE_DARK = 110;
 
-    const total = info.width * info.height;
-    if (!total) return null;
+/**
+ * 카드만 잘라 키운 변형 — PC · 태블릿 모양이거나 기존 변형에서 카드가 너무 작게 읽힐 때만 (`cardFirst`). 아니면 빈 배열.
+ * `firstScale` = 기존 첫 변형의 배율 (폭 700 으로 줄이면 700 / 폭, 아니면 1)
+ */
+async function cardVariants(src: Sharp, firstScale: number): Promise<OcrVariant[]> {
+  const meta = await src.metadata();
+  const imageWidth = meta.autoOrient?.width ?? meta.width ?? 0;
+  const imageHeight = meta.autoOrient?.height ?? meta.height ?? 0;
+  if (imageWidth <= 0 || imageHeight <= 0) return [];
+  // 투명한 칸은 흰 바탕으로 — 그대로 두면 검게 읽혀 카드 둘레가 흐려진다
+  const flat = () => src.clone().flatten({ background: "#ffffff" });
+  const { data, info } = await flat().resize({ width: FIND_WIDTH, kernel: "nearest" }).raw().toBuffer({ resolveWithObject: true });
+  const blob = largestBlueBlob(data, info.width, info.height, info.channels);
+  if (!blob) return [];
+  const card = cardOf(blob, imageWidth / info.width, imageHeight / info.height, imageWidth, imageHeight);
+  if (!card || !cardFirst(card, firstScale)) return [];
 
-    const colors = paletteColors();
-    const hits = new Array<number>(colors.length).fill(0);
-    const tol2 = PALETTE_TOLERANCE * PALETTE_TOLERANCE;
-    for (let i = 0; i < data.length; i += info.channels) {
-      for (let k = 0; k < colors.length; k++) {
-        const [r, g, b] = colors[k].rgb;
-        const dr = data[i] - r, dg = data[i + 1] - g, db = data[i + 2] - b;
-        if (dr * dr + dg * dg + db * db <= tol2) {
-          hits[k]++;
-          break; // 한 픽셀은 한 색에만 센다
-        }
-      }
-    }
-    const out: PaletteShares = {};
-    colors.forEach((c, k) => { out[c.key] = (hits[k] / total) * 100; });
-    return out;
-  } catch (e) {
-    console.error("[ocr] 팔레트를 재지 못했어요", e);
-    return null;
-  }
+  const crop = cardCrop(card, imageWidth, imageHeight);
+  const at = (height: number) =>
+    flat()
+      .extract(crop)
+      .grayscale()
+      .resize({ width: Math.max(1, Math.round(crop.width * cardScale(card, height))) });
+  const dark = Math.min(BADGE_DARK, Math.round(blob.gray) - 15);
+  const [first, second] = CARD_HEIGHTS;
+  return [
+    { name: `card_h${first}`, bytes: await at(first).png().toBuffer() },
+    { name: "card_badge", bytes: await at(first).threshold(dark).png().toBuffer() },
+    { name: `card_h${second}`, bytes: await at(second).png().toBuffer() },
+  ];
 }
