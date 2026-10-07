@@ -411,9 +411,9 @@ describe("현장수령 — 받는 방법 · 날짜 · 시각 · 상태 이름 (2
     expect(orderHint({ status: "shipped" })).toBe(TEXTBOOK_STATUS.shipped.hint);
   });
 
-  // 앱과 DB 함수가 같은 규칙이어야 화면의 금액 · 날짜 범위와 주문이 어긋나지 않는다 (마이그레이션 20261007100000)
+  // 앱과 DB 함수가 같은 규칙이어야 화면의 금액 · 날짜 범위와 주문이 어긋나지 않는다 (마이그레이션 20261007110000)
   it("DB 함수와 같은 규칙 — 배송비 0 · 날짜 범위 · 받는 방법 값", () => {
-    const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261007100000_textbook_pickup.sql"), "utf8");
+    const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261007110000_textbook_pickup.sql"), "utf8");
     expect(sql).toContain(`p_pickup_date > v_today + ${PICKUP_DAYS_AHEAD}`);
     expect(sql).toContain("v_ship := case when v_method = 'pickup' then 0 else coalesce(v_ship, 0) end;");
     expect(sql).toContain(`check (delivery_method in (${Object.keys(DELIVERY_LABEL).map((k) => `'${k}'`).join(", ")}))`);

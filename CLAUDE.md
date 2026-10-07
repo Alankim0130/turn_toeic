@@ -2094,7 +2094,7 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
     지난 주문에서 받은 교재(`ownedItemIds`)에도 그대로 센다. 강사 · 조교가 배송완료가 아닌 상태로 되돌리면 트리거가 `received_at` 을 지워 학생 화면에 다시 선다.
   - 학생 알림은 여전히 없다 (아래 "아직 없는 것") — 학생은 주문 화면에서 단계를 본다.
 - **현장수령 — 학원에서 직접 받기** (2026-10-07 Alan — "불라방 현장수령도 있어. 현장수령시 택배비가 없어. 그래서 불라방 교재 주문할때 현장 수령 선택시
-  무슨날짜에 올껀지, 몇시쯤 올껀지 남겨주면 좋겠어", 마이그레이션 20261007100000).
+  무슨날짜에 올껀지, 몇시쯤 올껀지 남겨주면 좋겠어", 마이그레이션 20261007110000 — 같은 날 다른 세션의 20261007100000 과 번호가 겹쳐 뒤로 미뤘다).
   - 주문 화면에서 **받는 방법**을 고른다 — `택배로 받기`(배송비) · `학원에서 받기 (현장수령)`(배송비 없음). 기본은 택배다.
     현장수령이면 배송지 칸이 숨고(지우지 않는다 — 다시 택배로 바꾸면 적어 둔 주소가 남는다) **받으러 올 날짜**(오늘부터 60일 안 — `PICKUP_DAYS_AHEAD`)와
     **몇 시쯤**(오전 9시 ~ 밤 10시 30분 간격 — `PICKUP_TIMES`)을 받고, 아래에 `10월 12일 (월) 오후 2시쯤 학원에서 받아요` 처럼 요일까지 적는다.
@@ -3136,7 +3136,7 @@ create table textbook_settings (           -- 한 줄: shipping_fee · default_a
 --   depositor_name · pay_to(jsonb, 계좌별 금액). unique (user_id, term_id) where status <> 'cancelled'.
 --   넣기는 public.create_textbook_order(...) 로만, 학생 취소는 public.cancel_textbook_order(id) 로만
 --   received_at (20261002234000) — 학생이 받았다고 누른 시각(public.receive_textbook_order(id), 내 주문 · shipped 만). 찍히면 학생 내역에서 숨는다.
---   delivery_method · pickup_date · pickup_time (20261007100000) — 받는 방법 parcel(택배) | pickup(현장수령 — 배송비 0, 주소 대신 받으러 올 날짜 · 시각).
+--   delivery_method · pickup_date · pickup_time (20261007110000) — 받는 방법 parcel(택배) | pickup(현장수령 — 배송비 0, 주소 대신 받으러 올 날짜 · 시각).
 --   address 는 not null 을 풀었고 check textbook_orders_pickup_check 가 "택배면 주소 · 현장수령이면 날짜 · 시각" 을 묶는다. 현장수령을 건네면 조교가 수령완료(shipped + received_at)
 --   트리거 private.guard_textbook_order_update: 조교 세션이 금액확인 전 · 취소 주문을 confirmed · shipped 로 넘기는 것을 막고,
 --   조교 세션은 status · tracking_no · updated_at · received_at 밖의 칸을 못 바꾸며(assistant_status_only, 20261003100000),
