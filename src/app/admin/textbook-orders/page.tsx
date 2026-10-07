@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { cn, formatDate, formatWon, TRACK_LABEL } from "@/lib/utils";
+import { cn, formatDate, formatWon, todayKST, TRACK_LABEL } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Alert } from "@/components/ui/Alert";
@@ -10,9 +10,9 @@ import { FilterTabs } from "@/components/admin/FilterTabs";
 import { TableWrap, Th, Td } from "@/components/admin/Table";
 import { termLabel } from "../_lib/queries";
 import { getProfileNames } from "../_lib/profile-names";
-import { confirmTextbookPayment, markTextbookShipped, updateTextbookOrder } from "./actions";
+import { confirmTextbookPayment, markTextbookPickedUp, markTextbookShipped, updateTextbookOrder } from "./actions";
 import { isStaff, requireCrew } from "@/lib/auth";
-import { TEXTBOOK_ADMIN_STATUS } from "@/lib/textbook";
+import { isPickup, pickupLabel, TEXTBOOK_ADMIN_STATUS, textbookAdminStatus } from "@/lib/textbook";
 
 export const metadata: Metadata = { title: "교재주문", robots: { index: false } };
 
@@ -56,10 +56,20 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
     .limit(300);
   if (status !== "all") query = query.eq("status", status);
 
-  const [{ data: rows }, ...countRes] = await Promise.all([
+  const [{ data: rows }, { data: pickups }, ...countRes] = await Promise.all([
     query,
+    // 현장수령 예정 (2026-10-07) — 아직 건네지 않은 것(금액확인 전 · 수령 대기)을 받으러 올 날짜 · 시각 순으로. 탭과 상관없이 맨 위에 선다
+    supabase
+      .from("textbook_orders")
+      .select("id, recipient_name, status, pickup_date, pickup_time")
+      .eq("delivery_method", "pickup")
+      .in("status", ["requested", "confirmed"])
+      .order("pickup_date", { ascending: true })
+      .order("pickup_time", { ascending: true })
+      .limit(50),
     ...["requested", "confirmed", "shipped", "cancelled"].map((s) => supabase.from("textbook_orders").select("id", { count: "exact", head: true }).eq("status", s)),
   ]);
+  const today = todayKST();
   // 주문한 학생의 가입 이름 — 이름 · 등급만 주는 함수로 (조교는 profiles 를 못 읽는다, 2026-10-03 `profile-names.ts`).
   // 배송에 쓰는 받는 사람 · 연락처 · 주소는 주문에 따로 적혀 있다 (Alan — 교재 배송은 번호가 필요하다)
   const names = await getProfileNames(supabase, (rows ?? []).map((o) => o.user_id));
@@ -76,7 +86,7 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
       <PageHeader
         icon="orders"
         title="교재주문"
-        description="불라방 수강생의 교재 주문이에요. 강사님이 입금자명을 통장과 대조해 '금액확인'을 누르면 조교 화면의 배송 대기로 넘어가고, 보낸 뒤 '배송완료'를 누르면 학생 화면에 배송시작으로 보여요."
+        description="불라방 수강생의 교재 주문이에요. 강사님이 입금자명을 통장과 대조해 '금액확인'을 누르면 조교 화면의 배송 대기로 넘어가고, 보낸 뒤 '배송완료'를 누르면 학생 화면에 배송시작으로 보여요. 현장수령 주문은 학생이 고른 날짜 · 시각에 학원에서 건네고 '수령완료'를 눌러요."
       />
       {staff && (
         <div className="mb-4 flex justify-end">
@@ -89,13 +99,46 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
       {ok && (
         <Alert kind="success" className="mb-4">
           {did === "confirmed"
-            ? `주문 #${ok} 금액확인했어요 — 조교 화면의 배송 대기로 넘어갔고, 학생 화면에는 배송확인으로 보여요.`
+            ? `주문 #${ok} 금액확인했어요 — 조교 화면의 배송 대기로 넘어갔고, 학생 화면에는 배송확인(현장수령이면 입금확인)으로 보여요.`
             : did === "shipped"
               ? `주문 #${ok} 배송완료 — 학생 화면에 배송시작으로 보여요.`
-              : `주문 #${ok} 상태를 저장했습니다.`}
+              : did === "picked"
+                ? `주문 #${ok} 수령완료 — 학원에서 건넸어요. 학생 주문 내역에서는 사라져요.`
+                : `주문 #${ok} 상태를 저장했습니다.`}
         </Alert>
       )}
       {error && <Alert kind="warning" className="mb-4">{ERROR_TEXT[error] ?? "저장에 실패했습니다. 다시 시도해 주세요."}</Alert>}
+
+      {/* 현장수령 예정 (2026-10-07 Alan — "무슨날짜에 올껀지, 몇시쯤 올껀지") — 탭을 넘기지 않아도 누가 언제 오는지 보이게 */}
+      {(pickups ?? []).length > 0 && (
+        <section aria-labelledby="pickup-title" className="card mb-4 p-4 sm:p-5">
+          <h2 id="pickup-title" className="flex items-center gap-2 font-black text-ink">
+            <Icon name="calendar" size={22} />
+            현장수령 예정 <span className="rounded-full bg-brand-500 px-2 py-0.5 text-xs font-black text-white">{(pickups ?? []).length}</span>
+          </h2>
+          <p className="mt-1 text-xs text-slate">학생이 학원에 와서 받아 가는 주문이에요 (배송비 없음). 받으러 올 날짜 · 시각 순이고, 건네면 그 주문의 수령완료를 눌러 주세요.</p>
+          <ul className="mt-3 divide-y divide-line">
+            {(pickups ?? []).map((o) => {
+              const day = o.pickup_date ?? "";
+              const tag = day === today ? "오늘" : day && day < today ? "지남" : null;
+              return (
+                <li key={o.id}>
+                  <Link href={`/admin/textbook-orders?status=${o.status}#order-${o.id}`} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 text-sm hover:bg-brand-50/40">
+                    {tag && (
+                      <span className={cn("rounded-full px-2 py-0.5 text-xs font-black", tag === "오늘" ? "bg-brand-500 text-white" : "bg-amber-100 text-amber-800")}>{tag}</span>
+                    )}
+                    <span className="font-bold text-ink">{o.pickup_date && o.pickup_time ? pickupLabel(o.pickup_date, o.pickup_time) : "날짜 없음"}</span>
+                    <span className="text-slate">· {o.recipient_name}</span>
+                    <span className={cn("ml-auto whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-bold", STATUS_CLASS[o.status] ?? "bg-line text-slate")}>
+                      {textbookAdminStatus(o.status, true)}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <FilterTabs basePath="/admin/textbook-orders" paramKey="status" current={status} tabs={TABS.map((t) => ({ ...t, count: counts[t.value] }))} />
 
@@ -118,11 +161,13 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
           <tbody className="divide-y divide-line">
             {(rows ?? []).map((o) => {
               const ordered = (Array.isArray(o.items) ? o.items : []) as OrderedItem[];
+              const pickup = isPickup(o);
               return (
-                <tr key={o.id} className="align-top hover:bg-brand-50/40">
+                <tr key={o.id} id={`order-${o.id}`} className="scroll-mt-24 align-top hover:bg-brand-50/40 target:bg-brand-50">
                   <Td className="whitespace-nowrap text-xs">{formatDate(o.created_at, { year: "2-digit", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
                   <Td className="whitespace-nowrap font-bold">{names.get(o.user_id)?.name ?? "-"}</Td>
-                  <Td className="text-xs">
+                  {/* 칸이 좁아지면 반 이름이 한 글자씩 세로로 쪼개져서 최소 너비를 둔다 (표는 넘치면 옆으로 민다) */}
+                  <Td className="min-w-[9rem] text-xs">
                     {termLabel(o.section?.term, true)} · {o.section?.course?.name ?? "강좌"}
                     <br />
                     {o.section?.track ? TRACK_LABEL[o.section.track] : ""} {o.section?.time_block ?? ""}
@@ -151,19 +196,31 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
                     <a href={`tel:${o.phone}`} className="text-brand-600 hover:underline">{o.phone}</a>
                   </Td>
                   <Td className="min-w-[14rem] text-xs">
-                    {o.postal_code && <span className="text-mist">[{o.postal_code}] </span>}
-                    {o.address} {o.address_detail}
+                    {pickup ? (
+                      // 현장수령 (2026-10-07) — 주소 대신 받으러 올 날짜 · 시각
+                      <p>
+                        <span className="mr-1.5 inline-block rounded-full bg-brand-500 px-2 py-0.5 font-black text-white">현장수령</span>
+                        <span className="font-bold text-ink">{o.pickup_date && o.pickup_time ? pickupLabel(o.pickup_date, o.pickup_time) : "날짜 없음"}</span>
+                      </p>
+                    ) : (
+                      <>
+                        {o.postal_code && <span className="text-mist">[{o.postal_code}] </span>}
+                        {o.address} {o.address_detail}
+                      </>
+                    )}
                     {o.memo && <p className="mt-1 text-mist">메모: {o.memo}</p>}
                     {o.tracking_no && <p className="mt-1 font-bold text-ink">송장 {o.tracking_no}</p>}
                   </Td>
                   <Td>
                     <span className={cn("whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-bold", STATUS_CLASS[o.status] ?? "bg-line text-slate")}>
-                      {TEXTBOOK_ADMIN_STATUS[o.status] ?? o.status}
+                      {textbookAdminStatus(o.status, pickup)}
                     </span>
-                    {/* 학생이 받았다고 누르면(배송완료) 학생 내역에서는 사라지고 여기에 남는다 (2026-10-02) */}
+                    {/* 학생이 받았다고 누르면(배송완료) 학생 내역에서는 사라지고 여기에 남는다 (2026-10-02). 현장수령은 건넬 때 찍힌다 */}
                     {o.status === "shipped" && (
                       <p className="mt-1 whitespace-nowrap text-xs text-slate">
-                        {o.received_at ? `학생 수령 확인 · ${formatDate(o.received_at, { month: "numeric", day: "numeric" })}` : "학생 수령 확인 전"}
+                        {o.received_at
+                          ? `${pickup ? "학원에서 받아 감" : "학생 수령 확인"} · ${formatDate(o.received_at, { month: "numeric", day: "numeric" })}`
+                          : "학생 수령 확인 전"}
                       </p>
                     )}
                   </Td>
@@ -180,7 +237,15 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
                         ) : (
                           <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">강사님 금액확인을 기다려요</p>
                         ))}
-                      {o.status === "confirmed" && (
+                      {o.status === "confirmed" && pickup && (
+                        <form action={markTextbookPickedUp} className="flex flex-col gap-1.5">
+                          <input type="hidden" name="order_id" value={o.id} />
+                          <input type="hidden" name="back" value={back} />
+                          <button type="submit" className="btn-primary w-full !py-1.5 text-xs">수령완료</button>
+                          <p className="text-mist">학원에서 건넨 뒤 눌러 주세요 — 학생 주문 내역에서 사라져요.</p>
+                        </form>
+                      )}
+                      {o.status === "confirmed" && !pickup && (
                         <form action={markTextbookShipped} className="flex flex-col gap-1.5">
                           <input type="hidden" name="order_id" value={o.id} />
                           <input type="hidden" name="back" value={back} />
@@ -196,12 +261,16 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
                           <input type="hidden" name="back" value={back} />
                           <select name="status" defaultValue={o.status} className="input !py-1.5 text-xs" aria-label="상태">
                             {(["requested", "confirmed", "shipped", "cancelled"] as const).map((v) => (
-                              <option key={v} value={v}>{TEXTBOOK_ADMIN_STATUS[v]}</option>
+                              <option key={v} value={v}>{textbookAdminStatus(v, pickup)}</option>
                             ))}
                           </select>
                           <input name="tracking_no" defaultValue={o.tracking_no ?? ""} maxLength={60} placeholder="송장번호" className="input !py-1.5 text-xs" aria-label="송장번호" />
                           <button type="submit" className="btn-secondary !py-1.5 text-xs">저장</button>
-                          {!staff && <p className="text-mist">금액확인 전 주문을 배송 대기 · 배송완료로 넘기는 것은 강사·관리자만 할 수 있어요 (금액확인).</p>}
+                          {!staff && (
+                            <p className="text-mist">
+                              금액확인 전 주문을 {textbookAdminStatus("confirmed", pickup)} · {textbookAdminStatus("shipped", pickup)}로 넘기는 것은 강사·관리자만 할 수 있어요 (금액확인).
+                            </p>
+                          )}
                         </form>
                       </details>
                     </div>

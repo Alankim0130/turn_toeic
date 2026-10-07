@@ -210,7 +210,7 @@ export default async function TextbookSetupPage({ searchParams }: { searchParams
             <div>
               <label htmlFor="shipping_fee" className="label">배송비 (원)</label>
               <input id="shipping_fee" name="shipping_fee" defaultValue={settings?.shipping_fee ?? 0} inputMode="numeric" className="input" />
-              <p className="mt-1 text-xs text-slate">주문마다 한 번 더해져요. 무료면 0.</p>
+              <p className="mt-1 text-xs text-slate">택배 주문마다 한 번 더해져요. 학원에서 받는 주문(현장수령)에는 붙지 않아요. 무료면 0.</p>
             </div>
             <div>
               <label htmlFor="default_account_id" className="label">기본 계좌</label>

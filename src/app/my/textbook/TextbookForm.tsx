@@ -6,7 +6,19 @@ import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { cn, formatWon } from "@/lib/utils";
-import { textbookQuote, type TextbookAccount, type TextbookItem, type TextbookSettings } from "@/lib/textbook";
+import {
+  DELIVERY_LABEL,
+  PICKUP_DAYS_AHEAD,
+  PICKUP_TIMES,
+  pickupDateLabel,
+  pickupLabel,
+  pickupTimeLabel,
+  textbookQuote,
+  type DeliveryMethod,
+  type TextbookAccount,
+  type TextbookItem,
+  type TextbookSettings,
+} from "@/lib/textbook";
 
 export type OrderTerm = {
   id: number;
@@ -29,17 +41,25 @@ const initialPick = (t: OrderTerm | undefined) =>
 /**
  * 불라방 교재 주문 (2026-09-21). 교재·계좌·배송비는 강사가 등록한 것을 쓴다.
  * 합계와 계좌별 입금액은 **미리보기** 다 — 주문에 박히는 금액은 DB 함수가 같은 규칙으로 다시 계산한다.
+ *
+ * **받는 방법** (2026-10-07 Alan — "불라방 현장수령도 있어. 현장수령시 택배비가 없어 … 무슨날짜에 올껀지, 몇시쯤 올껀지 남겨주면 좋겠어"):
+ * 택배면 배송지를, 현장수령이면 배송비 없이 받으러 올 날짜 · 시각을 받는다. 다른 쪽 칸은 숨기기만 하고 지우지 않는다 —
+ * 학생이 방법을 바꿨다 되돌려도 적어 둔 주소가 남는다 (숨긴 칸은 `required` 를 끈다 — 켜 두면 브라우저가 제출을 막는다).
+ *
+ * @param pickupRange 받으러 올 날짜를 고를 수 있는 날 (오늘 ~ 60일 뒤, 한국 날짜) — 서버가 정해 넘긴다
  */
 export function TextbookForm({
   terms,
   accounts,
   settings,
   defaults,
+  pickupRange,
 }: {
   terms: OrderTerm[];
   accounts: TextbookAccount[];
   settings: TextbookSettings | null;
   defaults: { recipient_name: string; phone: string };
+  pickupRange: { min: string; max: string };
 }) {
   const [state, action] = useActionState<TextbookState, FormData>(submitTextbookOrder, {});
   const v: Record<string, string | undefined> = { ...defaults, ...(state.values ?? {}) };
@@ -50,16 +70,36 @@ export function TextbookForm({
   const [recipient, setRecipient] = useState(v.recipient_name ?? "");
   // 입금자명은 받는 분 이름으로 미리 채운다 (첫토익과 같다) — 부모님 이름으로 보내면 고친다
   const [depositor, setDepositor] = useState(v.depositor_name ?? v.recipient_name ?? "");
+  const [delivery, setDelivery] = useState<DeliveryMethod>(v.delivery === "pickup" ? "pickup" : "parcel");
+  const [pickupDate, setPickupDate] = useState(v.pickup_date ?? "");
+  const [pickupTime, setPickupTime] = useState(v.pickup_time ?? "");
+  const pickup = delivery === "pickup";
 
   const chosen = (term?.items ?? []).filter((i) => picked.has(i.id));
-  const quote = textbookQuote(chosen, accounts, settings);
+  const quote = textbookQuote(chosen, accounts, settings, { pickup });
+  const shippingFee = Math.max(0, settings?.shipping_fee ?? 0);
+  const pickupDateOk = pickupDate !== "" && pickupDate >= pickupRange.min && pickupDate <= pickupRange.max;
   const missing =
-    chosen.length === 0 ? "교재를 하나 이상 골라 주세요" : quote.missingAccount ? "입금 계좌가 아직 없어요" : !depositor.trim() ? "입금자명을 적어 주세요" : null;
+    chosen.length === 0
+      ? "교재를 하나 이상 골라 주세요"
+      : pickup && !pickupDate
+        ? "받으러 올 날짜를 골라 주세요"
+        : pickup && !pickupDateOk
+          ? `받으러 올 날짜는 오늘부터 ${PICKUP_DAYS_AHEAD}일 안에서 골라 주세요`
+          : pickup && !pickupTime
+            ? "몇 시쯤 올지 골라 주세요"
+            : quote.missingAccount
+              ? "입금 계좌가 아직 없어요"
+              : !depositor.trim()
+                ? "입금자명을 적어 주세요"
+                : null;
 
   if (state.ok) {
     return (
       <Alert kind="success" title="교재주문이 접수됐어요">
-        안내한 계좌로 입금하시면 강사님이 통장과 대조해 금액을 확인하고(배송확인) 교재를 보내 드려요(배송시작). 진행 상태는 아래 내역에서 볼 수 있어요.
+        {state.pickup
+          ? `안내한 계좌로 입금하시면 강사님이 통장과 대조해 금액을 확인해요(입금확인). ${state.pickup} 학원에 와서 교재를 받아 가세요. 진행 상태는 아래 내역에서 볼 수 있어요.`
+          : "안내한 계좌로 입금하시면 강사님이 통장과 대조해 금액을 확인하고(배송확인) 교재를 보내 드려요(배송시작). 진행 상태는 아래 내역에서 볼 수 있어요."}
       </Alert>
     );
   }
@@ -148,10 +188,44 @@ export function TextbookForm({
         )}
       </fieldset>
 
+      {/* 받는 방법 (2026-10-07 Alan) — 택배 · 현장수령. 현장수령은 배송비가 없다 */}
+      <fieldset>
+        <legend className="label">받는 방법</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {(
+            [
+              { value: "parcel", title: "택배로 받기", sub: shippingFee > 0 ? `집으로 보내 드려요 · 배송비 ${formatWon(shippingFee)}` : "집으로 보내 드려요" },
+              { value: "pickup", title: "학원에서 받기 (현장수령)", sub: shippingFee > 0 ? "배송비 없음 · 받으러 올 날짜 · 시각만 남겨요" : "받으러 올 날짜 · 시각만 남겨요" },
+            ] as const
+          ).map((o) => {
+            const on = delivery === o.value;
+            return (
+              <label
+                key={o.value}
+                className={cn("flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition", on ? "border-brand-400 bg-brand-50/60" : "border-line hover:border-brand-200")}
+              >
+                <input
+                  type="radio"
+                  name="delivery"
+                  value={o.value}
+                  checked={on}
+                  onChange={() => setDelivery(o.value)}
+                  className="mt-1 h-4 w-4 accent-brand-500"
+                />
+                <span className="min-w-0">
+                  <span className="block font-bold text-ink">{o.title}</span>
+                  <span className="mt-0.5 block text-xs text-slate">{o.sub}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+
       <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="recipient_name" className="label">받는 분</label>
+            <label htmlFor="recipient_name" className="label">{pickup ? "받으러 올 분" : "받는 분"}</label>
             <input
               id="recipient_name"
               name="recipient_name"
@@ -171,23 +245,67 @@ export function TextbookForm({
             <input id="phone" name="phone" type="tel" inputMode="numeric" required className="input" placeholder="01012345678" defaultValue={v.phone} />
           </div>
         </div>
-        <div className="grid gap-4 sm:grid-cols-[8rem_1fr]">
-          <div>
-            <label htmlFor="postal_code" className="label">우편번호 <span className="font-normal text-mist">(선택)</span></label>
-            <input id="postal_code" name="postal_code" inputMode="numeric" maxLength={5} className="input" placeholder="12345" defaultValue={v.postal_code} />
+
+        {/* 택배 — 배송지. 현장수령이면 숨기기만 한다 (적어 둔 주소가 남게) */}
+        <div className={cn("space-y-4", pickup && "hidden")}>
+          <div className="grid gap-4 sm:grid-cols-[8rem_1fr]">
+            <div>
+              <label htmlFor="postal_code" className="label">우편번호 <span className="font-normal text-mist">(선택)</span></label>
+              <input id="postal_code" name="postal_code" inputMode="numeric" maxLength={5} className="input" placeholder="12345" defaultValue={v.postal_code} />
+            </div>
+            <div>
+              <label htmlFor="address" className="label">주소</label>
+              <input id="address" name="address" required={!pickup} maxLength={200} className="input" placeholder="도로명 주소" defaultValue={v.address} />
+            </div>
           </div>
           <div>
-            <label htmlFor="address" className="label">주소</label>
-            <input id="address" name="address" required maxLength={200} className="input" placeholder="도로명 주소" defaultValue={v.address} />
+            <label htmlFor="address_detail" className="label">상세 주소 <span className="font-normal text-mist">(선택)</span></label>
+            <input id="address_detail" name="address_detail" maxLength={100} className="input" placeholder="동·호수, 공동현관 비밀번호 등" defaultValue={v.address_detail} />
           </div>
         </div>
-        <div>
-          <label htmlFor="address_detail" className="label">상세 주소 <span className="font-normal text-mist">(선택)</span></label>
-          <input id="address_detail" name="address_detail" maxLength={100} className="input" placeholder="동·호수, 공동현관 비밀번호 등" defaultValue={v.address_detail} />
+
+        {/* 현장수령 — 받으러 올 날짜 · 몇 시쯤 (2026-10-07 Alan "무슨날짜에 올껀지, 몇시쯤 올껀지") */}
+        <div className={cn("space-y-2", !pickup && "hidden")}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="pickup_date" className="label">받으러 올 날짜</label>
+              <input
+                id="pickup_date"
+                name="pickup_date"
+                type="date"
+                required={pickup}
+                min={pickupRange.min}
+                max={pickupRange.max}
+                className="input"
+                value={pickupDate}
+                onChange={(e) => setPickupDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label htmlFor="pickup_time" className="label">몇 시쯤</label>
+              <select id="pickup_time" name="pickup_time" required={pickup} className="input" value={pickupTime} onChange={(e) => setPickupTime(e.target.value)}>
+                <option value="">시각 고르기</option>
+                {PICKUP_TIMES.map((t) => (
+                  <option key={t} value={t}>
+                    {pickupTimeLabel(t)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {/* 고른 날의 요일까지 한 줄로 — 날짜 칸은 기기마다 요일을 안 보여 준다 */}
+          <p className={cn("rounded-xl px-3 py-2 text-sm", pickupDateOk && pickupTime ? "bg-brand-50 font-bold text-ink" : "bg-surface text-slate")}>
+            {pickupDateOk && pickupTime
+              ? `${pickupLabel(pickupDate, pickupTime)} 학원에서 받아요`
+              : pickupDateOk
+                ? `${pickupDateLabel(pickupDate)} — 몇 시쯤 올지도 골라 주세요`
+                : `오늘부터 ${PICKUP_DAYS_AHEAD}일 안에서 날짜를 골라 주세요. 강사님이 입금을 확인하면 그 날 학원에서 받아 가요.`}
+          </p>
         </div>
+
         <div>
           <label htmlFor="memo" className="label">요청사항 <span className="font-normal text-mist">(선택)</span></label>
-          <input id="memo" name="memo" maxLength={200} className="input" placeholder="배송 시 요청사항" defaultValue={v.memo} />
+          <input id="memo" name="memo" maxLength={200} className="input" placeholder={pickup ? "전할 말 (예: 수업 끝나고 들를게요)" : "배송 시 요청사항"} defaultValue={v.memo} />
         </div>
       </div>
 
@@ -196,6 +314,10 @@ export function TextbookForm({
         <dl className="mt-3 space-y-1 text-sm">
           <div className="flex justify-between"><dt className="text-slate">교재</dt><dd className="tabular-nums text-ink">{formatWon(quote.itemsTotal)}</dd></div>
           {quote.shipping > 0 && <div className="flex justify-between"><dt className="text-slate">배송비</dt><dd className="tabular-nums text-ink">{formatWon(quote.shipping)}</dd></div>}
+          {/* 현장수령으로 아낀 배송비를 보여 준다 — 배송비가 원래 없으면 적지 않는다 */}
+          {pickup && shippingFee > 0 && chosen.length > 0 && (
+            <div className="flex justify-between"><dt className="text-slate">배송비</dt><dd className="text-ink">없음 ({DELIVERY_LABEL.pickup})</dd></div>
+          )}
           <div className="flex justify-between border-t border-brand-100 pt-2 text-base"><dt className="font-black text-ink">합계</dt><dd className="font-black tabular-nums text-brand-700">{formatWon(quote.total)}</dd></div>
         </dl>
 
