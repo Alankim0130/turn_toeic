@@ -411,6 +411,9 @@ export const NAV_ADMIN_SECTIONS: NavSection[] = [
       { href: "/admin/study-checkins", label: "비대면스터디 인증", icon: "camera", crew: true },
       // 조교도 점검한다 (2026-10-03 Alan "숙제점검") — 점검완료 알림은 그 과목 선생님 이름으로 간다 (2026-10-08 — 조교 이름은 남지 않는다)
       { href: "/admin/homework", label: "숙제점검", icon: "homework", crew: true },
+      // 숙제 미제출 알림 — 수업일 × RC/LC 격자 · 안 낸 학생 일괄 알림 (2026-10-08). 처음엔 숙제점검 머리의 `미제출 알림` 버튼으로만 갔는데
+      // 같은 날 Alan "응 메뉴에 넣어줘" 로 제 줄이 생겼다 — 아홉째 조교 화면 (조교는 그 전부터 숙제점검 아래 화면으로 썼다. 할 수 있는 일은 그대로)
+      { href: "/admin/homework/missing", label: "숙제 미제출 알림", icon: "bell", crew: true },
     ],
   },
 ];

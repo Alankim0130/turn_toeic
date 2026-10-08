@@ -137,7 +137,7 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
         title="숙제점검"
         description="정규 수업 숙제입니다. 강사(과목) → 레벨로 좁힌 뒤, 학생 줄을 누르면 숙제 사진을 넘겨 보고 음성 파일을 들으면서 질문에 답하고 점검완료할 수 있어요."
       >
-        {/* 누가 안 냈는지 · 한 번에 알림 (2026-10-08 Alan "숙제제출 리스트 … 안한사람은 일괄선택해서 알림메시지도") — 메뉴 줄을 늘리지 않고 여기서 간다 */}
+        {/* 누가 안 냈는지 · 한 번에 알림 (2026-10-08 Alan "숙제제출 리스트 … 안한사람은 일괄선택해서 알림메시지도") — 메뉴 `숙제 미제출 알림` 줄(같은 날 "응 메뉴에 넣어줘")과 같은 곳, 보던 레벨을 들고 간다 */}
         <Link href={`/admin/homework/missing${level ? `?level=${level}` : ""}`} className="btn-secondary">
           <Icon name="bell" size={18} />
           미제출 알림
