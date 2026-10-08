@@ -71,9 +71,10 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // 카메라는 우리 사이트에만 연다 (2026-09-22 Alan — 출석 화면에서 카메라를 바로 켜 QR 을 찍는다). 남의 사이트(iframe)는 여전히 못 쓴다.
-          // 켜는 곳은 `/my/attendance` 의 `AttendanceCamera` 하나다. 마이크·위치·결제는 계속 끈다
-          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(), payment=()" },
+          // 카메라 · 마이크는 우리 사이트에만 연다. 남의 사이트(iframe)는 여전히 못 쓴다. 위치 · 결제는 계속 끈다.
+          //  - 카메라: 2026-09-22 Alan — 출석 화면에서 카메라를 바로 켜 QR 을 찍는다 (`/my/attendance` 의 `AttendanceCamera` 하나)
+          //  - 마이크: 2026-10-08 Alan — 숙제를 화면에서 바로 녹음한다 (`/my/homework` 의 `HomeworkRecorder` 하나). 끄면 녹음이 늘 "권한이 꺼져 있어요" 가 된다
+          { key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=(), payment=()" },
           // vercel.app 은 Vercel 이 이미 붙이지만, 나중에 우리 도메인을 붙였을 때도 같게
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
         ],

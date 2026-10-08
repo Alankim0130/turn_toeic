@@ -3,6 +3,7 @@
 import { Fragment, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitHomework } from "@/app/my/homework/actions";
+import { HomeworkRecorder, type Recording } from "@/components/my/homework/HomeworkRecorder";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
 import {
@@ -17,14 +18,18 @@ import {
   MAX_QUESTION,
   type HomeworkSubject,
 } from "@/lib/homework";
+import { recordingName } from "@/lib/homework-recorder";
 import { formatBytes } from "@/lib/study";
 import { contentTypeOf, MB, objectName, type UploadedFile } from "@/lib/upload";
 import { removeUploaded, uploadFile } from "@/lib/upload-client";
 
 const BUCKET = "homework";
 
-/** 고른 파일 하나 — `type` 은 저장소에 붙여 올릴 형식이다 (녹음 파일은 브라우저가 형식을 비워 주기도 해서 확장자로 채운다) */
-type Picked = { key: string; file: File; url: string; type: string };
+/**
+ * 고른 파일 하나 — `type` 은 저장소에 붙여 올릴 형식이다 (녹음 파일은 브라우저가 형식을 비워 주기도 해서 확장자로 채운다).
+ * `quiet` 는 화면에서 바로 녹음했는데 소리가 거의 안 잡힌 것 — 막지 않고 들어 보라고만 한다.
+ */
+type Picked = { key: string; file: File; url: string; type: string; quiet?: boolean };
 
 /**
  * 사진 고르기(여러 장, 최대 10장) + **음성 파일 고르기**(최대 5개, 2026-10-07 Alan — "학생들이 숙제제출할때 음성파일도
@@ -33,6 +38,9 @@ type Picked = { key: string; file: File; url: string; type: string };
  *
  * 사진과 음성은 **고르는 칸이 따로다** — 한 칸에 둘 다 받으면 아이폰이 사진 보관함부터 열어 음성을 고를 수 있는지 안 보인다.
  * 둘 중 하나만 있어도 낼 수 있다 (음성만 내는 숙제가 있다). 개수 · 크기 규칙은 `homeworkFilesError` 한곳이고 서버도 같은 것을 본다.
+ *
+ * 음성은 **화면에서 바로 녹음**할 수도 있다 (2026-10-08 Alan — `HomeworkRecorder`). 녹음은 고른 파일과 같은 목록에 `녹음 N.wav` 로 들어가
+ * 같은 길(미리 듣기 · 빼기 · 올리기)을 탄다. 녹음하는 동안은 파일 고르기 칸을 숨기고 제출을 잠근다 (끝내지 않은 녹음이 빠진 채 나가지 않게).
  */
 export function HomeworkUploadForm({
   userId,
@@ -52,6 +60,9 @@ export function HomeworkUploadForm({
   const audioRef = useRef<HTMLInputElement>(null);
   const [photos, setPhotos] = useState<Picked[]>([]);
   const [audios, setAudios] = useState<Picked[]>([]);
+  const [recording, setRecording] = useState(false);
+  /** 바로 녹음한 순서 — 이름 `녹음 N` 에 쓴다 (뺀 녹음의 번호를 다시 쓰지 않는다) */
+  const recordCount = useRef(0);
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
@@ -89,6 +100,16 @@ export function HomeworkUploadForm({
     }
     (kind === "photo" ? setPhotos : setAudios)([...current, ...next.slice(0, room)]);
     if (problems.length) setError(problems.join(" · "));
+  }
+
+  /** 바로 녹음한 것을 음성 목록에 — 고른 파일과 같은 한도를 본다 */
+  function addRecording(r: Recording) {
+    setError(null);
+    if (audios.length >= MAX_AUDIOS) return setError(`음성 파일은 ${MAX_AUDIOS}개까지 올릴 수 있어요.`);
+    if (r.blob.size > MAX_AUDIO_MB * MB) return setError(`녹음이 ${MAX_AUDIO_MB}MB 를 넘어 담지 못했어요. 나눠서 녹음해 주세요.`);
+    recordCount.current += 1;
+    const file = new File([r.blob], recordingName(recordCount.current, r.ext), { type: r.type, lastModified: Date.now() });
+    setAudios([...audios, { key: crypto.randomUUID(), file, url: URL.createObjectURL(file), type: r.type, quiet: r.quiet }]);
   }
 
   function remove(kind: "photo" | "audio", key: string) {
@@ -147,7 +168,7 @@ export function HomeworkUploadForm({
   const audiosFull = audios.length >= MAX_AUDIOS;
   const counts = [photos.length ? `사진 ${photos.length}장` : null, audios.length ? `음성 ${audios.length}개` : null].filter((c): c is string => !!c);
   const dropClass = cn(
-    "mt-3 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl2 border-2 border-dashed px-4 py-6 text-center text-sm font-bold transition",
+    "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl2 border-2 border-dashed px-4 py-6 text-center text-sm font-bold transition",
     busy ? "pointer-events-none border-brand-300 bg-brand-50 text-brand-700" : "border-line bg-paper text-ink hover:border-brand-300 hover:bg-brand-50/50",
   );
 
@@ -184,7 +205,7 @@ export function HomeworkUploadForm({
         )}
 
         {!photosFull && (
-          <label className={dropClass}>
+          <label className={cn("mt-3", dropClass)}>
             <input ref={photoRef} type="file" accept="image/*" multiple className="sr-only" onChange={(e) => pick("photo", e.target.files)} disabled={busy} />
             <Icon name="camera" size={36} />
             {photos.length ? "사진 더 고르기" : "사진 고르기 (여러 장 선택 가능)"}
@@ -226,27 +247,36 @@ export function HomeworkUploadForm({
                 </div>
                 {/* 올리기 전 미리 듣기 — 아직 내 기기에 있는 파일이라 브라우저 기본 재생 칸으로 충분하다 */}
                 <audio controls preload="metadata" src={a.url} className="mt-2 h-10 w-full" aria-label={`${a.file.name} 미리 듣기`} />
+                {a.quiet && (
+                  <p className="mt-1.5 text-xs font-bold text-amber-800">소리가 거의 녹음되지 않았어요. 들어 보고 안 들리면 빼고 다시 녹음해 주세요.</p>
+                )}
               </li>
             ))}
           </ul>
         )}
 
+        {/* 바로 녹음 · 파일 고르기 두 길 (넓은 화면은 나란히). 녹음하는 동안은 녹음 칸만 — 끝내기 · 취소에 손이 가게 */}
         {!audiosFull && (
-          <label className={dropClass}>
-            <input
-              ref={audioRef}
-              type="file"
-              accept={HOMEWORK_AUDIO_ACCEPT}
-              multiple
-              className="sr-only"
-              onChange={(e) => pick("audio", e.target.files)}
-              disabled={busy}
-            />
-            <Icon name="headphones" size={36} />
-            {audios.length ? "음성 파일 더 고르기" : "음성 파일 고르기"}
-            <span className="text-xs font-medium text-mist">녹음 앱으로 녹음한 파일을 골라요 · 한 개에 {MAX_AUDIO_MB}MB 이하</span>
-            <span className="text-xs font-medium text-mist">아이폰 음성 메모는 ⋯ → 공유 → ‘파일에 저장’ 한 뒤 여기서 골라요</span>
-          </label>
+          <div className={cn("mt-3 grid gap-2", !recording && "sm:grid-cols-2")}>
+            <HomeworkRecorder disabled={busy} onRecorded={addRecording} onActiveChange={setRecording} />
+            {!recording && (
+              <label className={dropClass}>
+                <input
+                  ref={audioRef}
+                  type="file"
+                  accept={HOMEWORK_AUDIO_ACCEPT}
+                  multiple
+                  className="sr-only"
+                  onChange={(e) => pick("audio", e.target.files)}
+                  disabled={busy}
+                />
+                <Icon name="headphones" size={36} />
+                {audios.length ? "음성 파일 더 고르기" : "음성 파일 고르기"}
+                <span className="text-xs font-medium text-mist">녹음 앱으로 녹음한 파일을 골라요 · 한 개에 {MAX_AUDIO_MB}MB 이하</span>
+                <span className="text-xs font-medium text-mist">아이폰 음성 메모는 ⋯ → 공유 → ‘파일에 저장’ 한 뒤 여기서 골라요</span>
+              </label>
+            )}
+          </div>
         )}
       </section>
 
@@ -276,9 +306,11 @@ export function HomeworkUploadForm({
         </p>
       )}
 
-      <button type="submit" disabled={busy || (photos.length === 0 && audios.length === 0)} className="btn-primary w-full text-base">
+      <button type="submit" disabled={busy || recording || (photos.length === 0 && audios.length === 0)} className="btn-primary w-full text-base">
         {busy ? (
           (progress ?? "올리는 중…")
+        ) : recording ? (
+          "녹음을 끝내면 낼 수 있어요"
         ) : (
           // 좁은 화면(320px)에서 두 줄이 되면 `음성` / `2개` 처럼 쪼개지지 않게 덩어리마다 묶는다
           <span className="text-center">
