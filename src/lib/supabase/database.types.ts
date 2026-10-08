@@ -2568,6 +2568,10 @@ export type Database = {
         Args: { p_id: number }
         Returns: { user_id: string; same_person: boolean }[]
       }
+      homework_missing_notices: {
+        Args: { p_term_id: number }
+        Returns: { user_id: string; level: number | null; sent_at: string }[]
+      }
       my_attendance_days: {
         Args: never
         Returns: {

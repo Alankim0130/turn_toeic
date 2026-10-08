@@ -542,3 +542,77 @@ describe("비대면스터디 인증 게시판 — 조교도 확인하고, 알림
     expect(selects[0][1]).toContain("(storage.foldername(name))[1] = (select auth.uid())::text");
   });
 });
+
+/**
+ * 숙제 미제출 알림 (2026-10-08 Alan — "안한사람은 일괄선택해서 알림메시지도 보낼 수 있으면 좋겠어" · "조교도 보낸다").
+ * 조교가 보내도 학생에게는 **안 낸 과목의 선생님 이름**으로 간다 (점검완료 알림과 같은 까닭 — "조교가 했다고 알림가는거 빨리 없애줘").
+ * 조교 갈래는 **받는 학생이 그 기수 반에 배정된 학생일 때만** — 선생님 이름이 붙는 알림을 아무 회원에게나 보내지 못하게.
+ */
+describe("숙제 미제출 알림 — 조교도 보내고, 학생에게 조교 이름이 가지 않는다 (마이그레이션을 순서대로 재생한 마지막 모양)", () => {
+  const DIR = "supabase/migrations";
+  const files = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
+  const sqlOf = (f: string) =>
+    readFileSync(join(DIR, f), "utf8")
+      .split("\n")
+      .map((l) => (l.trim().startsWith("--") ? "" : l))
+      .join("\n");
+  const lastFn = (name: string) => {
+    let fn = "";
+    const re = new RegExp(`create or replace function ${name.replace(".", "\\.")}\\([\\s\\S]*?\\$\\$([\\s\\S]*?)\\$\\$`, "g");
+    for (const f of files) for (const m of sqlOf(f).matchAll(re)) fn = m[1];
+    return fn.replace(/\s+/g, " ");
+  };
+
+  it("조교 발송 정책 — 미제출 알림은 '그 기수 반에 배정된 학생' 일 때만, 이름 조건 없이 (트리거가 이름을 바꾼다)", () => {
+    const live = new Map<string, string>();
+    for (const f of files) {
+      for (const [, verb, name, body] of sqlOf(f).matchAll(/(create|drop) policy (?:if exists )?"([^"]+)" on public\.student_messages([^;]*);/g)) {
+        if (verb === "create") live.set(name, body.replace(/\s+/g, " "));
+        else live.delete(name);
+      }
+    }
+    const crew = [...live].filter(([, b]) => /private\.is_assistant\(\)/.test(b) && /for insert/.test(b));
+    expect(crew.length).toBe(1);
+    expect(crew[0][1]).toContain("(kind = 'homework_missing' and private.homework_missing_notice_ok(related, user_id))");
+    // 앞서 연 세 갈래도 그대로다
+    expect(crew[0][1]).toContain("(kind = 'homework_checked' and private.homework_notice_ok(related, user_id))");
+    expect(crew[0][1]).toContain("(kind = 'study_checked' and private.study_checkin_notice_ok(related, user_id))");
+    const ok = lastFn("private.homework_missing_notice_ok");
+    expect(ok).toContain("e.student_id = p_user_id");
+    expect(ok).toContain("s.term_id = private.homework_missing_term(p_related)");
+  });
+
+  it("트리거가 살아 있다 — 보낸 사람이 조교인 homework_missing 은 이름을 안 낸 과목의 선생님으로", () => {
+    let alive = false;
+    for (const f of files) {
+      for (const m of sqlOf(f).matchAll(/(create|drop) trigger (?:if exists )?student_messages_homework_missing_sender\b([^;]*);/g)) {
+        alive = m[1] === "create" && /before insert on public\.student_messages/.test(m[2]);
+      }
+    }
+    expect(alive, "student_messages_homework_missing_sender 트리거(before insert)가 없다").toBe(true);
+    const body = lastFn("private.student_messages_homework_missing_sender");
+    expect(body).toContain("new.kind = 'homework_missing'");
+    expect(body).toContain("p.id = new.sender_id and p.role = 'assistant'");
+    expect(body).toContain("new.sender_name := private.homework_missing_teacher(new.related)");
+    // 선생님 이름은 과목 칸(profiles.subject)에서 — RC 먼저, 합쳐진 옛 계정은 빼고
+    const teacher = lastFn("private.homework_missing_teacher");
+    expect(teacher).toContain("(values ('rc', 1), ('lc', 2))");
+    expect(teacher).toContain("i.subject = s.subject and i.merged_into is null");
+  });
+
+  it("보낸 시각 함수는 강사 · 관리자 · 조교만, 시각만 준다 (알림 내용 · 개인정보 칸 없음)", () => {
+    let fn = "";
+    for (const f of files) for (const m of sqlOf(f).matchAll(/create or replace function public\.homework_missing_notices\(([\s\S]*?)\$\$([\s\S]*?)\$\$/g)) fn = m[1] + m[2];
+    const body = fn.replace(/\s+/g, " ");
+    expect(body).toContain("returns table (user_id uuid, level integer, sent_at timestamptz)");
+    expect(body).toContain("if not private.is_crew() then raise exception 'forbidden'");
+  });
+
+  it("보내는 것은 앱의 서버 액션이다 — 서버가 다시 세어 글을 만들고 kind 는 homework_missing", () => {
+    const src = readFileSync("src/app/admin/homework/missing/actions.ts", "utf8");
+    expect(src).toContain("requireCrew(");
+    expect(src).toContain('kind: "homework_missing"');
+    expect(src).toContain("buildMissingBoard(");
+    expect(src).toContain("homeworkMissingMessage(");
+  });
+});

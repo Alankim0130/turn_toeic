@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { cn, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Icon } from "@/components/ui/Icon";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { HomeworkList, type HomeworkRow } from "@/components/admin/homework/HomeworkList";
@@ -135,7 +136,13 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
         icon="homework"
         title="숙제점검"
         description="정규 수업 숙제입니다. 강사(과목) → 레벨로 좁힌 뒤, 학생 줄을 누르면 숙제 사진을 넘겨 보고 음성 파일을 들으면서 질문에 답하고 점검완료할 수 있어요."
-      />
+      >
+        {/* 누가 안 냈는지 · 한 번에 알림 (2026-10-08 Alan "숙제제출 리스트 … 안한사람은 일괄선택해서 알림메시지도") — 메뉴 줄을 늘리지 않고 여기서 간다 */}
+        <Link href={`/admin/homework/missing${level ? `?level=${level}` : ""}`} className="btn-secondary">
+          <Icon name="bell" size={18} />
+          미제출 알림
+        </Link>
+      </PageHeader>
 
       {/* **과목이 먼저, 그 안에서 레벨** (2026-09-19 Alan — "RC와 LC가 구분되어 있고 과목안에서도 레벨까지만 구분이 되면 좋겠어").
           날짜로는 나누지 않는다 — 날짜는 학생이 찾는 길이고, 강사는 과목 × 레벨로 훑는다.

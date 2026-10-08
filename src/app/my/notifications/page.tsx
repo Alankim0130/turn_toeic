@@ -24,7 +24,7 @@ export default async function NotificationsPage() {
   return (
     <div className="space-y-6">
       <MarkRead unread={unread} />
-      <PageHeader icon="bell" title="알림" description="선생님이 보낸 알림 · 문의 답변 · 수업 시작 알림 · 교재비 안내가 여기에 쌓여요." />
+      <PageHeader icon="bell" title="알림" description="선생님이 보낸 알림 · 숙제 안내 · 문의 답변 · 수업 시작 알림 · 교재비 안내가 여기에 쌓여요." />
 
       {messages.length === 0 ? (
         <EmptyState icon="bell" title="아직 알림이 없어요" description="선생님이 보낸 안내나 불라방 수업 시작 알림이 오면 여기에서 볼 수 있어요." />
@@ -61,6 +61,12 @@ export default async function NotificationsPage() {
                   {m.kind === "homework_checked" && (
                     <Link href="/my/homework" className="btn-primary mt-3 !px-4 !py-2 text-sm">
                       숙제업로드에서 확인하기
+                    </Link>
+                  )}
+                  {/* 숙제 미제출 안내 (2026-10-08) — 강사 · 조교가 숙제 미제출 알림 화면에서 보낸 것. 본문에 안 낸 날짜가 있고, 달력에서 그 날짜를 눌러 낸다 */}
+                  {m.kind === "homework_missing" && (
+                    <Link href="/my/homework" className="btn-primary mt-3 !px-4 !py-2 text-sm">
+                      숙제 내러 가기
                     </Link>
                   )}
                   {/* 문의 답변 (2026-09-30) — 연락하기로 보낸 문의에 선생님이 답한 것. 더 물을 것은 다시 연락하기로 */}
