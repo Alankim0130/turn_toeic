@@ -245,8 +245,16 @@ export function HomeworkUploadForm({
                     빼기
                   </button>
                 </div>
-                {/* 올리기 전 미리 듣기 — 아직 내 기기에 있는 파일이라 브라우저 기본 재생 칸으로 충분하다 */}
-                <audio controls preload="metadata" src={a.url} className="mt-2 h-10 w-full" aria-label={`${a.file.name} 미리 듣기`} />
+                {/* 올리기 전 미리 듣기 — 아직 내 기기에 있는 파일이라 브라우저 기본 재생 칸으로 충분하다.
+                    크롬은 ⋮ 메뉴에 재생 속도 · 다운로드를 두는데 숙제 녹음에는 쓸 일이 없어 숨긴다 (2026-10-08 Alan "녹음은 숙제제출이라서 저 기능은 필요없어") */}
+                <audio
+                  controls
+                  controlsList="noplaybackrate nodownload"
+                  preload="metadata"
+                  src={a.url}
+                  className="mt-2 h-10 w-full"
+                  aria-label={`${a.file.name} 미리 듣기`}
+                />
                 {a.quiet && (
                   <p className="mt-1.5 text-xs font-bold text-amber-800">소리가 거의 녹음되지 않았어요. 들어 보고 안 들리면 빼고 다시 녹음해 주세요.</p>
                 )}

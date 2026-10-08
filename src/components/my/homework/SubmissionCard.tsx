@@ -30,7 +30,8 @@ export type SubmissionLite = {
  * **지킬 것**
  * - 사진은 **접어 두되 없애지 않는다** — 내가 무엇을 냈는지 되볼 길은 여기뿐이다.
  *   `<details>` 라 자바스크립트 없이 열리고 이 카드는 서버 컴포넌트로 남는다.
- *   **음성 파일(2026-10-07)도 같은 자리에 접어 둔다** — 열면 LC 음원과 같은 플레이어로 듣는다 (플레이어만 클라이언트 조각이다).
+ *   **음성 파일(2026-10-07)도 같은 자리에 접어 둔다** — 열면 재생 · 위치 막대 · 받기만 있는 간단한 플레이어(`AudioPlayer basic`)로 듣는다
+ *   (2026-10-08 Alan "녹음은 숙제제출이라서 저 기능은 필요없어" — 배속 · 구간반복은 뺐다. 플레이어만 클라이언트 조각이다).
  * - **질문과 강사 코멘트는 접지 않는다** — 강사가 답을 적어 준 자리라 접으면 읽히지 않는다.
  * - 상태 문구는 `HOMEWORK_STATUS_LABEL`(`src/lib/homework.ts`) 한곳이다. 점검 상태를 **배지로 또 적지 않는다** —
  *   같은 말이 한 카드에 두 번 나온다.
@@ -123,6 +124,7 @@ export function SubmissionCard({ submission: s, highlight = false }: { submissio
                     title={f.file_name}
                     note={audios.length > 1 ? `음성 ${i + 1}` : null}
                     download={`/files/homework/${f.id}?download=1`}
+                    basic
                     className="!p-3"
                   />
                 </li>

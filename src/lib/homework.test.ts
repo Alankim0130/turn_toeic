@@ -169,3 +169,38 @@ describe("homework 버킷 — 마이그레이션과 같은 값", () => {
     expect(MAX_PHOTO_MB).toBeLessThanOrEqual(MAX_AUDIO_MB);
   });
 });
+
+describe('숙제 음성은 간단한 플레이어로 듣는다 (2026-10-08 Alan — "녹음은 숙제제출이라서 저 기능은 필요없어")', () => {
+  // src 아래 tsx 를 모두 읽어 <AudioPlayer … /> 를 꺼낸다 — 새로 쓰는 곳이 생겨도 저절로 걸린다
+  const tsxFiles = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const path = `${dir}/${e.name}`;
+      return e.isDirectory() ? tsxFiles(path) : path.endsWith(".tsx") ? [path] : [];
+    });
+  const players = tsxFiles("src").flatMap((path) =>
+    [...readFileSync(path, "utf8").matchAll(/<AudioPlayer\b[\s\S]*?\/>/g)].map((m) => ({ path, jsx: m[0] })),
+  );
+  const isBasic = (jsx: string) => /\sbasic(\s|=\{true\}|\/>)/.test(jsx);
+
+  it("숙제 음성(/files/homework/) — 학생 제출 카드 · 강사 숙제점검 팝업 둘 다 basic (재생 · 위치 · 받기만)", () => {
+    const homework = players.filter((p) => p.jsx.includes("/files/homework/"));
+    expect(homework.map((p) => p.path).sort()).toEqual([
+      "src/components/admin/homework/HomeworkDetail.tsx",
+      "src/components/my/homework/SubmissionCard.tsx",
+    ]);
+    for (const p of homework) expect(isBasic(p.jsx), p.path).toBe(true);
+  });
+
+  it("LC 음원(/files/audio/)은 그대로 — 배속 · 구간반복은 LC 음원을 공부하는 도구다", () => {
+    const lc = players.filter((p) => p.jsx.includes("/files/audio/"));
+    expect(lc.length).toBeGreaterThanOrEqual(2); // 학생 수업일 달력 · 관리자 LC 음원 등록
+    for (const p of lc) expect(isBasic(p.jsx), p.path).toBe(false);
+  });
+
+  it("올리기 전 미리 듣기(브라우저 기본 칸)도 크롬 ⋮ 메뉴의 재생 속도를 숨긴다", () => {
+    const form = readFileSync("src/components/my/homework/HomeworkUploadForm.tsx", "utf8");
+    const previews = [...form.matchAll(/<audio\b[\s\S]*?\/>/g)].map((m) => m[0]);
+    expect(previews).toHaveLength(1);
+    expect(previews[0]).toMatch(/controlsList="[^"]*\bnoplaybackrate\b[^"]*"/);
+  });
+});

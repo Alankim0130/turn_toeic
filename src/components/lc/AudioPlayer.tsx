@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils";
  *
  * 숙제 음성 파일(2026-10-07)도 이 플레이어로 듣는다 — 그때만 `download`(받기 주소)를 준다. 학생이 올린 녹음은 형식이 제각각이라
  * 이 기기에서 못 트는 파일(옛 안드로이드의 amr 등)은 받아서 듣게 한다. **LC 음원에는 주지 않는다** — LC 음원은 페이지에서 재생만 한다(CLAUDE.md).
+ * 숙제 음성은 `basic` 도 준다 — **재생 · 일시정지 · 위치 막대 · 받기만** 남고 정지 · ±5초 · 구간반복 · 배속은 그리지 않는다
+ * (2026-10-08 Alan — "녹음은 숙제제출이라서 저 기능은 필요없어"). 그 넷은 LC 음원을 공부하는 도구다.
  */
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
@@ -74,6 +76,7 @@ export function AudioPlayer({
   title,
   note,
   download,
+  basic = false,
   className,
 }: {
   src: string;
@@ -81,6 +84,8 @@ export function AudioPlayer({
   note?: string | null;
   /** 받기 주소 — 숙제 음성 파일에만 준다 (위 머리말) */
   download?: string | null;
+  /** 숙제 음성 — 재생 · 위치 · 받기만 (위 머리말) */
+  basic?: boolean;
   className?: string;
 }) {
   const id = useId();
@@ -168,6 +173,30 @@ export function AudioPlayer({
 
   const loopReady = loop?.b != null;
 
+  const playButton = (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-label={playing ? `${title} 일시정지` : `${title} 재생`}
+      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-500 text-white shadow-pink transition hover:bg-brand-600"
+    >
+      <Glyph shape={playing ? "pause" : "play"} size={22} />
+    </button>
+  );
+  const positionBar = (
+    <input
+      type="range"
+      min={0}
+      max={duration || 0}
+      step={0.1}
+      value={Math.min(time, duration || 0)}
+      onChange={(e) => seekTo(Number(e.target.value))}
+      disabled={!duration}
+      aria-label={`${title} 재생 위치`}
+      className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-line accent-brand-500 disabled:cursor-default"
+    />
+  );
+
   return (
     <div className={cn("rounded-xl2 border border-line bg-paper p-3 sm:p-4", className)}>
       <audio
@@ -215,94 +244,93 @@ export function AudioPlayer({
         )}
       </div>
 
-      {/* 진행바 */}
-      <div className="flex items-center gap-2">
-        <span className="w-11 shrink-0 text-right text-xs font-bold tabular-nums text-slate">{formatTime(time)}</span>
-        <input
-          type="range"
-          min={0}
-          max={duration || 0}
-          step={0.1}
-          value={Math.min(time, duration || 0)}
-          onChange={(e) => seekTo(Number(e.target.value))}
-          disabled={!duration}
-          aria-label={`${title} 재생 위치`}
-          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-line accent-brand-500 disabled:cursor-default"
-        />
-        <span className="w-11 shrink-0 text-xs font-bold tabular-nums text-mist">{duration ? formatTime(duration) : "--:--"}</span>
-      </div>
+      {basic ? (
+        /* 숙제 음성 — 재생 단추 옆에 위치 막대 하나, 시간은 막대 아래 (320px 카드 안에서도 막대가 넉넉하다) */
+        <div className="flex items-center gap-3">
+          {playButton}
+          <div className="min-w-0 flex-1">
+            {positionBar}
+            <div className="mt-1 flex justify-between text-[11px] font-bold tabular-nums">
+              <span className="text-slate">{formatTime(time)}</span>
+              <span className="text-mist">{duration ? formatTime(duration) : "--:--"}</span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* 진행바 */}
+          <div className="flex items-center gap-2">
+            <span className="w-11 shrink-0 text-right text-xs font-bold tabular-nums text-slate">{formatTime(time)}</span>
+            {positionBar}
+            <span className="w-11 shrink-0 text-xs font-bold tabular-nums text-mist">{duration ? formatTime(duration) : "--:--"}</span>
+          </div>
 
-      {/* 구간반복 표시 */}
-      {loop && (
-        <p className="mt-1.5 text-[11px] font-bold text-brand-600">
-          구간반복 {formatTime(loop.a)} ~ {loop.b != null ? formatTime(loop.b) : "끝 지점을 찍어 주세요"}
-        </p>
-      )}
-
-      {/* 조작 */}
-      <div className="mt-3 flex flex-wrap items-center gap-1.5">
-        <button
-          type="button"
-          onClick={toggle}
-          aria-label={playing ? `${title} 일시정지` : `${title} 재생`}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-brand-500 text-white shadow-pink transition hover:bg-brand-600"
-        >
-          <Glyph shape={playing ? "pause" : "play"} size={22} />
-        </button>
-        <button
-          type="button"
-          onClick={stop}
-          aria-label={`${title} 정지`}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-surface text-ink-soft ring-1 ring-line transition hover:text-brand-600"
-        >
-          <Glyph shape="stop" size={18} />
-        </button>
-
-        <button type="button" onClick={() => seekBy(-5)} className="btn-ghost !px-2.5 !py-2 text-xs font-bold" aria-label="5초 뒤로">
-          -5초
-        </button>
-        <button type="button" onClick={() => seekBy(5)} className="btn-ghost !px-2.5 !py-2 text-xs font-bold" aria-label="5초 앞으로">
-          +5초
-        </button>
-
-        {/* 구간반복 */}
-        <button
-          type="button"
-          onClick={markLoop}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-full px-3 py-2 text-xs font-bold transition",
-            loopReady ? "bg-brand-500 text-white shadow-pink" : loop ? "bg-brand-50 text-brand-700 ring-1 ring-brand-200" : "bg-surface text-ink-soft ring-1 ring-line hover:text-brand-600",
+          {/* 구간반복 표시 */}
+          {loop && (
+            <p className="mt-1.5 text-[11px] font-bold text-brand-600">
+              구간반복 {formatTime(loop.a)} ~ {loop.b != null ? formatTime(loop.b) : "끝 지점을 찍어 주세요"}
+            </p>
           )}
-          aria-label={!loop ? "구간반복 시작 지점 찍기" : loop.b == null ? "구간반복 끝 지점 찍기" : "구간반복 다시 찍기"}
-        >
-          <Glyph shape="repeat" size={15} />
-          {!loop ? "구간반복" : loop.b == null ? "끝 지점" : "다시 찍기"}
-        </button>
-        {loop && (
-          <button type="button" onClick={() => setLoop(null)} className="btn-ghost !px-2.5 !py-2 text-xs font-bold text-red-600 hover:!bg-red-50">
-            반복 해제
-          </button>
-        )}
 
-        {/* 배속 — 좁은 화면(320px · 카드 안에 든 숙제 음성)에서는 칸 사이를 좁혀 한 줄에 둔다. 글자는 접히지 않는다 (`0.75x` 가 두 줄로 쪼개졌다) */}
-        <span className="ml-auto flex items-center gap-0.5 rounded-full bg-surface p-1 ring-1 ring-line sm:gap-1">
-          {RATES.map((r) => (
+          {/* 조작 */}
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            {playButton}
             <button
-              key={r}
               type="button"
-              onClick={() => setRate(r)}
-              aria-pressed={rate === r}
-              aria-label={`재생 속도 ${r}배`}
-              className={cn(
-                "whitespace-nowrap rounded-full px-1.5 py-1 text-[11px] font-black tabular-nums transition sm:px-2",
-                rate === r ? "bg-brand-500 text-white" : "text-slate hover:text-brand-600",
-              )}
+              onClick={stop}
+              aria-label={`${title} 정지`}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-surface text-ink-soft ring-1 ring-line transition hover:text-brand-600"
             >
-              {r}x
+              <Glyph shape="stop" size={18} />
             </button>
-          ))}
-        </span>
-      </div>
+
+            <button type="button" onClick={() => seekBy(-5)} className="btn-ghost !px-2.5 !py-2 text-xs font-bold" aria-label="5초 뒤로">
+              -5초
+            </button>
+            <button type="button" onClick={() => seekBy(5)} className="btn-ghost !px-2.5 !py-2 text-xs font-bold" aria-label="5초 앞으로">
+              +5초
+            </button>
+
+            {/* 구간반복 */}
+            <button
+              type="button"
+              onClick={markLoop}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-3 py-2 text-xs font-bold transition",
+                loopReady ? "bg-brand-500 text-white shadow-pink" : loop ? "bg-brand-50 text-brand-700 ring-1 ring-brand-200" : "bg-surface text-ink-soft ring-1 ring-line hover:text-brand-600",
+              )}
+              aria-label={!loop ? "구간반복 시작 지점 찍기" : loop.b == null ? "구간반복 끝 지점 찍기" : "구간반복 다시 찍기"}
+            >
+              <Glyph shape="repeat" size={15} />
+              {!loop ? "구간반복" : loop.b == null ? "끝 지점" : "다시 찍기"}
+            </button>
+            {loop && (
+              <button type="button" onClick={() => setLoop(null)} className="btn-ghost !px-2.5 !py-2 text-xs font-bold text-red-600 hover:!bg-red-50">
+                반복 해제
+              </button>
+            )}
+
+            {/* 배속 — 좁은 화면(320px)에서는 칸 사이를 좁혀 한 줄에 둔다. 글자는 접히지 않는다 (`0.75x` 가 두 줄로 쪼개졌다) */}
+            <span className="ml-auto flex items-center gap-0.5 rounded-full bg-surface p-1 ring-1 ring-line sm:gap-1">
+              {RATES.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setRate(r)}
+                  aria-pressed={rate === r}
+                  aria-label={`재생 속도 ${r}배`}
+                  className={cn(
+                    "whitespace-nowrap rounded-full px-1.5 py-1 text-[11px] font-black tabular-nums transition sm:px-2",
+                    rate === r ? "bg-brand-500 text-white" : "text-slate hover:text-brand-600",
+                  )}
+                >
+                  {r}x
+                </button>
+              ))}
+            </span>
+          </div>
+        </>
+      )}
 
       {loading && <p className="mt-2 text-xs font-semibold text-mist">불러오는 중…</p>}
       {error && <p className="mt-2 text-xs font-semibold text-red-600">{error}</p>}
