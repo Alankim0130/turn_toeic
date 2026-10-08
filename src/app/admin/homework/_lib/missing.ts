@@ -35,10 +35,14 @@ export type MissingData = {
   includes: Map<number, number[]>;
   enrollments: MissingEnrollment[];
   submissions: MissingSubmission[];
-  people: Map<string, { name: string; tester: boolean }>;
+  people: Map<string, { name: string; staff: boolean }>;
 };
 
-/** 강사 · 관리자 · 조교 계정의 반 배정은 테스트용이다 (출석 한눈에 보기 · 학생명단과 같은 규칙) */
+/**
+ * 강사 · 관리자 · 조교 계정 — 반에 배정돼 있어도 학생 화면을 보려는 테스트 배정이라 명단에 넣지 않는다
+ * (2026-10-08 Alan "미제출 알림에 리스트 명단에 강사계정과 관리자 계정도 포함되어있어. 이건 빼줘" · 학생명단 `강사·조교` 탭과 같은 집합).
+ * 진짜 등급으로 본다 — `profile_names` 가 주는 등급은 test_role 이 아니라 profiles.role 이다.
+ */
 const STAFF_ROLES = new Set(["instructor", "admin", "assistant"]);
 
 /** KST 날짜 (배정한 날) */
@@ -150,9 +154,11 @@ export async function loadMissingData(supabase: DB, term: TermLite, opts: { stud
   }
 
   const names = await getProfileNames(supabase, studentIds);
-  const people = new Map(studentIds.map((id) => [id, { name: names.get(id)?.name ?? "", tester: STAFF_ROLES.has(names.get(id)?.role ?? "") }]));
+  const people = new Map(studentIds.map((id) => [id, { name: names.get(id)?.name ?? "", staff: STAFF_ROLES.has(names.get(id)?.role ?? "") }]));
+  // 이름 · 등급을 못 읽으면(빈 Map) 강사 · 관리자 계정을 가려낼 수 없다 — 명단에 섞이고 알림이 갈 수 있으니 다 못 읽은 것으로 본다 (보내기도 멈춘다)
+  const namesOk = studentIds.length === 0 || names.size > 0;
 
-  return { sections, meta, includes, enrollments, submissions, people, ok: dates.ok && enrollRows.ok && !includeRows.error && subsOk };
+  return { sections, meta, includes, enrollments, submissions, people, ok: dates.ok && enrollRows.ok && !includeRows.error && subsOk && namesOk };
 }
 
 /** 반 정렬 키 — 과정(점수보장반 → 속성반 → 2주완성) · 레벨 · 시작 · 끝 · 트랙(월수금 먼저) */

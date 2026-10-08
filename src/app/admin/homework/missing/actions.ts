@@ -41,7 +41,7 @@ export async function sendHomeworkMissingNotice(input: { termId: number; level: 
   if (!term) return { ok: false, error: "그 달 기수를 찾지 못했어요. 새로고침해 주세요." };
 
   const data = await loadMissingData(supabase, term, { students: ids });
-  // 일부를 못 읽었으면 낸 숙제가 '안 냄' 으로 보일 수 있다 — 틀린 알림을 보내느니 멈춘다
+  // 일부를 못 읽었으면 낸 숙제가 '안 냄' 으로 보이거나 강사 · 관리자 계정을 못 가린다 — 틀린 알림을 보내느니 멈춘다
   if (!data.ok) return { ok: false, error: "숙제 기록을 다 읽지 못했어요. 잠시 뒤 다시 해 주세요." };
   const board = buildMissingBoard({ level, today: todayKST(), ...data, sortKeyOf: sectionSortKey(data.meta) });
   const rows = ids.map((id) => rowOf(board, id)).filter((r): r is MissingRow => !!r && r.missing.length > 0);

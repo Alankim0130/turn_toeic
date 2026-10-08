@@ -76,7 +76,7 @@ function CellMark({ kind, label }: { kind: MissingCell; label?: string }) {
  * 구조는 첫토익 그대로 — 반마다 카드, 학생 줄 × 수업일 열(N회 · 날짜 · 트랙 · RC LC), 제출률, 위에 단계 점(개근 · 양호 · 주의 · 위험)과
  * **미제출 전체선택**, 고르면 아래에 **N명 선택 · 알림 보내기** 막대가 서고 팝업에서 제목을 고치고 학생마다 만들어진 글을 미리 본다. 색은 우리 핫핑크다.
  *
- * - 학생 줄은 **안 낸 숙제가 많은 학생 → 이름**, 테스터는 맨 아래 (`buildMissingBoard`). 고른 줄은 연분홍으로 칠할 뿐 자리를 옮기지 않는다
+ * - 학생 줄은 **안 낸 숙제가 많은 학생 → 이름** (`buildMissingBoard` — 강사 · 관리자 · 조교 계정은 줄이 없다). 고른 줄은 연분홍으로 칠할 뿐 자리를 옮기지 않는다
  *   (첫토익은 고른 학생을 위로 올리는데, 누를 때마다 줄이 뛰어 다음 학생을 잘못 누르게 된다).
  * - 이름 칸만 왼쪽에 고정하고 날짜는 카드 안에서 가로로 민다. **제출률은 이름 아래에 둔다** — 첫토익처럼 줄 끝 칸에 두면 한 달 20일 × RC · LC 가
  *   화면을 넘어 휴대폰에서는 밀어야 보였다. 칸 안에 `sr-only` 를 두지 않는다 (가로 스크롤 상자를 빠져나가
@@ -174,7 +174,12 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
               <rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="none" stroke="currentColor" strokeWidth="1.6" />
               <path d="M4.6 8.2l2.2 2.2 4.6-4.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            {picks.length > 0 ? `미제출 전체선택 (${picks.length}명)` : "안 낸 학생이 없어요"}
+            {/* 고를 학생이 없는 까닭이 둘이다 — 다 냈거나, 안 낸 학생이 모두 오늘 이미 알림을 받았다 (전체선택은 그 학생을 뺀다) */}
+            {picks.length > 0
+              ? `미제출 전체선택 (${picks.length}명)`
+              : groups.some((g) => g.rows.some((r) => r.missing.length > 0))
+                ? "오늘 모두 알림을 보냈어요"
+                : "안 낸 학생이 없어요"}
           </button>
         </div>
       </div>
@@ -277,8 +282,7 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
 function GroupCard({ group, selected, onToggle }: { group: MissingGroupView; selected: ReadonlySet<string>; onToggle: (id: string, on: boolean) => void }) {
   const tracks = new Set(group.columns.map((c) => c.track).filter(Boolean));
   const showTrack = tracks.size > 1;
-  const students = group.rows.filter((r) => !r.tester);
-  const flagged = students.filter((r) => r.missing.length > 0).length;
+  const flagged = group.rows.filter((r) => r.missing.length > 0).length;
 
   return (
     <section className="card overflow-hidden">
@@ -297,7 +301,7 @@ function GroupCard({ group, selected, onToggle }: { group: MissingGroupView; sel
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs font-bold">
           {flagged > 0 && <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700">안 낸 학생 {flagged}명</span>}
-          <span className="rounded-full bg-paper px-2 py-0.5 text-brand-700 ring-1 ring-brand-100">학생 {students.length}명</span>
+          <span className="rounded-full bg-paper px-2 py-0.5 text-brand-700 ring-1 ring-brand-100">학생 {group.rows.length}명</span>
         </span>
       </header>
       <div className="overflow-x-auto">
@@ -344,7 +348,6 @@ function GroupCard({ group, selected, onToggle }: { group: MissingGroupView; sel
                       />
                       <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[status])} title={MISSING_STATUS_LABEL[status]} aria-hidden />
                       <span className="whitespace-nowrap font-bold text-ink">{r.name || "이름 없음"}</span>
-                      {r.tester && <span className="rounded-full bg-line px-1.5 py-0.5 text-[10px] font-bold text-slate">테스터</span>}
                     </label>
                     {/* 제출률은 이름 아래 — 날짜가 많아 가로로 밀어도 늘 보이게 (첫토익은 줄 끝 칸이라 휴대폰에서는 밀어야 보였다) */}
                     <span className="mt-1 flex items-center gap-1.5 whitespace-nowrap pl-6">
