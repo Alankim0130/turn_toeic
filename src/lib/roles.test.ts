@@ -421,7 +421,7 @@ describe("조교의 숙제 점검 알림에 조교 이름이 남지 않는다 (�
       .map((l) => (l.trim().startsWith("--") ? "" : l))
       .join("\n");
 
-  it("트리거가 살아 있다 — 보낸 사람이 조교인 homework_checked 는 이름을 그 과목 선생님(homework_notice_teacher)으로", () => {
+  it("트리거가 살아 있다 — 보낸 사람이 강사가 아닌(조교 · 관리자) homework_checked 는 이름을 그 과목 선생님(homework_notice_teacher)으로", () => {
     let alive = false;
     let fn = "";
     for (const f of files) {
@@ -434,7 +434,9 @@ describe("조교의 숙제 점검 알림에 조교 이름이 남지 않는다 (�
     expect(alive, "student_messages_homework_sender 트리거(before insert)가 없다").toBe(true);
     const body = fn.replace(/\s+/g, " ");
     expect(body).toContain("new.kind = 'homework_checked'");
-    expect(body).toContain("p.id = new.sender_id and p.role = 'assistant'");
+    // 2026-10-08 저녁 — 조교 등급만 보던 낮의 규칙은 관리자 등급을 받은 조교(윤혜원)에게 안 걸렸다. 강사(과목이 있는 사람)가 아니면 전부
+    expect(body).toContain("p.id = new.sender_id and p.role <> 'instructor'");
+    expect(body).not.toContain("p.role = 'assistant'");
     expect(body).toContain("new.sender_name := private.homework_notice_teacher(new.related)");
   });
 
@@ -510,7 +512,7 @@ describe("비대면스터디 인증 게시판 — 조교도 확인하고, 알림
     expect(body).toContain("c.status = 'checked'");
   });
 
-  it("트리거가 살아 있다 — 보낸 사람이 조교인 study_checked 는 이름을 비운다", () => {
+  it("트리거가 살아 있다 — 보낸 사람이 강사가 아닌(조교 · 관리자) study_checked 는 이름을 비운다", () => {
     let alive = false;
     let fn = "";
     for (const f of files) {
@@ -523,7 +525,8 @@ describe("비대면스터디 인증 게시판 — 조교도 확인하고, 알림
     expect(alive, "student_messages_study_sender 트리거(before insert)가 없다").toBe(true);
     const body = fn.replace(/\s+/g, " ");
     expect(body).toContain("new.kind = 'study_checked'");
-    expect(body).toContain("p.id = new.sender_id and p.role = 'assistant'");
+    expect(body).toContain("p.id = new.sender_id and p.role <> 'instructor'");
+    expect(body).not.toContain("p.role = 'assistant'");
     expect(body).toContain("new.sender_name := ''");
   });
 
@@ -582,7 +585,7 @@ describe("숙제 미제출 알림 — 조교도 보내고, 학생에게 조교 �
     expect(ok).toContain("s.term_id = private.homework_missing_term(p_related)");
   });
 
-  it("트리거가 살아 있다 — 보낸 사람이 조교인 homework_missing 은 이름을 안 낸 과목의 선생님으로", () => {
+  it("트리거가 살아 있다 — 보낸 사람이 강사가 아닌(조교 · 관리자) homework_missing 은 이름을 안 낸 과목의 선생님으로", () => {
     let alive = false;
     for (const f of files) {
       for (const m of sqlOf(f).matchAll(/(create|drop) trigger (?:if exists )?student_messages_homework_missing_sender\b([^;]*);/g)) {
@@ -592,7 +595,8 @@ describe("숙제 미제출 알림 — 조교도 보내고, 학생에게 조교 �
     expect(alive, "student_messages_homework_missing_sender 트리거(before insert)가 없다").toBe(true);
     const body = lastFn("private.student_messages_homework_missing_sender");
     expect(body).toContain("new.kind = 'homework_missing'");
-    expect(body).toContain("p.id = new.sender_id and p.role = 'assistant'");
+    expect(body).toContain("p.id = new.sender_id and p.role <> 'instructor'");
+    expect(body).not.toContain("p.role = 'assistant'");
     expect(body).toContain("new.sender_name := private.homework_missing_teacher(new.related)");
     // 선생님 이름은 과목 칸(profiles.subject)에서 — RC 먼저, 합쳐진 옛 계정은 빼고
     const teacher = lastFn("private.homework_missing_teacher");

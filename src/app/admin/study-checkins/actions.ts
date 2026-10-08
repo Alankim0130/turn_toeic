@@ -46,7 +46,7 @@ export async function checkStudyCheckin(input: { id: number; feedback?: string }
   const { error: sendError } = await supabase.from("student_messages").insert({
     user_id: c.user_id,
     sender_id: user.id, // 누가 확인했는지는 기록에 남는다 (학생은 이 id 로 이름을 못 읽는다)
-    sender_name: profile.name, // 조교면 DB 트리거가 비운다 — 알림함은 시각만 적는다
+    sender_name: profile.name, // 강사가 아니면(조교 · 관리자) DB 트리거가 비운다 — 알림함은 시각만 적는다
     title: msg.title,
     body: msg.body,
     kind: "study_checked",
