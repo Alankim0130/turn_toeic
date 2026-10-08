@@ -25,8 +25,9 @@ function revalidateAll() {
  *
  * **조교도 점검한다** (2026-10-03 Alan "숙제점검"). DB 정책 "homework_submissions: 스태프·조교 점검" ·
  * "student_messages: 조교 발송"(점검완료 알림 — 그 학생의 점검된 숙제만)이 같은 집합이다.
- * **조교가 점검해도 학생 알림에는 그 과목 선생님 이름이 간다** (2026-10-08 Alan — "조교가 했다고 알림가는거 빨리 없애줘").
- * 이름을 바꾸는 것은 DB 트리거(`private.student_messages_homework_sender`) 한곳이다 — 여기서 무엇을 보내든 조교 이름은 남지 않는다.
+ * **강사(이혜영 · 이영수)가 아닌 사람이 점검하면 학생 알림에는 그 과목 선생님 이름이 간다** (2026-10-08 Alan — "조교가 했다고 알림가는거 빨리 없애줘"
+ * → 같은 날 저녁 "조교가 숙제검사했다고 알리지 말아줘. !!!!!!" — 점검한 계정이 관리자 등급이라 조교만 보던 규칙에 안 걸렸다. 지금은 조교 · 관리자 전부).
+ * 이름을 바꾸는 것은 DB 트리거(`private.student_messages_homework_sender`) 한곳이다 — 여기서 무엇을 보내든 조교 · 관리자 이름은 남지 않는다.
  */
 export async function checkHomework(input: { id: number; feedback?: string }): Promise<HomeworkCheckResult> {
   const { user, profile } = await requireCrew();
@@ -49,7 +50,7 @@ export async function checkHomework(input: { id: number; feedback?: string }): P
   const { error: sendError } = await supabase.from("student_messages").insert({
     user_id: s.user_id,
     sender_id: user.id, // 누가 점검했는지는 기록에 남는다 (학생은 이 id 로 이름을 못 읽는다)
-    sender_name: profile.name, // 조교면 DB 트리거가 그 과목 선생님 이름(RC 이영수 · LC 이혜영)으로 바꾼다
+    sender_name: profile.name, // 강사가 아니면(조교 · 관리자) DB 트리거가 그 과목 선생님 이름(RC 이영수 · LC 이혜영)으로 바꾼다
     title: msg.title,
     body: msg.body,
     kind: "homework_checked",

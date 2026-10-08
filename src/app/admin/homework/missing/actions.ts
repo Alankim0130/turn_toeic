@@ -20,8 +20,8 @@ export type MissingNoticeResult = { ok: true; sent: number; skipped: number } | 
  * 화면을 열어 둔 사이 학생이 숙제를 냈으면 그 날짜는 빠지고, 다 냈으면 그 학생에게는 보내지 않는다 (`skipped`).
  * 학생 알림함(`student_messages`, kind `homework_missing`)으로만 간다 — 문자 · 카톡 · 푸시는 없다.
  *
- * **조교가 보내도 학생에게는 안 낸 과목의 선생님 이름으로 간다** — DB 트리거(`private.student_messages_homework_missing_sender`)가 바꾼다.
- * 여기서는 보내는 사람의 이름을 그대로 넣는다 (강사 · 관리자는 그 이름이 남는다). 조교 정책은 그 기수 반에 배정된 학생만 받는다.
+ * **강사가 아닌 사람(조교 · 관리자)이 보내도 학생에게는 안 낸 과목의 선생님 이름으로 간다** — DB 트리거(`private.student_messages_homework_missing_sender`)가 바꾼다
+ * (2026-10-08 저녁부터 관리자도 — 20261008160000). 여기서는 보내는 사람의 이름을 그대로 넣는다 (강사는 그 이름이 남는다). 조교 정책은 그 기수 반에 배정된 학생만 받는다.
  * 로그인한 세션으로 넣어 정책이 한 번 더 본다.
  */
 export async function sendHomeworkMissingNotice(input: { termId: number; level: number; userIds: string[]; title: string }): Promise<MissingNoticeResult> {
@@ -51,7 +51,7 @@ export async function sendHomeworkMissingNotice(input: { termId: number; level: 
     rows.map((r) => ({
       user_id: r.id,
       sender_id: user.id, // 누가 보냈는지는 기록에 남는다 (학생은 이 id 로 이름을 못 읽는다)
-      sender_name: profile.name || "", // 조교면 DB 트리거가 안 낸 과목의 선생님 이름으로 바꾼다
+      sender_name: profile.name || "", // 강사가 아니면(조교 · 관리자) DB 트리거가 안 낸 과목의 선생님 이름으로 바꾼다
       title,
       body: homeworkMissingMessage({ name: r.name, level, missing: r.missing, past: r.past, done: r.done }),
       kind: "homework_missing",
