@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CLASS_MATERIAL_LINK_URL_MAX } from "./class-materials";
 import {
   ddayLabel,
-  isYbmUrl,
+  isYbmReviewUrl,
   kstDateOf,
   lectureCameo,
   lectureOpensAt,
@@ -15,6 +15,7 @@ import {
   REVIEW_LECTURE_WEEK,
   shiftDate,
   signupDday,
+  YBM_REVIEW_LINK_RE,
 } from "./lecture";
 
 const base = { id: 1, date: "2026-10-17", signup: true, capacity: 140, signup_opens_at: null, applied_count: 0 };
@@ -140,44 +141,84 @@ describe("needsReviewLink — 3주차 모의고사 특강은 YBM 수강후기 �
   });
 });
 
-describe("parseReviewLink — 학생이 붙여 넣은 후기 링크", () => {
-  it("주소를 그대로 받고, https:// 를 빼먹었으면 붙인다", () => {
-    expect(parseReviewLink("https://www.ybmedu.com/review/view?seq=1")).toEqual({ ok: true, url: "https://www.ybmedu.com/review/view?seq=1" });
-    expect(parseReviewLink("  www.ybmedu.com/review/view?seq=2 ")).toEqual({ ok: true, url: "https://www.ybmedu.com/review/view?seq=2" });
+describe("parseReviewLink — YBM 수강후기 링크만 받는다 (2026-10-08 Alan 이 보내 준 7월 학생들의 링크 화면)", () => {
+  // 7월 링크는 전부 https://www.ybmedu.com/mypage/lessonView/<22자 토큰> 이었다. 실제 학생 링크 · 이름은 저장소에 넣지 않는다 — 토큰 · 이름은 지어낸 것
+  const TOKEN = "Ab3dEf-hIjKlMn_pQrStUv";
+  const LINK = `https://www.ybmedu.com/mypage/lessonView/${TOKEN}`;
+
+  it("후기 링크를 그대로 받고, https:// 를 빼먹었으면 붙인다", () => {
+    expect(parseReviewLink(LINK)).toEqual({ ok: true, url: LINK });
+    expect(parseReviewLink(`  www.ybmedu.com/mypage/lessonView/${TOKEN} `)).toEqual({ ok: true, url: LINK });
+    expect(parseReviewLink(`https://m.ybmedu.com/mypage/lessonView/${TOKEN}`).ok).toBe(true);
+    expect(parseReviewLink(`${LINK}?utm_source=share`).ok).toBe(true);
+    expect(parseReviewLink(`${LINK}/`).ok).toBe(true);
   });
-  it("공유하기로 글이 붙어 와도 글 속의 주소를 꺼낸다 (끝의 마침표는 뗀다)", () => {
-    expect(parseReviewLink("[YBM] 역전토익 수강후기 https://www.ybmedu.com/review/view?seq=3 확인해 보세요.")).toEqual({
-      ok: true,
-      url: "https://www.ybmedu.com/review/view?seq=3",
-    });
-    expect(parseReviewLink("후기: https://www.ybmedu.com/r/4.")).toEqual({ ok: true, url: "https://www.ybmedu.com/r/4" });
+  it("7월처럼 `번호/이름/반/주소` 로 붙여 넣거나 공유 글이 붙어 와도 주소만 꺼낸다", () => {
+    expect(parseReviewLink(`3/홍길동/750주5일/${LINK}`)).toEqual({ ok: true, url: LINK });
+    expect(parseReviewLink(`5/홍길동/650주5일/ ${LINK}`)).toEqual({ ok: true, url: LINK });
+    expect(parseReviewLink(`[YBM] 수강후기 ${LINK} 확인해 보세요.`)).toEqual({ ok: true, url: LINK });
+    expect(parseReviewLink(`후기: ${LINK}.`)).toEqual({ ok: true, url: LINK });
   });
-  it("비었거나 주소가 아니면 막는다", () => {
-    expect(parseReviewLink("").ok).toBe(false);
-    expect(parseReviewLink("   ").ok).toBe(false);
-    expect(parseReviewLink("javascript:alert(1)").ok).toBe(false);
-    expect(parseReviewLink("후기 다 썼어요").ok).toBe(false);
-    expect(parseReviewLink(`https://www.ybmedu.com/${"a".repeat(CLASS_MATERIAL_LINK_URL_MAX)}`).ok).toBe(false);
-  });
-  it("YBM 첫 화면 · 역전토익 후기 목록 주소는 내 후기가 아니다 — 꼬리가 붙은 주소는 받는다", () => {
+  it("YBM 후기 링크가 아니면 돌려보낸다 — 첫 화면 · 역전토익 후기 목록 · 토큰 없음 · 다른 사이트", () => {
     for (const u of [
+      "",
+      "   ",
+      "후기 다 썼어요",
+      "javascript:alert(1)",
       "https://www.ybmedu.com/",
-      "https://www.ybmedu.com",
       "ybmedu.com",
       "https://www.ybmedu.com/seomyon/winnertoeic",
-      "https://m.ybmedu.com/seomyon/winnertoeic/",
       "https://www.ybmedu.com/seomyon/winnertoeic#tab_area06",
+      "https://www.ybmedu.com/mypage/lessonView/",
+      "https://www.ybmedu.com/mypage/lessonView/short",
+      "https://www.ybmedu.com/mypage/lessonList",
+      `https://blog.naver.com/mypage/lessonView/${TOKEN}`,
+      `https://ybmedu.com.evil.example/mypage/lessonView/${TOKEN}`,
+      `https://evilybmedu.com/mypage/lessonView/${TOKEN}`,
+      `https://www.ybmedu.com/mypage/lessonView/${"a".repeat(CLASS_MATERIAL_LINK_URL_MAX)}`,
     ]) {
       expect(parseReviewLink(u).ok, u).toBe(false);
     }
-    expect(parseReviewLink("https://www.ybmedu.com/seomyon/winnertoeic?seq=10").ok).toBe(true);
-    expect(parseReviewLink("https://www.ybmedu.com/seomyon/winnertoeic#review10").ok).toBe(true);
+    const bad = parseReviewLink("https://www.ybmedu.com/seomyon/winnertoeic#tab_area06");
+    expect(bad.ok === false && bad.error).toContain("https://www.ybmedu.com/mypage/lessonView/");
   });
-  it("ybmedu.com 인지 — 강사 화면의 'YBM 주소 아님' 표시 (신청은 막지 않는다)", () => {
-    expect(isYbmUrl("https://www.ybmedu.com/x")).toBe(true);
-    expect(isYbmUrl("https://m.ybmedu.com/x")).toBe(true);
-    expect(isYbmUrl("https://ybmedu.com.evil.example/x")).toBe(false);
-    expect(isYbmUrl("https://blog.naver.com/x")).toBe(false);
-    expect(isYbmUrl("주소 아님")).toBe(false);
+  it("DB check(lecture_signups_review_url_check — 마지막 정의)와 같은 정규식 — 같은 주소에 같은 답", () => {
+    const dir = "supabase/migrations";
+    const sqls = readdirSync(dir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort()
+      .map((f) => readFileSync(`${dir}/${f}`, "utf8"));
+    const last = sqls.filter((t) => t.includes("add constraint lecture_signups_review_url_check")).at(-1) ?? "";
+    const pattern = last.match(/review_url ~\* '([^']+)'/)?.[1];
+    expect(pattern, "DB check 의 정규식을 못 찾음").toBeTruthy();
+    expect(last).toMatch(new RegExp(`char_length\\(review_url\\) <= ${CLASS_MATERIAL_LINK_URL_MAX}\\b`));
+    // POSIX 문자 묶음 → JS, ~* 는 대소문자를 가리지 않는다
+    const sqlRe = new RegExp(pattern!.replace(/\[:space:\]/g, "\\s"), "i");
+    const samples = [
+      LINK,
+      `https://m.ybmedu.com/mypage/lessonView/${TOKEN}`,
+      `https://ybmedu.com/m/mypage/lessonview/${TOKEN}`,
+      `http://www.ybmedu.com/mypage/lessonView/${TOKEN}#x`,
+      `${LINK}?a=1&b=2`,
+      `${LINK}/`,
+      `${LINK}=`,
+      "https://www.ybmedu.com/",
+      "https://www.ybmedu.com/seomyon/winnertoeic#tab_area06",
+      "https://www.ybmedu.com/mypage/lessonView/",
+      "https://www.ybmedu.com/mypage/lessonView/short",
+      `https://www.ybmedu.com/mypage/lessonView/${TOKEN}%20x`,
+      `https://blog.naver.com/mypage/lessonView/${TOKEN}`,
+      `https://ybmedu.com.evil.example/mypage/lessonView/${TOKEN}`,
+      `https://evilybmedu.com/mypage/lessonView/${TOKEN}`,
+      `https://ybmedu.com@evil.example/mypage/lessonView/${TOKEN}`,
+    ];
+    for (const u of samples) expect(isYbmReviewUrl(u), u).toBe(sqlRe.test(u));
+    expect(samples.filter((u) => isYbmReviewUrl(u)).length).toBe(7);
+    // 앱이 저장하는 주소는 늘 DB 를 통과한다
+    for (const raw of [LINK, `www.ybmedu.com/mypage/lessonView/${TOKEN}`, `3/홍길동/750주5일/${LINK}`]) {
+      const r = parseReviewLink(raw);
+      expect(r.ok && sqlRe.test(r.url), raw).toBe(true);
+    }
+    expect(YBM_REVIEW_LINK_RE.flags).toContain("i");
   });
 });

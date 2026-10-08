@@ -17,10 +17,11 @@ import {
   needsReviewLink,
   seatsLeft,
   signupDday,
+  YBM_REVIEW_LINK_HINT,
 } from "@/lib/lecture";
 import { InstructorCameo } from "@/components/ui/InstructorCameo";
 import { LectureCancelButton, LectureSignupButton, SignupOpensIn } from "@/components/my/LectureSignup";
-import { YBM_REVIEW_GUIDE_ID, YbmReviewGuide } from "@/components/my/YbmReviewGuide";
+import { BreakableUrl, YBM_REVIEW_GUIDE_ID, YbmReviewGuide } from "@/components/my/YbmReviewGuide";
 import { getMyLectures, getMyLectureSignups } from "../_lib/queries";
 
 export const metadata: Metadata = { title: "특강 신청", robots: { index: false } };
@@ -168,6 +169,11 @@ function ReviewLinkNote({ applied, reviewUrl, notOpen }: { applied: boolean; rev
     <div className="rounded-xl border border-brand-200 bg-brand-50 px-3 py-2.5 text-xs">
       <p className="font-black text-brand-700">YBM 수강후기를 쓰고 링크를 올려야 신청돼요</p>
       <p className="mt-0.5 text-slate">
+        후기 링크는{" "}
+        <span className="font-semibold text-ink">
+          <BreakableUrl url={YBM_REVIEW_LINK_HINT} />
+        </span>{" "}
+        처럼 생겼어요.{" "}
         {notOpen ? "신청이 열리기 전에 미리 써 두세요. " : ""}
         <a href={`#${YBM_REVIEW_GUIDE_ID}`} className="font-bold text-brand-600 underline decoration-brand-200 underline-offset-2">
           후기 쓰는 법 보기

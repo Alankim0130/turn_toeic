@@ -12,7 +12,7 @@ import { LectureSignupForm } from "@/components/admin/lectures/LectureSignupForm
 import { CancelLectureSignupButton } from "@/components/admin/lectures/CancelLectureSignupButton";
 import {
   formatKstDateTime,
-  isYbmUrl,
+  isYbmReviewUrl,
   LECTURE_STATE_CLASS,
   LECTURE_STATE_LABEL,
   lectureOpensAt,
@@ -198,8 +198,9 @@ async function getSignups(supabase: Awaited<ReturnType<typeof createClient>>, id
 
 /**
  * 학생이 올린 YBM 수강후기 링크 — 눌러 열어 보고 후기가 아니면 신청을 취소한다.
- * 어느 사이트 주소인지는 신청 때 막지 않으므로(YBM 후기 주소의 모양을 몰라 짐작으로 막지 않았다) ybmedu.com 이 아니면 표시하고,
- * 같은 링크를 다른 학생도 냈으면 표시한다 (친구 후기를 그대로 붙여 넣은 것일 수 있다). 조건이 생기기 전 신청은 링크가 없다.
+ * 같은 링크를 다른 학생도 냈으면 표시한다 (친구 후기를 그대로 붙여 넣은 것일 수 있다).
+ * 신청은 YBM 후기 링크 꼴만 받지만(2026-10-08 — `YBM_REVIEW_LINK_RE`) 꼴을 좁히기 전 몇 분 동안 들어온 신청이 있을 수 있어 그 꼴이 아니면 표시한다.
+ * 조건이 생기기 전 신청은 링크가 없다.
  */
 function ReviewLinkLine({ url, shared }: { url: string | null; shared: boolean }) {
   if (!url) return <p className="basis-full pl-9 text-xs font-semibold text-amber-700">후기 링크 없음</p>;
@@ -208,7 +209,7 @@ function ReviewLinkLine({ url, shared }: { url: string | null; shared: boolean }
       <a href={url} target="_blank" rel="noopener noreferrer" className="min-w-0 break-all font-semibold text-ink underline decoration-brand-200 underline-offset-2 hover:decoration-brand-500">
         {url}
       </a>
-      {!isYbmUrl(url) && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800">YBM 주소 아님</span>}
+      {!isYbmReviewUrl(url) && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800">YBM 후기 링크 아님</span>}
       {shared && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800">다른 학생과 같은 링크</span>}
     </p>
   );

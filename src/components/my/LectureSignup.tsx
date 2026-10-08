@@ -79,7 +79,8 @@ export function LectureSignupButton({ lectureId, full, needsReview = false }: { 
         <SubmitButton variant="primary" className="!w-full !py-2.5" pendingText="신청 중…" disabled={!link.trim()}>
           후기 링크 올리고 신청하기
         </SubmitButton>
-        {state.error && <p className="text-xs font-semibold text-red-600">{state.error}</p>}
+        {/* 오류에 주소 꼴이 들어 있다 — 좁은 화면에서 카드를 넘지 않게 필요할 때만 끊는다 */}
+        {state.error && <p className="break-words text-xs font-semibold text-red-600">{state.error}</p>}
       </form>
     );
   }

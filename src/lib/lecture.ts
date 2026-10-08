@@ -1,5 +1,4 @@
-import { normalizeLinkUrl } from "@/lib/class-materials";
-import { site } from "@/lib/site";
+import { CLASS_MATERIAL_LINK_URL_MAX, normalizeLinkUrl } from "@/lib/class-materials";
 import { lectureKindLabel, sortLectureKinds } from "@/lib/utils";
 
 /**
@@ -148,38 +147,33 @@ export function needsReviewLink(l: { date: string; kinds: readonly string[] | nu
   return lectureWeek(l.date, termOpens) === REVIEW_LECTURE_WEEK;
 }
 
-/** ybmedu.com(과 그 아래 주소)인가 — 강사 화면이 아닌 주소에 표시를 붙인다. 신청을 막지는 않는다 (마이그레이션 머리말) */
-export function isYbmUrl(url: string) {
-  try {
-    return /(^|\.)ybmedu\.com$/i.test(new URL(url).hostname);
-  } catch {
-    return false;
-  }
-}
+/**
+ * **YBM 수강후기 링크의 꼴** (2026-10-08 Alan 이 7월 3주차 모의고사 특강 때 학생들이 올린 링크 화면을 보내 줬다 — 일곱 개가 전부
+ * `https://www.ybmedu.com/mypage/lessonView/<토큰>`). ybmedu.com(www. · m. 같은 앞자리 포함)의 경로 끝이 `lessonView/<토큰>` 이고
+ * 뒤에 ? # / 꼬리만 붙을 수 있다. 앞의 경로(`/mypage/`)는 정하지 않는다 — 앱 화면에서 열면 앞자리가 다를 수 있다. 대소문자는 가리지 않는다.
+ * DB check `lecture_signups_review_url_check`(마이그레이션 20261008110000)와 같은 정규식 — 바꾸면 둘 다 (lecture.test.ts 가 두 정규식에 같은 주소를 넣어 본다).
+ */
+export const YBM_REVIEW_LINK_RE = /^https?:\/\/([a-z0-9-]+\.)*ybmedu\.com\/([^\s?#]*\/)?lessonview\/[a-z0-9_=-]{10,}([/?#]\S*)?$/i;
 
-/** 주소 비교용 — www. · m. 을 떼고, 경로 끝의 / 를 뗀다 */
-const addressKey = (url: string) => {
-  const u = new URL(url);
-  return `${u.hostname.replace(/^(www|m)\./i, "").toLowerCase()}${u.pathname.replace(/\/+$/, "")}${u.search}${u.hash}`;
-};
+/** YBM 수강후기 링크 꼴인가 — 강사 화면이 아닌 것(꼴을 좁히기 전에 들어온 신청)에 표시를 붙인다 */
+export const isYbmReviewUrl = (url: string) => url.length <= CLASS_MATERIAL_LINK_URL_MAX && YBM_REVIEW_LINK_RE.test(url);
 
-/** 누구나 같은 YBM 주소 — 첫 화면 · 역전토익 페이지 · 그 후기 탭. 내 후기를 가리키지 않는다 */
-const YBM_LIST_KEYS = new Set([site.academy.ybmHomeUrl, site.academy.ybmUrl, site.academy.ybmReviewUrl].map(addressKey));
+/** 주소 모양을 알려 주는 말 — 학생 칸 · 안내 · 오류에 같은 꼴을 적는다 */
+export const YBM_REVIEW_LINK_HINT = "https://www.ybmedu.com/mypage/lessonView/…";
 
 /**
  * 학생이 붙여 넣은 후기 링크를 저장할 주소로 — **화면과 서버 액션이 같은 것을 쓴다**.
- * 주소 규칙은 수업자료실 링크와 같다(`normalizeLinkUrl` — https:// 붙이기 · http(s) 만 · 2,000자 = DB check).
- * 휴대폰 '공유' 로 복사하면 `[YBM] 수강후기 https://…` 처럼 글이 붙어 와서, 글 속의 첫 주소를 꺼낸다.
- * YBM 첫 화면 · 역전토익 후기 목록 주소는 받지 않는다 — 랜딩의 "후기 바로보기" 주소를 그대로 붙여 넣는 실수가 가장 쉽다.
+ * 먼저 수업자료실 링크와 같은 규칙으로 정리하고(`normalizeLinkUrl` — https:// 붙이기 · http(s) 만 · 2,000자),
+ * **YBM 수강후기 링크 꼴(`YBM_REVIEW_LINK_RE`)만 받는다** — YBM 첫 화면 · 역전토익 후기 목록 · 다른 사이트 주소는 돌려보낸다.
+ * 글이 붙어 와도 글 속의 첫 주소를 꺼낸다 — 7월에는 학생들이 `번호/이름/반/주소` 로 올렸고, 휴대폰 '공유' 도 제목을 붙여 온다.
  */
 export function parseReviewLink(raw: string | null | undefined): { ok: true; url: string } | { ok: false; error: string } {
   const s = String(raw ?? "").trim();
   if (!s) return { ok: false, error: "YBM 수강후기 링크를 붙여 넣어 주세요." };
   const found = s.match(/https?:\/\/[^\s<>"']+/i)?.[0].replace(/[.,;:!?]+$/, "");
   const url = normalizeLinkUrl(found ?? s);
-  if (!url) return { ok: false, error: "후기 링크를 확인해 주세요 — 내가 쓴 후기의 주소(https://…)를 그대로 붙여 넣어 주세요." };
-  if (YBM_LIST_KEYS.has(addressKey(url))) {
-    return { ok: false, error: "YBM 홈페이지 첫 화면이나 역전토익 후기 목록 주소예요. 내가 쓴 후기를 열고 그 주소를 붙여 넣어 주세요." };
+  if (!url || !isYbmReviewUrl(url)) {
+    return { ok: false, error: `YBM 수강후기 링크가 아니에요. 마이페이지에서 내가 쓴 후기를 열고 그 주소(${YBM_REVIEW_LINK_HINT})를 붙여 넣어 주세요.` };
   }
   return { ok: true, url };
 }

@@ -1,13 +1,45 @@
 import Image from "next/image";
+import { Fragment, type ReactNode } from "react";
 import { Icon } from "@/components/ui/Icon";
+import { YBM_REVIEW_LINK_HINT } from "@/lib/lecture";
 import { site } from "@/lib/site";
 
 export const YBM_REVIEW_GUIDE_ID = "ybm-review-guide";
 
-const STEPS = [
+/**
+ * 주소를 **경로의 `/` 뒤에서만** 줄바꿈한다 — 칸이 좁으면 `break-all` 은 `lessonV` / `iew` 처럼 낱말 가운데서 끊는다.
+ * `https://` 의 두 `/` 사이에서는 끊지 않는다 (경로부터만 끊을 자리를 준다).
+ */
+export function BreakableUrl({ url }: { url: string }) {
+  const parts = url.split("/");
+  return (
+    <>
+      {parts.map((part, i) => (
+        <Fragment key={i}>
+          {part}
+          {i < parts.length - 1 && "/"}
+          {i >= 2 && i < parts.length - 1 && <wbr />}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+const STEPS: { title: string; body: ReactNode }[] = [
   { title: "YBM 홈페이지 로그인", body: "아래 버튼으로 YBM 홈페이지에 들어가 로그인해요." },
   { title: "마이페이지에서 후기 쓰기", body: "마이페이지의 '후기 작성하기'를 눌러 역전토익 수강후기를 써요." },
-  { title: "후기 링크 복사", body: "다 쓴 내 후기를 열고 그 화면의 주소(링크)를 복사해요." },
+  {
+    title: "후기 링크 복사",
+    body: (
+      <>
+        다 쓴 내 후기를 열고 그 화면의 주소(링크)를 복사해요 —{" "}
+        <span className="font-semibold text-ink">
+          <BreakableUrl url={YBM_REVIEW_LINK_HINT} />
+        </span>{" "}
+        로 시작해요.
+      </>
+    ),
+  },
   { title: "붙여 넣고 신청", body: "이 화면의 특강 카드에 링크를 붙여 넣고 '후기 링크 올리고 신청하기'를 눌러요." },
 ];
 
@@ -17,6 +49,7 @@ const STEPS = [
  * 특강 신청(`/my/lecture`)에 후기 링크를 올려야 하는 특강(3주차 모의고사 — `needsReviewLink`)이 있을 때만 선다. 특강 카드의 `후기 쓰는 법` 이 여기로 온다.
  * 마이페이지 그림은 등업신청의 수강증 찾는 법(`ReceiptGuide`)과 같은 것이다 (Alan 이 준 YBM 홈페이지 첫 화면 — 아래 메뉴의 마이페이지).
  * YBM 화면 안의 후기 쓰기 · 링크 복사 단계는 이 작업 환경에서 YBM 홈페이지가 막혀 직접 보지 못하고 Alan 의 말대로 적었다 — 실제와 다르면 STEPS 만 고친다.
+ * 링크의 꼴(`YBM_REVIEW_LINK_HINT`)은 Alan 이 보내 준 7월 학생들의 링크 화면에서 왔다 (2026-10-08).
  */
 export function YbmReviewGuide() {
   return (
