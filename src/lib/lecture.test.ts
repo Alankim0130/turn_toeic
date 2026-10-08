@@ -12,6 +12,8 @@ import {
   needsReviewLink,
   parseReviewLink,
   REVIEW_LECTURE_KINDS,
+  reviewLinkError,
+  reviewLinkKey,
   REVIEW_LECTURE_WEEK,
   shiftDate,
   signupDday,
@@ -137,7 +139,8 @@ describe("needsReviewLink — 3주차 모의고사 특강은 YBM 수강후기 �
     expect(check).toMatch(new RegExp(`char_length\\(review_url\\) <= ${CLASS_MATERIAL_LINK_URL_MAX}\\b`));
     // 넣을 때 트리거가 막는다 — 오류 이름은 서버 액션이 학생 말로 바꾼다
     expect(sqls.join("\n")).toMatch(/before insert on public\.lecture_signups[\s\S]*?lecture_signups_review_check/);
-    expect(readFileSync("src/app/my/class/actions.ts", "utf8")).toContain('"review_link_required"');
+    expect(readFileSync("src/app/my/class/actions.ts", "utf8")).toContain("reviewLinkError(error.message)");
+    expect(reviewLinkError("review_link_required")).toContain("링크를 올려야");
   });
 });
 
@@ -220,5 +223,85 @@ describe("parseReviewLink — YBM 수강후기 링크만 받는다 (2026-10-08 A
       expect(r.ok && sqlRe.test(r.url), raw).toBe(true);
     }
     expect(YBM_REVIEW_LINK_RE.flags).toContain("i");
+  });
+});
+
+describe("reviewLinkKey — 후기 링크는 한 번만 (2026-10-08 Alan \"후기막기 진행해주고\")", () => {
+  // 지어낸 토큰이다 — 실제 학생 링크는 저장소에 넣지 않는다
+  const TOKEN = "Ab3dEf-hIjKlMn_pQrStUv";
+  const LINK = `https://www.ybmedu.com/mypage/lessonView/${TOKEN}`;
+
+  it("같은 후기면 주소 앞자리 · 꼬리 · 대소문자 · 끝의 = 가 달라도 같은 키", () => {
+    const key = reviewLinkKey(LINK);
+    expect(key).toBe(TOKEN.toLowerCase());
+    for (const u of [
+      `https://m.ybmedu.com/mypage/lessonView/${TOKEN}`,
+      `http://ybmedu.com/m/mypage/lessonview/${TOKEN.toUpperCase()}`,
+      `${LINK}?utm_source=share`,
+      `${LINK}#top`,
+      `${LINK}/`,
+      `${LINK}==`,
+    ]) {
+      expect(reviewLinkKey(u), u).toBe(key);
+    }
+  });
+  it("다른 후기는 다른 키, 토큰이 없으면 null", () => {
+    expect(reviewLinkKey(`https://www.ybmedu.com/mypage/lessonView/${TOKEN}x`)).not.toBe(reviewLinkKey(LINK));
+    expect(reviewLinkKey("https://www.ybmedu.com/mypage/lessonView/Zz9yXw-vUtSrQp_oNmLkJi")).not.toBe(reviewLinkKey(LINK));
+    for (const u of [null, undefined, "", "https://www.ybmedu.com/", "https://www.ybmedu.com/mypage/lessonView/short", "https://www.ybmedu.com/mypage/lessonView/=========="]) {
+      expect(reviewLinkKey(u), String(u)).toBeNull();
+    }
+  });
+  it("DB(private.review_link_key — 마지막 정의)와 같은 규칙 — SQL 의 정규식으로 같은 답", () => {
+    const dir = "supabase/migrations";
+    const sqls = readdirSync(dir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort()
+      .map((f) => readFileSync(`${dir}/${f}`, "utf8"));
+    const last = sqls.filter((t) => t.includes("function private.review_link_key(")).at(-1) ?? "";
+    const start = last.indexOf("function private.review_link_key(");
+    const fn = last.slice(start, last.indexOf("$$;", start));
+    const m = fn.match(/regexp_match\(p_url, '([^']+)', 'i'\)/);
+    expect(m, "SQL 의 정규식을 못 찾음").toBeTruthy();
+    expect(fn).toContain("rtrim(");
+    expect(fn).toContain("'='))");
+    expect(fn).toContain("lower(");
+    expect(fn).toContain("nullif(");
+    // SQL 을 JS 로 옮긴 것: lower(rtrim(첫 토큰, '=')), 빈 문자열이면 null
+    const sqlKey = (u: string) => {
+      const t = u.match(new RegExp(m![1], "i"))?.[1];
+      return t === undefined ? null : t.replace(/=+$/, "").toLowerCase() || null;
+    };
+    for (const u of [
+      LINK,
+      `${LINK}==`,
+      `https://M.YBMEDU.COM/MYPAGE/LESSONVIEW/${TOKEN}?x=1`,
+      `https://www.ybmedu.com/a/lessonView/${TOKEN}/lessonView/Zz9yXw-vUtSrQp_oNmLkJi`,
+      "https://www.ybmedu.com/mypage/lessonView/short",
+      "https://www.ybmedu.com/mypage/lessonView/==========",
+      "https://www.ybmedu.com/",
+    ]) {
+      expect(reviewLinkKey(u), u).toBe(sqlKey(u));
+    }
+  });
+  it("신청을 넣을 때 트리거가 키로 막는다 — 다른 학생의 링크 · 다른 달에 쓴 내 링크 · 같은 링크 동시 신청", () => {
+    const dir = "supabase/migrations";
+    const sqls = readdirSync(dir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort()
+      .map((f) => readFileSync(`${dir}/${f}`, "utf8"));
+    const last = sqls.filter((t) => t.includes("function private.lecture_signups_review_check(")).at(-1) ?? "";
+    const start = last.indexOf("function private.lecture_signups_review_check(");
+    const fn = last.slice(start, last.indexOf("$$;", start));
+    expect(fn).toContain("'review_link_required'");
+    expect(fn).toContain("'review_link_taken'");
+    expect(fn).toContain("'review_link_reused'");
+    expect(fn).toContain("pg_advisory_xact_lock(");
+    expect(fn).toContain("s.user_id <> new.user_id");
+    expect(fn).toContain("l.term_id <> n.term_id");
+    expect(fn.match(/private\.review_link_key\(s\.review_url\) = v_key/g)?.length).toBe(2);
+    // 서버 액션이 셋 다 학생 말로 바꾼다
+    for (const code of ["review_link_required", "review_link_taken", "review_link_reused"]) expect(reviewLinkError(code), code).toBeTruthy();
+    expect(reviewLinkError("lecture_full")).toBeNull();
   });
 });

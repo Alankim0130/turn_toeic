@@ -8,9 +8,10 @@ import { isAudioType, isImageType } from "@/lib/upload";
  *  - class = 수업자료실 파일(class_material_files, 2026-10-06 — 자료 하나에 파일 여러 개라 **id 는 파일 id** 다).
  *    파일 행은 부모 자료(class_materials)가 보이는 사람에게만 보여서, 남의 칸 · 아직 안 열린 회차의 id 는 404 다.
  *    2026-10-05 에 올린 파일은 자료와 같은 id 로 옮겼다 — 그날 받은 링크가 그대로 같은 파일이다 (마이그레이션 20261006100000)
+ *  - checkin = 비대면 스터디 인증 사진(study_checkin_files, 2026-10-08 비대면스터디 인증 게시판). 본인 · 강사 · 관리자 · 조교만 보인다
  *  - 사용자 세션으로 행을 조회하므로 RLS 가 접근 권한을 정한다 (못 보면 404).
  *  - 저장소 서명 URL 도 사용자 세션으로 만들어 storage 정책을 한 번 더 통과한다.
- *  - ?download=1 은 원본 파일명으로 내려받기, 숙제 사진·교재 이미지는 ?w=400 으로 썸네일 (숙제 음성 파일은 ?w 를 무시하고 그대로 준다).
+ *  - ?download=1 은 원본 파일명으로 내려받기, 숙제 사진·인증 사진·교재 이미지는 ?w=400 으로 썸네일 (숙제 음성 파일은 ?w 를 무시하고 그대로 준다).
  */
 const BUCKET = {
   material: "study-materials",
@@ -19,6 +20,7 @@ const BUCKET = {
   audio: "lc-audio",
   textbook: "lc-textbooks",
   class: "class-materials",
+  checkin: "study-checkins",
 } as const;
 type Kind = keyof typeof BUCKET;
 
@@ -49,6 +51,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         ? await supabase.from("study_material_items").select(cols).eq("id", id).maybeSingle()
       : kind === "class"
         ? await supabase.from("class_material_files").select(cols).eq("id", id).maybeSingle()
+      : kind === "checkin"
+        ? await supabase.from("study_checkin_files").select(cols).eq("id", id).maybeSingle()
       : kind === "homework"
         ? await supabase.from("homework_files").select(cols).eq("id", id).maybeSingle()
         : kind === "textbook"
@@ -58,7 +62,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   const sp = request.nextUrl.searchParams;
   const width = Number(sp.get("w"));
-  const thumb = (kind === "homework" || kind === "textbook") && isImageType(row.content_type) && width >= 80 && width <= 1200;
+  const thumb = (kind === "homework" || kind === "checkin" || kind === "textbook") && isImageType(row.content_type) && width >= 80 && width <= 1200;
   // 음원은 재생 중 구간 요청이 이어지므로 넉넉히, 나머지는 짧게 — 숙제 음성 파일(2026-10-07)도 플레이어로 듣는 음원이다
   const expiresIn = kind === "audio" || (kind === "homework" && isAudioType(row.content_type)) ? 6 * 60 * 60 : 10 * 60;
 

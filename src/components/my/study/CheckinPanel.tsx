@@ -9,13 +9,16 @@ import { CHECKIN_BUCKET, CHECKIN_MAX_NOTE, CHECKIN_MAX_PHOTO_MB, CHECKIN_MAX_PHO
 import { contentTypeOf, MB, objectName, type UploadedFile } from "@/lib/upload";
 import { removeUploaded, uploadFile } from "@/lib/upload-client";
 
-export type MyCheckin = { id: number; created_at: string; files: number };
+/** 내 인증 한 건. `checked` = 강사 · 조교가 확인 완료 (2026-10-08 비대면스터디 인증 게시판) — 그 뒤에는 지우고 다시 올릴 수 없다 */
+export type MyCheckin = { id: number; created_at: string; files: number; checked?: boolean };
 type Picked = { key: string; file: File; url: string };
 
 /**
  * 비대면 스터디 자료 한 줄의 **인증** (2026-09-18 Alan — "인증은 비대면 스터디 페이지에서 항상").
  * 인증 전: [인증하기] → 풀이 사진 고르기(1~10장) + 메모 → 브라우저에서 Storage 로 올린 뒤 서버 액션에 등록.
  * 인증 후: 인증 시각 · 사진 수 배지 + [지우고 다시] .
+ * **선생님이 확인했으면**(2026-10-08 — 숙제처럼) `선생님 확인 완료` 배지만 남고 [지우고 다시] 는 없다 — DB 도 확인된 인증은 학생이 못 지운다.
+ * 확인하며 남긴 코멘트는 자료 줄 왼쪽(`/my/study`)에 펼쳐 둔다.
  */
 export function CheckinPanel({ materialId, userId, checkin }: { materialId: number; userId: string; checkin: MyCheckin | null }) {
   const router = useRouter();
@@ -100,9 +103,13 @@ export function CheckinPanel({ materialId, userId, checkin }: { materialId: numb
           <Icon name="success" size={14} className="brightness-0 invert" />
           인증함 · {formatDate(checkin.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} · 사진 {checkin.files}장
         </span>
-        <button type="button" onClick={remove} disabled={busy} className="btn-ghost !px-3 !py-1.5 text-xs">
-          지우고 다시
-        </button>
+        {checkin.checked ? (
+          <span className="rounded-full bg-ink px-2.5 py-1 text-xs font-black text-white">선생님 확인 완료</span>
+        ) : (
+          <button type="button" onClick={remove} disabled={busy} className="btn-ghost !px-3 !py-1.5 text-xs">
+            지우고 다시
+          </button>
+        )}
         {error && <p role="alert" className="w-full text-xs font-semibold text-amber-800">{error}</p>}
       </div>
     );

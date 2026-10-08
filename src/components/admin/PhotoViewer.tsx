@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fitBox, stepIndex, swipeDirection } from "@/lib/photo-viewer";
 import { cn } from "@/lib/utils";
 
-export type HomeworkPhoto = { id: number; name: string };
+export type ViewerPhoto = { id: number; name: string };
 
 /** 크게 볼 때 받는 폭 — 원본(장당 20MB)을 그대로 받으면 휴대폰에서 한 장마다 한참 기다린다 */
 const VIEW_WIDTH = 1200;
@@ -25,7 +25,7 @@ function Glyph({ kind }: { kind: "back" | "next" | "rotate" }) {
 }
 
 /**
- * 숙제 사진 보기 — **제출 한 건 안에서 `n / N` 으로 넘겨 본다** (2026-09-22 Alan 요청:
+ * 사진 보기 — **제출 한 건 안에서 `n / N` 으로 넘겨 본다** (2026-09-22 Alan 요청:
  * "숙제 이미지를 클릭했을때 웹페이지가 열리는것처럼 열려서 다음 이미지 선택하기가 힘들어").
  *
  * 그전에는 썸네일이 `/files/homework/{id}` 로 나가는 **링크**여서 새 화면이 떴다 — 한 장 보고 뒤로 가서
@@ -33,13 +33,17 @@ function Glyph({ kind }: { kind: "back" | "next" | "rotate" }) {
  * 화살표 · 손가락 넘기기 · 키보드 ← → · 아래 썸네일 줄로 넘어간다.
  * 판정(넘기기·회전 칸·다음 장)은 `src/lib/photo-viewer.ts` 한곳이다.
  *
- * **이 컴포넌트는 팝업이 아니다** — `HomeworkDetail` 안에 얹혀 있다. ESC·뒤 화면 잠금은 그쪽이 맡는다
+ * **숙제점검(`HomeworkDetail`)과 비대면스터디 인증(`CheckinDetail`, 2026-10-08)이 함께 쓴다** — 그래서 숙제 폴더가 아니라 여기 있다.
+ * 두 일은 표 · 화면 · 알림이 따로이고(2026-09-19 Alan "철저하게 분리") 사진을 넘겨 보는 손짓만 같다. 파일 주소는 `fileBase` 로 받는다
+ * (`/files/homework` · `/files/checkin`).
+ *
+ * **이 컴포넌트는 팝업이 아니다** — 상세 팝업 안에 얹혀 있다. ESC·뒤 화면 잠금은 그쪽이 맡는다
  * (팝업 안에 팝업을 겹치면 닫기가 어느 것을 닫는지 흐려진다).
  *
  * **첨삭 도구(핀·스탬프·필기·지우개)는 만들지 않았다** — 채점·첨삭은 "아직 논의되지 않음" 이고
- * 숙제는 점검완료 표시까지만이다. 보는 데 필요한 **회전**만 두었다 (교재를 손으로 찍으면 눕는 사진이 흔하다).
+ * 숙제는 점검완료 · 인증은 확인 완료 표시까지만이다. 보는 데 필요한 **회전**만 두었다 (교재를 손으로 찍으면 눕는 사진이 흔하다).
  */
-export function HomeworkPhotos({ photos, student }: { photos: HomeworkPhoto[]; student: string }) {
+export function PhotoViewer({ photos, student, fileBase }: { photos: ViewerPhoto[]; student: string; fileBase: "/files/homework" | "/files/checkin" }) {
   const [index, setIndex] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
   /**
@@ -105,8 +109,8 @@ export function HomeworkPhotos({ photos, student }: { photos: HomeworkPhoto[]; s
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={photo.id}
-            src={`/files/homework/${photo.id}?w=${VIEW_WIDTH}`}
-            alt={`${student} 숙제 사진 ${index + 1}`}
+            src={`${fileBase}/${photo.id}?w=${VIEW_WIDTH}`}
+            alt={`${student} 사진 ${index + 1}`}
             style={{ ...(fit ?? {}), transform: `rotate(${deg}deg)` }}
             className={cn("h-auto w-auto object-contain", !fit && "max-h-full max-w-full")}
           />
@@ -158,7 +162,7 @@ export function HomeworkPhotos({ photos, student }: { photos: HomeworkPhoto[]; s
                   className={cn("block overflow-hidden rounded-lg border-2 transition", i === index ? "border-brand-500" : "border-transparent opacity-60 hover:opacity-100")}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`/files/homework/${p.id}?w=${THUMB_WIDTH}`} alt="" loading="lazy" className="size-12 object-cover" />
+                  <img src={`${fileBase}/${p.id}?w=${THUMB_WIDTH}`} alt="" loading="lazy" className="size-12 object-cover" />
                 </button>
               </li>
             ))}
@@ -166,7 +170,7 @@ export function HomeworkPhotos({ photos, student }: { photos: HomeworkPhoto[]; s
         )}
         {/* 작은 글씨를 더 키워 봐야 할 때의 길 — 위 그림은 축소본(폭 1200)이다 */}
         <a
-          href={`/files/homework/${photo.id}`}
+          href={`${fileBase}/${photo.id}`}
           target="_blank"
           rel="noopener noreferrer"
           className="ml-auto shrink-0 text-xs font-bold text-ink-soft underline decoration-brand-200 hover:text-brand-600"

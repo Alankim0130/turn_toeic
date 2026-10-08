@@ -651,16 +651,43 @@ export async function getMyMergeRequests() {
   return data ?? [];
 }
 
-/** 내 비대면 스터디 인증 (자료 id → 인증). 2026-09-18 */
+/**
+ * 내 비대면 스터디 인증 (자료 id → 인증). 2026-09-18.
+ * 2026-10-08 부터 강사 · 조교가 **확인 완료**(+ 코멘트)를 한다 (비대면스터디 인증 게시판 — 마이그레이션 20261008140000).
+ * 그 칸을 못 읽으면(배포와 마이그레이션 사이) 예전 칸만 읽는다 — 그대로 비우면 낸 인증이 하나도 없는 것처럼 보인다.
+ */
 export async function getMyStudyCheckins() {
   const { user } = await getSessionProfile();
   if (!user) return [];
   const supabase = await createClient();
+  const full = await supabase
+    .from("study_checkins")
+    .select("id, material_id, created_at, status, checked_at, feedback, study_checkin_files(count)")
+    .eq("user_id", user.id);
+  if (!full.error) {
+    return (full.data ?? []).map((c) => ({
+      id: c.id,
+      material_id: c.material_id,
+      created_at: c.created_at,
+      files: c.study_checkin_files?.[0]?.count ?? 0,
+      checked: c.status === "checked",
+      checked_at: c.checked_at,
+      feedback: c.feedback,
+    }));
+  }
   const { data } = await supabase
     .from("study_checkins")
     .select("id, material_id, created_at, study_checkin_files(count)")
     .eq("user_id", user.id);
-  return (data ?? []).map((c) => ({ id: c.id, material_id: c.material_id, created_at: c.created_at, files: c.study_checkin_files?.[0]?.count ?? 0 }));
+  return (data ?? []).map((c) => ({
+    id: c.id,
+    material_id: c.material_id,
+    created_at: c.created_at,
+    files: c.study_checkin_files?.[0]?.count ?? 0,
+    checked: false,
+    checked_at: null as string | null,
+    feedback: null as string | null,
+  }));
 }
 
 /** 선생님이 보낸 알림 (최근 100건). RLS 가 본인 것만 돌려준다 */

@@ -118,27 +118,46 @@ export type Database = {
       }
       study_checkins: {
         Row: {
+          checked_at: string | null
+          checked_by: string | null
           created_at: string
+          feedback: string | null
           id: number
           material_id: number
           note: string | null
+          status: string
           user_id: string
         }
         Insert: {
+          checked_at?: string | null
+          checked_by?: string | null
           created_at?: string
+          feedback?: string | null
           id?: never
           material_id: number
           note?: string | null
+          status?: string
           user_id: string
         }
         Update: {
+          checked_at?: string | null
+          checked_by?: string | null
           created_at?: string
+          feedback?: string | null
           id?: never
           material_id?: number
           note?: string | null
+          status?: string
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "study_checkins_checked_by_fkey"
+            columns: ["checked_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "study_checkins_material_id_fkey"
             columns: ["material_id"]

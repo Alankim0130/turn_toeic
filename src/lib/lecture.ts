@@ -177,3 +177,24 @@ export function parseReviewLink(raw: string | null | undefined): { ok: true; url
   }
   return { ok: true, url };
 }
+
+/**
+ * **후기 한 편을 가리키는 키** — `lessonView/` 뒤 토큰(첫 번째)을 소문자로, 끝의 `=` 는 뗀다. 토큰이 없으면 null.
+ * 같은 키 = 같은 후기다 — 주소 앞자리(www. · m.) · `?` `#` 꼬리 · 대소문자가 달라도 같은 후기로 본다.
+ * **후기 링크는 한 번만 쓴다** (2026-10-08 Alan — "다른학생 링크를 넣은건지도 파악가능할까?" → "후기막기 진행해주고"):
+ * 신청을 넣을 때 DB 트리거(`private.lecture_signups_review_check`, 마이그레이션 20261008130000)가 이 키로 견주어
+ * 다른 학생이 쓴 링크(`review_link_taken`) · 다른 달 특강에 쓴 내 링크(`review_link_reused`)를 막는다.
+ * DB `private.review_link_key` 와 같은 규칙 — 바꾸면 둘 다 (lecture.test.ts 가 SQL 의 정규식으로 같은 답을 내는지 본다).
+ */
+export function reviewLinkKey(url: string | null | undefined): string | null {
+  const token = String(url ?? "").match(/lessonview\/([a-z0-9_=-]{10,})/i)?.[1];
+  return token?.replace(/=+$/, "").toLowerCase() || null;
+}
+
+/** 신청을 넣을 때 DB 가 낸 후기 링크 오류 → 학생에게 보일 말. 다른 오류면 null */
+export function reviewLinkError(message: string | null | undefined): string | null {
+  if (message === "review_link_required") return "이 특강은 YBM 수강후기를 쓰고 그 링크를 올려야 신청할 수 있어요.";
+  if (message === "review_link_taken") return "이미 다른 학생이 신청에 쓴 후기 링크예요. 내가 쓴 후기의 링크를 올려 주세요 — 내 후기가 맞다면 선생님께 말씀해 주세요.";
+  if (message === "review_link_reused") return "예전 달 특강 신청에 쓴 후기 링크예요. 이번 달 후기를 새로 써서 그 링크를 올려 주세요.";
+  return null;
+}

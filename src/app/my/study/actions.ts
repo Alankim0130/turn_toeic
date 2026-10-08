@@ -10,6 +10,7 @@ export type CheckinResult = { ok: boolean; error?: string; id?: number };
 function revalidate() {
   revalidatePath("/my/study");
   revalidatePath("/admin/study");
+  revalidatePath("/admin/study-checkins");
   revalidatePath("/admin");
 }
 
@@ -77,7 +78,10 @@ export async function submitStudyCheckin(input: { materialId: number; note: stri
   return { ok: true, id: created.id };
 }
 
-/** 인증 지우기 (다시 올리려고). 사진 파일도 함께 지운다 */
+/**
+ * 인증 지우기 (다시 올리려고). 사진 파일도 함께 지운다.
+ * **선생님이 확인한 인증은 지울 수 없다** (2026-10-08 — 정책 "study_checkins: 본인 삭제" 가 확인 전만 받는다). 그때는 지운 줄이 0 이라 아래에서 멈춘다.
+ */
 export async function deleteStudyCheckin(id: number): Promise<CheckinResult> {
   const supabase = await createClient();
   const {
@@ -87,7 +91,7 @@ export async function deleteStudyCheckin(id: number): Promise<CheckinResult> {
 
   const { data: files } = await supabase.from("study_checkin_files").select("file_path").eq("checkin_id", id);
   const { error, count } = await supabase.from("study_checkins").delete({ count: "exact" }).eq("id", id).eq("user_id", user.id);
-  if (error || !count) return { ok: false, error: "인증을 지우지 못했어요." };
+  if (error || !count) return { ok: false, error: "인증을 지우지 못했어요. 선생님이 이미 확인한 인증은 지울 수 없어요." };
   const paths = (files ?? []).map((f) => f.file_path);
   if (paths.length) await supabase.storage.from(CHECKIN_BUCKET).remove(paths);
 

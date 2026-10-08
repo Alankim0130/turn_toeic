@@ -9,11 +9,9 @@ import { FilterTabs } from "@/components/admin/FilterTabs";
 import { TermChips } from "@/components/admin/TermChips";
 import { TableWrap, Th, Td } from "@/components/admin/Table";
 import { CancelSignupButton } from "@/components/admin/studies/CancelSignupButton";
-import { CheckinRoster } from "@/components/admin/studies/CheckinRoster";
 import { isSlotKind, slotTime, sortSlots, STUDY_KIND_LABEL, STUDY_STATUS_LABEL, termParam } from "@/lib/study";
-import { pickTerm, termLabel, sectionChip, type TermLite } from "../_lib/queries";
+import { pickTerm, termLabel, type TermLite } from "../_lib/queries";
 import { getProfileNames } from "../_lib/profile-names";
-import { week5SectionIds, collapseWeek5 } from "@/lib/week5";
 import { isStaff, requireCrew } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "스터디 신청자", robots: { index: false } };
@@ -21,7 +19,8 @@ export const metadata: Metadata = { title: "스터디 신청자", robots: { inde
 const KIND_ORDER = ["offline", "vocab", "online"] as const;
 
 export default async function StudyRosterPage({ searchParams }: { searchParams: Promise<{ term?: string; kind?: string }> }) {
-  // 조교가 운영한다 (2026-10-03 Alan "스터디를 조교가 운영한다") — 신청자 명단 · 비대면 인증 현황 · 독촉 알림 · 신청 취소.
+  // 조교가 운영한다 (2026-10-03 Alan "스터디를 조교가 운영한다") — 신청자 명단 · 신청 취소.
+  // 비대면 인증 현황 · 독촉 알림은 2026-10-08 부터 '비대면스터디 인증'(/admin/study-checkins — 조교도 쓴다)에 있다
   // 시간대 설정(/admin/study/plan)은 강사 · 관리자 화면이라 조교에게는 그리로 가는 버튼을 그리지 않는다
   const { profile } = await requireCrew();
   const staff = isStaff(profile.role);
@@ -39,7 +38,7 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
   if (!term) {
     return (
       <>
-        <PageHeader icon="study" title="스터디 신청자" description="대면·단어 스터디는 시간대별로, 비대면 스터디는 날짜별 인증 현황과 함께 보여 드려요." />
+        <PageHeader icon="study" title="스터디 신청자" description="대면·단어 스터디는 시간대별로, 비대면 스터디는 신청자 명단을 보여 드려요. 비대면 인증은 '비대면스터디 인증' 화면에서 봐요." />
         <EmptyState
           icon="study"
           title="아직 만든 스터디가 없어요"
@@ -73,51 +72,9 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
   const rows = (signups ?? []).map((r) => ({ ...r, user: { id: r.user_id, name: names.get(r.user_id)?.name ?? "" } }));
   const slots = sortSlots(study.study_slots ?? []);
 
-  // 비대면: 자료(날짜)마다 누가 인증했는지 (2026-09-18 Alan — 미인증 학생에게 알림)
-  // 세 번째는 신청자의 **반 배정** — 인증 표의 이름 옆에 적는다 (2026-09-19 Alan)
-  const online = kind === "online";
-  const signupIds = rows.map((r) => r.user.id);
-  const [{ data: materialRows }, { data: checkinRows }, { data: enrollRows }] = await Promise.all([
-    online ? supabase.from("study_materials").select("id, seq, date, title").eq("study_id", study.id).order("date", { ascending: false }) : Promise.resolve({ data: null }),
-    online ? supabase.from("study_checkins").select("material_id, user_id, created_at, study_checkin_files(count)") : Promise.resolve({ data: null }),
-    online && signupIds.length
-      ? supabase
-          .from("enrollments")
-          // enrollments 는 class_sections 를 두 번 참조한다(section_id · pending_from_section_id) — FK 이름을 꼭 적는다
-          .select("student_id, section:class_sections!enrollments_section_id_fkey(id, term_id, course_id, track, start_time, time_block, course:courses(name, target_score, program))")
-          .in("student_id", signupIds)
-          .order("id")
-      : Promise.resolve({ data: null }),
-  ]);
-  const materialIds = new Set((materialRows ?? []).map((m) => m.id));
-  const rosterCheckins = (checkinRows ?? [])
-    .filter((c) => materialIds.has(c.material_id))
-    .map((c) => ({ material_id: c.material_id, user_id: c.user_id, created_at: c.created_at, files: c.study_checkin_files?.[0]?.count ?? 0 }));
-
-  // 인증 표에는 **그 달에 듣는 반**을 넘긴다 (2026-09-19 Alan — "650 주5일 10:00~12:10 이런거").
-  // 등급은 적지 않는다 — 스터디는 그 달 반에 배정된 수강생만 신청할 수 있어(private.is_term_enrollee) 전원 같은 값이다.
-  // **이 기수의 배정만** 남긴다 — 지난달 반까지 적으면 한 사람이 여러 반을 듣는 것처럼 보인다
-  const enrollByUser = new Map<string, NonNullable<typeof enrollRows>>();
-  for (const e of enrollRows ?? []) {
-    if (e.section?.term_id !== term.id) continue;
-    enrollByUser.set(e.student_id, [...(enrollByUser.get(e.student_id) ?? []), e]);
-  }
-  const rosterStudents = rows.map((r) => {
-    const mine = enrollByUser.get(r.user.id) ?? [];
-    // 주5일은 한 줄로 합친다 (도메인 규칙 1). 짝은 **그 학생이 듣는 반 안에서만** 찾는다 —
-    // 명단 전체로 찾으면 다른 학생의 반과 짝이 된다
-    const week5 = week5SectionIds(mine.map((e) => e.section).filter((x) => !!x));
-    return {
-      id: r.user.id,
-      name: r.user.name,
-      // 달(`9월`)은 뺀다 — 화면 전체가 이미 한 기수라 줄마다 되풀이하면 레벨·시간이 뒤로 밀린다
-      classes: collapseWeek5(mine, (e) => e.section, week5).map((e) => sectionChip(e.section, week5, { withTerm: false })),
-    };
-  });
-
   return (
     <>
-      <PageHeader icon="study" title="스터디 신청자" description="대면·단어 스터디는 시간대별로, 비대면 스터디는 날짜별 인증 현황과 함께 보여 드려요.">
+      <PageHeader icon="study" title="스터디 신청자" description="대면·단어 스터디는 시간대별로, 비대면 스터디는 신청자 명단을 보여 드려요. 비대면 인증은 '비대면스터디 인증' 화면에서 봐요.">
         {/* 시간대는 전용 화면에서 (2026-09-18 Alan — 반 편성으로 보내면 한참 스크롤해야 했다). 강사 · 관리자만 */}
         {staff && (
           <Link href={`/admin/study/plan?term=${termKey}`} className="btn-secondary">
@@ -201,10 +158,22 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
         <EmptyState icon="online" title="아직 신청한 수강생이 없어요" description="신청 받기 상태로 바꾸면 수강생이 스터디 페이지에서 신청할 수 있어요." />
       ) : (
         <div className="space-y-6">
-        <section>
-          <h2 className="mb-2 text-base font-black text-ink">날짜별 인증 현황 <span className="text-sm font-semibold text-slate">— 자료를 풀고 인증하지 않은 학생에게 알림을 보낼 수 있어요</span></h2>
-          <CheckinRoster students={rosterStudents} materials={materialRows ?? []} checkins={rosterCheckins} today={today} />
-        </section>
+        {/* 날짜별 인증 현황 · 미인증 독촉은 '비대면스터디 인증' 화면으로 옮겼다 (2026-10-08 Alan — "비대면스터디 인증 카테고리 하나 만들어줘. 별도의 페이지") */}
+        <Link
+          href={`/admin/study-checkins?term=${termKey}`}
+          className="card flex items-center gap-3 p-4 transition hover:border-brand-300 hover:bg-brand-50/40"
+        >
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl2 bg-brand-50">
+            <Icon name="camera" size={26} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <b className="block text-[15px] font-black text-ink">비대면스터디 인증 보기</b>
+            <span className="block text-xs text-slate">학생이 올린 풀이 사진 확인 · 날짜별 인증 현황 · 미인증 학생 알림은 여기서 해요</span>
+          </span>
+          <svg viewBox="0 0 24 24" aria-hidden className="size-4 shrink-0 fill-none stroke-mist stroke-[2.5]">
+            <path d="m9 5 7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </Link>
         <section>
         <h2 className="mb-2 text-base font-black text-ink">신청자</h2>
         <TableWrap>

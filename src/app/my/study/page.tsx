@@ -156,6 +156,13 @@ export default async function MyStudyPage() {
                         {/* 회차 안내 (2026-09-30 Alan "각 회차마다 안내문구") — 강사가 자료실에 적은 것. 접지 않는다.
                             2026-10-05 부터 공지와 같은 서식 글이다 — 굵게 · 색 · 크기 · 줄 정렬 · 사진 (`NoteBody`) */}
                         {m.note && <MaterialNoteBox note={m.note} images={noteImages} />}
+                        {/* 선생님이 인증을 확인하며 남긴 코멘트 (2026-10-08 비대면스터디 인증 게시판) — 같은 글이 알림함에도 갔다. 접지 않는다 */}
+                        {checkinByMaterial.get(m.id)?.feedback && (
+                          <p className="mt-2 whitespace-pre-line rounded-xl border border-brand-200 bg-paper px-3 py-2 text-sm text-ink">
+                            <span className="mr-1.5 text-xs font-black text-brand-700">선생님 코멘트</span>
+                            {checkinByMaterial.get(m.id)?.feedback}
+                          </p>
+                        )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <a href={`/files/material/${m.id}?download=1`} className="btn-primary !px-4 !py-2 text-sm">

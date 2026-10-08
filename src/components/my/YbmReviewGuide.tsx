@@ -79,6 +79,11 @@ export function YbmReviewGuide() {
             ))}
           </ol>
 
+          {/* 후기 링크는 한 번만 (2026-10-08 Alan "후기막기") — DB 가 다른 학생의 링크 · 다른 달에 쓴 내 링크를 막는다 (`reviewLinkKey`) */}
+          <p className="mt-4 rounded-xl bg-surface px-3 py-2 text-xs text-slate">
+            <b className="text-ink">후기 링크는 한 번만 쓸 수 있어요.</b> 다른 학생의 후기 링크나 예전 달에 쓴 내 링크로는 신청이 안 돼요 — 그 달 후기를 새로 써서 올려 주세요.
+          </p>
+
           <a href={site.academy.ybmHomeUrl} target="_blank" rel="noopener noreferrer" className="btn-primary mt-5 w-full !py-2.5 sm:w-auto">
             YBM 홈페이지 열기
           </a>

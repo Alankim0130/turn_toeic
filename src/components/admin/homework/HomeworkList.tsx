@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { HomeworkDetail } from "@/components/admin/homework/HomeworkDetail";
-import type { HomeworkPhoto } from "@/components/admin/homework/HomeworkPhotos";
+import type { ViewerPhoto } from "@/components/admin/PhotoViewer";
 import { cn } from "@/lib/utils";
 
 /** 목록 한 줄 — **글자는 서버가 다 만들어서 넘긴다** (날짜·건수 문구를 클라이언트에서 다시 짓지 않는다) */
@@ -21,7 +21,7 @@ export type HomeworkRow = {
   checked: boolean;
   question: string | null;
   feedback: string | null;
-  photos: HomeworkPhoto[];
+  photos: ViewerPhoto[];
   /** 음성 파일 (2026-10-07) — 팝업에서 플레이어로 듣는다 */
   audios: { id: number; name: string }[];
   /** 사진도 음성도 아닌 첨부 (옛 제출) */

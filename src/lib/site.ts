@@ -393,7 +393,7 @@ export const NAV_ADMIN_SECTIONS: NavSection[] = [
       // 강사 유튜브 채널 연결 · 오늘 회차 송출 상태 (2026-09-21) — 강사·관리자만.
       // 2026-10-01 부터 Zoom 수업을 유튜브로 함께 송출한 방송을 찾아 **다시보기**로 올린다 (불라방 입장은 Zoom 그대로 — 도메인 규칙 1)
       { href: "/admin/live-channels", label: "유튜브 자동 연결", icon: "live" },
-      // 수업자료실 — 레벨 × RC/LC 로 자료를 올린다 (2026-10-05 Alan). 강사·관리자만 (crew 를 붙이지 말 것 — 조교 화면은 Alan 이 정한 여섯 가지)
+      // 수업자료실 — 레벨 × RC/LC 로 자료를 올린다 (2026-10-05 Alan). 강사·관리자만 (crew 를 붙이지 말 것 — 조교 화면은 Alan 이 정한 것만, 등급 체계 9-1)
       { href: "/admin/class-materials", label: "수업자료실", icon: "download" },
       { href: "/admin/lc-audio", label: "LC 음원", icon: "headphones" },
     ],
@@ -406,7 +406,10 @@ export const NAV_ADMIN_SECTIONS: NavSection[] = [
       { href: "/admin/study/plan", label: "스터디 시간 설정", icon: "study" },
       // 조교도 올린다 (2026-10-07 Alan "비대면자료를 조교들이 올릴 수 있으면 좋겠어") — 일곱째 조교 화면
       { href: "/admin/study-materials", label: "비대면 자료", icon: "online", crew: true },
-      // 조교도 점검한다 (2026-10-03 Alan "숙제점검") — 점검완료 알림도 조교 이름으로 간다
+      // 비대면 스터디 인증 게시판 (2026-10-08 Alan "비대면스터디 인증 카테고리 하나 만들어줘. 별도의 페이지") — 사진 보기 · 확인 완료 · 날짜별 현황 · 독촉.
+      // 조교도 쓴다 — 스터디는 조교가 운영하고(2026-10-03) 인증 현황 · 독촉은 그때부터 스터디 신청자 화면에서 조교 일이었다. 여덟째 조교 화면
+      { href: "/admin/study-checkins", label: "비대면스터디 인증", icon: "camera", crew: true },
+      // 조교도 점검한다 (2026-10-03 Alan "숙제점검") — 점검완료 알림은 그 과목 선생님 이름으로 간다 (2026-10-08 — 조교 이름은 남지 않는다)
       { href: "/admin/homework", label: "숙제점검", icon: "homework", crew: true },
     ],
   },

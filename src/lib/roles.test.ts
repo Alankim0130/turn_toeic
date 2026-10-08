@@ -461,3 +461,84 @@ describe("조교의 숙제 점검 알림에 조교 이름이 남지 않는다 (�
     expect(src).toContain("related: { submissionId: s.id }");
   });
 });
+
+/**
+ * 비대면스터디 인증 게시판 (2026-10-08 Alan — "비대면 스터디도 숙제 점검 처럼 게시판이 필요합니당~ "비대면스터디 인증" 카테고리 하나 만들어줘").
+ * 스터디는 조교가 운영하므로 조교도 사진을 보고 확인 완료한다. 확인 알림에 **조교 이름이 남지 않는다** (숙제 알림과 같은 까닭).
+ */
+describe("비대면스터디 인증 게시판 — 조교도 확인하고, 알림에 조교 이름이 없다 (마이그레이션을 순서대로 재생한 마지막 모양)", () => {
+  const DIR = "supabase/migrations";
+  const files = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
+  const sqlOf = (f: string) =>
+    readFileSync(join(DIR, f), "utf8")
+      .split("\n")
+      .map((l) => (l.trim().startsWith("--") ? "" : l))
+      .join("\n");
+  const livePolicies = (table: string) => {
+    const live = new Map<string, string>();
+    const re = new RegExp(`(create|drop) policy (?:if exists )?"([^"]+)" on ${table.replace(".", "\\.")}([^;]*);`, "g");
+    for (const f of files) {
+      for (const [, verb, name, body] of sqlOf(f).matchAll(re)) {
+        if (verb === "create") live.set(name, body.replace(/\s+/g, " "));
+        else live.delete(name);
+      }
+    }
+    return live;
+  };
+
+  it("확인(update)은 스태프 · 조교만, 학생이 지우는 것은 확인 전 인증만 (사진 줄도)", () => {
+    const checkins = livePolicies("public.study_checkins");
+    const updates = [...checkins].filter(([, b]) => /for update/.test(b));
+    expect(updates.map(([n]) => n)).toEqual(["study_checkins: 스태프·조교 확인"]);
+    expect(updates[0][1]).toContain("private.is_crew()");
+    const del = [...checkins].filter(([, b]) => /for delete/.test(b));
+    expect(del.length).toBe(1);
+    expect(del[0][1]).toContain("status = 'submitted'");
+    const fileDel = [...livePolicies("public.study_checkin_files")].filter(([, b]) => /for delete/.test(b));
+    expect(fileDel.length).toBe(1);
+    expect(fileDel[0][1]).toContain("c.status = 'submitted'");
+  });
+
+  it("조교 발송 정책 — 인증 확인 알림은 '받는 학생의 확인된 인증' 일 때만", () => {
+    const crew = [...livePolicies("public.student_messages")].filter(([, b]) => /private\.is_assistant\(\)/.test(b) && /for insert/.test(b));
+    expect(crew.length).toBe(1);
+    expect(crew[0][1]).toContain("(kind = 'study_checked' and private.study_checkin_notice_ok(related, user_id))");
+    let fn = "";
+    for (const f of files) for (const m of sqlOf(f).matchAll(/create or replace function private\.study_checkin_notice_ok\([\s\S]*?\$\$([\s\S]*?)\$\$/g)) fn = m[1];
+    const body = fn.replace(/\s+/g, " ");
+    expect(body).toContain("c.user_id = p_user_id");
+    expect(body).toContain("c.status = 'checked'");
+  });
+
+  it("트리거가 살아 있다 — 보낸 사람이 조교인 study_checked 는 이름을 비운다", () => {
+    let alive = false;
+    let fn = "";
+    for (const f of files) {
+      const sql = sqlOf(f);
+      for (const m of sql.matchAll(/(create|drop) trigger (?:if exists )?student_messages_study_sender\b([^;]*);/g)) {
+        alive = m[1] === "create" && /before insert on public\.student_messages/.test(m[2]);
+      }
+      for (const m of sql.matchAll(/create or replace function private\.student_messages_study_sender\(\)[\s\S]*?\$\$([\s\S]*?)\$\$/g)) fn = m[1];
+    }
+    expect(alive, "student_messages_study_sender 트리거(before insert)가 없다").toBe(true);
+    const body = fn.replace(/\s+/g, " ");
+    expect(body).toContain("new.kind = 'study_checked'");
+    expect(body).toContain("p.id = new.sender_id and p.role = 'assistant'");
+    expect(body).toContain("new.sender_name := ''");
+  });
+
+  it("인증 사진(저장소 study-checkins)은 본인 · 스태프 · 조교만 — 조교 세션으로도 서명 주소가 나온다", () => {
+    const live = new Map<string, string>();
+    for (const f of files) {
+      for (const [, verb, name, body] of sqlOf(f).matchAll(/(create|drop) policy (?:if exists )?"([^"]+)" on storage\.objects([^;]*);/g)) {
+        if (!name.startsWith("study-checkins")) continue;
+        if (verb === "create") live.set(name, body.replace(/\s+/g, " "));
+        else live.delete(name);
+      }
+    }
+    const selects = [...live].filter(([, b]) => /for select/.test(b));
+    expect(selects.map(([n]) => n)).toEqual(["study-checkins: 본인·스태프·조교 조회"]);
+    expect(selects[0][1]).toContain("private.is_crew()");
+    expect(selects[0][1]).toContain("(storage.foldername(name))[1] = (select auth.uid())::text");
+  });
+});

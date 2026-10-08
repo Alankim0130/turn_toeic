@@ -3,7 +3,7 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { HomeworkCheckForm } from "@/components/admin/homework/HomeworkCheckForm";
-import { HomeworkPhotos } from "@/components/admin/homework/HomeworkPhotos";
+import { PhotoViewer } from "@/components/admin/PhotoViewer";
 import type { HomeworkRow } from "@/components/admin/homework/HomeworkList";
 import { AudioPlayer } from "@/components/lc/AudioPlayer";
 import { Icon } from "@/components/ui/Icon";
@@ -94,7 +94,7 @@ export function HomeworkDetail({ row, onClose }: { row: HomeworkRow; onClose: ()
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
-          {row.photos.length > 0 && <HomeworkPhotos photos={row.photos} student={row.name} />}
+          {row.photos.length > 0 && <PhotoViewer photos={row.photos} student={row.name} fileBase="/files/homework" />}
 
           {row.audios.length > 0 && (
             <ul className={row.photos.length > 0 ? "mt-4 space-y-2" : "space-y-2"} aria-label="음성 파일">

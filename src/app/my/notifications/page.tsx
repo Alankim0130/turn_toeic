@@ -52,6 +52,12 @@ export default async function NotificationsPage() {
                       내 스터디에서 인증하기{related.date ? ` (${formatDate(related.date, { month: "numeric", day: "numeric" })})` : ""}
                     </Link>
                   )}
+                  {/* 비대면 스터디 인증 확인 (2026-10-08) — 강사 · 조교가 비대면스터디 인증 게시판에서 확인 완료한 것. 코멘트는 내 스터디에도 남는다 */}
+                  {m.kind === "study_checked" && (
+                    <Link href="/my/study" className="btn-secondary mt-3 !px-4 !py-2 text-sm">
+                      내 스터디 보기
+                    </Link>
+                  )}
                   {m.kind === "homework_checked" && (
                     <Link href="/my/homework" className="btn-primary mt-3 !px-4 !py-2 text-sm">
                       숙제업로드에서 확인하기

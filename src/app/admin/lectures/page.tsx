@@ -19,6 +19,7 @@ import {
   lectureState,
   lectureTitle,
   needsReviewLink,
+  reviewLinkKey,
   seatsLeft,
 } from "@/lib/lecture";
 import { termParam } from "@/lib/study";
@@ -116,10 +117,14 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
           const state = lectureState(l, today);
           const rows = byLecture.get(l.id) ?? [];
           const left = seatsLeft(l);
-          // 3주차 모의고사 — YBM 수강후기 링크를 올려야 신청된다 (2026-10-08 Alan). 같은 링크를 낸 학생을 짚는다
+          // 3주차 모의고사 — YBM 수강후기 링크를 올려야 신청된다 (2026-10-08 Alan). 같은 후기(키 — `reviewLinkKey`)를 낸 학생을 짚는다.
+          // 같은 날 저녁부터 DB 가 다른 학생의 링크를 막으므로(20261008130000) 그 전에 들어온 신청에만 붙을 수 있다
           const review = needsReviewLink(l, term.enrollment_opens_at);
           const linkCount = new Map<string, number>();
-          for (const r of rows) if (r.review_url) linkCount.set(r.review_url, (linkCount.get(r.review_url) ?? 0) + 1);
+          for (const r of rows) {
+            const key = reviewLinkKey(r.review_url);
+            if (key) linkCount.set(key, (linkCount.get(key) ?? 0) + 1);
+          }
           return (
             <section key={l.id} className="card overflow-hidden">
               <div className="flex flex-wrap items-start justify-between gap-2 border-b border-line bg-violet-50/50 px-4 py-3">
@@ -168,7 +173,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
                       <span className="ml-auto">
                         <CancelLectureSignupButton id={s.id} name={s.student?.name ?? "수강생"} />
                       </span>
-                      {review && <ReviewLinkLine url={s.review_url} shared={!!s.review_url && (linkCount.get(s.review_url) ?? 0) > 1} />}
+                      {review && <ReviewLinkLine url={s.review_url} shared={(linkCount.get(reviewLinkKey(s.review_url) ?? "") ?? 0) > 1} />}
                     </li>
                   ))}
                 </ol>
@@ -198,7 +203,8 @@ async function getSignups(supabase: Awaited<ReturnType<typeof createClient>>, id
 
 /**
  * 학생이 올린 YBM 수강후기 링크 — 눌러 열어 보고 후기가 아니면 신청을 취소한다.
- * 같은 링크를 다른 학생도 냈으면 표시한다 (친구 후기를 그대로 붙여 넣은 것일 수 있다).
+ * 같은 후기(`reviewLinkKey`)를 다른 학생도 냈으면 표시한다 (친구 후기를 그대로 붙여 넣은 것일 수 있다) —
+ * 2026-10-08 저녁부터는 DB 가 그런 신청을 아예 막으므로(20261008130000) 그 전에 들어온 신청에만 붙는다.
  * 신청은 YBM 후기 링크 꼴만 받지만(2026-10-08 — `YBM_REVIEW_LINK_RE`) 꼴을 좁히기 전 몇 분 동안 들어온 신청이 있을 수 있어 그 꼴이 아니면 표시한다.
  * 조건이 생기기 전 신청은 링크가 없다.
  */
