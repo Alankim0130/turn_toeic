@@ -58,8 +58,9 @@ function CellMark({ kind, label }: { kind: MissingCell; label?: string }) {
           <path d="M4.6 8.4l2.2 2.2 4.6-4.9" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       ) : kind === "missing" ? (
+        // 안은 칠하지 않는다 — 연한 빨강을 채웠더니 휴대폰에서 × 가 묻혀 보기 힘들었다 (2026-10-08 Alan "x표시 안에 음영이 들어가니 보기 힘들어")
         <svg viewBox="0 0 16 16" className="size-4" aria-hidden>
-          <circle cx="8" cy="8" r="7.25" fill="#fee2e2" stroke="#ef4444" strokeWidth="1.5" />
+          <circle cx="8" cy="8" r="7.25" fill="none" stroke="#ef4444" strokeWidth="1.5" />
           <path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" stroke="#dc2626" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       ) : kind === "upcoming" ? (
