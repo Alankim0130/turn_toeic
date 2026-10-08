@@ -24,7 +24,9 @@ function revalidateAll() {
  * 알림을 못 보내도 점검은 그대로 남긴다 — 점검이 통째로 실패하는 편이 더 나쁘다.
  *
  * **조교도 점검한다** (2026-10-03 Alan "숙제점검"). DB 정책 "homework_submissions: 스태프·조교 점검" ·
- * "student_messages: 조교 발송"(점검완료 알림 · 보낸 이 = 자기 이름)이 같은 집합이다.
+ * "student_messages: 조교 발송"(점검완료 알림 — 그 학생의 점검된 숙제만)이 같은 집합이다.
+ * **조교가 점검해도 학생 알림에는 그 과목 선생님 이름이 간다** (2026-10-08 Alan — "조교가 했다고 알림가는거 빨리 없애줘").
+ * 이름을 바꾸는 것은 DB 트리거(`private.student_messages_homework_sender`) 한곳이다 — 여기서 무엇을 보내든 조교 이름은 남지 않는다.
  */
 export async function checkHomework(input: { id: number; feedback?: string }): Promise<HomeworkCheckResult> {
   const { user, profile } = await requireCrew();
@@ -46,8 +48,8 @@ export async function checkHomework(input: { id: number; feedback?: string }): P
   const msg = homeworkCheckedMessage({ level: s.level, subject: s.subject, classDate: s.class_date, feedback });
   const { error: sendError } = await supabase.from("student_messages").insert({
     user_id: s.user_id,
-    sender_id: user.id,
-    sender_name: profile.name,
+    sender_id: user.id, // 누가 점검했는지는 기록에 남는다 (학생은 이 id 로 이름을 못 읽는다)
+    sender_name: profile.name, // 조교면 DB 트리거가 그 과목 선생님 이름(RC 이영수 · LC 이혜영)으로 바꾼다
     title: msg.title,
     body: msg.body,
     kind: "homework_checked",

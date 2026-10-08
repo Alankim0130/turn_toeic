@@ -405,3 +405,59 @@ describe("LC 교재 · 음원 · 수업자료실 조회는 내 과정 칸 · 열
     expect(fnBody("my_open_rounds")).toContain("d.date <= private.today_kst()");
   });
 });
+
+/**
+ * 조교가 숙제를 점검해도 학생 알림에는 **그 과목 선생님 이름** (2026-10-08 Alan — "지금 조교가 숙제검사했을때 조교가 했다고 알림이 가고 있어!
+ * 이러면 안되잖아 으휴. 조교가 했다고 알림가는거 빨리 없애줘"). 학생 알림함은 보낸 이름을 "○○○ 선생님" 으로 그린다.
+ * 이름은 DB 트리거 한곳이 정한다. RLS 의 with check 는 BEFORE 트리거가 고친 행을 보므로, 조교 발송 정책이 숙제 알림에서도
+ * "보낸 이름 = 자기 이름" 을 요구하면 **조교의 숙제 알림이 통째로 막힌다** — 그 모양으로 되돌리지 말 것.
+ */
+describe("조교의 숙제 점검 알림에 조교 이름이 남지 않는다 (마이그레이션을 순서대로 재생한 마지막 모양)", () => {
+  const DIR = "supabase/migrations";
+  const files = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
+  const sqlOf = (f: string) =>
+    readFileSync(join(DIR, f), "utf8")
+      .split("\n")
+      .map((l) => (l.trim().startsWith("--") ? "" : l))
+      .join("\n");
+
+  it("트리거가 살아 있다 — 보낸 사람이 조교인 homework_checked 는 이름을 그 과목 선생님(homework_notice_teacher)으로", () => {
+    let alive = false;
+    let fn = "";
+    for (const f of files) {
+      const sql = sqlOf(f);
+      for (const m of sql.matchAll(/(create|drop) trigger (?:if exists )?student_messages_homework_sender\b([^;]*);/g)) {
+        alive = m[1] === "create" && /before insert on public\.student_messages/.test(m[2]);
+      }
+      for (const m of sql.matchAll(/create or replace function private\.student_messages_homework_sender\(\)[\s\S]*?\$\$([\s\S]*?)\$\$/g)) fn = m[1];
+    }
+    expect(alive, "student_messages_homework_sender 트리거(before insert)가 없다").toBe(true);
+    const body = fn.replace(/\s+/g, " ");
+    expect(body).toContain("new.kind = 'homework_checked'");
+    expect(body).toContain("p.id = new.sender_id and p.role = 'assistant'");
+    expect(body).toContain("new.sender_name := private.homework_notice_teacher(new.related)");
+  });
+
+  it("조교 발송 정책 — 숙제 갈래는 이름 대신 '그 학생의 점검된 숙제' 를 보고, 자기 이름 조건은 비대면 독촉에만", () => {
+    const live = new Map<string, string>();
+    for (const f of files) {
+      for (const [, verb, name, body] of sqlOf(f).matchAll(/(create|drop) policy (?:if exists )?"([^"]+)" on public\.student_messages([^;]*);/g)) {
+        if (verb === "create") live.set(name, body.replace(/\s+/g, " "));
+        else live.delete(name);
+      }
+    }
+    const crew = [...live].filter(([, body]) => /private\.is_assistant\(\)/.test(body) && /for insert/.test(body));
+    expect(crew.length, "조교가 학생 알림을 넣는 정책을 못 찾았다").toBe(1);
+    const body = crew[0][1];
+    expect(body).toContain("(kind = 'homework_checked' and private.homework_notice_ok(related, user_id))");
+    expect(body).toContain("(kind = 'study_checkin' and sender_name = (select private.my_profile_name()))");
+    // 두 종류를 묶어 자기 이름을 요구하던 2026-10-03 모양 — 트리거가 바꾼 이름이 걸려 숙제 알림이 막힌다
+    expect(body).not.toMatch(/kind in \(/);
+  });
+
+  it("점검완료 알림은 앱의 checkHomework 가 보낸다 — 넣는 길이 그대로여야 트리거가 받는다", () => {
+    const src = readFileSync("src/app/admin/homework/actions.ts", "utf8");
+    expect(src).toContain('kind: "homework_checked"');
+    expect(src).toContain("related: { submissionId: s.id }");
+  });
+});
