@@ -107,8 +107,6 @@ export type MissingSlot = { date: string; subject: HomeworkSubject };
 export type MissingRow = {
   id: string;
   name: string;
-  /** 강사 · 관리자 · 조교 계정의 테스트 배정 — 맨 아래에 두고 '미제출 전체선택' 에서 뺀다 */
-  tester: boolean;
   /** 열마다 · 그 열의 과목마다 */
   cells: MissingCell[][];
   /** 지난 수업 숙제 칸 수 · 그중 낸 칸 수 */
@@ -135,8 +133,11 @@ type GroupSortKey = (string | number)[];
  * 열은 그 묶음의 반들이 그 레벨에 숙제가 있는 수업일(개강일 ~ 종강일), 칸은 학생마다 배정일부터 센다.
  * 그 레벨에 숙제가 하나도 없는 학생 · 묶음은 빠진다 (속성반 학생은 650 탭과 850 탭에 다 선다).
  *
- * 묶음 순서는 `sortKeyOf`(반 id → 정렬 키)가 정한다 — 반 이름 · 시간 같은 것은 화면 쪽이 안다. 줄 순서는
- * **안 낸 숙제가 많은 학생 → 이름**, 테스터는 맨 아래 (출석 한눈에 보기와 같은 규칙).
+ * **강사 · 관리자 · 조교 계정(`staff`)은 반에 배정돼 있어도 넣지 않는다** (2026-10-08 Alan — "미제출 알림에 리스트 명단에 강사계정과 관리자 계정도
+ * 포함되어있어. 이건 빼줘"). 학생 화면을 보려고 넣은 테스트 배정이다 — 줄 · 묶음 · 탭 숫자 · 전체선택 · 보내기 어디에도 없다
+ * (처음엔 출석 한눈에 보기처럼 `테스터` 표를 달아 맨 아래에 뒀다). 그 계정만 배정된 반은 카드도 없다.
+ *
+ * 묶음 순서는 `sortKeyOf`(반 id → 정렬 키)가 정한다 — 반 이름 · 시간 같은 것은 화면 쪽이 안다. 줄 순서는 **안 낸 숙제가 많은 학생 → 이름**.
  */
 export function buildMissingBoard(input: {
   level: number;
@@ -145,15 +146,16 @@ export function buildMissingBoard(input: {
   includes: ReadonlyMap<number, readonly number[]>;
   enrollments: readonly MissingEnrollment[];
   submissions: readonly MissingSubmission[];
-  people: ReadonlyMap<string, { name: string; tester: boolean }>;
+  /** 이름과 강사 · 관리자 · 조교 계정인지 (`staff` 면 명단에 넣지 않는다) */
+  people: ReadonlyMap<string, { name: string; staff: boolean }>;
   sortKeyOf?: (sectionId: number) => GroupSortKey;
 }): MissingGroup[] {
   const { level, today, sections, includes } = input;
 
-  // 학생 → 직접 배정
+  // 학생 → 직접 배정 (강사 · 관리자 · 조교 계정의 테스트 배정은 뺀다)
   const byStudent = new Map<string, MissingEnrollment[]>();
   for (const e of input.enrollments) {
-    if (!sections.has(e.sectionId)) continue;
+    if (!sections.has(e.sectionId) || input.people.get(e.studentId)?.staff) continue;
     byStudent.set(e.studentId, [...(byStudent.get(e.studentId) ?? []), e]);
   }
 
@@ -212,7 +214,6 @@ export function buildMissingBoard(input: {
       return {
         id,
         name: person?.name ?? "",
-        tester: person?.tester ?? false,
         cells,
         past,
         done: doneCount,
@@ -220,8 +221,8 @@ export function buildMissingBoard(input: {
         rate: past > 0 ? Math.round((doneCount / past) * 100) : null,
       };
     });
-    // 안 낸 숙제가 많은 학생 → 이름 순, 테스터는 맨 아래
-    rows.sort((a, b) => Number(a.tester) - Number(b.tester) || b.missing.length - a.missing.length || a.name.localeCompare(b.name, "ko"));
+    // 안 낸 숙제가 많은 학생 → 이름 순
+    rows.sort((a, b) => b.missing.length - a.missing.length || a.name.localeCompare(b.name, "ko"));
     out.push({ key, sectionIds: g.sectionIds, columns, rows });
   }
 
@@ -245,10 +246,10 @@ function compareKeys(a: GroupSortKey, b: GroupSortKey): number {
   return 0;
 }
 
-/** 레벨 탭의 숫자 — 안 낸 숙제가 있는 학생 수 (테스터 빼고, 한 사람은 한 번) */
+/** 레벨 탭의 숫자 — 안 낸 숙제가 있는 학생 수 (한 사람은 한 번) */
 export function missingStudentCount(groups: readonly MissingGroup[]): number {
   const ids = new Set<string>();
-  for (const g of groups) for (const r of g.rows) if (!r.tester && r.missing.length > 0) ids.add(r.id);
+  for (const g of groups) for (const r of g.rows) if (r.missing.length > 0) ids.add(r.id);
   return ids.size;
 }
 
@@ -268,11 +269,11 @@ export const MISSING_STATUS_LABEL: Record<MissingStatus, string> = { perfect: "�
 
 /**
  * '미제출 전체선택' 이 고르는 학생 — 안 낸 지난 수업 숙제가 있는 학생 (첫토익 "제출률 100% 미만").
- * 테스터와 **오늘 이미 미제출 알림을 받은 학생은 뺀다** — 같은 날 두 번 가지 않게 (결석 알림과 같은 규칙). 손으로는 다시 고를 수 있다.
+ * **오늘 이미 미제출 알림을 받은 학생은 뺀다** — 같은 날 두 번 가지 않게 (결석 알림과 같은 규칙). 손으로는 다시 고를 수 있다.
  */
 export function defaultPicks(groups: readonly MissingGroup[], notifiedToday: ReadonlySet<string> = new Set()): string[] {
   const ids = new Set<string>();
-  for (const g of groups) for (const r of g.rows) if (!r.tester && r.missing.length > 0 && !notifiedToday.has(r.id)) ids.add(r.id);
+  for (const g of groups) for (const r of g.rows) if (r.missing.length > 0 && !notifiedToday.has(r.id)) ids.add(r.id);
   return [...ids];
 }
 

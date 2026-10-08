@@ -119,7 +119,7 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
 
       {!data.ok && (
         <Alert kind="warning" title="숙제 기록을 다 읽지 못했어요">
-          낸 숙제가 &lsquo;안 냄&rsquo; 으로 보일 수 있어요. 잠시 뒤 새로고침해 주세요.
+          낸 숙제가 &lsquo;안 냄&rsquo; 으로 보이거나 이름이 비어 보일 수 있어요. 잠시 뒤 새로고침해 주세요.
         </Alert>
       )}
 
