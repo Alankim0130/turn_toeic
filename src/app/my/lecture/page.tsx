@@ -14,12 +14,14 @@ import {
   lectureOpensAt,
   lectureState,
   lectureTitle,
+  needsReviewLink,
   seatsLeft,
   signupDday,
 } from "@/lib/lecture";
 import { InstructorCameo } from "@/components/ui/InstructorCameo";
 import { LectureCancelButton, LectureSignupButton, SignupOpensIn } from "@/components/my/LectureSignup";
-import { getMyLectures, getMyLectureSignupIds } from "../_lib/queries";
+import { YBM_REVIEW_GUIDE_ID, YbmReviewGuide } from "@/components/my/YbmReviewGuide";
+import { getMyLectures, getMyLectureSignups } from "../_lib/queries";
 
 export const metadata: Metadata = { title: "특강 신청", robots: { index: false } };
 
@@ -27,13 +29,16 @@ export default async function MyLecturePage() {
   const locked = await studentGate("lecture");
   if (locked) return locked;
 
-  const [lectures, mySignups] = await Promise.all([getMyLectures(), getMyLectureSignupIds()]);
+  const [lectures, mySignups] = await Promise.all([getMyLectures(), getMyLectureSignups()]);
   const today = todayKST();
 
   // 신청을 받는 특강만. 지난 특강은 내가 신청한 것만 남겨 기록을 보여 준다
   const open = lectures
     .filter((l) => l.signup && (today <= l.date || mySignups.has(l.id)))
     .sort((a, b) => a.date.localeCompare(b.date));
+  // 3주차 모의고사 특강은 YBM 수강후기 링크를 올려야 신청된다 (2026-10-08 Alan) — 아직 할 일이 남은 특강이 있을 때만 쓰는 법을 보여 준다
+  const reviewFor = (l: (typeof open)[number]) => needsReviewLink(l, l.term?.enrollment_opens_at);
+  const showGuide = open.some((l) => reviewFor(l) && !mySignups.has(l.id) && lectureState(l, today) !== "closed");
 
   return (
     <div className="space-y-6">
@@ -55,6 +60,8 @@ export default async function MyLecturePage() {
           {open.map((l, i) => {
             const state = lectureState(l, today);
             const applied = mySignups.has(l.id);
+            const review = reviewFor(l);
+            const reviewUrl = mySignups.get(l.id) ?? null;
             const left = seatsLeft(l);
             const pct = l.capacity ? Math.min(100, Math.round((l.applied_count / l.capacity) * 100)) : 0;
             // 강사 캐리커처 + 한마디, 잠긴 특강의 D-day (2026-10-02 Alan)
@@ -109,6 +116,8 @@ export default async function MyLecturePage() {
                     <SignupOpensIn opensAt={lectureOpensAt(l)} label={formatKstDateTime(lectureOpensAt(l))} dday={ddayLabel(dday)} />
                   )}
 
+                  {review && (applied || state !== "closed") && <ReviewLinkNote applied={applied} reviewUrl={reviewUrl} notOpen={state === "not_open"} />}
+
                   <div className="mt-auto flex flex-wrap items-center justify-end gap-2">
                     {applied ? (
                       state === "open" || state === "full" ? (
@@ -117,7 +126,7 @@ export default async function MyLecturePage() {
                         <p className="text-xs text-slate">신청이 마감돼 직접 취소할 수 없어요. 강사에게 말씀해 주세요.</p>
                       )
                     ) : state === "open" || state === "full" ? (
-                      <LectureSignupButton lectureId={l.id} full={state === "full"} />
+                      <LectureSignupButton lectureId={l.id} full={state === "full"} needsReview={review} />
                     ) : (
                       <p className="text-xs font-semibold text-slate">{state === "closed" ? "신청이 마감됐어요" : "아직 신청 전이에요"}</p>
                     )}
@@ -129,7 +138,41 @@ export default async function MyLecturePage() {
         </div>
       )}
 
+      {showGuide && <YbmReviewGuide />}
+
       <p className="text-xs text-mist">특강은 강사가 매달 반 편성 달력에서 정합니다. 신청은 특강 7일 전부터 당일까지 받아요 (강사가 따로 정한 특강은 그 시각부터).</p>
+    </div>
+  );
+}
+
+/**
+ * 3주차 모의고사 특강 카드의 후기 링크 안내 (2026-10-08 Alan) — 신청 전에는 "후기를 써야 신청돼요" + 쓰는 법으로 가는 길,
+ * 신청한 뒤에는 내가 올린 링크. 링크 칸 자체는 `LectureSignupButton` 이 그린다 (신청 받는 중일 때만).
+ */
+function ReviewLinkNote({ applied, reviewUrl, notOpen }: { applied: boolean; reviewUrl: string | null; notOpen: boolean }) {
+  if (applied) {
+    return (
+      <div className="rounded-xl bg-brand-50 px-3 py-2.5 text-xs">
+        <p className="font-bold text-slate">올린 YBM 수강후기 링크</p>
+        {reviewUrl ? (
+          <a href={reviewUrl} target="_blank" rel="noopener noreferrer" className="mt-0.5 block break-all font-semibold text-ink underline decoration-brand-200 underline-offset-2 hover:decoration-brand-500">
+            {reviewUrl}
+          </a>
+        ) : (
+          <p className="mt-0.5 text-mist">링크 없이 신청됐어요.</p>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl border border-brand-200 bg-brand-50 px-3 py-2.5 text-xs">
+      <p className="font-black text-brand-700">YBM 수강후기를 쓰고 링크를 올려야 신청돼요</p>
+      <p className="mt-0.5 text-slate">
+        {notOpen ? "신청이 열리기 전에 미리 써 두세요. " : ""}
+        <a href={`#${YBM_REVIEW_GUIDE_ID}`} className="font-bold text-brand-600 underline decoration-brand-200 underline-offset-2">
+          후기 쓰는 법 보기
+        </a>
+      </p>
     </div>
   );
 }

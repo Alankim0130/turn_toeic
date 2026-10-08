@@ -1,0 +1,78 @@
+import Image from "next/image";
+import { Icon } from "@/components/ui/Icon";
+import { site } from "@/lib/site";
+
+export const YBM_REVIEW_GUIDE_ID = "ybm-review-guide";
+
+const STEPS = [
+  { title: "YBM 홈페이지 로그인", body: "아래 버튼으로 YBM 홈페이지에 들어가 로그인해요." },
+  { title: "마이페이지에서 후기 쓰기", body: "마이페이지의 '후기 작성하기'를 눌러 역전토익 수강후기를 써요." },
+  { title: "후기 링크 복사", body: "다 쓴 내 후기를 열고 그 화면의 주소(링크)를 복사해요." },
+  { title: "붙여 넣고 신청", body: "이 화면의 특강 카드에 링크를 붙여 넣고 '후기 링크 올리고 신청하기'를 눌러요." },
+];
+
+/**
+ * YBM 수강후기 쓰는 법 (2026-10-08 Alan — "후기작성방법도 알려주면 좋을 것 같아. Ybm홈페이지 링크를 주고, 거기에서 마이페이지에서 작성하면 돼.
+ * 후기작성하기가 안뜬다면 ybm홈페이지 회원가입을 안한거라서 1층 데스크에 내려가서 연동해달라고 얘기를 하면 돼").
+ * 특강 신청(`/my/lecture`)에 후기 링크를 올려야 하는 특강(3주차 모의고사 — `needsReviewLink`)이 있을 때만 선다. 특강 카드의 `후기 쓰는 법` 이 여기로 온다.
+ * 마이페이지 그림은 등업신청의 수강증 찾는 법(`ReceiptGuide`)과 같은 것이다 (Alan 이 준 YBM 홈페이지 첫 화면 — 아래 메뉴의 마이페이지).
+ * YBM 화면 안의 후기 쓰기 · 링크 복사 단계는 이 작업 환경에서 YBM 홈페이지가 막혀 직접 보지 못하고 Alan 의 말대로 적었다 — 실제와 다르면 STEPS 만 고친다.
+ */
+export function YbmReviewGuide() {
+  return (
+    <section id={YBM_REVIEW_GUIDE_ID} aria-labelledby="ybm-review-guide-title" className="card scroll-mt-24 overflow-hidden">
+      <div className="flex items-center gap-3 border-b border-line bg-brand-50/70 px-5 py-4 sm:px-6">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-paper shadow-soft">
+          <Icon name="tag-feedback" size={26} />
+        </span>
+        <div className="min-w-0">
+          <h2 id="ybm-review-guide-title" className="text-lg font-black text-ink">
+            YBM 수강후기 쓰는 법
+          </h2>
+          <p className="mt-0.5 text-sm text-slate">3주차 모의고사 특강은 YBM 홈페이지에 수강후기를 쓰고, 그 후기 링크를 올려야 신청돼요.</p>
+        </div>
+      </div>
+
+      <div className="grid gap-6 p-5 sm:p-6 md:grid-cols-2">
+        <div className="min-w-0">
+          <ol className="space-y-3">
+            {STEPS.map((s, i) => (
+              <li key={s.title} className="flex gap-3 text-sm">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-500 text-sm font-black text-white">{i + 1}</span>
+                <p className="min-w-0 text-slate">
+                  <b className="text-ink">{s.title}</b> — {s.body}
+                </p>
+              </li>
+            ))}
+          </ol>
+
+          <a href={site.academy.ybmHomeUrl} target="_blank" rel="noopener noreferrer" className="btn-primary mt-5 w-full !py-2.5 sm:w-auto">
+            YBM 홈페이지 열기
+          </a>
+
+          <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+            <p className="flex items-center gap-2 font-black text-amber-900">
+              <Icon name="warning" size={18} />
+              &apos;후기 작성하기&apos;가 안 보여요?
+            </p>
+            <p className="mt-1 text-amber-900/90">
+              YBM 홈페이지 회원가입(연동)이 안 된 거예요. <b className="text-amber-950">1층 데스크에 내려가서 연동해 달라고</b> 말씀해 주세요.
+            </p>
+          </div>
+        </div>
+
+        <figure>
+          <Image
+            src="/guides/ybm-mypage.webp"
+            alt="YBM 홈페이지 첫 화면 — 아래 메뉴의 마이페이지를 빨간 화살표로 표시"
+            width={600}
+            height={851}
+            unoptimized
+            className="mx-auto h-auto w-full max-w-[16rem] rounded-xl border border-line shadow-soft"
+          />
+          <figcaption className="mt-2 text-center text-xs text-mist">YBM 홈페이지 첫 화면 → 아래 메뉴의 마이페이지</figcaption>
+        </figure>
+      </div>
+    </section>
+  );
+}

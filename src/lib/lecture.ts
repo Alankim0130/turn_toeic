@@ -1,3 +1,5 @@
+import { normalizeLinkUrl } from "@/lib/class-materials";
+import { site } from "@/lib/site";
 import { lectureKindLabel, sortLectureKinds } from "@/lib/utils";
 
 /**
@@ -119,3 +121,65 @@ export function formatKstDateTime(iso: string) {
 
 /** 남은 자리. 정원이 없으면 null */
 export const seatsLeft = (l: LectureSignupRow) => (l.capacity === null ? null : Math.max(0, l.capacity - l.applied_count));
+
+/**
+ * **3주차 모의고사 특강은 YBM 수강후기 링크를 올려야 신청된다** (2026-10-08 Alan — "3주차 특강에서 모의고사 특강을 신청할때,
+ * ybm홈페이지에서 수강후기를 작성해서 올리는것이 신청조건이야. 학생이 후기를 적고 난 뒤에 이미지처럼 링크를 올리면 신청이 되는걸로 해줘").
+ * 주차는 그 달 개강일(terms.enrollment_opens_at)이 든 주(월요일 시작)가 1주차 — 10월(10/6 개강)이면 10/24 RC특강 + 2차 모의고사.
+ * DB `private.lecture_needs_review`(마이그레이션 20261008100000 — 신청을 넣을 때 트리거가 막는다)와 같은 규칙 — 바꾸면 둘 다 (lecture.test.ts 가 SQL 도 본다).
+ */
+export const REVIEW_LECTURE_WEEK = 3;
+export const REVIEW_LECTURE_KINDS = ["mock1", "mock2"] as const;
+
+/** 그 날짜가 든 주의 월요일 (UTC ms) */
+const mondayOf = (date: string) => {
+  const t = dateToUtc(date);
+  const isodow = new Date(t).getUTCDay() || 7; // 월 1 … 일 7
+  return t - (isodow - 1) * DAY_MS;
+};
+
+/** 개강일이 든 주(월요일 시작)를 1주차로 센 그 날짜의 주차. 개강 전 주는 0 이하 */
+export const lectureWeek = (date: string, termOpens: string) => Math.round((mondayOf(date) - mondayOf(termOpens)) / (7 * DAY_MS)) + 1;
+
+/** 후기 링크를 올려야 신청되는 특강인가 — 모의고사가 든 3주차 특강. 개강일을 모르면 아니다 (DB 도 같다) */
+export function needsReviewLink(l: { date: string; kinds: readonly string[] | null }, termOpens: string | null | undefined): boolean {
+  if (!termOpens) return false;
+  if (!(l.kinds ?? []).some((k) => (REVIEW_LECTURE_KINDS as readonly string[]).includes(k))) return false;
+  return lectureWeek(l.date, termOpens) === REVIEW_LECTURE_WEEK;
+}
+
+/** ybmedu.com(과 그 아래 주소)인가 — 강사 화면이 아닌 주소에 표시를 붙인다. 신청을 막지는 않는다 (마이그레이션 머리말) */
+export function isYbmUrl(url: string) {
+  try {
+    return /(^|\.)ybmedu\.com$/i.test(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** 주소 비교용 — www. · m. 을 떼고, 경로 끝의 / 를 뗀다 */
+const addressKey = (url: string) => {
+  const u = new URL(url);
+  return `${u.hostname.replace(/^(www|m)\./i, "").toLowerCase()}${u.pathname.replace(/\/+$/, "")}${u.search}${u.hash}`;
+};
+
+/** 누구나 같은 YBM 주소 — 첫 화면 · 역전토익 페이지 · 그 후기 탭. 내 후기를 가리키지 않는다 */
+const YBM_LIST_KEYS = new Set([site.academy.ybmHomeUrl, site.academy.ybmUrl, site.academy.ybmReviewUrl].map(addressKey));
+
+/**
+ * 학생이 붙여 넣은 후기 링크를 저장할 주소로 — **화면과 서버 액션이 같은 것을 쓴다**.
+ * 주소 규칙은 수업자료실 링크와 같다(`normalizeLinkUrl` — https:// 붙이기 · http(s) 만 · 2,000자 = DB check).
+ * 휴대폰 '공유' 로 복사하면 `[YBM] 수강후기 https://…` 처럼 글이 붙어 와서, 글 속의 첫 주소를 꺼낸다.
+ * YBM 첫 화면 · 역전토익 후기 목록 주소는 받지 않는다 — 랜딩의 "후기 바로보기" 주소를 그대로 붙여 넣는 실수가 가장 쉽다.
+ */
+export function parseReviewLink(raw: string | null | undefined): { ok: true; url: string } | { ok: false; error: string } {
+  const s = String(raw ?? "").trim();
+  if (!s) return { ok: false, error: "YBM 수강후기 링크를 붙여 넣어 주세요." };
+  const found = s.match(/https?:\/\/[^\s<>"']+/i)?.[0].replace(/[.,;:!?]+$/, "");
+  const url = normalizeLinkUrl(found ?? s);
+  if (!url) return { ok: false, error: "후기 링크를 확인해 주세요 — 내가 쓴 후기의 주소(https://…)를 그대로 붙여 넣어 주세요." };
+  if (YBM_LIST_KEYS.has(addressKey(url))) {
+    return { ok: false, error: "YBM 홈페이지 첫 화면이나 역전토익 후기 목록 주소예요. 내가 쓴 후기를 열고 그 주소를 붙여 넣어 주세요." };
+  }
+  return { ok: true, url };
+}

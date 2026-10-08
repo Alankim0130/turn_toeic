@@ -180,7 +180,7 @@ export async function getMyLectures(opts: { upcoming?: boolean } = {}) {
   const [{ data }, orders] = await Promise.all([
     supabase
       .from("special_lectures")
-      .select("id, term_id, date, content, kinds, signup, capacity, signup_opens_at, applied_count, lecturer:lecturers(name), term:terms(year, month)")
+      .select("id, term_id, date, content, kinds, signup, capacity, signup_opens_at, applied_count, lecturer:lecturers(name), term:terms(year, month, enrollment_opens_at)")
       .order("date", { ascending: true })
       .order("id", { ascending: true }),
     getMyOrders(),
@@ -191,13 +191,24 @@ export async function getMyLectures(opts: { upcoming?: boolean } = {}) {
 }
 export type MyLecture = Awaited<ReturnType<typeof getMyLectures>>[number];
 
+/**
+ * 내가 신청한 특강 — 특강 id → 올린 YBM 수강후기 링크 (3주차 모의고사 특강만, 그 밖은 null — 2026-10-08).
+ * 후기 링크 칸은 마이그레이션 20261008100000 에서 생겼다 — 배포와 마이그레이션 사이에 그 칸을 못 읽으면 신청만 읽는다
+ * (그대로 비우면 신청한 특강이 전부 "신청 전" 으로 보인다).
+ */
+export async function getMyLectureSignups() {
+  const { user } = await getSessionProfile();
+  if (!user) return new Map<number, string | null>();
+  const supabase = await createClient();
+  const full = await supabase.from("lecture_signups").select("lecture_id, review_url").eq("user_id", user.id);
+  if (!full.error) return new Map<number, string | null>((full.data ?? []).map((r) => [r.lecture_id, r.review_url]));
+  const { data } = await supabase.from("lecture_signups").select("lecture_id").eq("user_id", user.id);
+  return new Map<number, string | null>((data ?? []).map((r) => [r.lecture_id, null]));
+}
+
 /** 내가 신청한 특강 id 집합 */
 export async function getMyLectureSignupIds() {
-  const { user } = await getSessionProfile();
-  if (!user) return new Set<number>();
-  const supabase = await createClient();
-  const { data } = await supabase.from("lecture_signups").select("lecture_id").eq("user_id", user.id);
-  return new Set((data ?? []).map((r) => r.lecture_id));
+  return new Set((await getMyLectureSignups()).keys());
 }
 
 /** 반의 상시 불라방 링크 — **내 반만** (링크 정책도 스태프에게 전부 열려 있다 — 머리말) */

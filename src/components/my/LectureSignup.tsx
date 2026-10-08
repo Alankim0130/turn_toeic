@@ -49,8 +49,40 @@ export function SignupOpensIn({ opensAt, label, dday }: { opensAt: string; label
   );
 }
 
-export function LectureSignupButton({ lectureId, full }: { lectureId: number; full: boolean }) {
+/**
+ * 신청 버튼. **3주차 모의고사 특강(`needsReview`)이면 YBM 수강후기 링크 칸이 함께 선다** (2026-10-08 Alan — "학생이 후기를 적고 난 뒤에
+ * 이미지처럼 링크를 올리면 신청이 되는걸로 해줘"). 링크가 맞는지는 서버 액션(`parseReviewLink`)이 보고 DB 트리거가 한 번 더 막는다.
+ * 칸은 상태로 쥔다 — React 19 는 `<form action>` 이 끝나면 폼을 초기화해서, 그냥 두면 "링크를 확인해 주세요" 와 함께 붙여 넣은 주소가 사라진다.
+ */
+export function LectureSignupButton({ lectureId, full, needsReview = false }: { lectureId: number; full: boolean; needsReview?: boolean }) {
   const [state, action] = useActionState<LectureSignupState, FormData>(signupLecture, {});
+  const [link, setLink] = useState("");
+  if (needsReview && !full) {
+    return (
+      <form action={action} className="w-full space-y-2">
+        <input type="hidden" name="lecture_id" value={lectureId} />
+        <label className="block">
+          <span className="text-xs font-bold text-ink">내 YBM 수강후기 링크</span>
+          <input
+            name="review_url"
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            inputMode="url"
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder="여기에 후기 링크 붙여 넣기"
+            className="input mt-1 !py-2.5"
+          />
+        </label>
+        <SubmitButton variant="primary" className="!w-full !py-2.5" pendingText="신청 중…" disabled={!link.trim()}>
+          후기 링크 올리고 신청하기
+        </SubmitButton>
+        {state.error && <p className="text-xs font-semibold text-red-600">{state.error}</p>}
+      </form>
+    );
+  }
   return (
     <form action={action} className="space-y-1">
       <input type="hidden" name="lecture_id" value={lectureId} />

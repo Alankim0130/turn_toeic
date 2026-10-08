@@ -10,7 +10,17 @@ import { Icon } from "@/components/ui/Icon";
 import { TermChips } from "@/components/admin/TermChips";
 import { LectureSignupForm } from "@/components/admin/lectures/LectureSignupForm";
 import { CancelLectureSignupButton } from "@/components/admin/lectures/CancelLectureSignupButton";
-import { formatKstDateTime, LECTURE_STATE_CLASS, LECTURE_STATE_LABEL, lectureOpensAt, lectureState, lectureTitle, seatsLeft } from "@/lib/lecture";
+import {
+  formatKstDateTime,
+  isYbmUrl,
+  LECTURE_STATE_CLASS,
+  LECTURE_STATE_LABEL,
+  lectureOpensAt,
+  lectureState,
+  lectureTitle,
+  needsReviewLink,
+  seatsLeft,
+} from "@/lib/lecture";
 import { termParam } from "@/lib/study";
 import { pickTerm, type TermLite } from "../_lib/queries";
 
@@ -72,19 +82,13 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
     .order("id");
 
   const ids = (lectures ?? []).map((l) => l.id);
-  const { data: signups } = ids.length
-    ? await supabase
-        .from("lecture_signups")
-        .select("id, lecture_id, created_at, student:profiles(name, phone)")
-        .in("lecture_id", ids)
-        .order("created_at")
-    : { data: [] as never[] };
+  const signups = ids.length ? await getSignups(supabase, ids) : [];
 
-  const byLecture = new Map<number, NonNullable<typeof signups>>();
-  for (const s of signups ?? []) byLecture.set(s.lecture_id, [...(byLecture.get(s.lecture_id) ?? []), s]);
+  const byLecture = new Map<number, typeof signups>();
+  for (const s of signups) byLecture.set(s.lecture_id, [...(byLecture.get(s.lecture_id) ?? []), s]);
 
   const termKey = termParam(term.year, term.month);
-  const total = (signups ?? []).length;
+  const total = signups.length;
 
   return (
     <>
@@ -112,6 +116,10 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
           const state = lectureState(l, today);
           const rows = byLecture.get(l.id) ?? [];
           const left = seatsLeft(l);
+          // 3주차 모의고사 — YBM 수강후기 링크를 올려야 신청된다 (2026-10-08 Alan). 같은 링크를 낸 학생을 짚는다
+          const review = needsReviewLink(l, term.enrollment_opens_at);
+          const linkCount = new Map<string, number>();
+          for (const r of rows) if (r.review_url) linkCount.set(r.review_url, (linkCount.get(r.review_url) ?? 0) + 1);
           return (
             <section key={l.id} className="card overflow-hidden">
               <div className="flex flex-wrap items-start justify-between gap-2 border-b border-line bg-violet-50/50 px-4 py-3">
@@ -123,6 +131,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
                   </p>
                 </div>
                 <span className="flex flex-wrap items-center gap-2">
+                  {review && <span className="rounded-full bg-brand-500 px-2.5 py-1 text-xs font-bold text-white">YBM 후기 링크로 신청 · 3주차 모의고사</span>}
                   {l.signup && (
                     <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold", LECTURE_STATE_CLASS[state])}>
                       {LECTURE_STATE_LABEL[state]}
@@ -159,6 +168,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
                       <span className="ml-auto">
                         <CancelLectureSignupButton id={s.id} name={s.student?.name ?? "수강생"} />
                       </span>
+                      {review && <ReviewLinkLine url={s.review_url} shared={!!s.review_url && (linkCount.get(s.review_url) ?? 0) > 1} />}
                     </li>
                   ))}
                 </ol>
@@ -168,5 +178,38 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
         })}
       </div>
     </>
+  );
+}
+
+/**
+ * 신청 명단 — 후기 링크(review_url, 2026-10-08)와 함께. 그 칸은 마이그레이션 20261008100000 에서 생겼다 —
+ * 배포와 마이그레이션 사이에 못 읽으면 링크 없이 명단만 읽는다 (그대로 비우면 신청자가 하나도 없는 것처럼 보인다).
+ */
+async function getSignups(supabase: Awaited<ReturnType<typeof createClient>>, ids: number[]) {
+  const full = await supabase
+    .from("lecture_signups")
+    .select("id, lecture_id, created_at, review_url, student:profiles(name, phone)")
+    .in("lecture_id", ids)
+    .order("created_at");
+  if (!full.error) return full.data ?? [];
+  const { data } = await supabase.from("lecture_signups").select("id, lecture_id, created_at, student:profiles(name, phone)").in("lecture_id", ids).order("created_at");
+  return (data ?? []).map((r) => ({ ...r, review_url: null as string | null }));
+}
+
+/**
+ * 학생이 올린 YBM 수강후기 링크 — 눌러 열어 보고 후기가 아니면 신청을 취소한다.
+ * 어느 사이트 주소인지는 신청 때 막지 않으므로(YBM 후기 주소의 모양을 몰라 짐작으로 막지 않았다) ybmedu.com 이 아니면 표시하고,
+ * 같은 링크를 다른 학생도 냈으면 표시한다 (친구 후기를 그대로 붙여 넣은 것일 수 있다). 조건이 생기기 전 신청은 링크가 없다.
+ */
+function ReviewLinkLine({ url, shared }: { url: string | null; shared: boolean }) {
+  if (!url) return <p className="basis-full pl-9 text-xs font-semibold text-amber-700">후기 링크 없음</p>;
+  return (
+    <p className="flex min-w-0 basis-full flex-wrap items-center gap-x-2 gap-y-1 pl-9 text-xs">
+      <a href={url} target="_blank" rel="noopener noreferrer" className="min-w-0 break-all font-semibold text-ink underline decoration-brand-200 underline-offset-2 hover:decoration-brand-500">
+        {url}
+      </a>
+      {!isYbmUrl(url) && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800">YBM 주소 아님</span>}
+      {shared && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800">다른 학생과 같은 링크</span>}
+    </p>
   );
 }
