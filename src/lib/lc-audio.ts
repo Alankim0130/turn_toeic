@@ -96,6 +96,13 @@ export const sortBooks = <T extends { book_set: string }>(books: T[]) => [...boo
 /** 표지 주소. 표지를 바꾸면 updated_at 이 달라져 브라우저가 새 이미지를 받는다 */
 export const coverSrc = (b: { id: number; updated_at: string }, width: number) => `/files/textbook/${b.id}?w=${width}&v=${encodeURIComponent(b.updated_at)}`;
 
+/**
+ * 학생 LC 음원 화면의 표지 크기 — **목록과 교재 화면이 같은 크기를 쓴다** (2026-10-09 Alan "Lc음원듣기에서도 교재 이미지 불러오는게 시간이 쫌 걸려").
+ * 주소가 같아야 목록에서 받은 그림을 교재 화면이 그대로 쓴다 (예전에는 목록 480 · 교재 화면 240 이라 같은 표지를 두 번 줄이고 두 번 받았다).
+ * 목록 카드의 가장 큰 표지(160px)를 3배 화면에서도 또렷하게.
+ */
+export const STUDENT_COVER_WIDTH = 480;
+
 /* ─── 음원 종류 ───────────────────────────────────────────────────────────── */
 
 /** DB 의 lc_audio_tracks.kind check 와 값이 같아야 한다 */

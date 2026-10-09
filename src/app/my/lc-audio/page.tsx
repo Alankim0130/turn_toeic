@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { BookCover } from "@/components/lc/BookCover";
 import { cn, formatDate, todayKST, TRACK_LABEL } from "@/lib/utils";
-import { BOOK_SET_LABEL, bookLabel, bookSectionsByLevel, bookTimesLabel, coverSrc, DAYS, lessonRangeLabel, sortBooks } from "@/lib/lc-audio";
+import { BOOK_SET_LABEL, bookLabel, bookSectionsByLevel, bookTimesLabel, coverSrc, STUDENT_COVER_WIDTH, DAYS, lessonRangeLabel, sortBooks } from "@/lib/lc-audio";
 import { cellLevels, isRoundOpen, roundKey } from "@/lib/class-rounds";
 import { shortDay } from "@/lib/study-rounds";
 import { getMyAccessibleSections, getMyLcAudio, getMyOrders, getMyStudyEligibility } from "../_lib/queries";
@@ -165,7 +165,7 @@ export default async function LcAudioPage({ searchParams }: { searchParams: Prom
                 )}
               >
                 <div className="w-24 shrink-0 sm:mx-auto sm:w-40">
-                  <BookCover src={b.cover_name ? coverSrc(b, 480) : null} alt={`${b.level} ${BOOK_SET_LABEL[b.book_set]} 교재 표지`} />
+                  <BookCover src={b.cover_name ? coverSrc(b, STUDENT_COVER_WIDTH) : null} alt={`${b.level} ${BOOK_SET_LABEL[b.book_set]} 교재 표지`} />
                 </div>
                 <div className="min-w-0 flex-1 sm:text-center">
                   {when && (

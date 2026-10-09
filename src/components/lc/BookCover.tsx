@@ -1,9 +1,21 @@
+import { preconnect } from "react-dom";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
+
+/** 표지 그림이 실제로 오는 곳 — /files/textbook/{id} 가 이 주소의 서명 URL 로 넘긴다 */
+const STORAGE_ORIGIN = (() => {
+  try {
+    return process.env.NEXT_PUBLIC_SUPABASE_URL ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).origin : null;
+  } catch {
+    return null;
+  }
+})();
 
 /**
  * 교재 표지. 책처럼 보이도록 그림자·책등 음영·은은한 광택을 얹는다.
  * src 는 /files/textbook/{id} (비공개 서명 URL 로 리다이렉트) 라 next/image 최적화를 쓰지 않는다.
+ * 표지가 있으면 저장소 주소에 **미리 연결**해 둔다 (2026-10-09 — 넘겨받은 뒤에야 연결을 열면 휴대폰에서 그만큼 늦다).
+ * 같은 주소를 하루 동안 다시 쓰는 것은 src/lib/stable-signed-url.ts.
  */
 export function BookCover({
   src,
@@ -18,6 +30,7 @@ export function BookCover({
   selected?: boolean;
   className?: string;
 }) {
+  if (src && STORAGE_ORIGIN) preconnect(STORAGE_ORIGIN);
   return (
     <div
       className={cn(

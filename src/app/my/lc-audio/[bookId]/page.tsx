@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { todayKST, TRACK_LABEL } from "@/lib/utils";
 import { studentTrackLabel } from "@/lib/week5";
 import { holidayNamesBetween } from "@/lib/holidays";
-import { BOOK_SET_LABEL, DAYS, DAY_COUNT, bookLabel, bookTimeLabel, coverSrc, explicitBookSet, lessonRangeLabel, sortTracks } from "@/lib/lc-audio";
+import { BOOK_SET_LABEL, DAYS, DAY_COUNT, bookLabel, bookTimeLabel, coverSrc, STUDENT_COVER_WIDTH, explicitBookSet, lessonRangeLabel, sortTracks } from "@/lib/lc-audio";
 import { cellKey, isRoundOpen, roundCells, roundDates, roundKey } from "@/lib/class-rounds";
 import { getMyAccessibleSections, getMySessions, getMyWeek5 } from "../../_lib/queries";
 import { isContainerProgram } from "@/lib/two-week";
@@ -117,7 +117,7 @@ export default async function LcBookPage({ params }: { params: Promise<{ bookId:
 
       <section className="flex items-center gap-4 rounded-xl3 border border-line bg-paper p-4">
         <div className="w-16 shrink-0 sm:w-20">
-          <BookCover size="sm" src={book.cover_name ? coverSrc(book, 240) : null} alt="" />
+          <BookCover size="sm" src={book.cover_name ? coverSrc(book, STUDENT_COVER_WIDTH) : null} alt="" />
         </div>
         <div className="min-w-0">
           <p className="text-[11px] font-black tracking-[0.18em] text-brand-600">

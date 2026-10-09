@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isAudioType, isImageType } from "@/lib/upload";
+import { COVER_REDIRECT_MAX_AGE, stableCoverUrl } from "@/lib/stable-signed-url";
 
 /**
  * 비공개 파일 열기: /files/material/12 · /files/homework/34 · /files/audio/56 · /files/textbook/78 · /files/item/9 · /files/class/3
@@ -11,7 +12,10 @@ import { isAudioType, isImageType } from "@/lib/upload";
  *  - checkin = 비대면 스터디 인증 사진(study_checkin_files, 2026-10-08 비대면스터디 인증 게시판). 본인 · 강사 · 관리자 · 조교만 보인다
  *  - 사용자 세션으로 행을 조회하므로 RLS 가 접근 권한을 정한다 (못 보면 404).
  *  - 저장소 서명 URL 도 사용자 세션으로 만들어 storage 정책을 한 번 더 통과한다.
+ *    **LC 교재 표지만 예외** (2026-10-09 Alan "Lc음원듣기에서도 교재 이미지 불러오는게 시간이 쫌 걸려") — 하루 동안 모두가 같은 서명 주소를 쓴다
+ *    (`stableCoverUrl`, 서비스 롤). 볼 수 있는지는 그 전에 사용자 세션으로 하는 행 조회(RLS)가 정한다. 까닭은 src/lib/stable-signed-url.ts 머리말.
  *  - ?download=1 은 원본 파일명으로 내려받기, 숙제 사진·인증 사진·교재 이미지는 ?w=400 으로 썸네일 (숙제 음성 파일은 ?w 를 무시하고 그대로 준다).
+ *  - 로그인 확인은 접속 토큰의 서명(`getClaims`)이다 — 화면과 같다 (CLAUDE.md "화면 전환 속도" 3). 볼 수 있는지는 행 조회와 저장소 정책이 정한다.
  */
 const BUCKET = {
   material: "study-materials",
@@ -34,10 +38,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const kind = kindParam as Kind;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const { data: auth } = await supabase.auth.getClaims();
+  if (!auth?.claims?.sub) {
     const login = new URL("/login", request.url);
     login.searchParams.set("next", request.nextUrl.pathname);
     return NextResponse.redirect(login);
@@ -63,6 +65,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const sp = request.nextUrl.searchParams;
   const width = Number(sp.get("w"));
   const thumb = (kind === "homework" || kind === "checkin" || kind === "textbook") && isImageType(row.content_type) && width >= 80 && width <= 1200;
+  // LC 교재 표지 — 하루 동안 같은 서명 주소 · 브라우저가 12시간 기억 (stable-signed-url.ts 머리말). 위에서 로그인한 사람의 세션으로
+  // 표지 행을 읽었다 = 볼 수 있다. 캐시나 서명이 실패하면 아래 예전 길(그 자리에서 서명)로 간다 — 표지가 깨지지 않게.
+  // 크기는 정수만 — 480.0001 처럼 끝없이 다른 값으로 캐시 칸을 늘리지 못하게 (화면은 늘 정수를 쓴다)
+  if (kind === "textbook" && thumb && Number.isInteger(width)) {
+    try {
+      const url = await stableCoverUrl(row.file_path, width);
+      return NextResponse.redirect(url, { status: 302, headers: { "Cache-Control": `private, max-age=${COVER_REDIRECT_MAX_AGE}` } });
+    } catch (e) {
+      console.error("[files] 표지 주소", e);
+    }
+  }
+
   // 음원은 재생 중 구간 요청이 이어지므로 넉넉히, 나머지는 짧게 — 숙제 음성 파일(2026-10-07)도 플레이어로 듣는 음원이다
   const expiresIn = kind === "audio" || (kind === "homework" && isAudioType(row.content_type)) ? 6 * 60 * 60 : 10 * 60;
 
