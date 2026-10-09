@@ -54,3 +54,16 @@ describe("카드 변형의 모양", () => {
     expect(channels[0].min).toBe(0);
   });
 });
+
+describe("SVG 는 읽지 않는다 (2026-10-09 보안 검토 — sharp.block)", () => {
+  it("image/png 라고 올린 SVG 도 내용으로 알아내 막는다 — 전처리가 던져 image_unreadable 로 강사 검토에 간다", async () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="#3e89e3"/></svg>');
+    await expect(receiptVariants(svg)).rejects.toThrow(/unsupported image format/);
+    // 막는 줄이 소스에 있어야 한다 — sharp 가 SVG 를 못 읽는 다른 까닭(빌드 옵션)으로 통과하면 안 된다
+    expect(fs.readFileSync(path.join(__dirname, "ocr-image.ts"), "utf8")).toContain('sharp.block({ operation: ["VipsForeignLoadSvg"] });');
+  });
+
+  it("PNG 수강증은 그대로 읽는다", async () => {
+    expect((await receiptVariants(PHONE)).length).toBeGreaterThan(0);
+  });
+});

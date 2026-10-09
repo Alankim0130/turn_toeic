@@ -2,6 +2,14 @@ import sharp, { type Sharp } from "sharp";
 import { cardCrop, cardFirst, cardOf, cardScale, largestBlueBlob } from "./receipt-card";
 
 /**
+ * **SVG 는 읽지 않는다** (2026-10-09 보안 검토). sharp 는 선언된 형식(`image/png`)이 아니라 **그림의 내용**으로 형식을 알아내서,
+ * PNG 라고 올린 SVG 도 librsvg 로 풀었다 — 그 라이브러리의 메모리 오류(CVE-2026-96889, sharp 0.35.5 에서 고침)가
+ * 로그인한 회원 누구나 수강증 올리기로 닿는 자리였다. 수강증은 화면 캡처라 SVG 일 수 없으므로 아예 막는다 — 다음 librsvg 오류도 우리에게 닿지 않는다.
+ * 막힌 그림은 `metadata()` 가 던져 `image_unreadable` 로 강사 검토에 간다 (ocr.ts). 프로세스 전체에 걸리지만 다른 sharp 사용처(출석 포스터 — PNG · WEBP)에는 SVG 가 없다.
+ */
+sharp.block({ operation: ["VipsForeignLoadSvg"] });
+
+/**
  * 수강증 이미지 전처리 — OCR 전에 **흑백으로** 바꾼 변형 여러 장을 만든다 (2026-09-18 실물 수강증으로 실측).
  *
  * 왜 필요한가: 학생은 카드만 잘라 올리지 않고 **휴대폰 화면 전체**를 캡처해 올린다. 그 화면에서 수강증 카드는
