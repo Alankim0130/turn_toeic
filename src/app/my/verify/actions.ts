@@ -327,6 +327,8 @@ export async function submitVerification(input: { filePath: string }): Promise<S
     })
     .select("id")
     .single();
+  // 같은 수강증을 동시에 두 번 냈다 — 확인 중 기록은 하나다 (unique index, 마이그레이션 20261009110000). 먼저 들어간 것이 접수됐다
+  if (error?.code === "23505") return { ok: false, error: "같은 수강증이 방금 접수됐어요. 화면을 새로고침해 확인해 주세요." };
   if (error || !inserted) return { ok: false, error: "접수 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요." };
 
   if (rejected && decision.kind === "reject") {
@@ -454,6 +456,7 @@ export async function submitManualVerification(input: {
     file_hash: outcome.hash,
     candidates: { ...(prior ? { correctionOf: prior.id } : {}), nameMatches: read?.nameMatches ?? null, flags },
   });
+  if (error?.code === "23505") return { ok: false, error: "같은 수강증이 방금 접수됐어요. 화면을 새로고침해 확인해 주세요." };
   if (error) return { ok: false, error: "접수 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요." };
 
   notifyNew(admin, user.id, true);

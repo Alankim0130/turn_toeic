@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireCrew, requireStaff } from "@/lib/auth";
+import { isStaff, requireCrew, requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AUTO_VERIFY_KEY } from "@/lib/auto-verify";
@@ -28,7 +28,7 @@ function revalidateAll(id: number) {
  * 주5일은 같은 달의 월수금·화목금 두 반을 함께 고른다.
  */
 export async function approveVerification(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  await requireCrew();
+  const { user, profile } = await requireCrew();
 
   const id = Number(formData.get("verification_id"));
   const sectionIds = [...new Set(formData.getAll("section_ids").map(Number).filter((n) => Number.isInteger(n) && n > 0))];
@@ -41,6 +41,8 @@ export async function approveVerification(_prev: ActionState, formData: FormData
   const { data: ver } = await admin.from("enrollment_verifications").select("id, user_id, result").eq("id", id).single();
   if (!ver) return { error: "검증 기록을 찾을 수 없습니다." };
   if (ver.result === "approved") return { error: "이미 승인된 기록입니다. 정정은 아래 배정 수정에서 해 주세요." };
+  // 조교는 자기 수강증을 스스로 승인하지 못한다 (2026-10-09 보안 검토 — 조교는 학생 모드에서 수강증을 올릴 수 있어, 아무 그림이나 올리고 원하는 반에 스스로 들어가는 길이었다)
+  if (ver.user_id === user.id && !isStaff(profile.role)) return { error: "자기 수강증은 승인할 수 없어요. 강사 · 관리자에게 부탁해 주세요." };
 
   // 승인 본체는 OCR 자동 승인과 같은 함수다 (src/lib/approve-verification.ts).
   // 스태프가 직접 고른 반은 **그 달의 최종 배정**이다 (2026-09-23 Alan) — 이미 그 반에 있어도 막지 않고 옮겨 온다
@@ -74,7 +76,7 @@ export async function rejectVerification(_prev: ActionState, formData: FormData)
 
 /** 오배정 정정: 배정된 반 / 수강 방식 변경 */
 export async function updateEnrollment(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  await requireCrew();
+  const { user, profile } = await requireCrew();
   const verificationId = Number(formData.get("verification_id"));
   const enrollmentId = Number(formData.get("enrollment_id"));
   const sectionId = Number(formData.get("section_id"));
@@ -82,7 +84,13 @@ export async function updateEnrollment(_prev: ActionState, formData: FormData): 
   if (!verificationId || !enrollmentId || !sectionId) return { error: "잘못된 요청입니다." };
 
   const admin = createAdminClient();
-  const { data: enr } = await admin.from("enrollments").select("id, order_id, student_id").eq("id", enrollmentId).single();
+  // 배정 기록은 **그 수강증으로 만든 등록 안의 것**이어야 한다 (2026-10-09 보안 검토). 서비스 롤로 고치므로 RLS 가 막아 주지 않는다 —
+  // 묶지 않으면 화면이 보낸 enrollment_id 하나로 아무 학생의 배정이든(강사가 수강증 없이 넣은 배정까지) 아무 반으로 옮길 수 있었다.
+  // 조교에게 열린 것은 "수강증 승인 · 오배정 정정" 이지 반 배정이 아니다 (CLAUDE.md 등급 체계 9-1)
+  const { data: order } = await admin.from("enrollment_orders").select("id, user_id").eq("verification_id", verificationId).maybeSingle();
+  if (!order) return { error: "이 수강증으로 만든 등록이 없습니다." };
+  if (order.user_id === user.id && !isStaff(profile.role)) return { error: "자기 배정은 고칠 수 없어요. 강사 · 관리자에게 부탁해 주세요." };
+  const { data: enr } = await admin.from("enrollments").select("id, order_id, student_id").eq("id", enrollmentId).eq("order_id", order.id).maybeSingle();
   if (!enr) return { error: "배정 기록을 찾을 수 없습니다." };
 
   // 승인과 같은 규칙 — 옮긴 뒤에도 한 등록 안의 반은 한 달(기수)이고, 종강 전이어야 한다 (`enrollment-window.ts`)

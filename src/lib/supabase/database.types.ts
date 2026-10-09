@@ -744,6 +744,7 @@ export type Database = {
           file_path: string
           file_deleted_at: string | null
           file_hash: string | null
+          hold_month: number | null
           id: number
           matched_section: number | null
           ocr_raw: Json | null

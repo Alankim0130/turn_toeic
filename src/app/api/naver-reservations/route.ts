@@ -25,7 +25,7 @@ function authorized(req: NextRequest) {
 
 const pickStrings = (values: unknown[]) => values.filter((v): v is string => typeof v === "string" && v.trim() !== "");
 
-async function readText(req: NextRequest): Promise<{ text: string; source: string }> {
+async function readText(req: Request): Promise<{ text: string; source: string }> {
   const type = req.headers.get("content-type") ?? "";
 
   if (type.includes("application/json")) {
@@ -54,8 +54,11 @@ export async function POST(req: NextRequest) {
 
   const length = Number(req.headers.get("content-length") ?? 0);
   if (length > MAX_BYTES) return NextResponse.json({ ok: false, error: "too large" }, { status: 413 });
+  // content-length 는 안 보낼 수도 있다(chunked) — 본문을 먼저 다 받아 크기를 본 뒤에야 JSON · 폼으로 푼다 (2026-10-09 보안 검토)
+  const raw = await req.arrayBuffer();
+  if (raw.byteLength > MAX_BYTES) return NextResponse.json({ ok: false, error: "too large" }, { status: 413 });
 
-  const { text, source } = await readText(req);
+  const { text, source } = await readText(new Request(req.url, { method: "POST", headers: req.headers, body: raw }));
   if (!text.trim()) return NextResponse.json({ ok: false, error: "empty text" }, { status: 400 });
   if (text.length > MAX_BYTES) return NextResponse.json({ ok: false, error: "too large" }, { status: 413 });
 

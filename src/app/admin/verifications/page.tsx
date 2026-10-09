@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -30,8 +31,10 @@ export default async function VerificationsPage({ searchParams }: { searchParams
   const { status: statusParam } = await searchParams;
   const status = TABS.some((t) => t.value === statusParam) ? (statusParam as string) : "pending";
   const supabase = await createClient();
+  // 수강증 표의 판정 칸(candidates)은 학생이 못 읽는 칸이라(2026-10-09, 마이그레이션 20261009110000) 서비스 롤로 읽는다 — 위의 requireCrew 가 먼저다
+  const admin = createAdminClient();
 
-  let query = supabase
+  let query = admin
     .from("enrollment_verifications")
     .select("id, user_id, created_at, result, confidence, matched_section, source, hold:candidates->hold, correction:candidates->correctionOf")
     .order("created_at", { ascending: false })
@@ -47,10 +50,10 @@ export default async function VerificationsPage({ searchParams }: { searchParams
 
   const [{ data: rows }, pending, held, approved, rejected, { data: flag, error: flagError }] = await Promise.all([
     query,
-    supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).is("candidates->hold", null),
-    supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).not("candidates->hold", "is", null),
-    supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).eq("result", "approved"),
-    supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).in("result", ["rejected", "closed"]),
+    admin.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).is("candidates->hold", null),
+    admin.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).not("candidates->hold", "is", null),
+    admin.from("enrollment_verifications").select("id", { count: "exact", head: true }).eq("result", "approved"),
+    admin.from("enrollment_verifications").select("id", { count: "exact", head: true }).in("result", ["rejected", "closed"]),
     // 긴급 스위치 (2026-09-22). 조교도 상태는 본다 — 꺼져 있으면 모든 수강증이 여기로 쌓이는 까닭이다
     supabase.from("feature_flags").select("enabled, note, updated_at, updated_by").eq("key", AUTO_VERIFY_KEY).maybeSingle(),
   ]);

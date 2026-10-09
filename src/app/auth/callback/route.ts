@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { safeNextPath } from "@/lib/safe-next";
 import { createClient } from "@/lib/supabase/server";
 import { COMPLETE_PROFILE_PATH, isProfileIncomplete } from "@/lib/auth";
 
@@ -7,7 +8,7 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const nextParam = searchParams.get("next") ?? "/my";
-  const next = nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/my";
+  const next = safeNextPath(nextParam);
 
   if (code) {
     const supabase = await createClient();

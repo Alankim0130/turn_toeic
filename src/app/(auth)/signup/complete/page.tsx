@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { safeNextPath } from "@/lib/safe-next";
 import { redirect } from "next/navigation";
 import { Logo } from "@/components/ui/Logo";
 import { COMPLETE_PROFILE_PATH, getSessionProfile, isProfileIncomplete } from "@/lib/auth";
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
  */
 export default async function CompleteProfilePage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
   const [{ next }, { user, profile }] = await Promise.all([searchParams, getSessionProfile()]);
-  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/my";
+  const target = safeNextPath(next);
   if (!user) redirect(`/login?next=${encodeURIComponent(COMPLETE_PROFILE_PATH)}`);
   if (!isProfileIncomplete(profile)) redirect(target);
 

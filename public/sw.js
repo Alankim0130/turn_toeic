@@ -89,7 +89,9 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = new URL((event.notification.data && event.notification.data.url) || "/admin", self.location.origin).href;
+  // 우리 사이트 안의 주소만 연다 — 알림 내용은 서버만 만들지만(VAPID 비밀) 밖의 주소가 끼어도 열지 않는다 (2026-10-09 보안 검토)
+  const wanted = new URL((event.notification.data && event.notification.data.url) || "/admin", self.location.origin);
+  const target = wanted.origin === self.location.origin ? wanted.href : new URL("/admin", self.location.origin).href;
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });

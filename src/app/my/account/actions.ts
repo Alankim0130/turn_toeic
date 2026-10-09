@@ -91,6 +91,7 @@ export async function updateMyProfile(_prev: AccountState, formData: FormData): 
 
   if (name.replace(/\s/g, "").length < 2 || name.length > 20) return { error: "이름을 정확히 적어 주세요." };
   if (!/^01\d{8,9}$/.test(phone)) return { error: "휴대폰 번호를 확인해 주세요. (예: 010-1234-5678)" };
+  if (university.length > 60 || department.length > 60) return { error: "대학 · 학과는 60자 안으로 적어 주세요." };
   if (!GENDERS.has(gender)) return { error: "성별 선택이 올바르지 않습니다." };
 
   const supabase = await createClient();

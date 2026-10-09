@@ -134,8 +134,9 @@ export async function getMyVerifications() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("enrollment_verifications")
-    // hold = 받아 둔 다음 달 수강증의 달 (2026-09-22). 위조 신호가 든 candidates 전체는 가져오지 않는다 — 학생에게 보일 일이 없다
-    .select("id, created_at, result, reject_reason, parsed, matched_section, hold:candidates->hold")
+    // hold = 받아 둔 다음 달 수강증의 달 (2026-09-22). 위조 신호가 든 candidates 는 2026-10-09 부터 학생이 아예 못 읽는다 (칸 단위 grant — 마이그레이션 20261009110000).
+    // 학생에게 보이는 판정 값은 생성 칸 hold_month 하나다
+    .select("id, created_at, result, reject_reason, parsed, matched_section, hold:hold_month")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(10);
@@ -268,13 +269,15 @@ export async function getMyLiveCards(): Promise<MyLiveCard[]> {
   const ends = myTermEnds(orders);
   const untilOf = (termId: number) => ends.get(termId);
   const cards = new Map<number, MyLiveCard>();
+  // 화면이 그대로 링크로 세우는 값이라 http(s) 주소만 (2026-10-09 보안 검토 — 표에도 같은 check 가 있다, 마이그레이션 20261009110000)
+  const isWebUrl = (u: string) => /^https?:\/\//i.test(u);
   for (const l of standing ?? [])
-    if (l.section && (!mine || mine.has(l.section_id)))
+    if (l.section && isWebUrl(l.live_url) && (!mine || mine.has(l.section_id)))
       cards.set(l.section_id, { sectionId: l.section_id, section: l.section, url: l.live_url, kind: "standing", until: untilOf(l.section.term_id) });
   const upcoming = (perSession ?? [])
     .filter((l) => {
       const sec = l.session?.section;
-      if (!sec || l.session!.date < today || (mine && !mine.has(l.session!.section_id))) return false;
+      if (!sec || !isWebUrl(l.live_url) || l.session!.date < today || (mine && !mine.has(l.session!.section_id))) return false;
       const until = untilOf(sec.term_id);
       return !until || l.session!.date <= until;
     })

@@ -31,7 +31,9 @@ export async function setMyAvatar(_prev: AvatarState, formData: FormData): Promi
   const { data: saved, error } = await supabase.from("profiles").update({ avatar_path: path }).eq("id", user.id).select("id");
   if (error || !saved?.length) return { error: "사진을 저장하지 못했어요. 잠시 후 다시 시도해 주세요." };
 
-  if (before?.avatar_path && before.avatar_path !== path) await admin.storage.from(AVATAR_BUCKET).remove([before.avatar_path]);
+  // 옛 파일은 **본인 세션으로** 지운다 — 저장소 정책 "avatars: 본인 삭제" 가 본인 폴더만 허락한다 (2026-10-09 보안 검토 — 예전에는 서비스 롤로 지워서,
+  // profiles.avatar_path 를 API 로 남의 경로로 바꿔 둔 뒤 부르면 남의 사진이 지워졌다. 경로가 본인 폴더인지도 한 번 더 본다)
+  if (before?.avatar_path && before.avatar_path !== path && isOwnAvatarPath(before.avatar_path, user.id)) await supabase.storage.from(AVATAR_BUCKET).remove([before.avatar_path]);
   revalidatePath("/my", "layout");
   revalidatePath("/admin/students", "layout");
   return { message: "프로필 사진을 바꿨어요." };
@@ -47,7 +49,8 @@ export async function removeMyAvatar(): Promise<AvatarState> {
   const { data: before } = await supabase.from("profiles").select("avatar_path").eq("id", user.id).maybeSingle();
   const { error } = await supabase.from("profiles").update({ avatar_path: null }).eq("id", user.id);
   if (error) return { error: "사진을 지우지 못했어요. 잠시 후 다시 시도해 주세요." };
-  if (before?.avatar_path) await createAdminClient().storage.from(AVATAR_BUCKET).remove([before.avatar_path]);
+  // 본인 세션 · 본인 폴더만 (위 setMyAvatar 와 같은 까닭)
+  if (before?.avatar_path && isOwnAvatarPath(before.avatar_path, user.id)) await supabase.storage.from(AVATAR_BUCKET).remove([before.avatar_path]);
   revalidatePath("/my", "layout");
   revalidatePath("/admin/students", "layout");
   return { message: "프로필 사진을 지웠어요." };

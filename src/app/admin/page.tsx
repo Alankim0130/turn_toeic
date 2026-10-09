@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { cn, todayKST, formatDate, formatTimeRange } from "@/lib/utils";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -64,7 +65,8 @@ export default async function AdminDashboardPage() {
     supabase.from("textbook_orders").select("id", { count: "exact", head: true }).eq("status", "requested"),
     supabase.from("profiles").select("gender, university"),
     // 받아 둔 다음 달 수강증(반 개설 대기)은 뺀다 — 그 달 반이 열려야 할 일이 생긴다 (2026-09-22)
-    supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).is("candidates->hold", null),
+    // candidates 는 학생이 못 읽는 칸이라(2026-10-09, 마이그레이션 20261009110000) 서비스 롤로 센다 — 위의 requireStaff 가 먼저다
+    createAdminClient().from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).is("candidates->hold", null),
     supabase.from("homework_submissions").select("id", { count: "exact", head: true }).eq("status", "submitted"),
     supabase.from("contact_messages").select("id", { count: "exact", head: true }).eq("status", "new"),
     // 네이버 예약 위젯 — 오늘 · 내일(한국 날짜). 10분마다 예약 페이지를 확인한 칸 기록에서 읽는다 (2026-09-21 — 첫토익과 같은 방식)

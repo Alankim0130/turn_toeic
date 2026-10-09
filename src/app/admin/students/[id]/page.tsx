@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { canAssignRole, isAdmin, isStaff, requireStaff, ROLE_LABEL, TEST_ROLES, type UserRole } from "@/lib/auth";
 import { TestRoleSelect, type TestRoleOption } from "@/components/admin/students/TestRoleSelect";
 import { todayKST, formatDate } from "@/lib/utils";
@@ -64,8 +65,9 @@ export default async function StudentDetailPage({
       .order("id"),
     supabase.from("enrollment_orders").select("id, status, activates_on, access_until, verification_id").eq("user_id", id).order("activates_on", { ascending: false }),
     supabase.from("terms").select(TERM_COLUMNS).order("year").order("month"),
-    // 올린 수강증 (2026-10-02 Alan) — 최근 것부터
-    supabase
+    // 올린 수강증 (2026-10-02 Alan) — 최근 것부터. 판정 칸(candidates · confidence)은 학생이 못 읽는 칸이라(2026-10-09, 마이그레이션 20261009110000)
+    // 서비스 롤로 읽는다 — 위의 requireStaff 가 먼저다
+    createAdminClient()
       .from("enrollment_verifications")
       .select("id, created_at, result, source, reject_reason, confidence, candidates, parsed, file_path, file_deleted_at")
       .eq("user_id", id)

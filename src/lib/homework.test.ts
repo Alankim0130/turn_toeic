@@ -159,13 +159,19 @@ describe("homework 버킷 — 마이그레이션과 같은 값", () => {
   const touching = files.filter((f) => /storage\.buckets[^;]*'homework'/.test(readFileSync(`${dir}/${f}`, "utf8")));
   const last = readFileSync(`${dir}/${touching.at(-1)}`, "utf8");
 
-  it("마지막으로 바꾼 파일은 음성을 연 20261007120000 이다", () => {
-    expect(touching.at(-1)).toBe("20261007120000_homework_audio.sql");
+  it("마지막으로 바꾼 파일은 사진 형식을 목록으로 좁힌 20261009120000 이다 (음성은 20261007120000 이 열었다)", () => {
+    expect(touching.at(-1)).toBe("20261009120000_student_bucket_image_types.sql");
   });
 
-  it("사진 · 음성을 받고, 한도는 음성 한도(50MB) — 사진 20MB 는 앱이 본다", () => {
-    expect(last).toContain("allowed_mime_types = array['image/*', 'audio/*']");
-    expect(last).toContain(`file_size_limit    = ${MAX_AUDIO_MB} * 1024 * 1024`);
+  it("사진 형식 목록 + 음성(audio/*) — image/* 로 되돌리지 말 것 (SVG 가 들어온다, 2026-10-09 보안 검토). 한도는 음성을 연 파일의 50MB 그대로", () => {
+    const homework = last.slice(last.indexOf("where id = 'homework'") - 400, last.indexOf("where id = 'homework'"));
+    expect(homework).toContain("'audio/*'");
+    expect(homework).toContain("'image/jpeg'");
+    expect(homework).toContain("'image/heic'");
+    expect(homework).not.toContain("'image/*'");
+    expect(last).not.toContain("'image/svg+xml'");
+    const audio = readFileSync(`${dir}/20261007120000_homework_audio.sql`, "utf8");
+    expect(audio).toContain(`file_size_limit    = ${MAX_AUDIO_MB} * 1024 * 1024`);
     expect(MAX_PHOTO_MB).toBeLessThanOrEqual(MAX_AUDIO_MB);
   });
 });

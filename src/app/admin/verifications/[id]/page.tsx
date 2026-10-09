@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { todayKST, formatDate, formatTimeRange, formatWon, cn, TRACK_LABEL } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
@@ -48,7 +49,10 @@ export default async function VerificationDetailPage({
   const supabase = await createClient();
   const today = todayKST();
 
-  const { data: v } = await supabase.from("enrollment_verifications").select("*").eq("id", id).maybeSingle();
+  // 판정 기록(candidates · ocr_raw · file_hash · confidence)은 2026-10-09 부터 학생이 못 읽는 칸이라(마이그레이션 20261009110000) **서비스 롤로** 읽는다 —
+  // 위의 requireCrew 가 먼저다. 그 밖의 표(반 · 등록 · 이름)는 그대로 로그인한 사람의 세션이다
+  const admin = createAdminClient();
+  const { data: v } = await admin.from("enrollment_verifications").select("*").eq("id", id).maybeSingle();
   if (!v) notFound();
 
   const [{ data: signed }, { data: sections }, { data: order }, { data: myEnrollments }, names, phones, { data: twinRows }, { data: courseRows }, { data: otherPending }] = await Promise.all([
@@ -83,7 +87,7 @@ export default async function VerificationDetailPage({
     // 강좌 이름 — 수강증의 반이 아직 안 열렸을 때 그 반을 이름으로 적는다 (열린 반 목록에는 없으니까, 2026-10-06 `missingClassOf`)
     supabase.from("courses").select("name, program, target_score").eq("is_active", true),
     // 같은 학생의 다른 확인 중 수강증 — 단과를 둘 산 학생은 수강증이 두 장이고 하나씩 승인한다 (2026-10-06 RC단과 두 장)
-    supabase.from("enrollment_verifications").select("id, candidates").eq("user_id", v.user_id).is("result", null).neq("id", id).order("id"),
+    admin.from("enrollment_verifications").select("id, candidates").eq("user_id", v.user_id).is("result", null).neq("id", id).order("id"),
   ]);
   const student = names.get(v.user_id);
   const phone = phones.get(v.user_id);

@@ -9,12 +9,9 @@ import { COMPLETE_PROFILE_PATH } from "@/lib/auth";
 import { getSocialLogins } from "@/lib/auth-providers";
 import { isSocialProvider } from "@/lib/social";
 import { site } from "@/lib/site";
+import { safeNextPath } from "@/lib/safe-next";
 
 export type AuthState = { error?: string; message?: string; values?: Record<string, string> };
-
-function safeNext(next: unknown) {
-  return typeof next === "string" && next.startsWith("/") && !next.startsWith("//") ? next : "/my";
-}
 
 /** 이 요청이 들어온 주소. 로컬·프리뷰·운영이 달라서 구글 로그인 뒤 돌아올 콜백 주소를 요청에서 만든다 */
 async function requestOrigin() {
@@ -29,7 +26,7 @@ async function requestOrigin() {
 export async function signIn(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
-  const next = safeNext(formData.get("next"));
+  const next = safeNextPath(formData.get("next"));
 
   if (!email || !password) return { error: "이메일과 비밀번호를 입력해 주세요.", values: { email } };
 
@@ -54,7 +51,7 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
  * provider 는 목록(`SOCIAL_PROVIDERS`)에 있고 Supabase 에 켜져 있는 것만 받는다.
  */
 export async function signInWithSocial(formData: FormData) {
-  const next = safeNext(formData.get("next"));
+  const next = safeNextPath(formData.get("next"));
   const provider = formData.get("provider");
   const back = `/login?error=social&next=${encodeURIComponent(next)}`;
   if (!isSocialProvider(provider) || !(await getSocialLogins())[provider]) redirect(back);
@@ -88,7 +85,8 @@ function readProfileValues(formData: FormData) {
 
 /** 두 폼의 공통 검사. 통과하면 undefined */
 function validateProfileValues(values: ReturnType<typeof readProfileValues>) {
-  if (values.name.length < 2) return "실명을 정확히 입력해 주세요. 수강증의 이름과 같아야 등업이 됩니다.";
+  if (values.name.length < 2 || values.name.length > 20) return "실명을 정확히 입력해 주세요. 수강증의 이름과 같아야 등업이 됩니다.";
+  if (values.university.length > 60 || values.department.length > 60) return "대학 · 학과는 60자 안으로 적어 주세요.";
   if (!/^01\d{8,9}$/.test(values.phone)) return "휴대폰 번호를 확인해 주세요. (예: 010-1234-5678)";
   if (!GENDERS.has(values.gender)) return "성별 선택이 올바르지 않습니다.";
   if (values.agree !== "on") return "개인정보 수집·이용에 동의해 주세요.";
@@ -149,7 +147,7 @@ export async function signUp(_prev: AuthState, formData: FormData): Promise<Auth
  */
 export async function completeProfile(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const values = readProfileValues(formData);
-  const next = safeNext(formData.get("next"));
+  const next = safeNextPath(formData.get("next"));
   const invalid = validateProfileValues(values);
   if (invalid) return { error: invalid, values };
 

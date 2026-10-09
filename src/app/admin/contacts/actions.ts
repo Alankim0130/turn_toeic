@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { contactReplyError, contactReplyMessage } from "@/lib/contact-reply";
 
 const STATUSES = new Set(["new", "read", "replied"]);
@@ -19,12 +18,11 @@ export async function updateContactStatus(formData: FormData) {
 
   if (!id || !STATUSES.has(status)) redirect(`${returnTo}${sep}error=invalid`);
 
+  // 로그인한 사람의 세션으로만 바꾼다 — RLS("contact: 스태프 처리")가 한 번 더 막는다. 막히면 서비스 롤로 다시 쓰지 않는다
+  // (2026-10-09 보안 검토 — 그전에는 세션이 막히면 서비스 롤로 다시 써서, 테스트 등급을 켠 스태프처럼 RLS 가 막은 경우를 그대로 비껴갔다)
   const supabase = await createClient();
   const { error } = await supabase.from("contact_messages").update({ status }).eq("id", id);
-  if (error) {
-    const { error: e2 } = await createAdminClient().from("contact_messages").update({ status }).eq("id", id);
-    if (e2) redirect(`${returnTo}${sep}error=save`);
-  }
+  if (error) redirect(`${returnTo}${sep}error=save`);
 
   revalidatePath("/admin");
   revalidatePath("/admin/contacts");

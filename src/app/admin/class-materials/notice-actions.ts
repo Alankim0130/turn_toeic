@@ -5,6 +5,7 @@ import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { CLASS_NOTICE_BUCKET, noticeError } from "@/lib/class-notices";
 import { noteImagePaths } from "@/lib/note-format";
+import { isNoteImagePath } from "@/lib/note-images";
 
 export type NoticeResult = { ok: boolean; error?: string; id?: number };
 
@@ -59,7 +60,7 @@ export async function saveClassNotice(input: { id?: number | null; title: string
   if (!data?.length) return { ok: false, error: "공지를 찾을 수 없어요. 새로고침해 주세요." };
 
   const kept = new Set(noteImagePaths(body));
-  const gone = noteImagePaths(old.body).filter((p) => !kept.has(p));
+  const gone = noteImagePaths(old.body).filter((p) => !kept.has(p) && isNoteImagePath(p));
   if (gone.length) await supabase.storage.from(CLASS_NOTICE_BUCKET).remove(gone);
   revalidateNotices(id);
   return { ok: true, id };
