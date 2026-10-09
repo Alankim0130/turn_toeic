@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { sendHomeworkMissingNotice } from "@/app/admin/homework/missing/actions";
 import { Alert } from "@/components/ui/Alert";
@@ -47,29 +47,16 @@ const STATUS_BADGE: Record<MissingStatus, string> = {
   none: "bg-surface text-mist",
 };
 const CELL_LABEL: Record<MissingCell, string> = { done: "냄", missing: "안 냄", upcoming: "아직 (오늘 · 앞으로)", none: "해당 없음 (반에 들어오기 전)" };
+const MARK_CLASS: Record<MissingCell, string> = { done: "hw-mark-done", missing: "hw-mark-missing", upcoming: "hw-mark-upcoming", none: "hw-mark-none" };
 
-/** 칸 하나 — 도형(인라인 SVG)이다. 이모지 · 그림 파일을 쓰지 않는다 (14px 에서 또렷하고 색을 바꿀 수 있게) */
+/**
+ * 칸 하나 — 도형이다. 이모지 · 그림 파일을 쓰지 않는다 (14px 에서 또렷하고 색을 바꿀 수 있게).
+ * **요소 하나에 배경 그림으로 그린다** (globals.css `.hw-mark-*`, 2026-10-09 "숙제미제출 알림 페이지를 클릭하면 로딩시간이 오래걸려") —
+ * 칸마다 인라인 SVG(요소 넷)였더니 한 레벨에 요소가 1만 6천 개가 넘어 휴대폰에서 그리는 데만 1초 넘게 걸렸다. 인라인 SVG 로 되돌리지 말 것.
+ */
 function CellMark({ kind, label }: { kind: MissingCell; label?: string }) {
-  return (
-    <span role="img" aria-label={label ?? CELL_LABEL[kind]} title={label ?? CELL_LABEL[kind]} className="flex size-4 shrink-0 items-center justify-center">
-      {kind === "done" ? (
-        <svg viewBox="0 0 16 16" className="size-4 text-brand-500" aria-hidden>
-          <circle cx="8" cy="8" r="8" fill="currentColor" />
-          <path d="M4.6 8.4l2.2 2.2 4.6-4.9" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      ) : kind === "missing" ? (
-        // 안은 칠하지 않는다 — 연한 빨강을 채웠더니 휴대폰에서 × 가 묻혀 보기 힘들었다 (2026-10-08 Alan "x표시 안에 음영이 들어가니 보기 힘들어")
-        <svg viewBox="0 0 16 16" className="size-4" aria-hidden>
-          <circle cx="8" cy="8" r="7.25" fill="none" stroke="#ef4444" strokeWidth="1.5" />
-          <path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" stroke="#dc2626" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      ) : kind === "upcoming" ? (
-        <span className="block h-0.5 w-2.5 rounded-full bg-mist/70" />
-      ) : (
-        <span className="block size-1 rounded-full bg-line" />
-      )}
-    </span>
-  );
+  const text = label ?? CELL_LABEL[kind];
+  return <span role="img" aria-label={text} title={text} className={cn("hw-mark", MARK_CLASS[kind])} />;
 }
 
 /**
@@ -103,13 +90,17 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
     if (!busy) setCompose(false);
   }, [busy]);
 
-  const toggle = (id: string, on: boolean) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (on) next.add(id);
-      else next.delete(id);
-      return next;
-    });
+  // 고정해 둔다 — 카드(GroupCard)는 고른 학생이 바뀐 카드만 다시 그린다 (memo)
+  const toggle = useCallback(
+    (id: string, on: boolean) =>
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (on) next.add(id);
+        else next.delete(id);
+        return next;
+      }),
+    [],
+  );
 
   async function send() {
     if (busy || toSend.length === 0) return;
@@ -187,7 +178,7 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
 
       <div className="space-y-5">
         {groups.map((g) => (
-          <GroupCard key={g.key} group={g} selected={selected} onToggle={toggle} />
+          <GroupCard key={g.key} group={g} picked={pickedIn(g, selected)} onToggle={toggle} />
         ))}
       </div>
 
@@ -280,13 +271,25 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
   );
 }
 
-function GroupCard({ group, selected, onToggle }: { group: MissingGroupView; selected: ReadonlySet<string>; onToggle: (id: string, on: boolean) => void }) {
+/** 이 카드에서 고른 학생 id — 글자 하나로 넘겨(쉼표로 이음, uuid 에는 쉼표가 없다) 고른 학생이 바뀐 카드만 다시 그린다 */
+const pickedIn = (group: MissingGroupView, selected: ReadonlySet<string>) =>
+  group.rows
+    .filter((r) => selected.has(r.id))
+    .map((r) => r.id)
+    .join(",");
+
+/**
+ * 반 묶음 카드 하나. **고른 학생이 바뀐 카드만 다시 그린다** (memo · `picked` 는 글자 · `onToggle` 은 고정, 2026-10-09) —
+ * 예전에는 한 명을 고를 때마다 모든 카드의 칸(한 레벨에 수천 개)을 다시 그려 휴대폰에서 체크가 늦게 들어갔다.
+ */
+const GroupCard = memo(function GroupCard({ group, picked, onToggle }: { group: MissingGroupView; picked: string; onToggle: (id: string, on: boolean) => void }) {
+  const selected = useMemo(() => new Set(picked ? picked.split(",") : []), [picked]);
   const tracks = new Set(group.columns.map((c) => c.track).filter(Boolean));
   const showTrack = tracks.size > 1;
   const flagged = group.rows.filter((r) => r.missing.length > 0).length;
 
   return (
-    <section className="card overflow-hidden">
+    <section className="hw-board-card card overflow-hidden">
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-line bg-brand-50/60 px-4 py-3">
         {/* 분홍 막대와 반 이름은 한 덩어리 — 이름이 길어 줄이 바뀌어도 막대만 따로 남지 않게. 이름은 띄어쓰기에서만 접는다 */}
         <span className="flex min-w-0 items-start gap-2">
@@ -360,13 +363,11 @@ function GroupCard({ group, selected, onToggle }: { group: MissingGroupView; sel
                     {r.sent && <span className="mt-0.5 block whitespace-nowrap pl-6 text-[11px] font-semibold text-brand-600">알림 {r.sent}</span>}
                   </th>
                   {group.columns.map((c, ci) => (
-                    <td key={c.date} className={cn("px-1 py-2 text-center align-middle", c.isToday && "bg-brand-50/60")}>
-                      <span className="inline-flex gap-1">
-                        {c.subjects.map((s, si) => {
-                          const kind = r.cells[ci]?.[si] ?? "none";
-                          return <CellMark key={s} kind={kind} label={`${r.name} ${c.md} ${SUBJECT_LABEL[s]} — ${CELL_LABEL[kind]}`} />;
-                        })}
-                      </span>
+                    <td key={c.date} className={cn("whitespace-nowrap px-1 py-2 text-center align-middle", c.isToday && "bg-brand-50/60")}>
+                      {c.subjects.map((s, si) => {
+                        const kind = r.cells[ci]?.[si] ?? "none";
+                        return <CellMark key={s} kind={kind} label={`${r.name} ${c.md} ${SUBJECT_LABEL[s]} — ${CELL_LABEL[kind]}`} />;
+                      })}
                     </td>
                   ))}
                 </tr>
@@ -377,4 +378,4 @@ function GroupCard({ group, selected, onToggle }: { group: MissingGroupView; sel
       </div>
     </section>
   );
-}
+});

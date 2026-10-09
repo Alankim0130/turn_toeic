@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -91,5 +92,53 @@ describe("③ 서버 쪽 — 로그인 확인과 차례로 묻기 줄이기", ()
     const src = read(file);
     expect(src).toContain("loadGated(");
     expect(src, "studentGate 를 먼저 기다린 뒤 데이터를 물으면 서버를 한 번 더 다녀온다").not.toContain("await studentGate(");
+  });
+});
+
+/**
+ * ④ 조회 정책은 "스태프(조교)인가" 를 맨 앞에 (2026-10-09 Alan "숙제미제출 알림 페이지를 클릭하면 로딩시간이 오래걸려", 마이그레이션 20261009100000).
+ * 수업일 표의 조회 정책이 행마다 `private.has_section_access(…)` 같은 함수를 먼저 부르고 맨 끝에서야 `is_crew()` 를 물어,
+ * 강사 · 관리자 · 조교가 한 달 수업일(353줄)을 읽는 데 0.85초가 갔다 (운영 크기 재생 DB). `(select private.is_crew())` 는 요청마다 한 번만
+ * 계산되니 맨 앞에 두면 스태프는 행마다의 함수를 건너뛴다. OR 의 순서만 다르고 누가 무엇을 보는지는 같다.
+ * 허용 정책끼리 합치는 순서는 Postgres 가 정해서, 정책마다 따로 지킨다.
+ */
+describe("④ 조회 정책 — 스태프 확인이 행마다의 접근 함수보다 앞", () => {
+  const DIR = "supabase/migrations";
+  const files = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
+  const sqlOf = (f: string) =>
+    readFileSync(join(DIR, f), "utf8")
+      .split("\n")
+      .map((l) => (l.trim().startsWith("--") ? "" : l))
+      .join("\n");
+  // 마이그레이션을 순서대로 재생한 마지막 정책 — `create policy "…"` 와 `on 표` 가 두 줄로 갈린 것도 읽는다
+  const live = new Map<string, string>();
+  for (const f of files) {
+    for (const [, verb, name, table, body] of sqlOf(f).matchAll(/(create|drop) policy (?:if exists )?"([^"]+)"\s+on\s+([\w.]+)([^;]*);/g)) {
+      const key = `${table} :: ${name}`;
+      if (verb === "create") live.set(key, body.replace(/\s+/g, " "));
+      else live.delete(key);
+    }
+  }
+  const reads = [...live].filter(([, b]) => !/\bfor (insert|update|delete)\b/.test(b));
+
+  it("수업일 두 정책 · 상시 불라방 링크 — using 의 첫 갈래가 스태프(조교) 확인이다", () => {
+    for (const [key, staff] of [
+      ["public.session_dates :: session_dates: 수강생·스태프·조교 조회", "is_crew"],
+      ["public.session_dates :: session_dates: 예비등록생 내 반 일정 조회", "is_crew"],
+      ["public.section_live_links :: live_links: 수강생·스태프 조회", "is_staff"],
+    ]) {
+      expect(live.get(key), key).toMatch(new RegExp(`using \\( ?\\(select private\\.${staff}\\(\\)\\)`));
+    }
+  });
+
+  it("행마다 부르는 접근 함수(private.has_*)가 있는 조회 정책은 스태프 확인을 그보다 앞에 둔다", () => {
+    const late = reads
+      .filter(([, b]) => {
+        const staff = b.search(/private\.is_(crew|staff|admin)\(\)/);
+        const perRow = b.search(/private\.has_\w+\(/);
+        return staff >= 0 && perRow >= 0 && perRow < staff;
+      })
+      .map(([k]) => k);
+    expect(late, `스태프 확인이 뒤에 있다 — 강사 · 관리자 · 조교가 읽을 때 행마다 함수가 돈다:\n${late.join("\n")}`).toEqual([]);
   });
 });

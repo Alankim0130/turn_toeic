@@ -126,9 +126,8 @@ export async function loadMissingData(supabase: DB, term: TermLite, opts: { stud
 
   // 낸 숙제 — 그 기수 회차 날짜 범위 안 (반 날짜는 앞뒤 달로 넘어갈 수 있어 달력의 월로 자르지 않는다)
   const allDates = [...sections.values()].flatMap((s) => s.dates).sort();
-  let submissions: MissingSubmission[] = [];
-  let subsOk = true;
-  if (allDates.length > 0 && studentIds.length > 0) {
+  const readSubmissions = async (): Promise<{ submissions: MissingSubmission[]; ok: boolean }> => {
+    if (allDates.length === 0 || studentIds.length === 0) return { submissions: [], ok: true };
     const [lo, hi] = [allDates[0], allDates[allDates.length - 1]];
     type Sub = { user_id: string; level: number; subject: string; class_date: string | null };
     const query = (ids: string[] | null) =>
@@ -146,14 +145,17 @@ export async function loadMissingData(supabase: DB, term: TermLite, opts: { stud
     if (want) for (let i = 0; i < studentIds.length; i += 100) chunks.push(studentIds.slice(i, i + 100));
     else chunks.push(null);
     const results = await Promise.all(chunks.map(query));
-    subsOk = results.every((r) => r.ok);
-    submissions = results
-      .flatMap((r) => r.rows)
-      .filter((s): s is Sub & { class_date: string } => !!s.class_date)
-      .map((s) => ({ userId: s.user_id, date: s.class_date, level: s.level, subject: s.subject }));
-  }
+    return {
+      ok: results.every((r) => r.ok),
+      submissions: results
+        .flatMap((r) => r.rows)
+        .filter((s): s is Sub & { class_date: string } => !!s.class_date)
+        .map((s) => ({ userId: s.user_id, date: s.class_date, level: s.level, subject: s.subject })),
+    };
+  };
 
-  const names = await getProfileNames(supabase, studentIds);
+  // 낸 숙제와 이름 · 등급은 서로 기다릴 까닭이 없다 — 함께 묻는다 (2026-10-09 "숙제미제출 알림 페이지를 클릭하면 로딩시간이 오래걸려")
+  const [{ submissions, ok: subsOk }, names] = await Promise.all([readSubmissions(), getProfileNames(supabase, studentIds)]);
   const people = new Map(studentIds.map((id) => [id, { name: names.get(id)?.name ?? "", staff: STAFF_ROLES.has(names.get(id)?.role ?? "") }]));
   // 이름 · 등급을 못 읽으면(빈 Map) 강사 · 관리자 계정을 가려낼 수 없다 — 명단에 섞이고 알림이 갈 수 있으니 다 못 읽은 것으로 본다 (보내기도 멈춘다)
   const namesOk = studentIds.length === 0 || names.size > 0;

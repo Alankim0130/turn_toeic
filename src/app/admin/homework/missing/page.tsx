@@ -75,14 +75,17 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
   chips.sort((a, b) => b.year * 12 + b.month - (a.year * 12 + a.month));
 
   const termKey = termParam(term.year, term.month);
-  const data = await loadMissingData(supabase, term);
+  // 보낸 알림 기록은 격자 데이터를 기다릴 까닭이 없다 — 함께 묻는다 (2026-10-09 "숙제미제출 알림 페이지를 클릭하면 로딩시간이 오래걸려")
+  const [data, { data: sentRows }] = await Promise.all([
+    loadMissingData(supabase, term),
+    supabase.rpc("homework_missing_notices", { p_term_id: term.id }),
+  ]);
   const sortKeyOf = sectionSortKey(data.meta);
   const boards = new Map<number, MissingGroup[]>(levels.map((l) => [l, buildMissingBoard({ level: l, today, ...data, sortKeyOf })]));
   const level = levels.includes(Number(sp.level)) ? Number(sp.level) : (levels[0] ?? null);
   const board = level != null ? (boards.get(level) ?? []) : [];
 
   // 이 레벨에서 마지막으로 미제출 알림을 받은 때 — 오늘 받은 학생은 '미제출 전체선택' 에서 뺀다 (같은 날 두 번 가지 않게)
-  const { data: sentRows } = await supabase.rpc("homework_missing_notices", { p_term_id: term.id });
   const sentAt = new Map<string, string>();
   for (const r of sentRows ?? []) if (r.level === level && (!sentAt.has(r.user_id) || sentAt.get(r.user_id)! < r.sent_at)) sentAt.set(r.user_id, r.sent_at);
   const sentDay = (iso: string) => new Date(iso).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });

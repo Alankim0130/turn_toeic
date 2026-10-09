@@ -402,3 +402,37 @@ html .app-splash[data-phase="play"], html .app-splash[data-phase="leave"] { disp
   .fly-ch { animation: none !important; will-change: auto; }
   .fly-ch[data-phase="out"] { visibility: hidden; }
 }
+
+/* 숙제 미제출 알림 격자의 칸 표시 — 냄 · 안 냄 · 아직 · 해당 없음 (2026-10-09 Alan "숙제미제출 알림 페이지를 클릭하면 로딩시간이 오래걸려").
+   칸마다 인라인 SVG(span · svg · circle · path 네 요소)로 그렸더니 한 레벨 격자에 요소가 1만 6천 개가 넘어 휴대폰에서 그리는 데만 1초 넘게 걸렸다.
+   모양은 그대로 두고 **요소 하나에 배경 그림**으로 그린다 (MissingBoard 의 CellMark). 16px 상자 · viewBox 16 이 예전 SVG 와 같다.
+   색을 바꾸면 그림 안의 값을 고친다 — 냄 brand-500 #ff2e88 · 안 냄 테두리 #ef4444 · × #dc2626 · 아직 mist #9a95a3 70% · 해당 없음 line #ece6ec.
+   안 냄은 안을 칠하지 않는다 (2026-10-08 Alan "x표시 안에 음영이 들어가니 보기 힘들어") */
+.hw-mark {
+  display: inline-block;
+  vertical-align: middle;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  background: center / 1rem 1rem no-repeat;
+}
+/* 칸 안의 두 표시(RC · LC) 사이 — 예전 감싸던 span(inline-flex gap-1)을 없애 칸마다 요소가 하나 줄었다 */
+.hw-mark + .hw-mark { margin-left: 0.25rem; }
+/* 반 묶음 카드 — 화면 밖 카드는 스크롤로 다가올 때 그린다 (스타일 · 레이아웃을 건너뛴다). 글자는 그대로 DOM 에 있어 찾기(Ctrl+F) · 낭독기가 읽는다.
+   카드 높이는 처음엔 32rem 으로 짐작하고, 한 번 그린 뒤로는 실제 높이를 기억한다(auto) */
+.hw-board-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 32rem;
+}
+.hw-mark-done {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%23ff2e88'/%3E%3Cpath d='M4.6 8.4l2.2 2.2 4.6-4.9' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.hw-mark-missing {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7.25' fill='none' stroke='%23ef4444' stroke-width='1.5'/%3E%3Cpath d='M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8' stroke='%23dc2626' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+.hw-mark-upcoming {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='3' y='7' width='10' height='2' rx='1' fill='%239a95a3' fill-opacity='0.7'/%3E%3C/svg%3E");
+}
+.hw-mark-none {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='2' fill='%23ece6ec'/%3E%3C/svg%3E");
+}
