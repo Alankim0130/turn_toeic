@@ -1,4 +1,4 @@
-import { studentGate } from "@/components/student/StudentGate";
+import { loadGated } from "@/components/student/StudentGate";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -23,12 +23,11 @@ export const metadata: Metadata = {
  * (속성반은 650 + 850 이 저절로 함께 선다).
  */
 export default async function ReplayPage() {
-  // 수강생이 아니면 기능 대신 잠금 안내를 보여준다
-  const locked = await studentGate("replay");
-  if (locked) return locked;
-
+  // 수강생이 아니면 기능 대신 잠금 안내를 보여준다 — 잠금 판정과 데이터를 함께 받는다 (loadGated)
+  const g = await loadGated("replay", () => Promise.all([getMyReplays(), getMySessions(), getMyAccessibleSections(), getMyOrders()]));
+  if (g.locked) return g.locked;
+  const [rows, sessions, mySections, orders] = g.data;
   const today = todayKST();
-  const [rows, sessions, mySections, orders] = await Promise.all([getMyReplays(), getMySessions(), getMyAccessibleSections(), getMyOrders()]);
 
   // 저녁 반 학생은 오전 짝 반의 다시보기를 본다 (화목금 인강 2026-09-18 · 월수금 현장 2026-09-23) — 내 반이 아닌 반의 녹화본이면 그렇게 적어 준다.
   // 짝은 같은 트랙이라(DB `private.recorded_source_section`), 그 트랙에 내 인강 반이 있으면 인강 학생이고 아니면 저녁 현장 학생이다

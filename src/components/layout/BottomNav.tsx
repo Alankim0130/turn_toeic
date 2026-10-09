@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { bottomNavLift } from "@/lib/bottom-nav";
 import { Icon } from "@/components/ui/Icon";
+import { NavTabIcon } from "./NavPending";
 import { canUseFeature, featureHref, NAV_BOTTOM, STUDENT_FEATURES } from "@/lib/site";
 import { cn } from "@/lib/utils";
 import { isActivePath } from "./NavLinks";
@@ -69,19 +70,14 @@ export function BottomNav({ access }: { access: NavAccess }) {
                   active ? "text-brand-600" : "text-mist",
                 )}
               >
-                <span
-                  className={cn(
-                    "relative flex h-8 w-11 items-center justify-center rounded-full transition",
-                    active ? "bg-brand-100" : "bg-transparent",
-                  )}
-                >
-                  <Icon name={item.icon} size={24} className={cn(!active && "opacity-60 grayscale")} />
+                {/* 누른 칸은 다음 화면이 오기 전에도 바로 켜진다 (NavPending — 2026-10-09 화면 전환 속도) */}
+                <NavTabIcon active={active} icon={item.icon}>
                   {locked && (
                     <span className="absolute -right-0.5 -top-0.5 rounded bg-paper p-px shadow-soft">
                       <Icon name="lock" size={11} />
                     </span>
                   )}
-                </span>
+                </NavTabIcon>
                 <span className="whitespace-nowrap">{item.label}</span>
                 {locked && <span className="sr-only">(수강생 전용, 잠김)</span>}
               </Link>

@@ -9,7 +9,7 @@ import { cn, formatDate, todayKST } from "@/lib/utils";
 import { formatBytes, isSlotKind, slotTime, STUDY_KIND_ICON, STUDY_KIND_LABEL, STUDY_STATUS_LABEL, termIndex } from "@/lib/study";
 import { getMyOrders, getMyStudyCheckins, getMyStudyEligibility, getMyStudyMaterials, getMyStudySignups, termLabel } from "../_lib/queries";
 import { getSessionProfile } from "@/lib/auth";
-import { studentGate } from "@/components/student/StudentGate";
+import { loadGated } from "@/components/student/StudentGate";
 import { CheckinPanel } from "@/components/my/study/CheckinPanel";
 import { onlineStudyWindow, shortDay } from "@/lib/study-rounds";
 import { NoteBody } from "@/components/note/NoteBody";
@@ -25,16 +25,27 @@ export const metadata: Metadata = {
 
 export default async function MyStudyPage() {
   // 수강생전용 잠금 — 스터디는 개강일부터 (2026-10-02 Alan). 그전에는 이 화면만 잠금 없이 열렸다
-  const locked = await studentGate("study");
-  if (locked) return locked;
-
-  const [orders, signups, materials, checkins, { user }] = await Promise.all([getMyOrders(), getMyStudySignups(), getMyStudyMaterials(), getMyStudyCheckins(), getSessionProfile()]);
+  // 잠금 판정과 데이터를 함께 받는다 (loadGated)
+  const g = await loadGated("study", () =>
+    Promise.all([
+      getMyOrders(),
+      getMyStudySignups(),
+      // 안내에 든 사진 — 내 세션으로 서명 주소를 만든다. 저장소 정책이 "그 사진을 품은 안내가 보이는 사람" 만 연다 (마이그레이션 20261005180000).
+      // 자료를 받자마자 이어서 만든다 — 다른 조회가 끝나기를 기다리지 않게
+      getMyStudyMaterials().then(async (materials) => ({
+        materials,
+        noteImages: await signNoteImages(await createClient(), STUDY_MATERIAL_BUCKET, materials.map((m) => m.note ?? "").join("\n")),
+      })),
+      getMyStudyCheckins(),
+      getSessionProfile(),
+    ]),
+  );
+  if (g.locked) return g.locked;
+  const [orders, signups, { materials, noteImages }, checkins, { user }] = g.data;
   // 자료(날짜)마다 내 인증 — 비대면 스터디는 풀고 나서 **인증을 항상** 한다 (2026-09-18 Alan)
   const checkinByMaterial = new Map(checkins.map((c) => [c.material_id, c]));
   const { accessTerms, opensOn } = await getMyStudyEligibility(orders);
   const today = todayKST();
-  // 안내에 든 사진 — 내 세션으로 서명 주소를 만든다. 저장소 정책이 "그 사진을 품은 안내가 보이는 사람" 만 연다 (마이그레이션 20261005180000)
-  const noteImages = await signNoteImages(await createClient(), STUDY_MATERIAL_BUCKET, materials.map((m) => m.note ?? "").join("\n"));
 
   const header = (
     <PageHeader icon="study" title="내 스터디" description="신청한 스터디와 비대면스터디 자료를 한곳에서 확인하세요.">

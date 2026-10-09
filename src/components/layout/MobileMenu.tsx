@@ -13,6 +13,7 @@ import { ExternalMark, isActivePath } from "./NavLinks";
 import { isStudentAreaPath, type NavAccess } from "./DesktopNav";
 import { StaffModeSwitch, isStaffMode } from "./StaffModeSwitch";
 import { Avatar } from "./Avatar";
+import { NavPendingRing } from "./NavPending";
 import { InstallApp } from "@/components/pwa/InstallApp";
 import { RefreshButton } from "@/components/pwa/RefreshButton";
 import { signOut } from "@/app/(auth)/actions";
@@ -252,7 +253,7 @@ function Row({
   const href = feature ? featureHref(feature, access) : item.href;
   const active = !item.external && (activeHref !== undefined ? activeHref === item.href : isActivePath(pathname, item.href));
   const className = cn(
-    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-bold transition",
+    "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-bold transition",
     active ? "bg-brand-50 text-brand-700" : "text-ink hover:bg-surface",
   );
   // 카카오톡 상담 줄은 PC 드롭다운·/contact 와 같은 노란 타일 + 카카오 심벌 (2026-10-01)
@@ -290,6 +291,8 @@ function Row({
       {icon}
       <span className="flex-1 truncate">{item.label}</span>
       {locked && <span className="sr-only">(수강생 전용, 잠김)</span>}
+      {/* 누른 줄은 다음 화면이 오기 전에도 바로 테두리가 선다 — 서랍은 화면이 바뀌어야 닫힌다 (NavPending, 2026-10-09) */}
+      <NavPendingRing />
     </Link>
   );
 }

@@ -8,7 +8,7 @@ import { VerifyForm } from "./VerifyForm";
 import { NoReceiptCard } from "./NoReceiptCard";
 import { ForgeryNotice } from "./ForgeryNotice";
 import { ReceiptGuide } from "./ReceiptGuide";
-import { getSessionProfile } from "@/lib/auth";
+import { getLastSignInAt, getSessionProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { IdentityConfirmForm } from "@/components/my/IdentityConfirmForm";
 import { MergePanel, type ChoiceAccount, type MeInfo, type MergeCandidate, type MergeRequest } from "../account/MergePanel";
@@ -44,9 +44,11 @@ export default async function VerifyPage() {
   // 합칠 것이 없으면 아무것도 그리지 않는다 — 계정이 하나뿐인 학생에게는 없는 이야기다.
   // 스태프가 보낸 "남길 계정 고르기"(choice)는 확인 전에도 보인다 (2026-10-02 Alan) — 요청은 늘 읽는다
   const supabase = await createClient();
-  const [pending, { data: candidateRows }] = await Promise.all([
+  const [pending, { data: candidateRows }, lastSignIn] = await Promise.all([
     getMyMergeRequests(),
     confirmed ? supabase.rpc("merge_candidates") : Promise.resolve({ data: null }),
+    // 마지막 로그인 시각은 접속 토큰에 없다 — 로그인 서버에 따로 묻는다 (getLastSignInAt)
+    user ? getLastSignInAt() : null,
   ]);
   const requests = pending as MergeRequest[];
   const candidates: MergeCandidate[] = (candidateRows ?? []) as MergeCandidate[];
@@ -54,7 +56,7 @@ export default async function VerifyPage() {
   const { data: choiceRows } = choiceRequest ? await supabase.rpc("merge_choice_info", { p_request: choiceRequest.id }) : { data: null };
   const choice = choiceRequest && choiceRows?.length ? { request: choiceRequest, accounts: choiceRows as ChoiceAccount[] } : null;
   const showMerge = profile != null && (requests.length > 0 || (confirmed && candidates.length > 0));
-  const meInfo: MeInfo = { providers: ((user?.app_metadata as { providers?: string[] } | undefined)?.providers ?? []), last_sign_in_at: user?.last_sign_in_at ?? null };
+  const meInfo: MeInfo = { providers: ((user?.app_metadata as { providers?: string[] } | undefined)?.providers ?? []), last_sign_in_at: lastSignIn };
 
   return (
     <div className="space-y-8">

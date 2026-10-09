@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { studentGate } from "@/components/student/StudentGate";
+import { loadGated } from "@/components/student/StudentGate";
 import { NoteBody } from "@/components/note/NoteBody";
 import { createClient } from "@/lib/supabase/server";
 import { CLASS_NOTICE_BUCKET } from "@/lib/class-notices";
@@ -18,13 +18,14 @@ export const metadata: Metadata = { title: "공지사항 · 수업자료실", ro
  * 사진 주소는 내 세션으로 만든다 — 저장소 정책이 "그 사진을 품은 공지를 볼 수 있는 사람" 만 연다.
  */
 export default async function ClassNoticePage({ params }: { params: Promise<{ id: string }> }) {
-  const locked = await studentGate("materials");
-  if (locked) return locked;
-  const { id } = await params;
-  const notice = await getMyClassNotice(Number(id));
+  // 잠금 판정과 공지 · 사진 주소를 함께 받는다 (loadGated)
+  const g = await loadGated("materials", async () => {
+    const notice = await getMyClassNotice(Number((await params).id));
+    return { notice, images: notice ? await signNoteImages(await createClient(), CLASS_NOTICE_BUCKET, notice.body) : {} };
+  });
+  if (g.locked) return g.locked;
+  const { notice, images } = g.data;
   if (!notice) notFound();
-  const supabase = await createClient();
-  const images = await signNoteImages(supabase, CLASS_NOTICE_BUCKET, notice.body);
   const { runs, aligns } = trimDoc(parseDoc(notice.body));
   const edited = notice.updated_at.slice(0, 16) !== notice.created_at.slice(0, 16);
 

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { studentGate } from "@/components/student/StudentGate";
+import { loadGated } from "@/components/student/StudentGate";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Reveal } from "@/components/ui/Reveal";
@@ -27,10 +27,10 @@ import { getMyLectures, getMyLectureSignups } from "../_lib/queries";
 export const metadata: Metadata = { title: "특강 신청", robots: { index: false } };
 
 export default async function MyLecturePage() {
-  const locked = await studentGate("lecture");
-  if (locked) return locked;
-
-  const [lectures, mySignups] = await Promise.all([getMyLectures(), getMyLectureSignups()]);
+  // 잠금 판정과 데이터를 함께 받는다 (loadGated)
+  const g = await loadGated("lecture", () => Promise.all([getMyLectures(), getMyLectureSignups()]));
+  if (g.locked) return g.locked;
+  const [lectures, mySignups] = g.data;
   const today = todayKST();
 
   // 신청을 받는 특강만. 지난 특강은 내가 신청한 것만 남겨 기록을 보여 준다

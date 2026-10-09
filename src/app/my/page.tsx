@@ -9,7 +9,7 @@ import { MonthSchedule } from "@/components/my/MonthSchedule";
 import { AttendanceRate } from "@/components/my/AttendanceRate";
 import { ProfilePhoto } from "@/components/layout/ProfilePhoto";
 import { createClient } from "@/lib/supabase/server";
-import { requireUser } from "@/lib/auth";
+import { getSessionProfile, requireUser } from "@/lib/auth";
 import { cn, formatDate, formatTimeRange, MODE_LABEL, RECORDED_LABEL, TRACK_LABEL } from "@/lib/utils";
 import { initialMonth } from "@/lib/class-day";
 import { pickPhoto, profilePhotoUrl } from "@/lib/avatar";
@@ -92,8 +92,10 @@ function recordedTracksOf(
 }
 
 export default async function MyPage({ searchParams }: { searchParams: Promise<{ welcome?: string; denied?: string }> }) {
-  const [{ profile, user }, sp, verifications, accessibleWeek5, schedule, mergeRequests, unread, attendance] = await Promise.all([
+  const [{ profile, user }, uploadedPhoto, sp, verifications, accessibleWeek5, schedule, mergeRequests, unread, attendance] = await Promise.all([
     requireUser("/my"),
+    // 직접 올린 사진의 주소는 프로필을 받자마자 이어서 만든다 — 다른 조회가 끝나기를 기다리지 않게 (2026-10-09 화면 전환 속도)
+    getSessionProfile().then(async ({ profile }) => signedAvatarUrl(await createClient(), profile?.avatar_path)),
     searchParams,
     getMyVerifications(),
     getMyWeek5(),
@@ -116,7 +118,7 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
   const name = profile?.name || user.email || "회원";
   // 카카오·구글로 들어온 계정은 그쪽 프로필 사진이 저절로 들어온다 (없으면 이름 첫 글자 동그라미)
   // 직접 올린 사진이 있으면 그것이 먼저다 (2026-10-02 Alan — 학생이 프로필 사진을 설정)
-  const photo = pickPhoto(await signedAvatarUrl(await createClient(), profile?.avatar_path), profilePhotoUrl(user.user_metadata));
+  const photo = pickPhoto(uploadedPhoto, profilePhotoUrl(user.user_metadata));
   const latestVerification = verifications[0];
   const empty = orders.length === 0 && verifications.length === 0;
 

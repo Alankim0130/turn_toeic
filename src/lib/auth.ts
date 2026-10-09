@@ -54,16 +54,55 @@ export const isTestRole = (v: unknown): v is TestRole => typeof v === "string" &
 export const effectiveRole = (profile?: { role: UserRole; test_role?: UserRole | null } | null): UserRole | null =>
   profile ? (profile.test_role ?? profile.role) : null;
 
-/** 요청당 1회만 조회되도록 캐시 */
-export const getSessionProfile = cache(async () => {
+/**
+ * 로그인한 사람 — **접속 토큰(JWT)의 서명을 확인해** 꺼낸 값 (2026-10-09 Alan "화면 전환이 좀 느린데").
+ *
+ * 예전에는 `auth.getUser()` 로 화면을 열 때마다 Supabase 로그인 서버에 한 번 더 물었다 (proxy 에서 한 번 + 화면에서 한 번).
+ * `getClaims()` 는 Supabase 가 **비대칭 키**(JWT Signing Keys)로 서명했으면 공개 키(10분 캐시)로 **여기서** 확인해 서버를 다녀오지 않고,
+ * 옛 공유 비밀(HS256)이면 예전처럼 로그인 서버에 묻는다 — 어느 쪽이든 위조한 토큰은 통과하지 못하고,
+ * 데이터베이스(RLS)도 같은 토큰을 같은 서명으로 믿는다. 요청 하나에 한 번만 확인한다 (cache).
+ *
+ * **토큰에 없는 값은 없다** — 마지막 로그인 시각은 `getLastSignInAt()` 이 따로 묻는다 (계정 합치기 화면만).
+ * 서버 액션(쓰기)은 그대로 `auth.getUser()` 로 확인한다 — 화면 이동 길이 아니다.
+ */
+export type SessionUser = {
+  id: string;
+  email: string | null;
+  user_metadata: Record<string, unknown>;
+  app_metadata: Record<string, unknown>;
+};
+
+export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  if (!claims?.sub) return null;
+  return {
+    id: claims.sub,
+    email: claims.email || null,
+    user_metadata: claims.user_metadata ?? {},
+    app_metadata: claims.app_metadata ?? {},
+  };
+});
+
+/** 로그인한 사람 + 프로필. 요청당 1회만 조회되도록 캐시 */
+export const getSessionProfile = cache(async () => {
+  const user = await getSessionUser();
   if (!user) return { user: null, profile: null as Profile | null };
 
+  const supabase = await createClient();
   const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
   return { user, profile };
+});
+
+/**
+ * 이 계정의 마지막 로그인 시각 — 접속 토큰에 없는 값이라 로그인 서버에 묻는다.
+ * 계정 합치기 화면(내 계정 · 등업신청)에서 "어느 계정을 최근에 썼나" 를 보여 줄 때만 쓴다 (2026-10-02 Alan).
+ */
+export const getLastSignInAt = cache(async () => {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  return data.user?.last_sign_in_at ?? null;
 });
 
 /**
@@ -129,8 +168,16 @@ export type StudentAccess = {
  * 여기서도 상태 대신 **날짜를 직접** 보아 화면과 RLS 가 같은 기준을 쓰게 한다.
  */
 export const getStudentAccess = cache(async (): Promise<StudentAccess> => {
-  const { user, profile } = await getSessionProfile();
+  const user = await getSessionUser();
   if (!user) return { signedIn: false, role: null, active: false, enrollee: false, opensOn: null, until: null };
+
+  // 등록 조회는 프로필을 기다리지 않는다 — 둘 다 내 id 만 있으면 된다 (2026-10-09 화면 전환 속도 — 예전에는 프로필 다음에 차례로 물었다)
+  const supabase = await createClient();
+  const today = todayKST();
+  const [{ profile }, { data }] = await Promise.all([
+    getSessionProfile(),
+    supabase.from("enrollment_orders").select("status, activates_on, access_until").eq("user_id", user.id).gte("access_until", today),
+  ]);
 
   // 테스트 등급을 켠 스태프는 그 등급의 학생처럼 판정한다 (RLS 도 같은 등급으로 본다)
   const role = effectiveRole(profile);
@@ -139,14 +186,6 @@ export const getStudentAccess = cache(async (): Promise<StudentAccess> => {
    * 크루면 무조건 열어 줬는데, 10월 반에 배정된 관리자가 개강 전 학생 모드에서 모든 것이 열려 "학생이 뭘 보는지" 를 알 수 없었다.
    * 열어 볼 권한(RLS)은 그대로다 — 학생 모드 **화면**만 학생과 같다. 반에 배정하면(테스터) 그 학생과 똑같이 열린다.
    */
-
-  const supabase = await createClient();
-  const today = todayKST();
-  const { data } = await supabase
-    .from("enrollment_orders")
-    .select("status, activates_on, access_until")
-    .eq("user_id", user.id)
-    .gte("access_until", today);
 
   const live = data ?? [];
   // 지금 수강 중 = 개강일 ≤ 오늘 ≤ 종강일 · 예비등록 = 오늘 < 개강일

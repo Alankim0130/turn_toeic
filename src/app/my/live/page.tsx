@@ -1,4 +1,4 @@
-import { studentGate } from "@/components/student/StudentGate";
+import { loadGated } from "@/components/student/StudentGate";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -16,19 +16,17 @@ export const metadata: Metadata = {
 };
 
 export default async function LivePage() {
-  // 수강생이 아니면 기능 대신 잠금 안내를 보여준다
-  const locked = await studentGate("live");
-  if (locked) return locked;
-
+  // 수강생이 아니면 기능 대신 잠금 안내를 보여준다 — 잠금 판정과 데이터를 함께 받는다 (loadGated)
   // 회차 링크(오늘 → 다음 수업) 가 있으면 그것, 없으면 반의 상시 링크 (2026-09-18 Alan)
-  const cards = await getMyLiveCards();
-  const week5 = await getMyWeek5();
+  const g = await loadGated("live", () => Promise.all([getMyLiveCards(), getMyWeek5(), getMyStudyEligibility()]));
+  if (g.locked) return g.locked;
+  const [cards, week5, eligibility] = g.data;
   const next = await getNextSessionBySection(
     cards.map((c) => c.sectionId),
     new Map(cards.flatMap((c) => (c.until ? [[c.sectionId, c.until] as const] : []))),
   );
   // 개강 전 배정이 있으면 개강일을 적어 준다 (2026-10-02 Alan — 숙제업로드·LC음원과 같은 안내)
-  const opens = cards.length === 0 ? [...(await getMyStudyEligibility()).opensOn.values()].sort()[0] : undefined;
+  const opens = cards.length === 0 ? [...eligibility.opensOn.values()].sort()[0] : undefined;
 
   return (
     <div className="space-y-8">

@@ -16,9 +16,8 @@ export const metadata: Metadata = { title: "출석 찍기", robots: { index: fal
  * 현장 수강생만 찍는다 (불라방·인강 날은 대상이 아니다 — 판정은 DB 함수 attendance_scan).
  */
 export default async function MyAttendancePage() {
-  await requireUser("/my/attendance");
-  const supabase = await createClient();
-  const { data: rate } = await supabase.rpc("my_attendance_summary");
+  // 로그인 확인과 출석률을 함께 받는다 (2026-10-09 화면 전환 속도)
+  const [, { data: rate }] = await Promise.all([requireUser("/my/attendance"), createClient().then((s) => s.rpc("my_attendance_summary"))]);
 
   return (
     <div className="space-y-8">

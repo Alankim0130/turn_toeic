@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { studentGate } from "@/components/student/StudentGate";
+import { loadGated } from "@/components/student/StudentGate";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Icon } from "@/components/ui/Icon";
 import { BookCover } from "@/components/lc/BookCover";
@@ -18,21 +18,23 @@ import { isContainerProgram } from "@/lib/two-week";
 export const metadata: Metadata = { title: "LC 음원듣기", robots: { index: false } };
 
 export default async function LcBookPage({ params }: { params: Promise<{ bookId: string }> }) {
-  const locked = await studentGate("lc-audio");
-  if (locked) return locked;
-
   const { bookId } = await params;
   const id = Number(bookId);
   if (!Number.isInteger(id) || id <= 0) notFound();
 
+  // 잠금 판정과 데이터를 함께 받는다 (loadGated)
   const supabase = await createClient();
-  const [{ data: book }, { data: trackRows }, sessions, week5, mySections] = await Promise.all([
-    supabase.from("lc_books").select("id, level, book_set, title, description, cover_name, lesson_offset, updated_at").eq("id", id).maybeSingle(),
-    supabase.from("lc_audio_tracks").select("id, day, kind, label, file_name, sort_order").eq("book_id", id),
-    getMySessions(),
-    getMyWeek5(),
-    getMyAccessibleSections(),
-  ]);
+  const g = await loadGated("lc-audio", () =>
+    Promise.all([
+      supabase.from("lc_books").select("id, level, book_set, title, description, cover_name, lesson_offset, updated_at").eq("id", id).maybeSingle(),
+      supabase.from("lc_audio_tracks").select("id, day, kind, label, file_name, sort_order").eq("book_id", id),
+      getMySessions(),
+      getMyWeek5(),
+      getMyAccessibleSections(),
+    ]),
+  );
+  if (g.locked) return g.locked;
+  const [{ data: book }, { data: trackRows }, sessions, week5, mySections] = g.data;
   if (!book) notFound();
 
   /**

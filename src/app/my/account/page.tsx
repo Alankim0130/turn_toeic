@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUser } from "@/lib/auth";
+import { getLastSignInAt, requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Reveal } from "@/components/ui/Reveal";
@@ -27,16 +27,18 @@ export default async function AccountPage() {
   const confirmed = Boolean(profile?.identity_confirmed_at);
 
   // 내 계정이 걸린 신청만 — 정책은 강사·관리자에게 모든 학생의 신청을 연다 (getMyMergeRequests 머리말)
-  const [pending, { data: candidateRows }] = await Promise.all([
+  const [pending, { data: candidateRows }, lastSignIn] = await Promise.all([
     getMyMergeRequests(),
     confirmed ? supabase.rpc("merge_candidates") : Promise.resolve({ data: null }),
+    // 마지막 로그인 시각은 접속 토큰에 없다 — 로그인 서버에 따로 묻는다 (getLastSignInAt)
+    getLastSignInAt(),
   ]);
   const requests = pending as MergeRequest[];
   const candidates: MergeCandidate[] = (candidateRows ?? []) as MergeCandidate[];
   const choiceRequest = requests.find((r) => r.status === "choice") ?? null;
   const { data: choiceRows } = choiceRequest ? await supabase.rpc("merge_choice_info", { p_request: choiceRequest.id }) : { data: null };
   const choice = choiceRequest && choiceRows?.length ? { request: choiceRequest, accounts: choiceRows as ChoiceAccount[] } : null;
-  const meInfo: MeInfo = { providers: (user.app_metadata as { providers?: string[] } | undefined)?.providers ?? [], last_sign_in_at: user.last_sign_in_at ?? null };
+  const meInfo: MeInfo = { providers: (user.app_metadata as { providers?: string[] } | undefined)?.providers ?? [], last_sign_in_at: lastSignIn };
 
   return (
     <div className="space-y-8">

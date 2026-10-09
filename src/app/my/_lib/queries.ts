@@ -1,6 +1,6 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { getSessionProfile } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
 import { todayKST } from "@/lib/utils";
 import { week5SectionIds } from "@/lib/week5";
 import type { EnrollSection } from "@/lib/enroll-options";
@@ -67,7 +67,7 @@ export async function getMyWeek5(sections?: MyAccessibleSection[]) {
 
 /** 내 등록. **`user_id` 로 좁힌다** — 정책 `orders: 본인·스태프·조교 조회` 는 스태프에게 전부 열려 있다 (머리말) */
 export const getMyOrders = cache(async () => {
-  const { user } = await getSessionProfile();
+  const user = await getSessionUser();
   if (!user) return [];
   const supabase = await createClient();
   const { data } = await supabase
@@ -92,6 +92,14 @@ export function myDirectSectionIds(orders: readonly MyOrder[]): Set<number> {
       o.status === "active" || o.status === "preliminary" ? o.enrollments.filter((e) => e.status === "active" && e.section).map((e) => e.section!.id) : [],
     ),
   );
+}
+
+/** 내 등록(수강 중 · 예비등록)의 반이 속한 기수 — 함께 듣는 반(포함 관계)을 수업일보다 먼저 물을 때 쓴다 (getMySchedule, 2026-10-09) */
+export function liveTermIds(orders: readonly MyOrder[]): number[] {
+  const ids = orders.flatMap((o) =>
+    o.status === "active" || o.status === "preliminary" ? o.enrollments.flatMap((e) => (e.status === "active" && e.section ? [e.section.term_id] : [])) : [],
+  );
+  return [...new Set(ids.filter((t): t is number => typeof t === "number"))];
 }
 
 /**
@@ -121,7 +129,7 @@ export async function getOpenEnrollSections(): Promise<EnrollSection[]> {
 }
 
 export async function getMyVerifications() {
-  const { user } = await getSessionProfile();
+  const user = await getSessionUser();
   if (!user) return [];
   const supabase = await createClient();
   const { data } = await supabase
@@ -197,7 +205,7 @@ export type MyLecture = Awaited<ReturnType<typeof getMyLectures>>[number];
  * (그대로 비우면 신청한 특강이 전부 "신청 전" 으로 보인다).
  */
 export async function getMyLectureSignups() {
-  const { user } = await getSessionProfile();
+  const user = await getSessionUser();
   if (!user) return new Map<number, string | null>();
   const supabase = await createClient();
   const full = await supabase.from("lecture_signups").select("lecture_id, review_url").eq("user_id", user.id);
@@ -331,7 +339,8 @@ async function getMyRecordedPairs(termIds: (number | null)[]) {
  */
 export async function getMyReplays() {
   const supabase = await createClient();
-  const [{ data: rows }, { data: ids, error: idsError }] = await Promise.all([
+  // 녹화본 · 내 반 id · 내 반을 **한꺼번에** 묻는다 (2026-10-09 화면 전환 속도 — 예전에는 녹화본 → 반 → 짝 → 묶음을 차례로 물어 서버를 다섯 번 다녀왔다)
+  const [{ data: rows }, { data: ids, error: idsError }, sections] = await Promise.all([
     supabase
       .from("replays")
       .select(
@@ -340,24 +349,22 @@ export async function getMyReplays() {
       )
       .order("published_at", { ascending: false }),
     supabase.rpc("my_section_ids"),
+    getMyAccessibleSections(),
   ]);
   const replays = rows ?? [];
   // 조회가 실패하면 좁히지 않는다 — 근거 없이 지우면 진짜 학생의 녹화본이 사라진다 (RLS 는 그대로 막고 있다)
   if (idsError || !ids) return replays;
   if (ids.length === 0) return [];
-
-  const sections = await getMyAccessibleSections();
   if (sections.length === 0) return replays; // 반을 못 읽었다 — 오전 짝을 알 수 없으니 좁히지 않는다
 
   const allowed = new Set<number>(ids);
-  const pairs = await getMyRecordedPairs(sections.map((s) => s.term_id));
+  // 오전 짝과 묶음 관계도 함께 묻는다 — 짝이 없는 학생(오전 반)에게는 묶음 조회가 남지만, 짝을 받은 뒤 차례로 묻는 것보다 빠르다
+  const termIds = sections.map((s) => s.term_id);
+  const [pairs, includes] = await Promise.all([getMyRecordedPairs(termIds), getMySectionIncludes(termIds)]);
   const sources = sections.map((s) => pairs.get(s.id)).filter((id): id is number => typeof id === "number");
-  if (sources.length > 0) {
-    const includes = await getMySectionIncludes(sections.map((s) => s.term_id));
-    for (const src of sources) {
-      allowed.add(src);
-      for (const inner of includes.get(src) ?? []) allowed.add(inner);
-    }
+  for (const src of sources) {
+    allowed.add(src);
+    for (const inner of includes.get(src) ?? []) allowed.add(inner);
   }
 
   return replays.filter((r) => {
@@ -369,7 +376,7 @@ export type MyReplay = Awaited<ReturnType<typeof getMyReplays>>[number];
 
 
 export async function getMyTextbookOrders() {
-  const { user } = await getSessionProfile();
+  const user = await getSessionUser();
   if (!user) return [];
   const supabase = await createClient();
   const { data } = await supabase
@@ -439,7 +446,7 @@ export async function getMyStudyEligibility(orders?: MyOrder[]) {
 
 /** 내 스터디 신청 (기수·유형·시간대 포함) */
 export const getMyStudySignups = cache(async () => {
-  const { user } = await getSessionProfile();
+  const user = await getSessionUser();
   if (!user) return [];
   const supabase = await createClient();
   const { data } = await supabase
@@ -483,7 +490,7 @@ export type MyStudyMaterial = Awaited<ReturnType<typeof getMyStudyMaterials>>[nu
  * 달력 `제출 N` 과 "지금까지 낸 숙제" 에 **남의 숙제가 레벨 가리지 않고** 선다.
  */
 export async function getMyHomework(filter?: { level?: number; subject?: string }) {
-  const { user } = await getSessionProfile();
+  const user = await getSessionUser();
   if (!user) return [];
   const supabase = await createClient();
   let q = supabase
@@ -515,34 +522,25 @@ export async function getHomeworkLevels() {
  */
 export async function getMyLcAudio() {
   const supabase = await createClient();
-  const [{ data: levelRows }, sections, sessions] = await Promise.all([
+  // 교재와 그 음원을 **한 번에, 내 칸 · 수업일과 동시에** 받는다 (2026-10-09 화면 전환 속도 — 예전에는 칸 → 교재 → 음원을 차례로 물었다).
+  // 교재는 전부 해야 여섯 권이고, 학생에게는 DB 가 내 칸 교재 · 열린 강 음원만 준다 — 거르는 일은 아래에서 한다
+  const [{ data: levelRows }, sections, sessions, { data: bookRows }] = await Promise.all([
     supabase.from("lc_levels").select("level").order("sort_order").order("level"),
     getMyAccessibleSections(),
     getMySessions(),
+    supabase.from("lc_books").select("id, level, book_set, title, description, cover_name, lesson_offset, updated_at, tracks:lc_audio_tracks(id, day, kind, label, sort_order, book_id)"),
   ]);
   const levels = (levelRows ?? []).map((l) => l.level);
   const cells = roundCells(sections);
   const dates = roundDates(sessions);
   const mine = cellLevels(cells, "lc");
   if (mine.length === 0) return { levels, cells, dates, books: [], tracks: [] };
-  const { data: bookRows } = await supabase
-    .from("lc_books")
-    .select("id, level, book_set, title, description, cover_name, lesson_offset, updated_at")
-    .in("level", mine);
   // 내 과정 칸의 교재만 — 같은 레벨이어도 내 반이 쓰지 않는 과정의 교재는 뺀다
-  const books = (bookRows ?? []).filter((b) => cells.has(cellKey(b.level, "lc", b.book_set)));
-  if (books.length === 0) return { levels, cells, dates, books, tracks: [] };
-  const { data: trackRows } = await supabase
-    .from("lc_audio_tracks")
-    .select("id, day, kind, label, sort_order, book_id")
-    .in("book_id", books.map((b) => b.id));
+  const mineRows = (bookRows ?? []).filter((b) => mine.includes(b.level) && cells.has(cellKey(b.level, "lc", b.book_set)));
+  const books = mineRows.map((b) => ({ id: b.id, level: b.level, book_set: b.book_set, title: b.title, description: b.description, cover_name: b.cover_name, lesson_offset: b.lesson_offset, updated_at: b.updated_at }));
   const today = todayKST();
-  const byId = new Map(books.map((b) => [b.id, b]));
   // 그 강의 내 수업일이 오늘이거나 지난 음원만
-  const tracks = (trackRows ?? []).filter((t) => {
-    const b = t.book_id == null ? undefined : byId.get(t.book_id);
-    return !!b && isRoundOpen(dates.get(roundKey(b.level, "lc", b.book_set, t.day)), today);
-  });
+  const tracks = mineRows.flatMap((b) => (b.tracks ?? []).filter((t) => isRoundOpen(dates.get(roundKey(b.level, "lc", b.book_set, t.day)), today)));
   return { levels, cells, dates, books, tracks };
 }
 
@@ -638,7 +636,7 @@ export function monthOf(date: string) {
  * `/my/account` · `/my/verify` · `/my` 가 모두 이 함수 하나로 읽는다.
  */
 export async function getMyMergeRequests() {
-  const { user } = await getSessionProfile();
+  const user = await getSessionUser();
   if (!user) return [];
   const supabase = await createClient();
   // choice = 스태프가 두 계정을 확인하고 **학생이 남길 계정을 고르게** 한 것 (2026-10-02 Alan) — 어느 계정에서든 고를 수 있다
@@ -657,7 +655,7 @@ export async function getMyMergeRequests() {
  * 그 칸을 못 읽으면(배포와 마이그레이션 사이) 예전 칸만 읽는다 — 그대로 비우면 낸 인증이 하나도 없는 것처럼 보인다.
  */
 export async function getMyStudyCheckins() {
-  const { user } = await getSessionProfile();
+  const user = await getSessionUser();
   if (!user) return [];
   const supabase = await createClient();
   const full = await supabase
@@ -692,7 +690,7 @@ export async function getMyStudyCheckins() {
 
 /** 선생님이 보낸 알림 (최근 100건). RLS 가 본인 것만 돌려준다 */
 export async function getMyMessages() {
-  const { user } = await getSessionProfile();
+  const user = await getSessionUser();
   if (!user) return [];
   const supabase = await createClient();
   const { data } = await supabase
@@ -705,7 +703,7 @@ export async function getMyMessages() {
 }
 
 export async function getUnreadMessageCount() {
-  const { user } = await getSessionProfile();
+  const user = await getSessionUser();
   if (!user) return 0;
   const supabase = await createClient();
   const { count } = await supabase

@@ -6,7 +6,7 @@ import { classHours, toClassHours, type ClassHour } from "@/lib/class-hours";
 import { initialDay } from "@/lib/class-day";
 import { studentTrackLabel, week5SectionIds } from "@/lib/week5";
 import { isContainerProgram } from "@/lib/two-week";
-import { getMyLectures, getMyLectureSignupIds, getMyOrders, getMySectionIncludes, getMySessions, getMyStudyEligibility, myDirectSectionIds, termLabel } from "./queries";
+import { getMyLectures, getMyLectureSignupIds, getMyOrders, getMySectionIncludes, getMySessions, getMyStudyEligibility, liveTermIds, myDirectSectionIds, termLabel } from "./queries";
 
 /** 달력 한 달치 — 화면이 그대로 `MonthSchedule` 에 넘길 수 있는 모양 */
 export type ScheduleMonth = {
@@ -26,13 +26,22 @@ export type ScheduleMonth = {
  * 넘길 수 있더라도 반·기수 전체를 실어 보낼 이유가 없다.
  */
 export async function getMySchedule() {
-  const [sessionRows, lectures, mySignups, orders] = await Promise.all([
+  /**
+   * 함께 듣는 반(포함 관계 — 아래 `includes`)은 **내 등록의 기수**로 미리 묻는다 (2026-10-09 화면 전환 속도 — 예전에는 수업일을 다 받은 뒤에야 물었다).
+   * 수업일은 내 등록(수강 중 · 예비등록)의 반과 그 반이 품은 반에서만 오므로 기수가 같다 — 그래도 다른 기수가 섞이면 그 기수만 아래에서 더 묻는다.
+   */
+  const ordersP = getMyOrders();
+  const earlyTermsP = ordersP.then(liveTermIds);
+  const earlyIncludesP = earlyTermsP.then((terms) => getMySectionIncludes(terms));
+  const [sessionRows, lectures, mySignups, orders, earlyTerms, earlyIncludes] = await Promise.all([
     // 개강 전(예비등록) 반의 수업일도 세운다 — 일정만이고 불라방 · 다시보기는 개강일부터다 (2026-10-02 Alan)
     getMySessions({ upcoming: true }),
     // 개강 전 배정의 특강 날짜도 미리 보여 준다 (2026-10-02 Alan). 신청 안내(signupLectures)는 아래에서 수강 중인 기수만 남긴다
     getMyLectures({ upcoming: true }),
     getMyLectureSignupIds(),
-    getMyOrders(),
+    ordersP,
+    earlyTermsP,
+    earlyIncludesP,
   ]);
   const { signupTerms } = await getMyStudyEligibility(orders);
 
@@ -61,7 +70,8 @@ export async function getMySchedule() {
    * 750·850·저녁반까지 줄줄이 나왔다 (2026-09-16 Alan 지적). 포함 관계는 DB 가 정한다
    * (`term_section_includes` → `private.section_includes`). 판정은 `lib/class-hours.ts`.
    */
-  const includes = await getMySectionIncludes(rows.map((s) => s.section!.term_id));
+  const missingTerms = [...new Set(rows.map((s) => s.section!.term_id))].filter((t) => !earlyTerms.includes(t));
+  const includes = missingTerms.length ? new Map([...earlyIncludes, ...(await getMySectionIncludes(missingTerms))]) : earlyIncludes;
 
   const partsOf = new Map<number, ClassHour[]>();
   const sessions: typeof rows = [];

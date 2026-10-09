@@ -6,6 +6,7 @@ import { Icon } from "@/components/ui/Icon";
 import { activeAdminHref, navAdminFor, navAdminSectionsFor } from "@/lib/site";
 import { cn } from "@/lib/utils";
 import { signOut } from "@/app/(auth)/actions";
+import { NavPendingRing } from "@/components/layout/NavPending";
 
 export function isAdminActive(pathname: string, href: string) {
   return href === "/admin" ? pathname === "/admin" : pathname === href || pathname.startsWith(href + "/");
@@ -49,12 +50,13 @@ export function AdminSidebar({ name, roleLabel, role }: { name: string; roleLabe
                         href={item.href}
                         aria-current={active ? "page" : undefined}
                         className={cn(
-                          "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+                          "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
                           active ? "bg-brand-500 text-white shadow-pink" : "text-ink-soft hover:bg-brand-50 hover:text-brand-600",
                         )}
                       >
                         <Icon name={item.icon} size={22} className={cn(active && "brightness-0 invert")} />
                         {item.label}
+                        <NavPendingRing />
                       </Link>
                     </li>
                   );
@@ -96,12 +98,13 @@ export function AdminMobileTabs({ role }: { role?: string | null }) {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-2 text-xs font-bold transition",
+                  "relative flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-2 text-xs font-bold transition",
                   active ? "border-brand-500 bg-brand-500 text-white" : "border-line bg-paper text-ink-soft",
                 )}
               >
                 <Icon name={item.icon} size={16} className={cn(active && "brightness-0 invert")} />
                 {item.label}
+                <NavPendingRing />
               </Link>
             </li>
           );

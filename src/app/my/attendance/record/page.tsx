@@ -28,10 +28,14 @@ const md = (d: string) => formatDate(d, { month: "numeric", day: "numeric", week
  * 읽는 것은 전부 `auth.uid()` 로 거르는 DB 함수다 (등급 체계 10 — 스태프에게 열린 표를 직접 읽지 않는다).
  */
 export default async function MyAttendanceRecordPage() {
-  await requireUser("/my/attendance/record");
   const supabase = await createClient();
   const today = todayKST();
-  const [{ data: dayRows }, { data: rateRows }] = await Promise.all([supabase.rpc("my_attendance_days"), supabase.rpc("my_attendance_summary")]);
+  // 로그인 확인과 출석 기록을 함께 받는다 (2026-10-09 화면 전환 속도)
+  const [, { data: dayRows }, { data: rateRows }] = await Promise.all([
+    requireUser("/my/attendance/record"),
+    supabase.rpc("my_attendance_days"),
+    supabase.rpc("my_attendance_summary"),
+  ]);
 
   const all = dayRows ?? [];
   const termIds = pickRecordTerms(all, today);

@@ -7,6 +7,19 @@ const nextConfig: NextConfig = {
    */
   serverExternalPackages: ["tesseract.js"],
 
+  experimental: {
+    /**
+     * **방금 본 화면 30초 기억** (2026-10-09 Alan "화면 전환이 좀 느린데" → 화면 틀 · 기억 · 서버 줄이기 셋 다 하기로).
+     * 같은 화면으로 30초 안에 다시 가면 서버에 묻지 않고 받아 둔 것을 바로 보여 준다 — 하단 메뉴로 왔다 갔다 할 때.
+     * 기본값(0초)은 매번 서버를 다녀왔다. 뒤로 가기는 원래부터 받아 둔 것을 쓴다.
+     * **내가 저장 · 제출하면 바로 비운다** — 서버 액션의 `revalidatePath` 가 기억해 둔 화면을 전부 버린다 (Next 문서 revalidatePath ·
+     * glossary "Client Cache"). 당겨서 새로고침 · 앱으로 돌아오면(`router.refresh`) 도 비운다.
+     * 대가: **다른 사람이 바꾼 것**(선생님이 넣은 불라방 링크 · 새 알림)은 그 화면을 30초 안에 다시 열면 그만큼 늦게 보인다 — Alan 이 알고 골랐다.
+     * 숫자를 늘리지 말 것 — 늘린 만큼 늦게 보인다.
+     */
+    staleTimes: { dynamic: 30 },
+  },
+
   /**
    * tesseract.js 는 워커(worker_threads)를 **파일 경로로** 띄우고, 그 워커가 wasm 코어를 `require` 한다.
    * Next 의 파일 추적은 워커 안의 require 를 따라가지 못해 **Vercel 함수에 워커의 나머지 파일과 wasm 이 실리지 않았다**

@@ -26,10 +26,12 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  // getUser() 는 토큰을 서버에서 검증한다. 세션 갱신 목적이므로 반드시 호출.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // 로그인 확인 + 세션 갱신 — **반드시 부른다** (만료된 접속 토큰을 새로 받아 쿠키에 쓰는 일이 이 안에서 일어난다. 빼면 학생이 아무 때나 로그아웃된다).
+  // getClaims() 는 접속 토큰의 서명을 확인한다 — Supabase 가 비대칭 키로 서명했으면 공개 키(10분 캐시)로 여기서 확인하고,
+  // 옛 공유 비밀(HS256)이면 예전 getUser() 처럼 로그인 서버에 묻는다 (2026-10-09 화면 전환 속도 — 예전에는 요청마다 로그인 서버에 물었다.
+  // 화면을 미리 받아 두는 요청까지 전부 이 길을 지난다). 이 사이에 다른 코드를 넣지 말 것 (Supabase 안내)
+  const { data } = await supabase.auth.getClaims();
+  const user = data?.claims?.sub ? { id: data.claims.sub } : null;
 
   const { pathname, search } = request.nextUrl;
   // /signup/complete 는 구글로 들어온 회원의 가입 정보 입력 — 로그인해야 의미가 있다 (화면의 redirect 보다 먼저 307 을 내린다)

@@ -5,7 +5,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
 import { InstructorCameo } from "@/components/ui/InstructorCameo";
 import { Alert } from "@/components/ui/Alert";
-import { getSessionProfile } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { cn, todayKST } from "@/lib/utils";
 import { termWindow } from "@/lib/term-window";
@@ -43,7 +43,8 @@ const STEPS = [
 ] as const;
 
 export default async function StudyPage() {
-  const { user } = await getSessionProfile();
+  // 로그인했는지만 본다 — 프로필은 필요 없다 (접속 토큰 확인 한 번, 2026-10-09 화면 전환 속도)
+  const user = await getSessionUser();
   const supabase = await createClient();
   const today = todayKST();
 

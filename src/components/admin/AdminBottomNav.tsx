@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Icon } from "@/components/ui/Icon";
 import { navAdminFor } from "@/lib/site";
 import { cn } from "@/lib/utils";
 import { isAdminActive } from "./AdminNav";
+import { NavTabIcon } from "@/components/layout/NavPending";
 
 const BOTTOM_HREFS = ["/admin", "/admin/students", "/admin/sections", "/admin/verifications", "/admin/textbook-orders"];
 /**
@@ -41,9 +41,8 @@ export function AdminBottomNav({ role }: { role?: string | null }) {
                   active ? "text-brand-600" : "text-mist",
                 )}
               >
-                <span className={cn("flex h-8 w-11 items-center justify-center rounded-full transition", active ? "bg-brand-100" : "bg-transparent")}>
-                  <Icon name={item.icon} size={24} className={cn(!active && "opacity-60 grayscale")} />
-                </span>
+                {/* 누른 칸은 다음 화면이 오기 전에도 바로 켜진다 (NavPending — 2026-10-09 화면 전환 속도) */}
+                <NavTabIcon active={active} icon={item.icon} />
                 {item.label}
               </Link>
             </li>

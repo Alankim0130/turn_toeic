@@ -1,4 +1,4 @@
-import { studentGate } from "@/components/student/StudentGate";
+import { loadGated } from "@/components/student/StudentGate";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -47,19 +47,20 @@ function termOrderLabel(t: MyTextbookTerm) {
 }
 
 export default async function TextbookPage() {
-  // 불라방 수강생(예비등록생 포함)이 아니면 기능 대신 잠금 안내를 보여준다
-  const locked = await studentGate("textbook");
-  if (locked) return locked;
-
+  // 불라방 수강생(예비등록생 포함)이 아니면 기능 대신 잠금 안내를 보여준다 — 잠금 판정과 데이터를 함께 받는다 (loadGated)
   const supabase = await createClient();
-  const [{ profile }, orders, myOrders, { data: items }, { data: accounts }, { data: settings }] = await Promise.all([
-    requireUser("/my/textbook"),
-    getMyOrders(),
-    getMyTextbookOrders(),
-    supabase.from("textbook_items").select(TEXTBOOK_ITEM_COLS).eq("active", true),
-    supabase.from("textbook_accounts").select(TEXTBOOK_ACCOUNT_COLS).eq("active", true),
-    supabase.from("textbook_settings").select("shipping_fee, default_account_id, notice").maybeSingle(),
-  ]);
+  const g = await loadGated("textbook", () =>
+    Promise.all([
+      requireUser("/my/textbook"),
+      getMyOrders(),
+      getMyTextbookOrders(),
+      supabase.from("textbook_items").select(TEXTBOOK_ITEM_COLS).eq("active", true),
+      supabase.from("textbook_accounts").select(TEXTBOOK_ACCOUNT_COLS).eq("active", true),
+      supabase.from("textbook_settings").select("shipping_fee, default_account_id, notice").maybeSingle(),
+    ]),
+  );
+  if (g.locked) return g.locked;
+  const [{ profile }, orders, myOrders, { data: items }, { data: accounts }, { data: settings }] = g.data;
 
   // 학생이 받았다고 누른(배송완료) 주문은 내역에서 뺀다 — 지난 주문에서 받은 교재(ownedItemIds)는 그대로 센다
   const visibleOrders = myOrders.filter((o) => !o.received_at);

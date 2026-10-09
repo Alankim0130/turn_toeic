@@ -17,8 +17,8 @@ export const metadata: Metadata = { title: "알림", robots: { index: false } };
  * 보낸 이름이 비어 있으면 자동 알림이라 시각만 적는다. 종류마다 할 일로 가는 버튼이 다르다.
  */
 export default async function NotificationsPage() {
-  await requireUser("/my/notifications");
-  const messages = await getMyMessages();
+  // 로그인 확인과 알림을 함께 받는다 (2026-10-09 화면 전환 속도 — 예전에는 확인이 끝나야 알림을 물었다)
+  const [, messages] = await Promise.all([requireUser("/my/notifications"), getMyMessages()]);
   const unread = messages.filter((m) => !m.read_at).length;
 
   return (

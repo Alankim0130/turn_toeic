@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { studentGate } from "@/components/student/StudentGate";
+import { loadGated } from "@/components/student/StudentGate";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ClassMaterialsView } from "@/components/my/ClassMaterialsView";
@@ -22,17 +22,12 @@ export const metadata: Metadata = { title: "수업자료실", robots: { index: f
  * 개강일부터 종강일까지만 열린다 — 스태프도 학생 모드에서는 같다 (LC 음원 · 2026-10-02 Alan "뭐든 권한이 개강일에 맞춰서").
  */
 export default async function ClassMaterialsPage({ searchParams }: { searchParams: Promise<{ level?: string; subject?: string }> }) {
-  // 수강생이 아니면 기능 대신 잠금 안내를 보여준다
-  const locked = await studentGate("materials");
-  if (locked) return locked;
-
-  const [sp, { access, dates, materials }, orders, mySections, notices] = await Promise.all([
-    searchParams,
-    getMyClassMaterials(),
-    getMyOrders(),
-    getMyAccessibleSections(),
-    getMyClassNotices(),
-  ]);
+  // 수강생이 아니면 기능 대신 잠금 안내를 보여준다 — 잠금 판정과 데이터를 함께 받는다 (loadGated)
+  const g = await loadGated("materials", () =>
+    Promise.all([searchParams, getMyClassMaterials(), getMyOrders(), getMyAccessibleSections(), getMyClassNotices()]),
+  );
+  if (g.locked) return g.locked;
+  const [sp, { access, dates, materials }, orders, mySections, notices] = g.data;
   // 공지사항 — 회차 자료보다 앞 (2026-10-05 Alan). 누르면 공지 페이지가 새로 열린다
   const noticeList = notices.length > 0 && (
     <section aria-label="공지사항">

@@ -1,4 +1,4 @@
-import { studentGate } from "@/components/student/StudentGate";
+import { loadGated } from "@/components/student/StudentGate";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -14,16 +14,10 @@ import { getMyAccessibleSections, getMyLcAudio, getMyOrders, getMyStudyEligibili
 export const metadata: Metadata = { title: "LC 음원듣기", robots: { index: false } };
 
 export default async function LcAudioPage({ searchParams }: { searchParams: Promise<{ level?: string }> }) {
-  // 수강생이 아니면 기능 대신 잠금 안내를 보여준다
-  const locked = await studentGate("lc-audio");
-  if (locked) return locked;
-
-  const [sp, { levels, cells, dates, books: bookRows, tracks }, orders, mySections] = await Promise.all([
-    searchParams,
-    getMyLcAudio(),
-    getMyOrders(),
-    getMyAccessibleSections(),
-  ]);
+  // 수강생이 아니면 기능 대신 잠금 안내를 보여준다 — 잠금 판정과 데이터를 함께 받는다 (loadGated)
+  const g = await loadGated("lc-audio", () => Promise.all([searchParams, getMyLcAudio(), getMyOrders(), getMyAccessibleSections()]));
+  if (g.locked) return g.locked;
+  const [sp, { levels, cells, dates, books: bookRows, tracks }, orders, mySections] = g.data;
   const header = (
     <PageHeader icon="headphones" title="LC 음원듣기" description="내 교재를 누르면 수업 날짜에 맞춰 음원이 열려요. 수업일 전 강의는 잠겨 있어요." />
   );
