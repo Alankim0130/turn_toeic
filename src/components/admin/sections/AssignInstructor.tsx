@@ -198,7 +198,7 @@ export function AssignInstructor({ rows, instructors, termLabel, termId }: { row
                               checked ? "border-brand-400 bg-brand-50 font-bold text-ink" : "border-line bg-paper text-ink-soft hover:border-brand-300",
                             )}
                           >
-                            <input type="checkbox" checked={checked} onChange={() => setMany([r], !checked)} className="size-4 shrink-0 accent-[#ff2e88]" />
+                            <input type="checkbox" checked={checked} onChange={() => setMany([r], !checked)} className="size-4 shrink-0 accent-brand-500" />
                             <span className="min-w-0 flex-1 truncate">
                               {r.course}
                               <span className="ml-1 text-xs text-slate">{TRACK_LABEL[r.track] ?? r.track}</span>

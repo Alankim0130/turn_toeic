@@ -102,6 +102,54 @@ body {
   color: var(--color-ink);
 }
 
+/* ─── 관리자 모드 = 토스 모양 (2026-10-09 Alan — "관리자모드에서도 전부다 핑크로 디자인되어있어서 눈이 아픈것 같아. 관리자모드는 토스 디자인처럼") ───
+   /admin 아래(AdminShell 이 그리는 [data-admin-theme])에서만 브랜드 토큰을 **토스 파랑 · 회색 벌**로 바꾼다 — 화면 조각은 그대로
+   `bg-brand-500` · `text-brand-700` 을 쓰고 값만 바뀐다. :root 에 거는 까닭은 헤더의 모드 배지 · 햄버거 서랍 · 하단 바 · 팝업처럼
+   AdminShell 바깥에 그려지는 것까지 같은 벌이어야 해서다. **학생 모드 · 랜딩은 그대로 핫핑크다.**
+   값은 토스 팔레트(파랑 #3182f6 · 글자 #191f28 · 회색 #8b95a1 · 선 #e5e8eb · 바탕 #f2f4f6 · 카드 흰색)다.
+   관리자 화면에 핑크 hex 를 직접 적지 말 것 — 토큰을 쓰면 두 모드가 저절로 갈린다 (admin-theme.test.ts 가 본다). */
+:root:has([data-admin-theme]) {
+  --color-brand-50: #eef4fc;
+  --color-brand-100: #dcebff;
+  --color-brand-200: #b7d4ff;
+  --color-brand-300: #86b6ff;
+  --color-brand-400: #4e96fc;
+  --color-brand-500: #3182f6;
+  --color-brand-600: #2272eb;
+  --color-brand-700: #1b64da;
+  --color-brand-800: #1957c2;
+  --color-brand-900: #194aa6;
+
+  --color-ink: #191f28;
+  --color-ink-soft: #333d4b;
+  --color-slate: #4e5968;
+  --color-mist: #8b95a1;
+  --color-line: #e5e8eb;
+  --color-surface: #f2f4f6;
+  --color-paper: #ffffff;
+}
+/* 그림자는 Tailwind 가 색을 값에 박아 넣어(변수가 아니다) 유틸리티의 --tw-shadow 를 직접 갈아 끼운다 — 토스는 카드 · 버튼에 그림자가 거의 없다.
+   `.btn-primary` 는 @apply 로 shadow-pink 를 안에 품어(클래스가 따로 안 붙는다) 이름을 함께 적는다 */
+:root:has([data-admin-theme]) :is(.shadow-soft, .shadow-pink, .btn-primary) {
+  --tw-shadow: 0 1px 2px 0 var(--tw-shadow-color, rgba(25, 31, 40, 0.04));
+}
+:root:has([data-admin-theme]) .hover\:shadow-pink:hover {
+  --tw-shadow: 0 8px 20px -10px var(--tw-shadow-color, rgba(49, 130, 246, 0.35));
+}
+/* 힉스필드 아이콘(`<Icon>` 이 `data-icon` 을 단다)은 잉크 + 핫핑크 2톤 PNG 라(public/icons — 전부 그 둘뿐이다) 색상환을 돌려 핫핑크를 토스 파랑으로 보낸다.
+   값은 크로미움에서 재서 맞췄다 (2026-10-09 — #f8147f → #2178eb, 잉크는 #091915 로 거의 그대로). 새 아이콘에 핑크 · 잉크 밖의 색을 넣으면 그 색도 함께 돈다.
+   Tailwind 의 filter 유틸리티(brightness-0 invert · grayscale)와 겹치도록 같은 변수 목록을 뒤에 잇는다 — 안 그러면 흰 아이콘이 다시 색을 띤다 */
+:root:has([data-admin-theme]) img[data-icon] {
+  filter: hue-rotate(248deg) saturate(0.72) brightness(1.32) var(--tw-blur, ) var(--tw-brightness, ) var(--tw-contrast, ) var(--tw-grayscale, ) var(--tw-hue-rotate, ) var(--tw-invert, ) var(--tw-saturate, ) var(--tw-sepia, ) var(--tw-drop-shadow, );
+}
+/* 회색 바탕 위 흰 카드라 테두리는 거의 안 보이게, 큰 버튼은 알약이 아니라 둥근 네모(토스) */
+[data-admin-theme] .card {
+  border-color: #edf0f4;
+}
+[data-admin-theme] :is(.btn-primary, .btn-secondary, .btn-dark) {
+  border-radius: 0.875rem;
+}
+
 /* 모바일 하단 네비 높이만큼 본문 여백 확보 */
 .has-bottom-nav {
   padding-bottom: calc(4.25rem + var(--safe-bottom));
@@ -406,7 +454,7 @@ html .app-splash[data-phase="play"], html .app-splash[data-phase="leave"] { disp
 /* 숙제 미제출 알림 격자의 칸 표시 — 냄 · 안 냄 · 아직 · 해당 없음 (2026-10-09 Alan "숙제미제출 알림 페이지를 클릭하면 로딩시간이 오래걸려").
    칸마다 인라인 SVG(span · svg · circle · path 네 요소)로 그렸더니 한 레벨 격자에 요소가 1만 6천 개가 넘어 휴대폰에서 그리는 데만 1초 넘게 걸렸다.
    모양은 그대로 두고 **요소 하나에 배경 그림**으로 그린다 (MissingBoard 의 CellMark). 16px 상자 · viewBox 16 이 예전 SVG 와 같다.
-   색을 바꾸면 그림 안의 값을 고친다 — 냄 brand-500 #ff2e88 · 안 냄 테두리 #ef4444 · × #dc2626 · 아직 mist #9a95a3 70% · 해당 없음 line #ece6ec.
+   색을 바꾸면 그림 안의 값을 고친다 — 냄은 brand-500 변수(마스크 + 바탕색 — 관리자 모드에서는 토스 파랑) · 안 냄 테두리 #ef4444 · × #dc2626 · 아직 mist #9a95a3 70% · 해당 없음 line #ece6ec.
    안 냄은 안을 칠하지 않는다 (2026-10-08 Alan "x표시 안에 음영이 들어가니 보기 힘들어") */
 .hw-mark {
   display: inline-block;
@@ -424,8 +472,11 @@ html .app-splash[data-phase="play"], html .app-splash[data-phase="leave"] { disp
   content-visibility: auto;
   contain-intrinsic-size: auto 32rem;
 }
+/* '냄' 은 브랜드색 동그라미 — 그림(data URI)에는 토큰 변수를 못 넣어서 **마스크 + 바탕색**으로 그린다. 관리자 모드(토스 파랑)에서도 같은 변수를 따라간다 */
 .hw-mark-done {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%23ff2e88'/%3E%3Cpath d='M4.6 8.4l2.2 2.2 4.6-4.9' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-color: var(--color-brand-500);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zm3.4 6.4a1 1 0 0 0-1.46-1.37l-3.17 3.4-1.47-1.47a1 1 0 1 0-1.41 1.41l2.2 2.2a1 1 0 0 0 1.44-.03z'/%3E%3C/svg%3E") center / 1rem 1rem no-repeat;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zm3.4 6.4a1 1 0 0 0-1.46-1.37l-3.17 3.4-1.47-1.47a1 1 0 1 0-1.41 1.41l2.2 2.2a1 1 0 0 0 1.44-.03z'/%3E%3C/svg%3E") center / 1rem 1rem no-repeat;
 }
 .hw-mark-missing {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7.25' fill='none' stroke='%23ef4444' stroke-width='1.5'/%3E%3Cpath d='M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8' stroke='%23dc2626' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E");

@@ -36,7 +36,7 @@ export function AssignSections({ id, sections }: { id: string; sections: PickerS
           { value: "live", label: "불라방" },
         ].map((m) => (
           <label key={m.value} className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
-            <input type="radio" name="mode" value={m.value} defaultChecked={m.value === "onsite"} className="size-4 accent-[#ff2e88]" />
+            <input type="radio" name="mode" value={m.value} defaultChecked={m.value === "onsite"} className="size-4 accent-brand-500" />
             {m.label}
           </label>
         ))}

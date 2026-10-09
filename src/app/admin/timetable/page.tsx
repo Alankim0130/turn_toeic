@@ -536,7 +536,7 @@ function TimeRange({ start, end, label }: { start?: string | null; end?: string 
 function RecordedCheck({ defaultChecked = false }: { defaultChecked?: boolean }) {
   return (
     <label className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold text-ink-soft" title="이 시간대는 화목금이 인강 (저녁 줄)">
-      <input type="checkbox" name="ttf_recorded" defaultChecked={defaultChecked} className="size-4 accent-[#ff2e88]" />
+      <input type="checkbox" name="ttf_recorded" defaultChecked={defaultChecked} className="size-4 accent-brand-500" />
       화목금 인강
     </label>
   );

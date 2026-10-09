@@ -200,7 +200,7 @@ export default async function AdminDashboardPage() {
                   </span>
                   <span className="order-last w-full min-w-0 text-sm font-black text-ink sm:order-none sm:w-auto sm:flex-1">{t.label}</span>
                   <span className="ml-auto flex shrink-0 items-baseline gap-0.5 sm:ml-0">
-                    <span className={cn("text-2xl font-black tabular-nums", on ? "text-brand-600" : "text-mist")}>{t.value}</span>
+                    <span className={cn("text-2xl font-black tabular-nums", on ? "text-ink" : "text-mist")}>{t.value}</span>
                     <span className="text-xs font-bold text-slate">건</span>
                     <span aria-hidden className="ml-1 text-lg font-black text-line">›</span>
                   </span>
@@ -295,9 +295,9 @@ export default async function AdminDashboardPage() {
                   ))}
                 </ul>
                 <div className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-brand-50 px-3 py-2.5">
-                  <span className="text-sm font-black text-brand-700 sm:text-base">총인원</span>
+                  <span className="text-sm font-black text-ink sm:text-base">총인원</span>
                   <span className="flex items-baseline gap-0.5">
-                    <span className="text-3xl font-black leading-none tabular-nums text-brand-600">{headTotal.count.toLocaleString("ko-KR")}</span>
+                    <span className="text-3xl font-black leading-none tabular-nums text-ink">{headTotal.count.toLocaleString("ko-KR")}</span>
                     <span className="text-xs font-bold text-slate">명</span>
                     {anyLive && <LiveCount n={headTotal.live} />}
                   </span>

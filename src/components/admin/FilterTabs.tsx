@@ -14,9 +14,10 @@ export type FilterTab = { value: string; label: string; count?: number };
  *
  * **무게가 둘이다** (2026-09-22 Alan — "버튼채우기가 검은색이고 3개가 연속으로 있으니 너무 정신없어").
  * 꽉 찬 검은 알약을 여러 줄 쌓으면 어디가 중요한지 없이 전부 소리친다. 그래서
- * - `solid`(기본) — 연분홍 **바탕 띠 안에서** 고른 칸만 핫핑크로 찬다. 한 줄만 있는 화면과 첫째 줄에 쓴다
+ * - `solid`(기본) — 흰 **바탕 띠 안에서** 고른 칸만 브랜드색으로 찬다 (관리자 모드는 토스 파랑 — globals.css "관리자 모드 = 토스 모양", 2026-10-09).
+ *   한 줄만 있는 화면과 첫째 줄에 쓴다
  * - `outline` — 테두리만. 같은 화면에 줄이 둘일 때 **둘째 줄**에 써서 첫째 줄에 자리를 내준다
- * 채움색은 잉크 검정이 아니라 **브랜드 핫핑크**다 (디자인 원칙 — 강조는 브랜드색 하나로).
+ * 채움색은 잉크 검정이 아니라 **브랜드색**이다 (디자인 원칙 — 강조는 브랜드색 하나로. 관리자 모드에서는 그 값이 토스 파랑이다).
  *
  * **지킬 것**
  * - 칸에 **최소 너비**(`min-w-20`)를 두고 자리가 모자랄 때만 가로로 밀리게 한다 — 다섯 칸짜리 줄
@@ -50,7 +51,7 @@ export function FilterTabs({
   const solid = variant === "solid";
   return (
     <div className="-mx-4 mb-3 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-      <div role="tablist" className={cn("flex min-w-full gap-1.5", solid && "rounded-2xl bg-brand-50 p-1")}>
+      <div role="tablist" className={cn("flex min-w-full gap-1.5", solid && "rounded-2xl bg-paper p-1 ring-1 ring-line")}>
         {tabs.map((t) => {
           const active = t.value === current;
           return (
@@ -62,7 +63,7 @@ export function FilterTabs({
               className={cn(
                 "flex min-w-20 flex-1 basis-0 flex-col items-center justify-center gap-0.5 text-center text-[13px] font-bold leading-tight transition sm:flex-row sm:gap-2 sm:text-sm",
                 solid
-                  ? cn("rounded-xl2 px-2 py-2", active ? "bg-brand-500 text-white shadow-pink" : "text-ink-soft hover:bg-white/70 hover:text-brand-600")
+                  ? cn("rounded-xl2 px-2 py-2", active ? "bg-brand-500 text-white" : "text-ink-soft hover:bg-surface hover:text-ink")
                   : cn(
                       "rounded-xl2 border px-2 py-2",
                       active ? "border-brand-400 bg-brand-50 text-brand-700" : "border-line bg-paper text-ink-soft hover:border-brand-300 hover:text-brand-600",

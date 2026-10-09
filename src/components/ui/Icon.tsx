@@ -31,6 +31,8 @@ export function Icon({
       src={`/icons/${name}.png`}
       alt=""
       aria-hidden
+      // 관리자 모드가 이 표시로 아이콘의 핑크를 토스 파랑으로 돌린다 (globals.css "관리자 모드 = 토스 모양") — next/image 가 src 를 바꿔 주소로는 못 고른다
+      data-icon=""
       width={size}
       height={size}
       priority={priority}

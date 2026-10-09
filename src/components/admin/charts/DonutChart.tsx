@@ -35,7 +35,7 @@ export function DonutChart({
     <div className={cn("flex flex-col items-center gap-5 sm:flex-row", className)}>
       <svg viewBox="0 0 100 100" className="h-40 w-40 shrink-0" role="img" aria-label={`${title} 도넛 차트`}>
         <title>{`${title} 도넛 차트`}</title>
-        <circle cx="50" cy="50" r={r} fill="none" stroke="#ffe4ef" strokeWidth="14" />
+        <circle cx="50" cy="50" r={r} fill="none" style={{ stroke: "var(--color-brand-100)" }} strokeWidth="14" />
         {segments.map(({ d, len, offset }, i) => (
           <circle
             key={d.label}
@@ -43,7 +43,7 @@ export function DonutChart({
             cy="50"
             r={r}
             fill="none"
-            stroke={SERIES[i % SERIES.length]}
+            style={{ stroke: SERIES[i % SERIES.length] }}
             strokeWidth="14"
             strokeDasharray={`${len} ${c - len}`}
             strokeDashoffset={-offset}
@@ -52,10 +52,10 @@ export function DonutChart({
             <title>{`${d.label} ${d.value}명 (${pct(d.value, total)}%)`}</title>
           </circle>
         ))}
-        <text x="50" y="47" textAnchor="middle" fontSize="13" fontWeight="800" fill="#17121f">
+        <text x="50" y="47" textAnchor="middle" fontSize="13" fontWeight="800" style={{ fill: "var(--color-ink)" }}>
           {total.toLocaleString("ko-KR")}
         </text>
-        <text x="50" y="60" textAnchor="middle" fontSize="7" fill="#5b5563">
+        <text x="50" y="60" textAnchor="middle" fontSize="7" style={{ fill: "var(--color-slate)" }}>
           {centerLabel ?? "명"}
         </text>
       </svg>

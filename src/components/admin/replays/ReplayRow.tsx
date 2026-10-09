@@ -107,7 +107,7 @@ export function ReplayRow({
             defaultValue={addState.value}
             aria-label={`${seq}회 다시보기 주소`}
           />
-          <SubmitButton className="sm:w-auto !py-2" pendingText="등록 중…">등록</SubmitButton>
+          <SubmitButton className="shrink-0 whitespace-nowrap sm:w-auto !py-2" pendingText="등록 중…">등록</SubmitButton>
         </form>
       )}
       {addState.error && <p className="mt-2 text-xs font-semibold text-red-600">{addState.error}</p>}

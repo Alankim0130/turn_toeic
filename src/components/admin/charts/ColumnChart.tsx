@@ -31,22 +31,22 @@ export function ColumnChart({
     <div className={className}>
       <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`${title} 막대 차트`}>
         <title>{title}</title>
-        <line x1="0" y1={H - padB} x2={W} y2={H - padB} stroke="#ece6ec" />
+        <line x1="0" y1={H - padB} x2={W} y2={H - padB} style={{ stroke: "var(--color-line)" }} />
         {data.map((d, i) => {
           const h = ((H - padB - padT) * d.value) / max;
           const x = gap + i * (bw + gap);
           const y = H - padB - h;
           return (
             <g key={d.label}>
-              <rect x={x} y={y} width={bw} height={Math.max(h, d.value > 0 ? 2 : 0)} rx="4" fill={i === data.length - 1 ? "#ff2e88" : "#ff8fbd"}>
+              <rect x={x} y={y} width={bw} height={Math.max(h, d.value > 0 ? 2 : 0)} rx="4" style={{ fill: i === data.length - 1 ? "var(--color-brand-500)" : "var(--color-brand-300)" }}>
                 <title>{`${d.label}: ${d.value}${unit}`}</title>
               </rect>
               {d.value > 0 && (
-                <text x={x + bw / 2} y={y - 5} textAnchor="middle" fontSize="11" fontWeight="700" fill="#17121f">
+                <text x={x + bw / 2} y={y - 5} textAnchor="middle" fontSize="11" fontWeight="700" style={{ fill: "var(--color-ink)" }}>
                   {d.value}
                 </text>
               )}
-              <text x={x + bw / 2} y={H - padB + 16} textAnchor="middle" fontSize="10" fill="#5b5563">
+              <text x={x + bw / 2} y={H - padB + 16} textAnchor="middle" fontSize="10" style={{ fill: "var(--color-slate)" }}>
                 {d.label}
               </text>
             </g>

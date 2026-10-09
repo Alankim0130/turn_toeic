@@ -17,6 +17,7 @@ export function isAdminActive(pathname: string, href: string) {
  * 메뉴가 화면보다 길면 사이드바 안에서만 스크롤한다 — 휠이 메뉴 위에 있으면 메뉴가 내려가고,
  * 끝에 닿아도 본문으로 스크롤이 넘어가지 않는다(overscroll-contain).
  * 켜 둘 메뉴는 **가장 긴 주소** 하나다 (`/admin/study/plan` 이 `/admin/study` 까지 켜지 않게).
+ * 모양은 토스 — 켜진 줄은 연한 바탕에 파란 글자(꽉 찬 칸 · 그림자 없음), 휴대폰 상단 탭의 켜진 칸은 잉크색 알약 (2026-10-09 Alan "관리자모드는 토스 디자인처럼").
  */
 export function AdminSidebar({ name, roleLabel, role }: { name: string; roleLabel: string; role?: string | null }) {
   const pathname = usePathname();
@@ -51,10 +52,10 @@ export function AdminSidebar({ name, roleLabel, role }: { name: string; roleLabe
                         aria-current={active ? "page" : undefined}
                         className={cn(
                           "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
-                          active ? "bg-brand-500 text-white shadow-pink" : "text-ink-soft hover:bg-brand-50 hover:text-brand-600",
+                          active ? "bg-brand-50 text-brand-700" : "text-ink-soft hover:bg-surface hover:text-ink",
                         )}
                       >
-                        <Icon name={item.icon} size={22} className={cn(active && "brightness-0 invert")} />
+                        <Icon name={item.icon} size={22} />
                         {item.label}
                         <NavPendingRing />
                       </Link>
@@ -66,12 +67,12 @@ export function AdminSidebar({ name, roleLabel, role }: { name: string; roleLabe
           ))}
         </nav>
         <div className="mt-3 space-y-1 border-t border-line pt-3">
-          <Link href="/my" className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-ink-soft hover:bg-brand-50 hover:text-brand-600">
+          <Link href="/my" className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-ink-soft hover:bg-surface hover:text-ink">
             <Icon name="profile" size={22} />
             학생 모드로
           </Link>
           <form action={signOut}>
-            <button type="submit" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-ink-soft hover:bg-brand-50 hover:text-brand-600">
+            <button type="submit" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-ink-soft hover:bg-surface hover:text-ink">
               <Icon name="logout" size={22} />
               로그아웃
             </button>
@@ -99,7 +100,7 @@ export function AdminMobileTabs({ role }: { role?: string | null }) {
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "relative flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-2 text-xs font-bold transition",
-                  active ? "border-brand-500 bg-brand-500 text-white" : "border-line bg-paper text-ink-soft",
+                  active ? "border-ink bg-ink text-white" : "border-line bg-paper text-ink-soft",
                 )}
               >
                 <Icon name={item.icon} size={16} className={cn(active && "brightness-0 invert")} />

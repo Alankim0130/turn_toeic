@@ -132,7 +132,7 @@ export function LiveReplayToggle({ sectionId, on, readOnly }: { sectionId: numbe
           checked={checked}
           disabled={readOnly}
           onChange={(e) => setChecked(e.target.checked)}
-          className="size-4 accent-[#ff2e88]"
+          className="size-4 accent-brand-500"
         />
         수업이 끝나면 그 회차 불라방 링크를 다시보기로 자동 연결 (유튜브 주소일 때만)
       </label>
