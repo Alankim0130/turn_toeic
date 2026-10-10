@@ -47,14 +47,15 @@ const ERRORS: Record<string, string> = {
 };
 
 /**
- * 출석 (2026-09-21 Alan — "입실과 퇴실 다 받자! 조교에게도 명단을 열어줘"). **강사·관리자·조교.**
+ * 출석 (2026-09-21 Alan — "입실과 퇴실 다 받자! 조교에게도 명단을 열어줘" → 2026-10-10 Alan — "한번만 찍어도 인정 … 수업시작하고 1초라도 늦으면 지각"). **강사·관리자·조교.**
+ * 한 번 찍으면 출석이고 수업이 시작된 뒤에 찍으면 지각이다 — 판정은 DB 함수 `attendance_scan`, 셈은 `attendance-board.ts` 와 SQL 이 같은 규칙.
  * **기수 하나만 보여 준다** (2026-09-22 · 2026-10-01 Alan — "해당달의 종강일이 되면 모두 사라지고, 다음달의 개강일에 맞춰서 새로운 수강생들로"):
  * 오늘이 든 기수(없으면 다음 기수)의 개강일~종강일 안에서만 보여 준다. 기수 고르기는 `pickCurrentTerm`(날짜를 정한 기수만),
  * 명단·격자·처리의 기간 판정은 DB 함수가 다시 한다 (20260922113000 · 20261001100000).
- * **끝난 기수는 종강 뒤 7일 동안만** `?term=YYYY-MM` 링크로 열 수 있다 — 종강일 수업의 퇴실 누락 같은 정정을 다음 날 할 수 있게. 결석 알림은 그 기수에 보내지 않는다.
+ * **끝난 기수는 종강 뒤 7일 동안만** `?term=YYYY-MM` 링크로 열 수 있다 — 종강일 수업에 못 찍은 학생의 출석 인정 같은 정정을 다음 날 할 수 있게. 결석 알림은 그 기수에 보내지 않는다.
  *
  * 화면은 둘이다 (2026-10-01 Alan — "강사모드에서 학생들 출결상태를 편하게 볼 수 있으면"):
- * - **날짜별**(기본) — 그 날 반마다 입실·퇴실·지각, 맨 위에 **결석·미출석 학생과 한 번에 알림 보내기**(강사·관리자만), 학생마다 `처리`(출석 인정 · 결석 · 되돌리기, 사유 필수).
+ * - **날짜별**(기본) — 그 날 반마다 출석(찍은 시각)·지각, 맨 위에 **결석·미출석 학생과 한 번에 알림 보내기**(강사·관리자만), 학생마다 `처리`(출석 인정 · 결석 · 되돌리기, 사유 필수).
  * - **한눈에 보기** — 기수 전체 학생 × 수업일 격자. 결석·미출석이 많은 학생이 위로 온다.
  * **연락처는 적지 않는다** (2026-09-23 Alan — "연락처는 없애줘. 이건 안보여줘도 괜찮아"). 연락이 필요하면 이름을 눌러 학생 관리에서 본다.
  */
@@ -85,7 +86,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   const q = (date: string) => `/admin/attendance?${termQ}date=${date}`;
 
   const header = (
-    <PageHeader icon="location" title="출석" description="강의실 앞 포스터 QR 로 찍은 입실·퇴실이에요. 퇴실까지 찍어야 출석이고, 기기 문제 등은 사유를 적어 출석 인정으로 바꿔 주세요.">
+    <PageHeader icon="location" title="출석" description="강의실 앞 포스터 QR 을 한 번 찍으면 출석이에요. 수업이 시작된 뒤에 찍으면 지각으로 적히고, 기기 문제 등은 사유를 적어 출석 인정으로 바꿔 주세요.">
       <Link href="/admin/attendance/poster" className="btn-primary">
         <Icon name="camera" size={18} />
         출석 QR 포스터
@@ -127,7 +128,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
           <Link href={`/admin/attendance?term=${key(recent)}&date=${termWindow(recent).closes}`} className="font-bold text-brand-600 hover:underline">
             지난 {recent.month}월 기수 정정하기 →
           </Link>
-          <span className="ml-1 text-xs text-slate">종강 뒤 {GRACE_DAYS}일까지 열려요 (퇴실 누락 등)</span>
+          <span className="ml-1 text-xs text-slate">종강 뒤 {GRACE_DAYS}일까지 열려요 (못 찍은 날의 출석 인정 등)</span>
         </p>
       )}
     </section>
@@ -193,7 +194,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   }
   const count = (list: Row[], st: string | null) => list.filter((r) => (r.status ?? null) === st).length;
 
-  // 결석·미출석 — 수업이 끝난(끝나고 30분) 반만. 알림을 이미 보냈으면 그 시각을 붙인다
+  // 결석·미출석 — 수업이 끝난 반만. 알림을 이미 보냈으면 그 시각을 붙인다
   const sentAt = new Map<string, string>();
   for (const m of sentRows ?? []) {
     const t = kstTime(m.created_at);
@@ -257,7 +258,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
                   {head.time_block} · {head.course_name} {TRACK_LABEL[head.track] ?? head.track}
                 </h2>
                 <p className="text-xs text-slate">
-                  출석 {count(list, "out") + count(list, "manual")} · 입실만 {count(list, "in")} · 미출석 {count(list, null)} · 결석 {count(list, "absent")} / {list.length}명
+                  출석 {count(list, "present") + count(list, "manual")} · 미출석 {count(list, null)} · 결석 {count(list, "absent")} / {list.length}명
                 </p>
               </div>
               <ul className="divide-y divide-line">
@@ -277,7 +278,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
                           {r.late && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-800">지각</span>}
                         </p>
                         <p className="mt-0.5 text-xs text-slate">
-                          {[kstTime(r.check_in_at) && `입실 ${kstTime(r.check_in_at)}`, kstTime(r.check_out_at) && `퇴실 ${kstTime(r.check_out_at)}`, r.decided_note && `${r.decided_by_name ?? "선생님"}: ${r.decided_note}`]
+                          {[kstTime(r.check_in_at) && `${kstTime(r.check_in_at)}에 찍음`, r.decided_note && `${r.decided_by_name ?? "선생님"}: ${r.decided_note}`]
                             .filter(Boolean)
                             .join(" · ") || "아직 안 찍었어요"}
                         </p>

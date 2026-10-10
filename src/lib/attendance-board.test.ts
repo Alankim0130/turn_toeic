@@ -19,15 +19,15 @@ import {
 
 const day = (d: string, st: string | null, opts: Partial<BoardDay & { order: string }> = {}): BoardDay & { order?: string } => ({ d, s: 1, done: true, st, late: false, ...opts });
 
-describe("dayMark — 한 칸의 표시", () => {
-  it("퇴실까지 찍었거나 출석 인정이면 출석, 지각했으면 지각 출석", () => {
-    expect(dayMark(day("2026-10-06", "out"))).toBe("present");
+describe("dayMark — 한 칸의 표시 (한 번 찍으면 출석, 2026-10-10)", () => {
+  it("찍었거나(present) 출석 인정이면 출석, 지각했으면 지각 출석", () => {
+    expect(dayMark(day("2026-10-06", "present"))).toBe("present");
     expect(dayMark(day("2026-10-06", "manual"))).toBe("present");
-    expect(dayMark(day("2026-10-06", "out", { late: true }))).toBe("late");
+    expect(dayMark(day("2026-10-06", "present", { late: true }))).toBe("late");
   });
-  it("입실만 했으면 수업이 끝난 뒤엔 입실만, 수업 중이면 입실함", () => {
-    expect(dayMark(day("2026-10-06", "in"))).toBe("in_only");
-    expect(dayMark(day("2026-10-06", "in", { done: false }))).toBe("checked_in");
+  it("찍는 순간 정해진다 — 수업 중이어도 출석 (입실만 · 수업 중 입실 같은 중간 표시는 없다)", () => {
+    expect(dayMark(day("2026-10-06", "present", { done: false }))).toBe("present");
+    expect(dayMark(day("2026-10-06", "present", { done: false, late: true }))).toBe("late");
   });
   it("기록이 없으면 끝난 수업은 미출석, 아직 안 끝난 수업은 예정 — 선생님이 정한 결석은 늘 결석", () => {
     expect(dayMark(day("2026-10-06", null))).toBe("missing");
@@ -38,18 +38,18 @@ describe("dayMark — 한 칸의 표시", () => {
 });
 
 describe("countDays — DB my_attendance_summary 와 같은 셈", () => {
-  it("끝난 수업만 세고, 출석 = 퇴실 + 출석 인정, 지각은 따로 센다", () => {
+  it("끝난 수업만 세고, 출석 = 찍음 + 출석 인정, 지각은 따로 센다", () => {
     const days = [
-      day("2026-10-06", "out"),
-      day("2026-10-07", "out", { late: true }),
+      day("2026-10-06", "present"),
+      day("2026-10-07", "present", { late: true }),
       day("2026-10-08", "manual"),
-      day("2026-10-09", "in", { late: true }),
+      day("2026-10-09", "present", { late: true }),
       day("2026-10-10", "absent"),
       day("2026-10-12", null),
       day("2026-10-13", null, { done: false }),
-      day("2026-10-14", "in", { done: false }),
+      day("2026-10-14", "present", { done: false }),
     ];
-    expect(countDays(days)).toEqual({ total: 8, past: 6, present: 3, late: 2, in_only: 1, absent: 1, missing: 1 });
+    expect(countDays(days)).toEqual({ total: 8, past: 6, present: 4, late: 2, absent: 1, missing: 1 });
   });
   it("출석률은 끝난 수업 중 출석 — 끝난 수업이 없으면 null", () => {
     expect(attendancePct({ past: 0, present: 0 })).toBeNull();
@@ -58,17 +58,17 @@ describe("countDays — DB my_attendance_summary 와 같은 셈", () => {
   });
 });
 
-describe("rankBoard — 결석·미출석 → 지각 → 입실만 → 이름, 테스터는 맨 아래", () => {
+describe("rankBoard — 결석·미출석 → 지각 → 이름, 테스터는 맨 아래", () => {
   it("관리할 학생이 위로 온다", () => {
     const rows = [
-      { student_id: "a", student_name: "가나다", tester: false, section_ids: [1], days: [day("2026-10-06", "out")] },
-      { student_id: "b", student_name: "라마바", tester: false, section_ids: [1], days: [day("2026-10-06", "out", { late: true })] },
+      { student_id: "a", student_name: "가나다", tester: false, section_ids: [1], days: [day("2026-10-06", "present")] },
+      { student_id: "b", student_name: "라마바", tester: false, section_ids: [1], days: [day("2026-10-06", "present", { late: true })] },
       { student_id: "c", student_name: "사아자", tester: false, section_ids: [1], days: [day("2026-10-06", null), day("2026-10-07", "absent")] },
       { student_id: "d", student_name: "차카타", tester: false, section_ids: [1], days: [day("2026-10-06", null)] },
       { student_id: "t", student_name: "가가가", tester: true, section_ids: [1], days: [day("2026-10-06", null), day("2026-10-07", null)] },
-      { student_id: "e", student_name: "파하", tester: false, section_ids: [1], days: [day("2026-10-06", "in")] },
+      { student_id: "e", student_name: "파하", tester: false, section_ids: [1], days: [day("2026-10-06", "manual")] },
     ];
-    expect(rankBoard(rows).map((r) => r.student_id)).toEqual(["c", "d", "b", "e", "a", "t"]);
+    expect(rankBoard(rows).map((r) => r.student_id)).toEqual(["c", "d", "b", "a", "e", "t"]);
   });
   it("앞날 수업은 결석으로 세지 않는다", () => {
     const rows = [
@@ -90,17 +90,17 @@ describe("boardDates", () => {
   });
 });
 
-describe("classDone — 퇴실 마감(끝나고 30분)이 지났나 · DB 와 같은 규칙", () => {
+describe("classDone — 수업이 끝났나 · DB 와 같은 규칙 (2026-10-10 — 끝나면 더 못 찍으니 그때부터 미출석)", () => {
   const at = (date: string, hhmm: string) => ({ date, minutes: Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5)) });
-  it("끝나고 30분이 지나야 끝난 수업이다", () => {
-    expect(classDone("2026-10-06", "10:00~12:10", at("2026-10-06", "12:39"))).toBe(false);
-    expect(classDone("2026-10-06", "10:00~12:10", at("2026-10-06", "12:40"))).toBe(true);
+  it("수업 끝 시각부터 끝난 수업이다 (퇴실 마감 30분은 없다)", () => {
+    expect(classDone("2026-10-06", "10:00~12:10", at("2026-10-06", "12:09"))).toBe(false);
+    expect(classDone("2026-10-06", "10:00~12:10", at("2026-10-06", "12:10"))).toBe(true);
     expect(classDone("2026-10-06", "10:00~12:10", at("2026-10-07", "00:00"))).toBe(true);
     expect(classDone("2026-10-07", "10:00~12:10", at("2026-10-06", "23:59"))).toBe(false);
   });
   it("밤늦게 끝나는 수업은 다음 날로 넘어가도 맞게 센다", () => {
-    expect(classDone("2026-10-06", "22:00~23:50", at("2026-10-07", "00:19"))).toBe(false);
-    expect(classDone("2026-10-06", "22:00~23:50", at("2026-10-07", "00:20"))).toBe(true);
+    expect(classDone("2026-10-06", "22:00~23:50", at("2026-10-06", "23:49"))).toBe(false);
+    expect(classDone("2026-10-06", "22:00~23:50", at("2026-10-07", "00:00"))).toBe(true);
   });
   it("시간을 못 읽는 반은 끝난 것으로 보지 않는다 (출석을 찍을 수 없는 반이다)", () => {
     expect(classDone("2026-10-01", null, at("2026-10-06", "12:00"))).toBe(false);
@@ -125,8 +125,8 @@ describe("absenteesOf — 결석 알림 받을 사람", () => {
   });
   const after = { date: "2026-10-06", minutes: 13 * 60 };
 
-  it("끝난 수업의 미출석 + 결석만 — 출석·입실만·지각생은 넣지 않는다", () => {
-    const list = absenteesOf([row("a", 1, null), row("b", 1, "absent"), row("c", 1, "out"), row("d", 1, "in"), row("e", 1, "manual")], "2026-10-06", after);
+  it("끝난 수업의 미출석 + 결석만 — 출석·출석 인정은 넣지 않는다", () => {
+    const list = absenteesOf([row("a", 1, null), row("b", 1, "absent"), row("c", 1, "present"), row("d", 1, "present"), row("e", 1, "manual")], "2026-10-06", after);
     expect(list.map((a) => a.student_id)).toEqual(["a", "b"]);
     expect(list.find((a) => a.student_id === "b")?.absent).toBe(true);
   });
@@ -158,19 +158,19 @@ describe("absenceNoticeMessage", () => {
 
 describe("streakOf — 연속 출석", () => {
   it("가장 최근에 끝난 수업부터 출석(지각 포함)이 이어진 만큼", () => {
-    expect(streakOf([day("2026-10-06", null), day("2026-10-07", "out"), day("2026-10-08", "out", { late: true }), day("2026-10-09", "manual")])).toBe(3);
+    expect(streakOf([day("2026-10-06", null), day("2026-10-07", "present"), day("2026-10-08", "present", { late: true }), day("2026-10-09", "manual")])).toBe(3);
   });
   it("가장 최근 수업을 빠졌으면 0", () => {
-    expect(streakOf([day("2026-10-06", "out"), day("2026-10-07", "in")])).toBe(0);
-    expect(streakOf([day("2026-10-06", "out"), day("2026-10-07", null)])).toBe(0);
+    expect(streakOf([day("2026-10-06", "present"), day("2026-10-07", "absent")])).toBe(0);
+    expect(streakOf([day("2026-10-06", "present"), day("2026-10-07", null)])).toBe(0);
   });
   it("아직 안 끝난 수업은 세지도 끊지도 않는다", () => {
-    expect(streakOf([day("2026-10-06", "out"), day("2026-10-07", "out"), day("2026-10-08", null, { done: false })])).toBe(2);
+    expect(streakOf([day("2026-10-06", "present"), day("2026-10-07", "present"), day("2026-10-08", null, { done: false })])).toBe(2);
     expect(streakOf([day("2026-10-08", null, { done: false })])).toBe(0);
   });
   it("같은 날 두 수업은 시작 순서로 본다", () => {
-    expect(streakOf([day("2026-10-06", null, { order: "18:30~20:40" }), day("2026-10-06", "out", { order: "10:00~12:10" })])).toBe(0);
-    expect(streakOf([day("2026-10-06", "out", { order: "18:30~20:40" }), day("2026-10-06", null, { order: "10:00~12:10" })])).toBe(1);
+    expect(streakOf([day("2026-10-06", null, { order: "18:30~20:40" }), day("2026-10-06", "present", { order: "10:00~12:10" })])).toBe(0);
+    expect(streakOf([day("2026-10-06", "present", { order: "18:30~20:40" }), day("2026-10-06", null, { order: "10:00~12:10" })])).toBe(1);
   });
 });
 

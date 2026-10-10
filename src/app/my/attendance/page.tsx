@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 export const metadata: Metadata = { title: "출석 찍기", robots: { index: false } };
 
 /**
- * 출석 찍기 (2026-09-21 Alan — "입실과 퇴실 다 받자"). 들어오면 **카메라가 바로 켜져** 강의실 앞 출석 QR 을 찍는다
+ * 출석 찍기 (2026-09-21 Alan — "입실과 퇴실 다 받자" → 2026-10-10 "한번만 찍어도 인정"). 들어오면 **카메라가 바로 켜져** 강의실 앞 출석 QR 을 찍는다
  * (`AttendanceCamera`, 2026-09-22 Alan). 휴대폰 기본 카메라로 찍는 길(`/attend?t=…`)도 그대로 된다.
  * 그 아래 이번 기수 출석률(`AttendanceRate`) — **내 출석 달력과 지난 기록은 따로 둔 화면 `/my/attendance/record`** 에 있다
  * (2026-10-01 Alan — "학생들도 본인이 출석을 잘 하고 있는지 확인 할 수 있는 공간이 따로 마련되면 좋겠어!").
@@ -21,7 +21,7 @@ export default async function MyAttendancePage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader icon="location" title="출석 찍기" description="카메라가 켜지면 강의실 앞 출석 QR 을 네모 안에 비춰요. 들어올 때 한 번, 나갈 때 한 번이에요.">
+      <PageHeader icon="location" title="출석 찍기" description="카메라가 켜지면 강의실 앞 출석 QR 을 네모 안에 비춰요. 수업일마다 한 번만 찍으면 돼요.">
         <Link href="/my/attendance/record" className="btn-secondary">
           내 출석 보기
         </Link>
@@ -31,7 +31,7 @@ export default async function MyAttendancePage() {
       <section aria-label="출석 QR 찍기" className="card p-4 sm:p-6">
         <AttendanceCamera />
         <p className="mt-3 text-center text-xs text-slate">
-          들어올 때 찍으면 입실, 수업이 끝나고 나갈 때 한 번 더 찍으면 퇴실이에요. 휴대폰 기본 카메라로 QR 을 찍어도 돼요.
+          수업 시작 30분 전부터 찍을 수 있고, 수업이 시작된 뒤에 찍으면 지각이에요. 휴대폰 기본 카메라로 QR 을 찍어도 돼요.
         </p>
       </section>
 

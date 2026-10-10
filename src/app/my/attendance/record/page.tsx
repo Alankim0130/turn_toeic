@@ -24,7 +24,7 @@ const md = (d: string) => formatDate(d, { month: "numeric", day: "numeric", week
  * - 맨 위 연속 출석 · 모은 도장, 그 아래 출석률(대시보드와 같은 `AttendanceRate`), 수업일마다 도장을 찍은 달력, 지난 수업 기록.
  * - **지금 기수(강사가 정한 개강일~종강일)만** 보여 준다. 종강일이 지나면 사라지고 다음 기수로 새로 쌓인다 —
  *   개강 전이면 다음 기수의 수업일을 예정으로 미리 보여 준다 (`my_attendance_days` · `pickRecordTerms`).
- * - 셈은 출석률 카드(`my_attendance_summary`)와 같은 규칙이다: 내가 직접 배정된 현장 반만 · 배정된 날부터 · 끝난 수업 = 끝나고 30분.
+ * - 셈은 출석률 카드(`my_attendance_summary`)와 같은 규칙이다: 내가 직접 배정된 현장 반만 · 배정된 날부터 · 끝난 수업 = 수업 끝 (2026-10-10 — 한 번 찍으면 출석).
  * 읽는 것은 전부 `auth.uid()` 로 거르는 DB 함수다 (등급 체계 10 — 스태프에게 열린 표를 직접 읽지 않는다).
  */
 export default async function MyAttendanceRecordPage() {
@@ -54,7 +54,8 @@ export default async function MyAttendanceRecordPage() {
   const stamps: CalendarStamp[] = days.map((r) => ({ date: r.d, kind: r.kind, label: `${md(r.d)} ${label(r)} — ${MARK_STYLE[r.kind].label}` }));
   const months = days.length ? monthsBetween(days[0].d, days[days.length - 1].d) : [];
   const shownKinds = new Set<MarkKind>(days.map((r) => r.kind));
-  const history = days.filter((r) => r.done || r.kind === "checked_in").reverse();
+  // 지난 수업 + 오늘 이미 찍은 수업 (찍는 순간 출석이 정해진다)
+  const history = days.filter((r) => r.done || r.st !== null).reverse();
 
   const action = (
     <Link href="/my/attendance" className="btn-primary">
@@ -132,7 +133,7 @@ export default async function MyAttendanceRecordPage() {
               {MARK_ORDER.filter((k) => shownKinds.has(k)).map((k) => (
                 <li key={k} className="flex items-center gap-1">
                   <AttendanceMark kind={k} size="xs" />
-                  {k === "in_only" ? "퇴실 안 찍음" : k === "missing" ? "미출석" : MARK_STYLE[k].label}
+                  {MARK_STYLE[k].label}
                 </li>
               ))}
             </ul>
@@ -140,7 +141,7 @@ export default async function MyAttendanceRecordPage() {
           {months.map((m) => (
             <AttendanceCalendar key={`${m.year}-${m.month}`} year={m.year} month={m.month} stamps={stamps} today={today} />
           ))}
-          <p className="text-xs text-slate">들어올 때 한 번, 수업이 끝나고 나갈 때 한 번 찍어야 출석 도장이 찍혀요. 선생님이 출석 인정한 날도 도장이 찍혀요.</p>
+          <p className="text-xs text-slate">수업일마다 강의실 앞 QR 을 한 번 찍으면 출석 도장이 찍혀요. 수업이 시작된 뒤에 찍으면 지각이에요. 선생님이 출석 인정한 날도 도장이 찍혀요.</p>
         </section>
       </Reveal>
 
@@ -158,14 +159,14 @@ export default async function MyAttendanceRecordPage() {
                       {formatDate(r.d, { month: "long", day: "numeric", weekday: "short" })} · {label(r)}
                     </p>
                     <p className="text-xs text-slate">
-                      {[kstTime(r.check_in_at) && `입실 ${kstTime(r.check_in_at)}`, kstTime(r.check_out_at) && `퇴실 ${kstTime(r.check_out_at)}`, r.decided_note && `선생님 메모: ${r.decided_note}`]
+                      {[kstTime(r.check_in_at) && `${kstTime(r.check_in_at)}에 찍음`, r.decided_note && `선생님 메모: ${r.decided_note}`]
                         .filter(Boolean)
                         .join(" · ") || (r.kind === "missing" ? "출석 기록이 없어요" : "선생님이 처리했어요")}
                     </p>
                   </div>
                   <span className="flex shrink-0 items-center gap-1.5 text-xs font-bold text-ink">
                     <AttendanceMark kind={r.kind} size="xs" />
-                    {r.kind === "in_only" ? "퇴실 안 찍음" : MARK_STYLE[r.kind].label}
+                    {MARK_STYLE[r.kind].label}
                   </span>
                 </li>
               ))}

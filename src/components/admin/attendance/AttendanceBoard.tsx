@@ -11,7 +11,7 @@ const weekday = (d: string) => WEEKDAY[new Date(`${d}T00:00:00Z`).getUTCDay()];
  * 기수 출석 한눈에 보기 — 학생 × 수업일 격자 (2026-10-01 Alan — "강사들이 지각생들과 결석생들을 알아보고 관리" ·
  * "강사모드에서 학생들 출결상태를 편하게 볼 수 있으면"). 비대면 인증 현황의 "한눈에 보기"(CheckinRoster)와 같은 꼴이다.
  *
- * - 줄은 **결석·미출석이 많은 학생 → 지각 → 입실만 → 이름** 순이고 테스터는 맨 아래다 (`rankBoard`).
+ * - 줄은 **결석·미출석이 많은 학생 → 지각 → 이름** 순이고 테스터는 맨 아래다 (`rankBoard`).
  * - 칸은 그 학생의 그 날 수업 하나 — 도장(`AttendanceMark`)이다. 그 날 수업이 없는 학생은 빈칸이다 (주3일 학생은 반대 트랙 날이 비어 있다).
  * - 날짜 머리글을 누르면 그 날 명단(날짜별)으로 간다 — 고치는 일은 거기서 한다. 머리글의 빨간 숫자는 그 날 결석·미출석 수.
  * - 한 달 수업일이 20일 안팎이라 가로로 밀리는 것은 어쩔 수 없다 — **이름 칸만 왼쪽에 고정**한다.
@@ -72,7 +72,7 @@ export function AttendanceBoard({
           {MARK_ORDER.filter((k) => shown.has(k)).map((k) => (
             <li key={k} className="flex items-center gap-1">
               <AttendanceMark kind={k} size="xs" />
-              {k === "in_only" ? "입실만 (퇴실 안 찍음)" : k === "missing" ? "미출석 (안 찍음)" : k === "checked_in" ? "입실 (수업 중)" : MARK_STYLE[k].label}
+              {k === "missing" ? "미출석 (안 찍음)" : MARK_STYLE[k].label}
             </li>
           ))}
         </ul>
@@ -126,7 +126,7 @@ export function AttendanceBoard({
                         <span className="inline-flex flex-col items-center gap-0.5">
                           {list.map((x) => {
                             const k = dayMark(x);
-                            const times = [x.in && `입실 ${x.in}`, x.out && `퇴실 ${x.out}`].filter(Boolean).join(" · ");
+                            const times = x.at ? `${x.at}에 찍음` : "";
                             return (
                               <AttendanceMark
                                 key={x.s}
@@ -145,7 +145,6 @@ export function AttendanceBoard({
                         출석 {r.counts.present}/{r.counts.past}
                       </span>
                       {r.counts.late > 0 && <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-sky-800">지각 {r.counts.late}</span>}
-                      {r.counts.in_only > 0 && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-800">입실만 {r.counts.in_only}</span>}
                       {r.counts.absent > 0 && <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-red-700">결석 {r.counts.absent}</span>}
                       {r.counts.missing > 0 && <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-red-700 ring-1 ring-red-200">미출석 {r.counts.missing}</span>}
                     </span>

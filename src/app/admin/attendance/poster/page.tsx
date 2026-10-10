@@ -69,7 +69,7 @@ export default async function AttendancePosterPage({ searchParams }: { searchPar
           <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-slate">
             <li>인쇄 설정: 용지 A4 · 방향 가로 · 배율 &ldquo;실제 크기&rdquo;(100%)</li>
             <li>가운데 점선을 자르면 A5 두 장 — 선생님마다 한 장씩이고 QR 은 같아요.</li>
-            <li>학생은 휴대폰 기본 카메라로 찍고, 들어올 때 한 번(입실) · 나갈 때 한 번(퇴실) 찍어요.</li>
+            <li>학생은 휴대폰 기본 카메라로 찍고, 수업일마다 한 번만 찍으면 출석이에요. 수업이 시작된 뒤에 찍으면 지각이에요.</li>
           </ul>
         </section>
 

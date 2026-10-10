@@ -45,7 +45,7 @@ export type AbsenceSendResult = { ok: boolean; error?: string; sent?: number };
  * 결석 알림 — 그 날 결석·미출석 학생에게 한 번에 (2026-10-01 Alan — "결석한 학생들에게는 전체 알림 메시지를 보낼 수 있도록").
  * **강사·관리자만** 보낸다 — 학생 알림함 쓰기 정책("student_messages: 스태프 발송")이 스태프만 열려 있고, 로그인한 세션으로 넣어 그 정책이 한 번 더 막는다.
  * 받는 사람은 **화면이 보낸 목록을 믿지 않고 서버가 다시 고른다**: 지금 기수(개강일~종강일) 안의 날짜 · 그 날 명단(`attendance_roster`) 중
- * 수업이 끝났고(끝나고 30분) 기록이 없거나 결석으로 정한 학생 — 화면을 열어 둔 사이 학생이 찍었으면 빠진다.
+ * 수업이 끝났고 기록이 없거나 결석으로 정한 학생 — 화면을 열어 둔 사이 학생이 찍었으면 빠진다.
  * 종강한 기수의 날짜에는 보내지 않는다 (2026-10-01 Alan — "종강일이 되면 모두 사라지고 … 새로운 수강생들로").
  */
 export async function sendAbsenceNotice(input: { date: string; userIds: string[]; title: string; body: string }): Promise<AbsenceSendResult> {
