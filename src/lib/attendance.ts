@@ -89,8 +89,14 @@ export function attendUrl(siteUrl: string, token: string) {
   return `${siteUrl.replace(/\/+$/, "")}/attend?t=${encodeURIComponent(token)}`;
 }
 
-/** 내 출석률 (DB `public.my_attendance_summary` 한 줄) */
+/**
+ * 내 출석률 (DB `public.my_attendance_summary` 한 줄). `absent`(선생님이 정한 결석) · `missing`(끝났는데 기록 없음)은 DB 가 따로 세지만
+ * 화면은 둘을 더해 **결석** 한 단어로 적는다 (2026-10-10 Alan "결석이랑 미출석이랑 같은말이야" → "합쳐줘") — `absentCount`.
+ */
 export type MyAttendanceSummary = { total: number; past: number; present: number; late: number; absent: number; missing: number };
+
+/** 화면에 적는 결석 수 = 선생님이 정한 결석 + 끝났는데 안 찍음 */
+export const absentCount = (s: Pick<MyAttendanceSummary, "absent" | "missing">) => s.absent + s.missing;
 
 /**
  * 출석률 두 가지 (2026-09-22 Alan — "본인의 신청등급에 따라 출석률을 몇 퍼센트 채우고 있는지"):
@@ -104,10 +110,15 @@ export function attendanceRate(s: MyAttendanceSummary) {
   return { rate: pct(s.present, s.past), fill: pct(s.present, s.total) ?? 0, left: Math.max(0, s.total - s.past) };
 }
 
-/** 출석 상태 이름 (명단 · 내 출석). present = 한 번 찍음 (2026-10-10 전의 in · out 은 마이그레이션이 present 로 바꿨다) */
+/**
+ * 출석 상태 이름 (날짜별 명단). present = 한 번 찍음 (2026-10-10 전의 in · out 은 마이그레이션이 present 로 바꿨다).
+ * 기록이 없으면 **수업이 끝났나**로 가른다 — 끝났으면 `none`(결석 — 선생님이 정한 `absent` 와 같은 말 · 같은 색, 2026-10-10 Alan "합쳐줘"),
+ * 아직이면 `upcoming`(예정 — 올 시간이 남았다). 그전에는 둘 다 `미출석` 이었다.
+ */
 export const ATTENDANCE_STATUS: Record<string, { label: string; className: string }> = {
   present: { label: "출석", className: "bg-emerald-100 text-emerald-800" },
   manual: { label: "출석 인정", className: "bg-brand-100 text-brand-700" },
   absent: { label: "결석", className: "bg-red-100 text-red-700" },
-  none: { label: "미출석", className: "bg-line text-slate" },
+  none: { label: "결석", className: "bg-red-100 text-red-700" },
+  upcoming: { label: "예정", className: "bg-line text-slate" },
 };

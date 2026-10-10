@@ -29,8 +29,8 @@ describe("dayMark — 한 칸의 표시 (한 번 찍으면 출석, 2026-10-10)",
     expect(dayMark(day("2026-10-06", "present", { done: false }))).toBe("present");
     expect(dayMark(day("2026-10-06", "present", { done: false, late: true }))).toBe("late");
   });
-  it("기록이 없으면 끝난 수업은 미출석, 아직 안 끝난 수업은 예정 — 선생님이 정한 결석은 늘 결석", () => {
-    expect(dayMark(day("2026-10-06", null))).toBe("missing");
+  it("기록이 없으면 끝난 수업은 결석, 아직 안 끝난 수업은 예정 — 선생님이 정한 결석도 같은 결석 (한 단어, 2026-10-10)", () => {
+    expect(dayMark(day("2026-10-06", null))).toBe("absent");
     expect(dayMark(day("2026-10-06", null, { done: false }))).toBe("upcoming");
     expect(dayMark(day("2026-10-06", "absent"))).toBe("absent");
     expect(dayMark(day("2026-10-06", "absent", { done: false }))).toBe("absent");
@@ -49,7 +49,8 @@ describe("countDays — DB my_attendance_summary 와 같은 셈", () => {
       day("2026-10-13", null, { done: false }),
       day("2026-10-14", "present", { done: false }),
     ];
-    expect(countDays(days)).toEqual({ total: 8, past: 6, present: 4, late: 2, absent: 1, missing: 1 });
+    // 결석 2 = 선생님이 정한 결석 1 + 끝났는데 안 찍음 1 (따로 세지 않는다)
+    expect(countDays(days)).toEqual({ total: 8, past: 6, present: 4, late: 2, absent: 2 });
   });
   it("출석률은 끝난 수업 중 출석 — 끝난 수업이 없으면 null", () => {
     expect(attendancePct({ past: 0, present: 0 })).toBeNull();
@@ -58,7 +59,7 @@ describe("countDays — DB my_attendance_summary 와 같은 셈", () => {
   });
 });
 
-describe("rankBoard — 결석·미출석 → 지각 → 이름, 테스터는 맨 아래", () => {
+describe("rankBoard — 결석 → 지각 → 이름, 테스터는 맨 아래", () => {
   it("관리할 학생이 위로 온다", () => {
     const rows = [
       { student_id: "a", student_name: "가나다", tester: false, section_ids: [1], days: [day("2026-10-06", "present")] },
@@ -76,7 +77,7 @@ describe("rankBoard — 결석·미출석 → 지각 → 이름, 테스터는 �
       { student_id: "b", student_name: "나", tester: false, section_ids: [1], days: [day("2026-10-06", null)] },
     ];
     expect(rankBoard(rows)[0].student_id).toBe("b");
-    expect(rankBoard(rows)[1].counts.missing).toBe(0);
+    expect(rankBoard(rows)[1].counts.absent).toBe(0);
   });
 });
 
@@ -90,7 +91,7 @@ describe("boardDates", () => {
   });
 });
 
-describe("classDone — 수업이 끝났나 · DB 와 같은 규칙 (2026-10-10 — 끝나면 더 못 찍으니 그때부터 미출석)", () => {
+describe("classDone — 수업이 끝났나 · DB 와 같은 규칙 (2026-10-10 — 끝나면 더 못 찍으니 그때부터 결석)", () => {
   const at = (date: string, hhmm: string) => ({ date, minutes: Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5)) });
   it("수업 끝 시각부터 끝난 수업이다 (퇴실 마감 30분은 없다)", () => {
     expect(classDone("2026-10-06", "10:00~12:10", at("2026-10-06", "12:09"))).toBe(false);
@@ -113,7 +114,7 @@ describe("classDone — 수업이 끝났나 · DB 와 같은 규칙 (2026-10-10 
 });
 
 describe("absenteesOf — 결석 알림 받을 사람", () => {
-  const row = (student_id: string, section_id: number, status: string | null, time_block = "10:00~12:10", tester = false): RosterLike => ({
+  const row = (student_id: string, section_id: number, status: string | null, time_block = "10:00~12:10", tester = false, decided_note: string | null = null): RosterLike => ({
     section_id,
     course_name: "650+ 왕기초반",
     track: section_id % 2 ? "mwf" : "ttf",
@@ -122,13 +123,16 @@ describe("absenteesOf — 결석 알림 받을 사람", () => {
     student_name: `학생${student_id}`,
     tester,
     status,
+    decided_note,
   });
   const after = { date: "2026-10-06", minutes: 13 * 60 };
 
-  it("끝난 수업의 미출석 + 결석만 — 출석·출석 인정은 넣지 않는다", () => {
-    const list = absenteesOf([row("a", 1, null), row("b", 1, "absent"), row("c", 1, "present"), row("d", 1, "present"), row("e", 1, "manual")], "2026-10-06", after);
+  it("끝난 수업에 안 찍은 학생 + 선생님이 결석으로 정한 학생 — 출석·출석 인정은 넣지 않는다", () => {
+    const list = absenteesOf([row("a", 1, null), row("b", 1, "absent", "10:00~12:10", false, " 병원 "), row("c", 1, "present"), row("d", 1, "present"), row("e", 1, "manual")], "2026-10-06", after);
     expect(list.map((a) => a.student_id)).toEqual(["a", "b"]);
-    expect(list.find((a) => a.student_id === "b")?.absent).toBe(true);
+    // 둘 다 "결석" 한 단어다 — 다른 것은 선생님이 적은 사유뿐
+    expect(list.find((a) => a.student_id === "a")?.note).toBeNull();
+    expect(list.find((a) => a.student_id === "b")?.note).toBe("병원");
   });
   it("아직 안 끝난 수업은 넣지 않는다 (올 시간이 남았다)", () => {
     const list = absenteesOf([row("a", 1, null), row("b", 3, null, "18:30~20:40")], "2026-10-06", after);

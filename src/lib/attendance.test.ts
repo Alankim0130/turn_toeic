@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ATTENDANCE_STATUS, attendanceRate, attendUrl, scanView, tokenFromQr } from "./attendance";
+import { absentCount, ATTENDANCE_STATUS, attendanceRate, attendUrl, scanView, tokenFromQr } from "./attendance";
 
 describe("내 출석률", () => {
   const base = { late: 0, absent: 0, missing: 0 };
@@ -49,7 +49,13 @@ describe("출석 결과 문구 (attendance_scan 의 action 마다) — 한 번 �
   it("퇴실 · 입실만은 더 없다 — 옛 결과 이름은 모르는 결과로 본다", () => {
     expect(scanView({ action: "check_out", at: "12:11" }).title).toBe("출석을 처리하지 못했어요");
     expect(scanView({ action: "already_in", at: "10:02" }).title).toBe("출석을 처리하지 못했어요");
-    expect(Object.keys(ATTENDANCE_STATUS).sort()).toEqual(["absent", "manual", "none", "present"]);
+    expect(Object.keys(ATTENDANCE_STATUS).sort()).toEqual(["absent", "manual", "none", "present", "upcoming"]);
+  });
+  it("결석은 한 단어 — 선생님이 정한 결석과 끝났는데 안 찍음이 같은 말 · 같은 색, 아직 안 끝난 수업은 예정 (2026-10-10 Alan \"합쳐줘\")", () => {
+    expect(ATTENDANCE_STATUS.none).toEqual(ATTENDANCE_STATUS.absent);
+    expect(ATTENDANCE_STATUS.absent.label).toBe("결석");
+    expect(ATTENDANCE_STATUS.upcoming.label).toBe("예정");
+    expect(absentCount({ absent: 1, missing: 2 })).toBe(3);
   });
   it("모르는 결과도 문구가 있다", () => {
     expect(scanView({ action: "something_new" }).tone).toBe("warning");
