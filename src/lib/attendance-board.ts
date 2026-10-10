@@ -7,7 +7,10 @@
  * 수업일 한 칸(학생 · 반 · 날짜)의 상태를 **한 가지 표시**로 정하고, 그 표시를 강사 격자와 학생 달력이 함께 쓴다.
  * 세는 규칙은 DB 의 `attendance_term_board` · `my_attendance_days` · `my_attendance_summary` 와 같다 — 바꾸면 SQL 과 이 파일을 같이 고친다:
  *  - "끝난 수업" = 수업이 끝난 회차 (DB 가 `done` 으로 내려 준다. 2026-10-10 전에는 끝나고 30분 = 퇴실 마감)
- *  - 출석 = 한 번 찍음(present) + 선생님이 출석 인정(manual) · 결석 = 선생님이 정한 absent · 미출석 = 끝났는데 기록 없음
+ *  - 출석 = 한 번 찍음(present) + 선생님이 출석 인정(manual) · **결석 = 선생님이 정한 absent + 끝났는데 기록 없음(null)** —
+ *    한 단어다 (2026-10-10 Alan "결석이랑 미출석이랑 같은말이야" → "합쳐줘". 그전에는 `미출석` 을 따로 적었다 — 되살리지 말 것).
+ *    둘의 차이는 **누가 정했나**뿐이고 사유가 있으면 그 줄에 사유를 같이 적는다. DB 는 둘을 그대로 따로 둔다(status absent · null) —
+ *    선생님이 정한 결석은 학생이 찍어도 바뀌지 않아야 해서다. `my_attendance_summary` 의 absent · missing 도 화면에서 더해 하나로 적는다.
  *  - 지각은 따로 세는 표시다 (수업이 시작된 뒤에 찍음 — 1초라도. 2026-10-10 Alan "지각처리만 확실하게")
  *  - 2026-10-10 전의 입실만(in) · 퇴실까지(out)는 마이그레이션 20261010100000 이 전부 present 로 바꿨다 — 그 상태는 더 없다
  * 기수(개강일~종강일)를 고르는 일은 DB 함수와 `pickCurrentTerm` 이 한다 — 여기서는 받은 칸만 다룬다.
@@ -20,16 +23,16 @@ export type BoardRow = { student_id: string; student_name: string; tester: boole
 
 /**
  * 한 칸의 표시.
- * present 출석 · late 지각 출석 · absent 결석(선생님이 정함) · missing 미출석(끝났는데 기록 없음) · upcoming 예정(아직 안 끝났고 기록 없음)
- * (찍은 순간 출석이 정해지므로 "수업 중 입실" 같은 중간 상태는 없다)
+ * present 출석 · late 지각 출석 · absent 결석(선생님이 정했거나 끝났는데 기록 없음) · upcoming 예정(아직 안 끝났고 기록 없음)
+ * (찍은 순간 출석이 정해지므로 "수업 중 입실" 같은 중간 상태는 없다. `missing`(미출석)은 2026-10-10 에 absent 로 합쳤다)
  */
-export type MarkKind = "present" | "late" | "absent" | "missing" | "upcoming";
+export type MarkKind = "present" | "late" | "absent" | "upcoming";
 
 export function dayMark(day: { done: boolean; st: string | null; late: boolean }): MarkKind {
   if (day.st === "absent") return "absent";
   // 출석 인정은 지각 표시를 지운다 (DB attendance_set) — manual 이면 late 는 늘 false 다
   if (day.st === "present" || day.st === "manual") return day.late ? "late" : "present";
-  return day.done ? "missing" : "upcoming";
+  return day.done ? "absent" : "upcoming";
 }
 
 /** 출석으로 세는 표시 — 지각해도 찍었으면 출석이다 */
@@ -43,25 +46,24 @@ export const MARK_STYLE: Record<MarkKind, { label: string; letter: string; class
   present: { label: "출석", letter: "출", className: "bg-brand-500 text-white" },
   late: { label: "지각", letter: "지", className: "bg-sky-500 text-white" },
   absent: { label: "결석", letter: "결", className: "bg-red-500 text-white" },
-  missing: { label: "미출석", letter: "미", className: "bg-red-100 text-red-700" },
   upcoming: { label: "예정", letter: "", className: "border-2 border-dashed border-line bg-paper text-mist" },
 };
 
 /** 표시 설명 (격자·달력 위의 범례) — 화면에 실제로 나온 것만 적는다 */
-export const MARK_ORDER: MarkKind[] = ["present", "late", "absent", "missing", "upcoming"];
+export const MARK_ORDER: MarkKind[] = ["present", "late", "absent", "upcoming"];
 
-export type DayCounts = { total: number; past: number; present: number; late: number; absent: number; missing: number };
+/** absent = 선생님이 정한 결석 + 끝났는데 기록 없음 (DB `my_attendance_summary` 의 absent + missing) */
+export type DayCounts = { total: number; past: number; present: number; late: number; absent: number };
 
 /** 칸들을 센다 — DB `my_attendance_summary` 와 같은 뜻 (past 이하 숫자는 끝난 수업만) */
 export function countDays(days: readonly { done: boolean; st: string | null; late: boolean }[]): DayCounts {
-  const c: DayCounts = { total: days.length, past: 0, present: 0, late: 0, absent: 0, missing: 0 };
+  const c: DayCounts = { total: days.length, past: 0, present: 0, late: 0, absent: 0 };
   for (const d of days) {
     if (!d.done) continue;
     c.past++;
     if (d.st === "present" || d.st === "manual") c.present++;
     if (d.late) c.late++;
-    if (d.st === "absent") c.absent++;
-    if (d.st === null) c.missing++;
+    if (d.st === "absent" || d.st === null) c.absent++;
   }
   return c;
 }
@@ -70,7 +72,7 @@ export function countDays(days: readonly { done: boolean; st: string | null; lat
 export const attendancePct = (c: Pick<DayCounts, "past" | "present">) => (c.past > 0 ? Math.min(100, Math.round((c.present / c.past) * 100)) : null);
 
 /**
- * 강사 격자의 줄 순서: **결석·미출석이 많은 학생 → 지각이 많은 학생 → 이름** (2026-10-01 Alan —
+ * 강사 격자의 줄 순서: **결석이 많은 학생 → 지각이 많은 학생 → 이름** (2026-10-01 Alan —
  * "지각생들과 결석생들을 알아보고"). 테스터(강사·관리자 계정)는 맨 아래로 — 진짜 학생 사이에 섞이면 눈에 걸린다.
  */
 export function rankBoard<T extends { student_name: string; tester: boolean; days: BoardDay[] }>(rows: readonly T[]): (T & { counts: DayCounts })[] {
@@ -79,7 +81,7 @@ export function rankBoard<T extends { student_name: string; tester: boolean; day
     .sort(
       (a, b) =>
         Number(a.tester) - Number(b.tester) ||
-        b.counts.absent + b.counts.missing - (a.counts.absent + a.counts.missing) ||
+        b.counts.absent - a.counts.absent ||
         b.counts.late - a.counts.late ||
         (a.student_name || "").localeCompare(b.student_name || "", "ko"),
     );
@@ -105,7 +107,7 @@ const dayNumber = (ymd: string) => Math.round(Date.UTC(Number(ymd.slice(0, 4)), 
 
 /**
  * 그 날 그 반 수업이 **끝났나** — DB 의 `d.date + time_block_end <= 지금(KST)` 과 같다 (2026-10-10 — 그전에는 끝나고 30분, 퇴실 마감).
- * 끝나면 더 찍을 수 없으므로 그때부터 기록이 없으면 미출석이다. 시간을 못 읽는 반은 출석을 찍지 않으므로 끝난 것으로 보지 않는다.
+ * 끝나면 더 찍을 수 없으므로 그때부터 기록이 없으면 결석이다. 시간을 못 읽는 반은 출석을 찍지 않으므로 끝난 것으로 보지 않는다.
  */
 export function classDone(date: string, timeBlock: string | null | undefined, now: { date: string; minutes: number }): boolean {
   const m = timeBlock?.match(/^(\d{2}):(\d{2})~(\d{2}):(\d{2})$/);
@@ -126,14 +128,17 @@ export type RosterLike = {
   student_name: string;
   tester: boolean;
   status: string | null;
+  /** 선생님이 결석으로 정하며 적은 사유 — 있으면 결석 알림 줄에 같이 적는다 */
+  decided_note?: string | null;
 };
 
-export type Absentee = { student_id: string; student_name: string; tester: boolean; sectionIds: number[]; labels: string[]; absent: boolean };
+/** `note` = 선생님이 결석으로 정하며 적은 사유 (없으면 끝났는데 안 찍은 것) — 화면은 둘 다 "결석" 한 단어다 */
+export type Absentee = { student_id: string; student_name: string; tester: boolean; sectionIds: number[]; labels: string[]; note: string | null };
 
 const TRACK_NAME: Record<string, string> = { mwf: "월수금", ttf: "화목금" };
 
 /**
- * 그 날 **결석·미출석** 학생 — 수업이 끝났는데 기록이 없거나 선생님이 결석으로 정한 학생.
+ * 그 날 **결석** 학생 — 수업이 끝났는데 기록이 없거나 선생님이 결석으로 정한 학생 (한 단어, 2026-10-10 Alan).
  * 아직 안 끝난 수업은 넣지 않는다 (올 시간이 남았다). 지각생은 왔으므로 넣지 않는다.
  * 한 사람이 그 날 두 반을 빠졌으면 한 줄로 합친다 — 알림은 한 사람에 한 번이다.
  */
@@ -142,12 +147,12 @@ export function absenteesOf(rows: readonly RosterLike[], date: string, now: { da
   for (const r of rows) {
     if (!(r.status === null || r.status === "absent")) continue;
     if (!classDone(date, r.time_block, now)) continue;
-    const a = by.get(r.student_id) ?? { student_id: r.student_id, student_name: r.student_name, tester: r.tester, sectionIds: [], labels: [], absent: false };
+    const a = by.get(r.student_id) ?? { student_id: r.student_id, student_name: r.student_name, tester: r.tester, sectionIds: [], labels: [], note: null };
     if (!a.sectionIds.includes(r.section_id)) {
       a.sectionIds.push(r.section_id);
       a.labels.push([r.course_name, TRACK_NAME[r.track] ?? r.track, r.time_block].filter(Boolean).join(" "));
     }
-    if (r.status === "absent") a.absent = true;
+    if (r.status === "absent" && r.decided_note?.trim() && !a.note) a.note = r.decided_note.trim();
     by.set(r.student_id, a);
   }
   return [...by.values()].sort((x, y) => Number(x.tester) - Number(y.tester) || (x.student_name || "").localeCompare(y.student_name || "", "ko"));
@@ -168,7 +173,7 @@ export function absenceNoticeMessage(date: string): { title: string; body: strin
 /**
  * 연속 출석 — 가장 최근에 끝난 수업부터 거꾸로, 출석(지각 포함)이 이어진 횟수.
  * 끝나지 않은 수업은 세지도 끊지도 않는다 (오늘 수업이 아직 진행 중이어도 어제까지의 연속이 그대로 보인다).
- * 결석·미출석이면 거기서 끊긴다 — 출석으로 세지 않는 날이다.
+ * 결석이면 거기서 끊긴다 — 출석으로 세지 않는 날이다.
  */
 export function streakOf(days: readonly { d: string; done: boolean; st: string | null; late: boolean; order?: string | null }[]): number {
   const past = days.filter((d) => d.done).sort((a, b) => a.d.localeCompare(b.d) || (a.order ?? "").localeCompare(b.order ?? ""));

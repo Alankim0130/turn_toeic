@@ -75,7 +75,7 @@ export default async function NotificationsPage() {
                       더 궁금한 점 문의하기
                     </Link>
                   )}
-                  {/* 결석 안내 (2026-10-01) — 강사가 출석 화면에서 그 날 결석·미출석 학생에게 보낸 것. 내 출석 달력에서 그 날을 본다 */}
+                  {/* 결석 안내 (2026-10-01) — 강사가 출석 화면에서 그 날 결석 학생에게 보낸 것. 내 출석 달력에서 그 날을 본다 */}
                   {m.kind === "attendance" && (
                     <Link href="/my/attendance/record" className="btn-primary mt-3 !px-4 !py-2 text-sm">
                       내 출석 보기

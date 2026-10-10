@@ -8,14 +8,16 @@ import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
 
-export type AbsenteeView = { id: string; name: string; tester: boolean; labels: string[]; absent: boolean; sentAt: string | null };
+/** `note` = 선생님이 결석으로 정하며 적은 사유 (없으면 끝났는데 안 찍은 학생) — 둘 다 "결석" 한 단어다 */
+export type AbsenteeView = { id: string; name: string; tester: boolean; labels: string[]; note: string | null; sentAt: string | null };
 
 /**
- * 그 날 결석·미출석 학생과 **한 번에 알림 보내기** (2026-10-01 Alan — "결석한 학생들에게는 전체 알림 메시지를 보낼 수 있도록").
+ * 그 날 결석 학생과 **한 번에 알림 보내기** (2026-10-01 Alan — "결석한 학생들에게는 전체 알림 메시지를 보낼 수 있도록").
+ * 결석 = 수업이 끝났는데 안 찍은 학생 + 선생님이 결석으로 정한 학생 — **한 단어**로 적고(2026-10-10 Alan "합쳐줘") 선생님이 적은 사유만 줄에 붙인다.
  * 비대면 인증의 "미인증 N명에게 알림 보내기"(CheckinRoster)와 같은 길이다 — 학생 알림함(`student_messages`, kind `attendance`)으로만 간다.
  * 문자·카톡·푸시는 가지 않는다. 이미 보낸 학생은 `알림 보냄` 이 붙고 처음에는 체크가 빠져 있다 (같은 알림을 두 번 보내지 않게).
  * 보내는 것은 **강사·관리자만**이다 (`canSend`) — 알림함 쓰기 정책이 스태프만 열려 있다. 조교는 목록만 본다.
- * 받는 사람은 서버가 다시 고른다 (`sendAbsenceNotice` — 그 날 수업이 끝났고 결석·미출석인 학생만).
+ * 받는 사람은 서버가 다시 고른다 (`sendAbsenceNotice` — 그 날 수업이 끝났고 결석인 학생만).
  */
 export function AbsenceNotice({
   date,
@@ -64,9 +66,9 @@ export function AbsenceNotice({
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-red-50/70 px-5 py-3">
         <div className="min-w-0">
           <h2 id="absent-title" className="font-black text-ink">
-            {dateLabel} 결석·미출석 <span className="text-red-600 tabular-nums">{absentees.length}명</span>
+            {dateLabel} 결석 <span className="text-red-600 tabular-nums">{absentees.length}명</span>
           </h2>
-          <p className="mt-0.5 text-xs text-slate">수업이 끝났는데 출석 기록이 없거나 결석으로 정한 학생이에요. 지각생은 왔으니 넣지 않아요.</p>
+          <p className="mt-0.5 text-xs text-slate">수업이 끝났는데 출석 기록이 없거나 선생님이 결석으로 정한 학생이에요. 지각생은 왔으니 넣지 않아요.</p>
         </div>
         {canSend && !compose && (
           <button type="button" onClick={start} className="btn-primary !px-4 !py-2 text-sm">
@@ -107,10 +109,12 @@ export function AbsenceNotice({
                   <span className="font-bold text-ink">{a.name || "-"}</span>
                 )}
                 {a.tester && <span className="rounded-full bg-line px-1.5 py-0.5 text-[10px] font-bold text-slate">테스터</span>}
-                <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold", a.absent ? "bg-red-100 text-red-700" : "bg-red-50 text-red-700 ring-1 ring-red-200")}>{a.absent ? "결석" : "미출석"}</span>
                 {a.sentAt && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-bold text-brand-700">알림 보냄 {a.sentAt}</span>}
               </p>
-              <p className="mt-0.5 text-xs text-slate">{a.labels.join(" / ")}</p>
+              <p className="mt-0.5 text-xs text-slate">
+                {a.labels.join(" / ")}
+                {a.note && <span className="ml-1.5 text-red-700">· 사유: {a.note}</span>}
+              </p>
             </div>
           </li>
         ))}

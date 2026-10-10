@@ -161,7 +161,7 @@ export default async function MyAttendanceRecordPage() {
                     <p className="text-xs text-slate">
                       {[kstTime(r.check_in_at) && `${kstTime(r.check_in_at)}에 찍음`, r.decided_note && `선생님 메모: ${r.decided_note}`]
                         .filter(Boolean)
-                        .join(" · ") || (r.kind === "missing" ? "출석 기록이 없어요" : "선생님이 처리했어요")}
+                        .join(" · ") || (r.st === null ? "출석 기록이 없어요" : "선생님이 처리했어요")}
                     </p>
                   </div>
                   <span className="flex shrink-0 items-center gap-1.5 text-xs font-bold text-ink">

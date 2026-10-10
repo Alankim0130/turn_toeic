@@ -9,7 +9,7 @@ import { AttendanceBoard } from "@/components/admin/attendance/AttendanceBoard";
 import { AbsenceNotice } from "@/components/admin/attendance/AbsenceNotice";
 import { isStaff, requireCrew } from "@/lib/auth";
 import { ATTENDANCE_STATUS } from "@/lib/attendance";
-import { absenceNoticeMessage, absenteesOf, boardDates, kstNow, rankBoard, type BoardDay } from "@/lib/attendance-board";
+import { absenceNoticeMessage, absenteesOf, boardDates, classDone, kstNow, rankBoard, type BoardDay } from "@/lib/attendance-board";
 import { clampToTerm, inTerm, pickCurrentTerm, shiftDate, termWindow } from "@/lib/term-window";
 import { collapseWeek5, week5SectionIds } from "@/lib/week5";
 import { createClient } from "@/lib/supabase/server";
@@ -55,8 +55,10 @@ const ERRORS: Record<string, string> = {
  * **끝난 기수는 종강 뒤 7일 동안만** `?term=YYYY-MM` 링크로 열 수 있다 — 종강일 수업에 못 찍은 학생의 출석 인정 같은 정정을 다음 날 할 수 있게. 결석 알림은 그 기수에 보내지 않는다.
  *
  * 화면은 둘이다 (2026-10-01 Alan — "강사모드에서 학생들 출결상태를 편하게 볼 수 있으면"):
- * - **날짜별**(기본) — 그 날 반마다 출석(찍은 시각)·지각, 맨 위에 **결석·미출석 학생과 한 번에 알림 보내기**(강사·관리자만), 학생마다 `처리`(출석 인정 · 결석 · 되돌리기, 사유 필수).
- * - **한눈에 보기** — 기수 전체 학생 × 수업일 격자. 결석·미출석이 많은 학생이 위로 온다.
+ * - **날짜별**(기본) — 그 날 반마다 출석(찍은 시각)·지각, 맨 위에 **결석 학생과 한 번에 알림 보내기**(강사·관리자만), 학생마다 `처리`(출석 인정 · 결석 · 되돌리기, 사유 필수).
+ * - **한눈에 보기** — 기수 전체 학생 × 수업일 격자. 결석이 많은 학생이 위로 온다.
+ * **결석은 한 단어다** (2026-10-10 Alan "결석이랑 미출석이랑 같은말이야" → "합쳐줘") — 수업이 끝났는데 안 찍은 학생과 선생님이 결석으로 정한 학생을
+ * 같은 말 · 같은 색으로 적고, 선생님이 적은 사유만 줄에 붙인다. 수업이 아직 안 끝난 학생은 `예정` 이다 (그전에는 둘 다 `미출석`).
  * **연락처는 적지 않는다** (2026-09-23 Alan — "연락처는 없애줘. 이건 안보여줘도 괜찮아"). 연락이 필요하면 이름을 눌러 학생 관리에서 본다.
  */
 const GRACE_DAYS = 7;
@@ -193,8 +195,9 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
     sections.set(r.section_id, s);
   }
   const count = (list: Row[], st: string | null) => list.filter((r) => (r.status ?? null) === st).length;
+  const now = kstNow();
 
-  // 결석·미출석 — 수업이 끝난 반만. 알림을 이미 보냈으면 그 시각을 붙인다
+  // 결석 — 수업이 끝난 반만. 알림을 이미 보냈으면 그 시각을 붙인다
   const sentAt = new Map<string, string>();
   for (const m of sentRows ?? []) {
     const t = kstTime(m.created_at);
@@ -202,7 +205,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   }
   const absentees = viewingPast
     ? []
-    : absenteesOf(rows, date, kstNow()).map((a) => ({ id: a.student_id, name: a.student_name, tester: a.tester, labels: a.labels, absent: a.absent, sentAt: sentAt.get(a.student_id) ?? null }));
+    : absenteesOf(rows, date, now).map((a) => ({ id: a.student_id, name: a.student_name, tester: a.tester, labels: a.labels, note: a.note, sentAt: sentAt.get(a.student_id) ?? null }));
 
   return (
     <>
@@ -251,19 +254,25 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         <EmptyState icon="location" title="이 날 현장 수업이 있는 학생이 없어요" description="수업일이 아니거나, 이 날 수업을 듣는 현장 수강생이 없어요. 불라방·인강 학생은 출석을 찍지 않아요." />
       ) : (
         <div className="space-y-6">
-          {[...sections.entries()].map(([sectionId, { head, rows: list }]) => (
+          {[...sections.entries()].map(([sectionId, { head, rows: list }]) => {
+            // 수업이 끝났으면 안 찍은 학생은 결석, 아직이면 예정 — 결석은 한 단어다 (2026-10-10)
+            const done = classDone(date, head.time_block, now);
+            const absent = count(list, "absent") + (done ? count(list, null) : 0);
+            const pending = done ? 0 : count(list, null);
+            return (
             <section key={sectionId} id={`s${sectionId}`} aria-labelledby={`t${sectionId}`} className="card scroll-mt-24 p-5">
               <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
                 <h2 id={`t${sectionId}`} className="text-base font-black text-ink">
                   {head.time_block} · {head.course_name} {TRACK_LABEL[head.track] ?? head.track}
                 </h2>
                 <p className="text-xs text-slate">
-                  출석 {count(list, "present") + count(list, "manual")} · 미출석 {count(list, null)} · 결석 {count(list, "absent")} / {list.length}명
+                  출석 {count(list, "present") + count(list, "manual")} · 결석 {absent}
+                  {pending > 0 && ` · 예정 ${pending}`} / {list.length}명
                 </p>
               </div>
               <ul className="divide-y divide-line">
                 {list.map((r) => {
-                  const st = ATTENDANCE_STATUS[r.status ?? "none"] ?? ATTENDANCE_STATUS.none;
+                  const st = (r.status ? ATTENDANCE_STATUS[r.status] : done ? ATTENDANCE_STATUS.none : ATTENDANCE_STATUS.upcoming) ?? ATTENDANCE_STATUS.none;
                   return (
                     <li key={r.student_id} className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 py-2.5">
                       <div className="min-w-0 flex-1 text-sm">
@@ -280,7 +289,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
                         <p className="mt-0.5 text-xs text-slate">
                           {[kstTime(r.check_in_at) && `${kstTime(r.check_in_at)}에 찍음`, r.decided_note && `${r.decided_by_name ?? "선생님"}: ${r.decided_note}`]
                             .filter(Boolean)
-                            .join(" · ") || "아직 안 찍었어요"}
+                            .join(" · ") || (done ? "출석 기록이 없어요" : "아직 안 찍었어요")}
                         </p>
                       </div>
                       {/* 처리 칸은 접어 둔다 — 줄마다 고르기·사유·저장이 펼쳐져 있으면 명단이 읽히지 않는다 (2026-10-01) */}
@@ -305,7 +314,8 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
                 })}
               </ul>
             </section>
-          ))}
+            );
+          })}
         </div>
       )}
 

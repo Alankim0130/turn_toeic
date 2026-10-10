@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { attendanceRate, type MyAttendanceSummary } from "@/lib/attendance";
+import { absentCount, attendanceRate, type MyAttendanceSummary } from "@/lib/attendance";
 import { formatDate } from "@/lib/utils";
 
 type Row = MyAttendanceSummary & { term_id: number; month: number; opens: string; closes: string };
@@ -69,8 +69,7 @@ export function AttendanceRate({ rows, link = true }: { rows: Row[]; link?: bool
 
             <p className="mt-3 flex flex-wrap gap-1.5 text-xs font-bold">
               {r.late > 0 && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-sky-800">지각 {r.late}</span>}
-              {r.absent > 0 && <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700">결석 {r.absent}</span>}
-              {r.missing > 0 && <span className="rounded-full bg-line px-2 py-0.5 text-slate">미출석 {r.missing}</span>}
+              {absentCount(r) > 0 && <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700">결석 {absentCount(r)}</span>}
             </p>
             <p className="mt-2 text-sm font-bold text-ink">{cheer}</p>
             <p className="mt-1 text-xs text-slate">강의실 QR 을 한 번 찍으면 출석이에요. 수업이 시작된 뒤에 찍으면 지각으로 적혀요. 선생님이 출석 인정한 날도 들어가요.</p>
