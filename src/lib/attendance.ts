@@ -1,21 +1,27 @@
 /**
- * QR 출석 (2026-09-21 Alan — "출석을 범위에 넣어줘. 입실과 퇴실 다 받자! 조교에게도 명단을 열어줘").
+ * QR 출석 (2026-09-21 Alan — "출석을 범위에 넣어줘. 입실과 퇴실 다 받자! 조교에게도 명단을 열어줘" →
+ * **2026-10-10 Alan — "들어올때 한번 나갈때 한번 이렇게 말고 그냥 한번만 찍어도 인정되는걸로 바꿔줘. 단 지각처리만 확실하게 부탁해!
+ * 수업시작하고 1초라도 늦으면 지각으로 표시해줘"**).
  *
- * **판정은 DB 함수 `public.attendance_scan` 한곳이다** (마이그레이션 20260921130500 · 20260922103000) — 토큰·배정·시각을 서버가 본다.
+ * **판정은 DB 함수 `public.attendance_scan` 한곳이다** (마이그레이션 20260921130500 · 20260922103000 · 20261010100000) — 토큰·배정·시각을 서버가 본다.
+ * 수업일마다 **한 번만 찍으면 출석**이고, 수업이 **시작된 뒤에 찍으면 1초라도 지각**이다. 찍을 수 있는 때는 수업 시작 30분 전부터 끝까지 — 끝나면 못 찍는다.
+ * (2026-10-10 전에는 입실 · 퇴실을 다 찍어야 출석이었고 시작 7분 뒤부터 지각이었다 — 되돌리지 말 것.)
  * QR 은 강의실 앞에 붙이는 **인쇄용 포스터 하나**다 (2026-09-22 Alan — 30초마다 바뀌던 화면 QR 과 6자리 코드는 없앴다).
  * 이 파일은 그 결과를 학생이 읽는 말로 바꾸고, 포스터 QR 에 담을 주소를 만드는 일만 한다 (순수 함수 — `attendance.test.ts`).
- * 규칙 숫자(30분 전·7분 지각·30분 체류)는 SQL 에 있다. 안내 문구에 같은 숫자를 적었으니 바꾸면 여기도 고친다.
+ * 규칙 숫자(30분 전)는 SQL 에 있다. 안내 문구에 같은 숫자를 적었으니 바꾸면 여기도 고친다.
  */
 
 export type ScanResult = {
   action: string;
   label?: string;
-  at?: string;
+  /** 찍은 시각 HH:MM (check_in · already_done) */
+  at?: string | null;
   late?: boolean;
   starts?: string;
   ends?: string;
-  stay?: number;
   opens?: string;
+  /** already_done 일 때 그 도장의 상태 — present(찍음) · manual(출석 인정) · absent(결석) */
+  status?: string | null;
 };
 
 /** `headline` 이 있으면 결과 화면이 그 글자를 크게 띄운다 — 제대로 찍혔을 때의 "출석!" (2026-09-22 Alan) */
@@ -27,18 +33,18 @@ export function scanView(r: ScanResult): ScanView {
   switch (r.action) {
     case "check_in":
       return r.late
-        ? { tone: "warning", headline: "출석!", title: "입실했어요 (지각)", body: `${cls}${r.at} 입실. 수업이 ${r.starts}에 시작했어요. 끝나고 나갈 때 한 번 더 찍으면 출석이 확정돼요.` }
-        : { tone: "success", headline: "출석!", title: "입실했어요", body: `${cls}${r.at} 입실. 수업 끝나고 나갈 때 한 번 더 찍으면 출석이 확정돼요.` };
-    case "check_out":
-      return { tone: "success", headline: "출석!", title: "퇴실했어요 — 오늘 출석 확정", body: `${cls}${r.at} 퇴실 · ${r.stay}분 머물렀어요.` };
-    case "already_in":
-      return { tone: "info", title: "이미 입실했어요", body: `${cls}${r.at}에 입실했어요. 퇴실은 입실하고 30분이 지나면 찍을 수 있어요.` };
+        ? { tone: "warning", headline: "출석!", title: "출석했어요 (지각)", body: `${cls}${r.at}에 찍었어요. 수업이 ${r.starts}에 시작해서 지각으로 적혀요.` }
+        : { tone: "success", headline: "출석!", title: "출석했어요", body: `${cls}${r.at}에 찍었어요. 오늘 출석은 이걸로 끝이에요 — 나갈 때는 안 찍어도 돼요.` };
     case "already_done":
-      return { tone: "info", title: "이미 처리된 수업이에요", body: `${cls}오늘 출석이 이미 끝났거나 선생님이 처리했어요.` };
+      if (r.status === "absent") return { tone: "info", title: "선생님이 결석으로 처리한 수업이에요", body: `${cls}사정이 있었다면 선생님께 말씀해 주세요.` };
+      if (r.status === "manual") return { tone: "info", title: "선생님이 출석으로 인정한 수업이에요", body: `${cls}오늘 출석은 이미 처리됐어요.` };
+      return r.at
+        ? { tone: "info", title: "이미 출석했어요", body: `${cls}${r.at}에 찍었어요${r.late ? " (지각)" : ""}. 하루에 한 번만 찍으면 돼요.` }
+        : { tone: "info", title: "이미 처리된 수업이에요", body: `${cls}오늘 출석이 이미 처리됐어요.` };
     case "too_early":
-      return { tone: "info", title: "아직 입실할 수 없어요", body: `입실은 수업 시작 30분 전인 ${r.opens}부터 돼요.` };
+      return { tone: "info", title: "아직 찍을 수 없어요", body: `출석은 수업 시작 30분 전인 ${r.opens}부터 찍을 수 있어요.` };
     case "class_over":
-      return { tone: "warning", title: "오늘 수업 시간이 지났어요", body: "출석을 못 찍었다면 선생님께 말씀해 주세요." };
+      return { tone: "warning", title: "오늘 수업 시간이 지났어요", body: "출석은 수업이 끝나기 전까지만 찍을 수 있어요. 못 찍었다면 선생님께 말씀해 주세요." };
     case "no_class_today":
       return { tone: "info", title: "오늘은 내 수업이 없어요", body: "현장 수업이 있는 날 강의실에서 찍어 주세요." };
     case "live_student":
@@ -84,7 +90,7 @@ export function attendUrl(siteUrl: string, token: string) {
 }
 
 /** 내 출석률 (DB `public.my_attendance_summary` 한 줄) */
-export type MyAttendanceSummary = { total: number; past: number; present: number; late: number; in_only: number; absent: number; missing: number };
+export type MyAttendanceSummary = { total: number; past: number; present: number; late: number; absent: number; missing: number };
 
 /**
  * 출석률 두 가지 (2026-09-22 Alan — "본인의 신청등급에 따라 출석률을 몇 퍼센트 채우고 있는지"):
@@ -98,10 +104,9 @@ export function attendanceRate(s: MyAttendanceSummary) {
   return { rate: pct(s.present, s.past), fill: pct(s.present, s.total) ?? 0, left: Math.max(0, s.total - s.past) };
 }
 
-/** 출석 상태 이름 (명단 · 내 출석) */
+/** 출석 상태 이름 (명단 · 내 출석). present = 한 번 찍음 (2026-10-10 전의 in · out 은 마이그레이션이 present 로 바꿨다) */
 export const ATTENDANCE_STATUS: Record<string, { label: string; className: string }> = {
-  out: { label: "출석", className: "bg-emerald-100 text-emerald-800" },
-  in: { label: "입실만", className: "bg-amber-100 text-amber-800" },
+  present: { label: "출석", className: "bg-emerald-100 text-emerald-800" },
   manual: { label: "출석 인정", className: "bg-brand-100 text-brand-700" },
   absent: { label: "결석", className: "bg-red-100 text-red-700" },
   none: { label: "미출석", className: "bg-line text-slate" },

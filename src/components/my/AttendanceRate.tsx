@@ -69,12 +69,11 @@ export function AttendanceRate({ rows, link = true }: { rows: Row[]; link?: bool
 
             <p className="mt-3 flex flex-wrap gap-1.5 text-xs font-bold">
               {r.late > 0 && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-sky-800">지각 {r.late}</span>}
-              {r.in_only > 0 && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">퇴실 안 찍음 {r.in_only}</span>}
               {r.absent > 0 && <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700">결석 {r.absent}</span>}
               {r.missing > 0 && <span className="rounded-full bg-line px-2 py-0.5 text-slate">미출석 {r.missing}</span>}
             </p>
             <p className="mt-2 text-sm font-bold text-ink">{cheer}</p>
-            <p className="mt-1 text-xs text-slate">퇴실까지 찍어야 출석으로 세요. 선생님이 출석 인정한 날도 들어가요.</p>
+            <p className="mt-1 text-xs text-slate">강의실 QR 을 한 번 찍으면 출석이에요. 수업이 시작된 뒤에 찍으면 지각으로 적혀요. 선생님이 출석 인정한 날도 들어가요.</p>
             {/* 출석 달력 · 지난 기록은 따로 둔 화면에 있다 (2026-10-01 Alan — "확인 할 수 있는 공간이 따로") */}
             {link && (
               <Link href="/my/attendance/record" className="mt-3 inline-block text-sm font-bold text-brand-600 hover:underline">

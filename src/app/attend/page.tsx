@@ -16,7 +16,7 @@ export default async function AttendPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="container-x max-w-2xl py-10">
-      <PageHeader icon="location" title="출석" description="강의실 앞 출석 QR 로 입실·퇴실을 찍어요." />
+      <PageHeader icon="location" title="출석" description="강의실 앞 출석 QR 을 한 번 찍으면 출석이에요." />
       {token ? (
         <AttendScan token={token} />
       ) : (

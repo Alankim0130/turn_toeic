@@ -4,8 +4,8 @@ import { scanView, type ScanResult } from "@/lib/attendance";
 import { cn } from "@/lib/utils";
 
 /**
- * 출석 결과 카드. 제대로 찍혔으면(입실·퇴실) **"출석!" 을 크게** 띄운다 (2026-09-22 Alan — "인식이 제대로 된다면, 출석! 이라는 문구").
- * 그 밖(이미 입실 · 수업 없음 · 맞지 않는 QR …)은 안내 카드다. 앱 안 카메라(`AttendanceCamera`)와 `/attend` 가 함께 쓴다.
+ * 출석 결과 카드. 제대로 찍혔으면 **"출석!" 을 크게** 띄운다 (2026-09-22 Alan — "인식이 제대로 된다면, 출석! 이라는 문구") — 지각이면 노란 바탕.
+ * 그 밖(이미 출석 · 수업 없음 · 맞지 않는 QR …)은 안내 카드다. 앱 안 카메라(`AttendanceCamera`)와 `/attend` 가 함께 쓴다.
  */
 export function AttendanceResult({ result }: { result: ScanResult }) {
   const v = scanView(result);

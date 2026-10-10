@@ -66,7 +66,7 @@ export function AbsenceNotice({
           <h2 id="absent-title" className="font-black text-ink">
             {dateLabel} 결석·미출석 <span className="text-red-600 tabular-nums">{absentees.length}명</span>
           </h2>
-          <p className="mt-0.5 text-xs text-slate">수업이 끝났는데(끝나고 30분) 출석 기록이 없거나 결석으로 정한 학생이에요. 입실만 한 학생·지각생은 넣지 않아요.</p>
+          <p className="mt-0.5 text-xs text-slate">수업이 끝났는데 출석 기록이 없거나 결석으로 정한 학생이에요. 지각생은 왔으니 넣지 않아요.</p>
         </div>
         {canSend && !compose && (
           <button type="button" onClick={start} className="btn-primary !px-4 !py-2 text-sm">
