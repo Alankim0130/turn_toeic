@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { BASE_VIEWPORT } from "@/lib/theme-color";
 import "./globals.css";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { Footer } from "@/components/layout/Footer";
@@ -61,12 +62,8 @@ export const metadata: Metadata = {
   formatDetection: { telephone: true },
 };
 
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  viewportFit: "cover",
-  themeColor: "#ff2e88",
-};
+// 상태 표시줄 · 브라우저 색은 모드마다 다르다 — 관리자 레이아웃이 ADMIN_VIEWPORT 로 덮는다 (src/lib/theme-color.ts)
+export const viewport: Viewport = BASE_VIEWPORT;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const [{ user, profile }, access] = await Promise.all([getSessionProfile(), getStudentAccess()]);

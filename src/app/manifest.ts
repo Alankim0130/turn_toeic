@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { STUDENT_FEATURES } from "@/lib/site";
+import { BRAND_THEME_COLOR } from "@/lib/theme-color";
 
 /** 앱 아이콘을 길게 눌렀을 때 뜨는 바로가기 (안드로이드는 앞의 4개 정도만 보여 준다) */
 const SHORTCUT_KEYS = ["live", "replay", "homework", "lc-audio"] as const;
@@ -18,8 +19,8 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: "/",
     display: "standalone",
     // OS 첫 화면 = 핫핑크 + 흰 화살표 아이콘 → 스플래시 영상의 첫 장면과 같아서 끊김 없이 이어진다
-    background_color: "#ff2e88",
-    theme_color: "#ff2e88",
+    background_color: BRAND_THEME_COLOR,
+    theme_color: BRAND_THEME_COLOR,
     lang: "ko",
     dir: "ltr",
     categories: ["education"],
