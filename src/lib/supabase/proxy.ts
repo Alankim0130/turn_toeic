@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { canEnterAdminPath } from "@/lib/site";
+import { navKindOf, staffLandsOnAdmin, STUDENT_MODE_COOKIE, STUDENT_MODE_VALUE, wantsStaffLanding } from "@/lib/staff-landing";
 
 /**
  * 요청마다 Supabase 세션 쿠키를 갱신하고, 로그인 필요 경로를 보호한다.
@@ -34,6 +35,13 @@ export async function updateSession(request: NextRequest) {
   const user = data?.claims?.sub ? { id: data.claims.sub } : null;
 
   const { pathname, search } = request.nextUrl;
+  const landing = {
+    method: request.method,
+    pathname,
+    search,
+    nav: navKindOf(request.headers),
+    studentCookie: request.cookies.get(STUDENT_MODE_COOKIE)?.value === STUDENT_MODE_VALUE,
+  };
   // /signup/complete 는 구글로 들어온 회원의 가입 정보 입력 — 로그인해야 의미가 있다 (화면의 redirect 보다 먼저 307 을 내린다)
   const needsAuth = pathname.startsWith("/my") || pathname.startsWith("/admin") || pathname.startsWith("/signup/complete");
   const isAuthPage = pathname === "/login" || pathname === "/signup";
@@ -50,6 +58,18 @@ export async function updateSession(request: NextRequest) {
     url.pathname = "/my";
     url.search = "";
     return NextResponse.redirect(url);
+  }
+
+  // 강사 · 관리자가 `/my` 를 **문서로** 열면(앱 켜기 · 로그인 뒤 · 새로고침) 관리자 모드로 (2026-10-11 Alan "첫화면은 관리자모드").
+  // 화면 안 이동 · 깊은 주소 · 물음표 붙은 주소 · 학생 모드를 쓰던 중(쿠키 — 브라우저가 둔다)은 그대로다 — src/lib/staff-landing.ts
+  if (user && wantsStaffLanding(landing)) {
+    const { data: profile } = await supabase.from("profiles").select("role, test_role").eq("id", user.id).maybeSingle();
+    if (staffLandsOnAdmin(profile)) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/admin";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
   }
 
   // /admin 은 렌더링 전에 역할을 확인한다. (레이아웃의 redirect 는 페이지 세그먼트의

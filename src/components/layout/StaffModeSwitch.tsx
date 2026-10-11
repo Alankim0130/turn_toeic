@@ -23,6 +23,8 @@ const modesFor = (role?: string | null): { key: "student" | "staff"; label: stri
  *
  * 모드는 따로 저장하지 않고 **지금 주소로 정해진다** — `/admin` 아래면 강사 모드, 그 밖은 학생 모드.
  * 저장해 두면 새로고침·뒤로가기·다른 기기에서 배지와 실제 화면이 어긋나는데, 주소로 정하면 그럴 일이 없다.
+ * 단 **들어오는 첫 걸음**만 강사 · 관리자는 관리자 모드다 (2026-10-11 Alan — `/my` 문서 요청을 proxy 가 `/admin` 으로. 학생 모드를 쓰던 중이면 그대로 —
+ * 브라우저가 두는 쿠키 하나, src/lib/staff-landing.ts · ModeMemory.tsx).
  * 화면을 바꿀 뿐이라 권한은 그대로다 — 학생 모드에서도 스태프는 수강생전용을 열어 볼 수 있다.
  */
 export function StaffModeSwitch({

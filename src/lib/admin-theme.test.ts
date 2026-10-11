@@ -70,6 +70,26 @@ describe("관리자 모드 토스 토큰", () => {
     expect(read("src/components/admin/charts/palette.ts")).not.toMatch(/#[0-9a-f]{6}/i);
   });
 
+  /**
+   * 상태 표시줄 · 브라우저 색(theme-color)도 모드를 따른다 (2026-10-11 Alan — 관리자 대시보드 위 "핑크줄이 있는데 새로고침을 하면 없어져").
+   * 관리자 화면은 회색 바탕 토큰과 같은 색, 학생 · 랜딩은 브랜드 핫핑크(manifest · offline.html 과 같다). 한쪽만 바꾸면 띠 색이 화면과 어긋난다
+   */
+  it("theme-color — 관리자 레이아웃은 관리자 바탕 회색, 루트 · manifest · offline.html 은 브랜드 핫핑크 한 값", async () => {
+    const { ADMIN_THEME_COLOR, ADMIN_VIEWPORT, BASE_VIEWPORT, BRAND_THEME_COLOR } = await import("./theme-color");
+    expect(block).toMatch(new RegExp(`--color-surface:\\s*${ADMIN_THEME_COLOR};`, "i"));
+    expect(css).toMatch(new RegExp(`--color-brand-500:\\s*${BRAND_THEME_COLOR};`, "i"));
+    expect(ADMIN_VIEWPORT.themeColor).toBe(ADMIN_THEME_COLOR);
+    expect(BASE_VIEWPORT.themeColor).toBe(BRAND_THEME_COLOR);
+    // 바깥 레이아웃의 나머지 값(폭 · 배율 · viewport-fit)은 그대로 물려받는다
+    expect({ ...ADMIN_VIEWPORT, themeColor: undefined }).toEqual({ ...BASE_VIEWPORT, themeColor: undefined });
+    expect(read("src/app/layout.tsx")).toMatch(/export const viewport: Viewport = BASE_VIEWPORT;/);
+    expect(read("src/app/admin/layout.tsx")).toMatch(/export const viewport: Viewport = ADMIN_VIEWPORT;/);
+    const manifest = read("src/app/manifest.ts");
+    expect(manifest).toMatch(/background_color: BRAND_THEME_COLOR,\s*theme_color: BRAND_THEME_COLOR,/);
+    expect(manifest).not.toMatch(/#[0-9a-f]{6}/i);
+    expect(read("public/offline.html")).toContain(`<meta name="theme-color" content="${BRAND_THEME_COLOR}" />`);
+  });
+
   it("학생 쪽 토큰은 그대로 핫핑크다 (바꾸는 것은 관리자 범위뿐)", () => {
     const theme = css.match(/@theme\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
     expect(theme).toMatch(/--color-brand-500:\s*#ff2e88;/);

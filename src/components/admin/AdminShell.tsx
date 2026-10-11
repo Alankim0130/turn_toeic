@@ -1,5 +1,6 @@
 import { AdminSidebar, AdminMobileTabs } from "./AdminNav";
 import { AdminBottomNav } from "./AdminBottomNav";
+import { AdminModeMark } from "@/components/layout/ModeMemory";
 
 export function AdminShell({ name, roleLabel, role, children }: { name: string; roleLabel: string; role?: string | null; children: React.ReactNode }) {
   return (
@@ -15,6 +16,8 @@ export function AdminShell({ name, roleLabel, role, children }: { name: string; 
         </div>
       </div>
       <AdminBottomNav role={role} />
+      {/* 관리자 화면에 들어왔다 — 학생 모드 기억(쿠키)을 지운다. 다음에 앱을 켜면 관리자 모드다 (2026-10-11, src/lib/staff-landing.ts) */}
+      <AdminModeMark />
     </>
   );
 }
