@@ -5,8 +5,8 @@ import { todayKST } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { TermChips } from "@/components/admin/TermChips";
-import { StudyPlanner, type PlannerStudy } from "@/components/admin/studies/StudyPlanner";
-import { termParam } from "@/lib/study";
+import { StudyPlanner, type CopySource, type PlannerStudy } from "@/components/admin/studies/StudyPlanner";
+import { copyStudyMessage, pickCopySource, termParam } from "@/lib/study";
 import { pickTerm, termLabel } from "../../_lib/queries";
 
 export const metadata: Metadata = { title: "스터디 시간 설정", robots: { index: false } };
@@ -20,7 +20,7 @@ export const metadata: Metadata = { title: "스터디 시간 설정", robots: { 
  *
  * 조교는 못 쓴다 — 시간대 · 레벨은 강사 · 관리자가 정한다 (등급 체계).
  */
-export default async function StudyPlanPage({ searchParams }: { searchParams: Promise<{ term?: string }> }) {
+export default async function StudyPlanPage({ searchParams }: { searchParams: Promise<{ term?: string; copied?: string; n?: string }> }) {
   await requireStaff();
   const sp = await searchParams;
   const supabase = await createClient();
@@ -60,12 +60,25 @@ export default async function StudyPlanPage({ searchParams }: { searchParams: Pr
   }
 
   const key = termParam(term.year, term.month);
-  const { data: studyRows } = await supabase
-    .from("studies")
-    .select(
-      "id, kind, status, notice, study_slots!study_slots_study_id_fkey(id, start_time, end_time, capacity, applied_count, level), study_signups!study_signups_study_id_fkey(count), study_materials(count)",
-    )
-    .eq("term_id", term.id);
+  const [{ data: studyRows }, { data: offlineRows }] = await Promise.all([
+    supabase
+      .from("studies")
+      .select(
+        "id, kind, status, notice, study_slots!study_slots_study_id_fkey(id, start_time, end_time, capacity, applied_count, level), study_signups!study_signups_study_id_fkey(count), study_materials(count)",
+      )
+      .eq("term_id", term.id),
+    // 지난달 그대로 가져오기 — 모든 달의 단어 스터디와 시간대 수 (어느 달에서 가져올지는 pickCopySource 가 고른다)
+    supabase.from("studies").select("term_id, study_slots!study_slots_study_id_fkey(count)").eq("kind", "offline"),
+  ]);
+  const byTermId = new Map(terms.map((t) => [t.id, t]));
+  const source = pickCopySource(
+    term,
+    (offlineRows ?? []).flatMap((s) => {
+      const t = byTermId.get(s.term_id);
+      return t ? [{ term: t, slotCount: s.study_slots?.[0]?.count ?? 0 }] : [];
+    }),
+  );
+  const copySource: CopySource | null = source ? { label: termLabel(source.term, true), slotCount: source.slotCount } : null;
 
   const studies: PlannerStudy[] = (studyRows ?? []).map((s) => ({
     id: s.id,
@@ -77,11 +90,21 @@ export default async function StudyPlanPage({ searchParams }: { searchParams: Pr
     materialCount: s.study_materials?.[0]?.count ?? 0,
   }));
 
+  // 방금 '지난달 그대로 가져오기' 를 눌렀으면(서버 액션이 ?copied=달&n=개수 로 돌려보낸다) 바뀐 카드 위에 결과를 적는다 —
+  // 가져온 뒤 시간대를 더하거나 지우면(개수가 달라지면) 글을 거둔다 (가져온 것이 아닌 시간대를 세어 말하지 않게)
+  const copiedMonth = Number(sp.copied);
+  const copiedCount = Number(sp.n);
+  const offlineStudy = studies.find((s) => s.kind === "offline") ?? null;
+  const copiedNotice =
+    offlineStudy && Number.isInteger(copiedMonth) && copiedMonth >= 1 && copiedMonth <= 12 && offlineStudy.slots.length === copiedCount
+      ? copyStudyMessage({ month: copiedMonth }, offlineStudy.slots)
+      : null;
+
   return (
     <>
       {header}
       <TermChips basePath="/admin/study/plan" terms={terms} current={key} />
-      <StudyPlanner termId={term.id} termLabel={termLabel(term)} termKey={key} studies={studies} />
+      <StudyPlanner termId={term.id} termLabel={termLabel(term)} termKey={key} studies={studies} copySource={copySource} copiedNotice={copiedNotice} />
     </>
   );
 }

@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useActionState, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { addSlot, createStudy, deleteSlot, deleteStudy, updateSlot, updateStudy, type StudyActionState } from "@/app/admin/study/actions";
+import { addSlot, copyLastOfflineStudy, createStudy, deleteSlot, deleteStudy, updateSlot, updateStudy, type StudyActionState } from "@/app/admin/study/actions";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Icon } from "@/components/ui/Icon";
 import { cn, formatTime } from "@/lib/utils";
 import { isSlotKind, STUDY_KIND_DESC, STUDY_KIND_ICON, STUDY_KIND_LABEL, STUDY_LEVELS, STUDY_STATUS_LABEL, studyLevelLabel, type SlotLite } from "@/lib/study";
-import type { PlannerStudy } from "./StudyPlanner";
+import type { CopySource, PlannerStudy } from "./StudyPlanner";
 
 const STATUS_OPTIONS = [
   { value: "draft", label: "준비 중", hint: "학생에게 안 보여요" },
@@ -34,8 +34,40 @@ function Feedback({ state }: { state: StudyActionState }) {
   return null;
 }
 
+/* ─── 지난달 그대로 가져오기 (단어 스터디) ───────────────────────────────── */
+/**
+ * 가장 최근 앞선 달의 단어 스터디 시간대 · 안내를 이 달로 복사한다 (2026-10-12 Alan "응 지난달 그대로 가져오기를 만들어줘").
+ * 스터디가 아직 없는 카드(`CreateStudyCard`)와 있는데 시간대가 비어 있는 카드 두 곳에서 같은 폼이다. 저절로 복사하지 않는다 — 버튼을 눌러야 한다.
+ */
+function CopyLastMonthForm({ termId, source, primary }: { termId: number; source: CopySource; primary: boolean }) {
+  const [state, action] = useActionState<StudyActionState, FormData>(copyLastOfflineStudy, {});
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <input type="hidden" name="term_id" value={termId} />
+      <SubmitButton variant={primary ? "primary" : "secondary"} pendingText="가져오는 중…">
+        <Icon name="calendar" size={18} className={primary ? "brightness-0 invert" : undefined} />
+        {source.label} 그대로 가져오기
+      </SubmitButton>
+      <p className="text-xs text-slate">
+        {source.label} 시간대 {source.slotCount}개(시간 · 정원 · 레벨)와 안내를 이 달에 복사해요. 신청 수는 0부터 새로 세고, 가져온 뒤 시간을 고쳐도 돼요.
+      </p>
+      <Feedback state={state} />
+    </form>
+  );
+}
+
 /* ─── 아직 없는 스터디: 열기 ─────────────────────────────────────────────── */
-export function CreateStudyCard({ kind, termId, termLabel }: { kind: string; termId: number; termLabel: string }) {
+export function CreateStudyCard({
+  kind,
+  termId,
+  termLabel,
+  copySource = null,
+}: {
+  kind: string;
+  termId: number;
+  termLabel: string;
+  copySource?: CopySource | null;
+}) {
   const [state, action] = useActionState<StudyActionState, FormData>(createStudy, {});
   return (
     <article className="flex h-full flex-col rounded-xl2 border border-dashed border-brand-200 bg-brand-50/40 p-4 sm:p-5">
@@ -49,11 +81,17 @@ export function CreateStudyCard({ kind, termId, termLabel }: { kind: string; ter
         </div>
       </div>
       <p className="mt-3 text-sm text-slate">{STUDY_KIND_DESC[kind]}</p>
-      <form action={action} className="mt-4 flex flex-col gap-2">
+      {/* 지난달 시간대가 있으면 그대로 가져오기가 먼저 — 준비 중으로 들어오고, 빈 채로 여는 길은 그 아래 그대로 */}
+      {copySource && (
+        <div className="mt-4">
+          <CopyLastMonthForm termId={termId} source={copySource} primary />
+        </div>
+      )}
+      <form action={action} className={cn("flex flex-col gap-2", copySource ? "mt-3 border-t border-dashed border-brand-200 pt-3" : "mt-4")}>
         <input type="hidden" name="term_id" value={termId} />
         <input type="hidden" name="kind" value={kind} />
         <SubmitButton variant="secondary" pendingText="만드는 중…">
-          {termLabel} {STUDY_KIND_LABEL[kind]} 열기
+          {copySource ? `빈 채로 ${termLabel} ${STUDY_KIND_LABEL[kind]} 열기` : `${termLabel} ${STUDY_KIND_LABEL[kind]} 열기`}
         </SubmitButton>
         <Feedback state={state} />
       </form>
@@ -62,9 +100,26 @@ export function CreateStudyCard({ kind, termId, termLabel }: { kind: string; ter
 }
 
 /* ─── 있는 스터디: 상태·안내·시간대 ─────────────────────────────────────── */
-export function StudyKindCard({ kind, study, termKey }: { kind: string; study: PlannerStudy; termKey: string }) {
+export function StudyKindCard({
+  kind,
+  study,
+  termKey,
+  termId,
+  copySource = null,
+  notice = null,
+}: {
+  kind: string;
+  study: PlannerStudy;
+  termKey: string;
+  termId: number;
+  copySource?: CopySource | null;
+  /** 방금 '지난달 그대로 가져오기' 한 결과 — 시간대 목록 위에 한 줄 */
+  notice?: string | null;
+}) {
   const slotKind = isSlotKind(kind);
   const needsSlots = slotKind && study.status === "open" && study.slots.length === 0;
+  // 시간대가 하나도 없을 때만 지난달 가져오기 — 이미 넣은 시간대 위에 덧붙이지 않는다
+  const canCopy = slotKind && study.slots.length === 0 && copySource != null;
 
   return (
     <article className="flex h-full flex-col rounded-xl2 border border-line bg-paper p-4 sm:p-5">
@@ -100,12 +155,22 @@ export function StudyKindCard({ kind, study, termKey }: { kind: string; study: P
             시간대 <span className="font-semibold text-slate">({study.slots.length})</span>
             <span className="ml-2 text-xs font-semibold text-slate">시간대마다 레벨(1 · 2)이 있어요 — 학생은 시간대를 고르면 그 레벨로 신청돼요</span>
           </p>
+          {notice && (
+            <p className="mb-3 rounded-xl bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-700" role="status">
+              {notice}
+            </p>
+          )}
           {study.slots.length > 0 && (
             <ul className="mb-3 space-y-2">
               {study.slots.map((slot, i) => (
                 <SlotRow key={slot.id} slot={slot} index={i} />
               ))}
             </ul>
+          )}
+          {canCopy && copySource && (
+            <div className="mb-3 rounded-xl border border-brand-200 bg-brand-50/60 p-3">
+              <CopyLastMonthForm termId={termId} source={copySource} primary={false} />
+            </div>
           )}
           <AddSlotForm studyId={study.id} />
         </div>
