@@ -41,7 +41,7 @@ export type MeInfo = { providers: string[]; last_sign_in_at: string | null };
  * - 어떤 계정을 남길지는 **학생이 고른다.**
  * - 학생이 스스로 신청하면 **반대쪽 계정으로 로그인해야** 합쳐진다 (본인 확인).
  * - 스태프가 두 계정을 확인하고 보낸 것(`choice`)은 **어느 계정에서든 바로** 고르면 합쳐진다 (2026-10-02 Alan).
- * - 계정마다 **로그인 방법 · 최근 로그인**을 적고 가장 최근 계정에 표시를 둔다 — "어느 계정을 쓰고 있나" 가 고르는 기준이다.
+ * - 계정마다 **로그인 방법 · 최근 접속**을 적고 가장 최근 계정에 표시를 둔다 — "어느 계정을 쓰고 있나" 가 고르는 기준이다.
  */
 export function MergePanel({
   me,
@@ -67,7 +67,7 @@ export function MergePanel({
 
   const pendingRequests = requests.filter((r) => r.status === "pending");
   const newestBadge = (id: string, newest: string | null) =>
-    newest === id ? <span className="rounded-lg bg-brand-500 px-2 py-0.5 text-xs font-black text-white">최근 로그인 계정</span> : null;
+    newest === id ? <span className="rounded-lg bg-brand-500 px-2 py-0.5 text-xs font-black text-white">최근 접속 계정</span> : null;
 
   return (
     <div className="space-y-4">
@@ -80,7 +80,7 @@ export function MergePanel({
           <p className="text-sm font-black text-brand-700">선생님이 같은 사람의 계정 두 개를 확인했어요 · {formatDate(choice.request.created_at, { month: "long", day: "numeric" })}</p>
           <p className="mt-1 text-sm text-ink">
             <b>어느 계정을 남길까요?</b> 남길 계정으로 숙제·스터디·특강 신청·교재주문·수강 기록이 모두 옮겨지고, 다른 계정은 기록을 보존한 채 로그인만 막혀요.
-            보통 <b>지금 쓰는(최근 로그인) 계정</b>을 남기면 돼요.
+            보통 <b>지금 쓰는(최근 접속) 계정</b>을 남기면 돼요.
           </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {choice.accounts.map((a) => {

@@ -96,11 +96,15 @@ export const getSessionProfile = cache(async () => {
 });
 
 /**
- * 이 계정의 마지막 로그인 시각 — 접속 토큰에 없는 값이라 로그인 서버에 묻는다.
- * 계정 합치기 화면(내 계정 · 등업신청)에서 "어느 계정을 최근에 썼나" 를 보여 줄 때만 쓴다 (2026-10-02 Alan).
+ * 이 계정의 마지막 접속 — 계정 합치기 화면(내 계정 · 등업신청)에서 "어느 계정을 최근에 썼나" 를 보여 줄 때만 쓴다 (2026-10-02 Alan).
+ * **마지막 로그인이 아니라 마지막으로 사이트를 쓴 때다** (2026-10-12 Alan "매일 들어오는데 접속시기가 4일전") — 로그인 서버의 `last_sign_in_at` 은
+ * 새로 로그인할 때만 바뀌어, 앱에 로그인이 남아 있는 사람은 매일 들어와도 그대로다. DB `public.my_last_active_at()`(세션 · 토큰 갱신까지 본다 —
+ * 학생명단의 `student_auth_info` 와 같은 값)를 묻고, 그 함수가 아직 없으면(배포 사이) 예전처럼 로그인 서버에 묻는다.
  */
 export const getLastSignInAt = cache(async () => {
   const supabase = await createClient();
+  const { data: active, error } = await supabase.rpc("my_last_active_at");
+  if (!error) return active ?? null;
   const { data } = await supabase.auth.getUser();
   return data.user?.last_sign_in_at ?? null;
 });

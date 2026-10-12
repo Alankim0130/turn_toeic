@@ -590,7 +590,7 @@ export async function getMyClassMaterials() {
     .from("class_materials")
     // 파일은 자료마다 0 ~ 20개 (class_material_files, 2026-10-06) — 자료가 보이는 사람에게만 내려온다 (조회 정책이 부모 자료를 본다).
     // 링크(links)는 자료 행의 칸이라 자료와 같은 날 함께 열린다 (같은 날 Alan "유튜브 링크를 … 여러개")
-    .select("id, level, subject, book_set, seq, title, note, links, created_at, updated_at, files:class_material_files(id, file_name, file_size, content_type, sort_order)")
+    .select("id, level, subject, book_set, seq, title, note, links, sort_order, created_at, updated_at, files:class_material_files(id, file_name, file_size, content_type, sort_order)")
     .in("level", [...new Set([...bySubject.rc, ...bySubject.lc])])
     .order("created_at", { ascending: false });
   const today = todayKST();

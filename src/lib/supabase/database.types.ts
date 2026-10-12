@@ -409,6 +409,7 @@ export type Database = {
           links: Json
           note: string | null
           seq: number | null
+          sort_order: number
           subject: string
           title: string
           updated_at: string
@@ -422,6 +423,7 @@ export type Database = {
           links?: Json
           note?: string | null
           seq?: number | null
+          sort_order?: number
           subject: string
           title: string
           updated_at?: string
@@ -435,6 +437,7 @@ export type Database = {
           links?: Json
           note?: string | null
           seq?: number | null
+          sort_order?: number
           subject?: string
           title?: string
           updated_at?: string
@@ -2485,6 +2488,8 @@ export type Database = {
         Returns: undefined
       }
       my_section_ids: { Args: never; Returns: number[] }
+      my_last_active_at: { Args: never; Returns: string | null }
+      move_class_material: { Args: { p_id: number; p_up: boolean }; Returns: undefined }
       my_schedule_section_ids: { Args: never; Returns: number[] }
       save_term_schedule: {
         Args: {
