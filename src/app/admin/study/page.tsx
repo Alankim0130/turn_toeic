@@ -9,14 +9,16 @@ import { FilterTabs } from "@/components/admin/FilterTabs";
 import { TermChips } from "@/components/admin/TermChips";
 import { TableWrap, Th, Td } from "@/components/admin/Table";
 import { CancelSignupButton } from "@/components/admin/studies/CancelSignupButton";
-import { isSlotKind, slotTime, sortSlots, STUDY_KIND_LABEL, STUDY_STATUS_LABEL, termParam } from "@/lib/study";
+import { isSlotKind, slotTime, sortSlots, STUDY_KIND_LABEL, STUDY_KINDS, STUDY_STATUS_LABEL, studyLevelLabel, studyLevelsOf, termParam } from "@/lib/study";
+import { LevelRequests, type LevelRequestRow } from "@/components/admin/studies/LevelRequests";
 import { pickTerm, termLabel, type TermLite } from "../_lib/queries";
 import { getProfileNames } from "../_lib/profile-names";
 import { isStaff, requireCrew } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "스터디 신청자", robots: { index: false } };
 
-const KIND_ORDER = ["offline", "vocab", "online"] as const;
+// 종류는 둘 — 단어 스터디(시간대 · 레벨 1 · 2) · 비대면(레벨 1 · 2 · 3). 2026-10-12 전에는 대면 · 단어 · 비대면
+const KIND_ORDER = STUDY_KINDS;
 
 export default async function StudyRosterPage({ searchParams }: { searchParams: Promise<{ term?: string; kind?: string }> }) {
   // 조교가 운영한다 (2026-10-03 Alan "스터디를 조교가 운영한다") — 신청자 명단 · 신청 취소.
@@ -38,7 +40,7 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
   if (!term) {
     return (
       <>
-        <PageHeader icon="study" title="스터디 신청자" description="대면·단어 스터디는 시간대별로, 비대면 스터디는 신청자 명단을 보여 드려요. 비대면 인증은 '비대면스터디 인증' 화면에서 봐요." />
+        <PageHeader icon="study" title="스터디 신청자" description="단어 스터디는 시간대(레벨)별로, 비대면 스터디는 레벨과 함께 신청자 명단을 보여 드려요. 레벨 변경 요청도 여기서 승인해요. 비대면 인증은 '비대면스터디 인증' 화면에서 봐요." />
         <EmptyState
           icon="study"
           title="아직 만든 스터디가 없어요"
@@ -52,7 +54,7 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
   const termKey = termParam(term.year, term.month);
   const { data: studies } = await supabase
     .from("studies")
-    .select("id, kind, status, notice, study_slots!study_slots_study_id_fkey(id, start_time, end_time, capacity, applied_count), study_signups!study_signups_study_id_fkey(count)")
+    .select("id, kind, status, notice, study_slots!study_slots_study_id_fkey(id, start_time, end_time, capacity, applied_count, level), study_signups!study_signups_study_id_fkey(count)")
     .eq("term_id", term.id);
 
   const byKind = new Map((studies ?? []).map((s) => [s.kind, s]));
@@ -63,7 +65,7 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
   const { data: signups } = await supabase
     .from("study_signups")
     // 연락처는 읽지 않는다 (2026-09-23 Alan — 스터디 신청자 화면에는 전화번호가 필요 없다)
-    .select("id, slot_id, user_id, created_at")
+    .select("id, slot_id, user_id, created_at, level, requested_level, requested_slot_id, requested_at")
     .eq("study_id", study.id)
     .order("created_at");
   // 이름은 이름 · 등급만 주는 함수로 — 조교는 profiles 를 못 읽는다 (2026-10-03, `profile-names.ts`)
@@ -71,10 +73,30 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
 
   const rows = (signups ?? []).map((r) => ({ ...r, user: { id: r.user_id, name: names.get(r.user_id)?.name ?? "" } }));
   const slots = sortSlots(study.study_slots ?? []);
+  const slotById = new Map(slots.map((sl) => [sl.id, sl]));
+  // 레벨 변경 요청 — 조교 · 강사가 승인 · 거절 (2026-10-12). 단어 스터디는 요청한 시간대까지 적는다
+  const short = (iso: string) => formatDate(iso, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const slotText = (id: number | null) => {
+    const sl = id == null ? null : slotById.get(id);
+    return sl ? ` · ${slotTime(sl)}` : "";
+  };
+  const requests: LevelRequestRow[] = rows
+    .filter((r) => r.requested_level != null)
+    .map((r) => ({
+      id: r.id,
+      name: r.user.name,
+      from: `${studyLevelLabel(r.level)}${isSlotKind(kind) ? slotText(r.slot_id) : ""}`,
+      to: `${studyLevelLabel(r.requested_level)}${isSlotKind(kind) ? slotText(r.requested_slot_id) : ""}`,
+      at: r.requested_at ? short(r.requested_at) : "",
+    }));
+  // 비대면 — 레벨마다 몇 명인지 (레벨 전 신청은 '레벨 미정')
+  const levelCounts = isSlotKind(kind)
+    ? []
+    : [...studyLevelsOf(kind), null].map((l) => ({ level: l, count: rows.filter((r) => (r.level ?? null) === l).length })).filter((c) => c.count > 0 || c.level != null);
 
   return (
     <>
-      <PageHeader icon="study" title="스터디 신청자" description="대면·단어 스터디는 시간대별로, 비대면 스터디는 신청자 명단을 보여 드려요. 비대면 인증은 '비대면스터디 인증' 화면에서 봐요.">
+      <PageHeader icon="study" title="스터디 신청자" description="단어 스터디는 시간대(레벨)별로, 비대면 스터디는 레벨과 함께 신청자 명단을 보여 드려요. 레벨 변경 요청도 여기서 승인해요. 비대면 인증은 '비대면스터디 인증' 화면에서 봐요.">
         {/* 시간대는 전용 화면에서 (2026-09-18 Alan — 반 편성으로 보내면 한참 스크롤해야 했다). 강사 · 관리자만 */}
         {staff && (
           <Link href={`/admin/study/plan?term=${termKey}`} className="btn-secondary">
@@ -99,7 +121,18 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
           {STUDY_STATUS_LABEL[study.status] ?? study.status}
         </span>
         {study.notice && <span className="text-xs">· {study.notice}</span>}
+        {levelCounts.length > 0 && (
+          <span className="flex flex-wrap gap-1">
+            {levelCounts.map((c) => (
+              <span key={c.level ?? "none"} className={cn("rounded-full px-2 py-0.5 text-xs font-bold", c.level == null ? "bg-amber-100 text-amber-800" : "bg-brand-100 text-brand-700")}>
+                {studyLevelLabel(c.level)} {c.count}명
+              </span>
+            ))}
+          </span>
+        )}
       </p>
+
+      <LevelRequests rows={requests} />
 
       {isSlotKind(kind) ? (
         slots.length === 0 ? (
@@ -116,8 +149,9 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
               return (
                 <section key={slot.id} aria-labelledby={`slot-${slot.id}`} className="card overflow-hidden">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-brand-50/60 px-5 py-3">
-                    <h2 id={`slot-${slot.id}`} className="font-black text-ink">
+                    <h2 id={`slot-${slot.id}`} className="flex flex-wrap items-center gap-2 font-black text-ink">
                       <span className="text-brand-600">{i + 1}타임</span> {slotTime(slot)}
+                      <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold", slot.level == null ? "bg-amber-100 text-amber-800" : "bg-brand-100 text-brand-700")}>{studyLevelLabel(slot.level)}</span>
                     </h2>
                     <p className="text-sm font-bold tabular-nums text-ink">
                       신청 {slot.applied_count}명{slot.capacity !== null && <span className="text-slate"> / 정원 {slot.capacity}명</span>}
@@ -181,6 +215,7 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
             <tr>
               <Th className="w-12">#</Th>
               <Th>이름</Th>
+              <Th>레벨</Th>
               <Th>신청일</Th>
               <Th className="text-right">관리</Th>
             </tr>
@@ -191,6 +226,10 @@ export default async function StudyRosterPage({ searchParams }: { searchParams: 
                 <tr key={r.id} className="hover:bg-brand-50/40">
                   <Td className="text-xs text-mist">{n + 1}</Td>
                   <Td className="font-bold">{r.user.name || "-"}</Td>
+                  <Td>
+                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold", r.level == null ? "bg-amber-100 text-amber-800" : "bg-brand-100 text-brand-700")}>{studyLevelLabel(r.level)}</span>
+                    {r.requested_level != null && <span className="ml-1 text-xs font-semibold text-amber-800">→ {studyLevelLabel(r.requested_level)} 요청 중</span>}
+                  </Td>
                   <Td className="whitespace-nowrap text-xs text-slate">{formatDate(r.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
                   <Td className="text-right"><CancelSignupButton id={r.id} name={r.user.name || "수강생"} /></Td>
                 </tr>

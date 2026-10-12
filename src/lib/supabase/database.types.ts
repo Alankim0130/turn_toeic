@@ -1819,6 +1819,7 @@ export type Database = {
           title: string | null
           updated_at: string
           uploaded_by: string | null
+          level: number
         }
         Insert: {
           content_type?: string | null
@@ -1832,6 +1833,7 @@ export type Database = {
           title?: string | null
           updated_at?: string
           uploaded_by?: string | null
+          level?: number
         }
         Update: {
           content_type?: string | null
@@ -1845,6 +1847,7 @@ export type Database = {
           title?: string | null
           updated_at?: string
           uploaded_by?: string | null
+          level?: number
         }
         Relationships: []
       }
@@ -1864,6 +1867,7 @@ export type Database = {
           title: string | null
           updated_at: string
           uploaded_by: string | null
+          level: number
         }
         Insert: {
           content_type?: string | null
@@ -1880,6 +1884,7 @@ export type Database = {
           title?: string | null
           updated_at?: string
           uploaded_by?: string | null
+          level?: number
         }
         Update: {
           content_type?: string | null
@@ -1896,6 +1901,7 @@ export type Database = {
           title?: string | null
           updated_at?: string
           uploaded_by?: string | null
+          level?: number
         }
         Relationships: [
           {
@@ -1922,6 +1928,12 @@ export type Database = {
           study_id: number
           updated_at: string
           user_id: string
+          level: number | null
+          requested_level: number | null
+          requested_slot_id: number | null
+          requested_at: string | null
+          request_result: string | null
+          request_decided_at: string | null
         }
         Insert: {
           created_at?: string
@@ -1930,6 +1942,12 @@ export type Database = {
           study_id: number
           updated_at?: string
           user_id: string
+          level?: number | null
+          requested_level?: number | null
+          requested_slot_id?: number | null
+          requested_at?: string | null
+          request_result?: string | null
+          request_decided_at?: string | null
         }
         Update: {
           created_at?: string
@@ -1938,6 +1956,12 @@ export type Database = {
           study_id?: number
           updated_at?: string
           user_id?: string
+          level?: number | null
+          requested_level?: number | null
+          requested_slot_id?: number | null
+          requested_at?: string | null
+          request_result?: string | null
+          request_decided_at?: string | null
         }
         Relationships: [
           {
@@ -1972,6 +1996,7 @@ export type Database = {
           id: number
           start_time: string
           study_id: number
+          level: number | null
         }
         Insert: {
           applied_count?: number
@@ -1981,6 +2006,7 @@ export type Database = {
           id?: number
           start_time: string
           study_id: number
+          level?: number | null
         }
         Update: {
           applied_count?: number
@@ -1990,6 +2016,7 @@ export type Database = {
           id?: number
           start_time?: string
           study_id?: number
+          level?: number | null
         }
         Relationships: [
           {
@@ -2524,6 +2551,15 @@ export type Database = {
       live_detect_candidates: {
         Args: never
         Returns: { instructor_id: string; label: string; live_to_replay: boolean; section_id: number; session_date_id: number; starts_at: string }[]
+      }
+      set_study_level: {
+        Args: { p_signup_id: number; p_level?: number; p_slot_id?: number }
+        Returns: Json
+      }
+      cancel_study_level_request: { Args: { p_signup_id: number }; Returns: boolean }
+      decide_study_level: {
+        Args: { p_signup_id: number; p_approve: boolean }
+        Returns: Json
       }
       receive_textbook_order: {
         Args: { p_id: number }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
-import { sortSlots, type SlotLite } from "@/lib/study";
+import { sortSlots, STUDY_KINDS, type SlotLite } from "@/lib/study";
 import { StudyKindCard, CreateStudyCard } from "./StudyKindCard";
 
 export type PlannerStudy = {
@@ -26,7 +26,7 @@ export function StudyPlanner({ termId, termLabel, termKey, studies }: { termId: 
             스터디 시간 설정 <span className="text-sm font-semibold text-slate">— {termLabel}</span>
           </h2>
           <p className="mt-1 text-sm text-slate">
-            대면·단어 스터디는 이 달 시간대를 추가하면 수강생이 시간대를 골라 신청해요. 하루 2타임, 3타임 모두 자유롭게 만들 수 있습니다.
+            단어 스터디는 이 달 시간대를 추가하면 수강생이 시간대를 골라 신청해요 — 시간대마다 레벨(1 · 2)을 정해 두면 학생은 그 레벨로 신청돼요. 하루 2타임, 3타임 모두 자유롭게 만들 수 있습니다.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -40,12 +40,12 @@ export function StudyPlanner({ termId, termLabel, termKey, studies }: { termId: 
         </div>
       </div>
 
-      {/* 시간대를 쓰는 대면·단어를 나란히, 비대면은 아래 전체 폭 */}
+      {/* 단어 스터디(시간대 · 레벨) · 비대면 두 장을 나란히 (2026-10-12 — 옛 단어스터디(vocab)는 없앴다) */}
       <div className="mt-5 grid gap-4 md:grid-cols-2">
-        {(["offline", "vocab", "online"] as const).map((kind) => {
+        {STUDY_KINDS.map((kind) => {
           const study = byKind.get(kind);
           return (
-            <div key={kind} className={kind === "online" ? "md:col-span-2" : undefined}>
+            <div key={kind}>
               {study ? <StudyKindCard kind={kind} study={study} termKey={termKey} /> : <CreateStudyCard kind={kind} termId={termId} termLabel={termLabel} />}
             </div>
           );

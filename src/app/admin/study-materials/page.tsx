@@ -7,7 +7,8 @@ import { Icon } from "@/components/ui/Icon";
 import { TermChips } from "@/components/admin/TermChips";
 import { CreateStudyCard } from "@/components/admin/studies/StudyKindCard";
 import { MaterialRow } from "@/components/admin/studies/MaterialRow";
-import { STUDY_STATUS_LABEL, termParam } from "@/lib/study";
+import { FilterTabs } from "@/components/admin/FilterTabs";
+import { MATERIAL_LEVELS, STUDY_LEVEL_ALL, STUDY_STATUS_LABEL, studyLevelLabel, termParam } from "@/lib/study";
 import { classDayRounds, onlineStudyWindow, roundRowCount, shortDay } from "@/lib/study-rounds";
 import { pickTerm, termLabel, TERM_COLUMNS } from "../_lib/queries";
 import { isStaff, requireCrew } from "@/lib/auth";
@@ -23,8 +24,10 @@ export const metadata: Metadata = { title: "비대면 자료", robots: { index: 
  * N회차 = 그 달 비대면 시작일(개강일+3)부터 N번째 수업일(월수금 + 화목금, 종강일까지). 붙이는 일은 DB 가 한다 (20260922124700 →
  * 2026-10-05 Alan "개강후 3일동안만 신청받고 4일째부터 시작", 20261005120000).
  * 위 달 칩은 "그 달엔 몇 회차가 며칠에 열리나" 를 미리 보는 것이다 — 자료는 달마다 따로 올리지 않는다.
+ * **자료는 레벨마다 올린다** (2026-10-12 Alan "기존에 있던 비대면스터디 자료도 레벨별로 업로드가 가능하도록") — 위 레벨 탭(`?level=`): 공통(모든 레벨) · 레벨 1 · 2 · 3.
+ * 회차 × 레벨이 한 칸이고 학생은 내 레벨의 자료와 공통 자료만 받는다. 지금까지 올린 자료는 전부 공통이다.
  */
-export default async function StudyMaterialsPage({ searchParams }: { searchParams: Promise<{ term?: string }> }) {
+export default async function StudyMaterialsPage({ searchParams }: { searchParams: Promise<{ term?: string; level?: string }> }) {
   // 조교도 올린다 (2026-10-07 Alan "비대면자료를 조교들이 올릴 수 있으면") — 일곱째 조교 화면. 그 달 비대면 열기 · 반 편성은 스태프라 그 조각만 가린다
   const { profile } = await requireCrew();
   const staff = isStaff(profile.role);
@@ -36,14 +39,17 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
   const term = pickTerm(terms ?? [], sp.term, today);
 
   const [{ data: itemRows }, { data: study }, { data: classDates }] = await Promise.all([
-    supabase.from("study_material_items").select("id, seq, title, note, file_name, file_size, updated_at").order("seq"),
+    supabase.from("study_material_items").select("id, seq, level, title, note, file_name, file_size, updated_at").order("seq"),
     term
       ? supabase.from("studies").select("id, status").eq("term_id", term.id).eq("kind", "online").maybeSingle()
       : Promise.resolve({ data: null as { id: number; status: string } | null }),
     term ? supabase.from("term_class_dates").select("date").eq("term_id", term.id) : Promise.resolve({ data: [] as { date: string }[] }),
   ]);
 
-  const items = itemRows ?? [];
+  const allItems = itemRows ?? [];
+  const levelParam = Number(sp.level);
+  const level = (MATERIAL_LEVELS as readonly number[]).includes(levelParam) ? levelParam : STUDY_LEVEL_ALL;
+  const items = allItems.filter((i) => i.level === level);
   const bySeq = new Map(items.map((i) => [i.seq, i]));
   // 안내에 든 사진 — 강사 세션으로 서명 주소를 한 번에 만든다 (보기 모드 · 편집기가 함께 쓴다)
   const noteImages = await signNoteImages(supabase, STUDY_MATERIAL_BUCKET, items.map((i) => i.note ?? "").join("\n"));
@@ -60,7 +66,7 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
       <PageHeader
         icon="online"
         title="비대면 자료"
-        description="회차마다 한 번 올려 두면 매달 그 달 수업일 순서대로 열려요. 신청은 개강일부터 3일, 1회차는 4일째부터의 첫 수업일이에요. 신청한 수강생은 그 날부터 받아요."
+        description="회차마다 한 번 올려 두면 매달 그 달 수업일 순서대로 열려요. 레벨마다 따로 올리고, 공통 자료는 모든 레벨이 받아요. 신청은 개강일부터 3일, 1회차는 4일째부터의 첫 수업일이에요."
       >
         <Link href="/admin/study" className="btn-secondary">
           <Icon name="study" size={18} />
@@ -68,7 +74,15 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
         </Link>
       </PageHeader>
 
-      {term && <TermChips basePath="/admin/study-materials" terms={terms ?? []} current={termKey} />}
+      {term && <TermChips basePath="/admin/study-materials" terms={terms ?? []} current={termKey} keep={{ level: level === STUDY_LEVEL_ALL ? undefined : String(level) }} />}
+      {/* 레벨 탭 — 공통(모든 레벨) · 레벨 1 · 2 · 3. 숫자는 그 레벨에 올린 회차 수 (2026-10-12) */}
+      <FilterTabs
+        basePath="/admin/study-materials"
+        paramKey="level"
+        current={String(level)}
+        keep={{ term: termKey || undefined }}
+        tabs={MATERIAL_LEVELS.map((l) => ({ value: String(l), label: l === STUDY_LEVEL_ALL ? "공통 (모든 레벨)" : studyLevelLabel(l), count: allItems.filter((i) => i.level === l).length }))}
+      />
 
       <div className="space-y-5">
         {term && (
@@ -85,8 +99,9 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
                 </p>
               )}
               <p className="mt-0.5">
-                올린 자료 <strong className="text-brand-600">{items.length}</strong>회차
-                {days.length > 0 && open < days.length && <> · 이 달엔 {open + 1}회차부터 자료가 비어 있어요</>}
+                <span className="font-bold text-ink">{level === STUDY_LEVEL_ALL ? "공통 자료" : `${studyLevelLabel(level)} 자료`}</span> <strong className="text-brand-600">{items.length}</strong>회차
+                {days.length > 0 && open < days.length && <> · 이 달엔 {open + 1}회차부터 비어 있어요</>}
+                {level === STUDY_LEVEL_ALL ? <> · 공통 자료는 모든 레벨 학생이 받아요</> : <> · {studyLevelLabel(level)} 학생만 받아요 (공통 자료는 함께)</>}
               </p>
             </div>
             {staff && (
@@ -126,8 +141,9 @@ export default async function StudyMaterialsPage({ searchParams }: { searchParam
         <ul className="space-y-3">
           {Array.from({ length: rows }, (_, k) => k + 1).map((seq) => (
             <MaterialRow
-              key={`${seq}-${bySeq.get(seq)?.id ?? "new"}`}
+              key={`${level}-${seq}-${bySeq.get(seq)?.id ?? "new"}`}
               seq={seq}
+              level={level}
               date={days[seq - 1] ?? null}
               today={today}
               monthLabel={monthLabel}

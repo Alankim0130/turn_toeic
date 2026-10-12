@@ -6,8 +6,9 @@ import { Reveal } from "@/components/ui/Reveal";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { cn, formatDate, todayKST } from "@/lib/utils";
-import { formatBytes, isSlotKind, slotTime, STUDY_KIND_ICON, STUDY_KIND_LABEL, STUDY_STATUS_LABEL, termIndex } from "@/lib/study";
-import { getMyOrders, getMyStudyCheckins, getMyStudyEligibility, getMyStudyMaterials, getMyStudySignups, termLabel } from "../_lib/queries";
+import { formatBytes, isSlotKind, slotTime, STUDY_KIND_ICON, STUDY_KIND_LABEL, STUDY_LEVEL_ALL, STUDY_STATUS_LABEL, studyLevelLabel, studyLevelsOf, termIndex } from "@/lib/study";
+import { StudyLevelPanel } from "@/components/my/study/StudyLevelPanel";
+import { getMyOrders, getMyStudyCheckins, getMyStudyEligibility, getMyStudyMaterials, getMyStudySignups, getStudySlots, termLabel } from "../_lib/queries";
 import { getSessionProfile } from "@/lib/auth";
 import { loadGated } from "@/components/student/StudentGate";
 import { CheckinPanel } from "@/components/my/study/CheckinPanel";
@@ -38,17 +39,19 @@ export default async function MyStudyPage() {
       })),
       getMyStudyCheckins(),
       getSessionProfile(),
+      // 단어 스터디의 시간대(레벨 포함) — 레벨 변경 요청 칸에서 다른 레벨의 시간대를 고른다 (2026-10-12)
+      getMyStudySignups().then((list) => getStudySlots(list.filter((x) => x.study && isSlotKind(x.study.kind)).map((x) => x.study_id))),
     ]),
   );
   if (g.locked) return g.locked;
-  const [orders, signups, { materials, noteImages }, checkins, { user }] = g.data;
+  const [orders, signups, { materials, noteImages }, checkins, { user }, slots] = g.data;
   // 자료(날짜)마다 내 인증 — 비대면 스터디는 풀고 나서 **인증을 항상** 한다 (2026-09-18 Alan)
   const checkinByMaterial = new Map(checkins.map((c) => [c.material_id, c]));
-  const { accessTerms, opensOn } = await getMyStudyEligibility(orders);
+  const { accessTerms, signupTerms, opensOn } = await getMyStudyEligibility(orders);
   const today = todayKST();
 
   const header = (
-    <PageHeader icon="study" title="내 스터디" description="신청한 스터디와 비대면스터디 자료를 한곳에서 확인하세요.">
+    <PageHeader icon="study" title="내 스터디" description="신청한 스터디 · 내 레벨 · 비대면스터디 자료를 한곳에서 확인하세요.">
       <Link href="/study" className="btn-secondary">
         <Icon name="timeslot" size={18} />
         신청·변경
@@ -63,7 +66,7 @@ export default async function MyStudyPage() {
         <EmptyState
           icon="study"
           title="아직 신청한 스터디가 없어요"
-          description="대면·비대면·단어 스터디 중 원하는 스터디를 골라 신청해 보세요. 그 달 수강생은 개강일부터 신청할 수 있어요."
+          description="단어 스터디 · 비대면 스터디 중 원하는 스터디를 레벨에 맞춰 신청해 보세요. 그 달 수강생은 개강일부터 신청할 수 있어요."
           action={{ href: "/study", label: "스터디 신청하러 가기" }}
         />
       </div>
@@ -113,6 +116,21 @@ export default async function MyStudyPage() {
                     </p>
                   )}
                   {study.notice && <p className="mt-2 whitespace-pre-wrap text-sm text-slate">{study.notice}</p>}
+                  {/* 내 레벨 · 변경 요청 (2026-10-12) — 레벨이 없던 신청은 여기서 한 번 바로 고른다 */}
+                  <StudyLevelPanel
+                    signupId={s.id}
+                    kind={study.kind}
+                    level={s.level}
+                    slotId={s.slot_id}
+                    requestedLevel={s.requested_level}
+                    requestedSlotId={s.requested_slot_id}
+                    requestedAt={s.requested_at}
+                    requestResult={s.request_result}
+                    requestDecidedAt={s.request_decided_at}
+                    levels={studyLevelsOf(study.kind)}
+                    slots={slots.filter((sl) => sl.study_id === study.id)}
+                    canRequest={signupTerms.has(study.term_id)}
+                  />
                 </article>
               </Reveal>
             );
@@ -120,11 +138,12 @@ export default async function MyStudyPage() {
         </ul>
       </section>
 
-      {/* 비대면 자료 */}
+      {/* 비대면 자료 — 내 레벨의 자료와 공통 자료만 (DB 가 막는다 — 2026-10-12) */}
       {onlineSignups.map((s) => {
         const study = s.study!;
         const list = materials.filter((m) => m.study_id === study.id);
         const waitingFrom = opensOn.get(study.term_id);
+        const hasLeveled = list.some((m) => m.level !== STUDY_LEVEL_ALL);
         return (
           <section key={s.id} aria-labelledby={`materials-${study.id}`} className="card overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-brand-50/60 px-5 py-3">
@@ -132,8 +151,19 @@ export default async function MyStudyPage() {
                 <Icon name="online" size={24} />
                 {termLabel(study.term)} 비대면스터디 자료
               </h2>
-              <span className="text-xs font-bold text-slate">자료를 풀고 날짜마다 <span className="text-brand-600">인증하기</span>로 풀이 사진을 올려요</span>
+              <span className="text-xs font-bold text-slate">
+                {s.level != null && <span className="mr-1.5 rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-black text-white">{studyLevelLabel(s.level)}</span>}
+                자료를 풀고 날짜마다 <span className="text-brand-600">인증하기</span>로 풀이 사진을 올려요
+              </span>
             </div>
+
+            {s.level == null && accessTerms.has(study.term_id) && (
+              <div className="px-5 pt-4">
+                <Alert kind="info" title="내 레벨을 아직 안 골랐어요">
+                  위 신청 카드에서 레벨을 고르면 그 레벨의 자료가 열려요. 지금은 모든 레벨 공통 자료만 보여요.
+                </Alert>
+              </div>
+            )}
 
             {!accessTerms.has(study.term_id) ? (
               <div className="p-5">
@@ -158,6 +188,11 @@ export default async function MyStudyPage() {
                         <p className="font-bold text-ink">
                           {m.seq ? `${m.seq}회차 · ` : ""}
                           {formatDate(m.date)}
+                          {hasLeveled && (
+                            <span className={cn("ml-2 rounded-full px-2 py-0.5 text-[11px] font-bold", m.level === STUDY_LEVEL_ALL ? "bg-line text-slate" : "bg-brand-100 text-brand-700")}>
+                              {studyLevelLabel(m.level)}
+                            </span>
+                          )}
                           {isToday && <span className="ml-2 rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-black text-white">오늘</span>}
                         </p>
                         <p className="truncate text-sm text-slate">

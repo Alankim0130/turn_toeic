@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { deleteMaterialItem, saveMaterialItem } from "@/app/admin/study-materials/actions";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
-import { formatBytes, shortDateTimeKST } from "@/lib/study";
+import { formatBytes, shortDateTimeKST, studyLevelLabel } from "@/lib/study";
 import { MB, objectName, type UploadedFile } from "@/lib/upload";
 import { removeUploaded, uploadFile } from "@/lib/upload-client";
 import { labelKo } from "@/components/admin/sections/dates";
@@ -42,7 +42,7 @@ function useItemSave() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function save(args: { seq: number; title: string; note: string; itemId?: number; file: File | null }) {
+  async function save(args: { seq: number; level: number; title: string; note: string; itemId?: number; file: File | null }) {
     setError(null);
     if (args.file && args.file.size > MAX) {
       setError("파일은 50MB 이하만 올릴 수 있어요. PDF 로 줄이거나 나눠 주세요.");
@@ -51,8 +51,8 @@ function useItemSave() {
     setBusy(true);
     let uploaded: UploadedFile | null = null;
     try {
-      if (args.file) uploaded = await uploadFile(BUCKET, `items/${args.seq}-${objectName(args.file)}`, args.file);
-      const res = await saveMaterialItem({ seq: args.seq, title: args.title, note: args.note, itemId: args.itemId ?? null, file: uploaded });
+      if (args.file) uploaded = await uploadFile(BUCKET, `items/${args.seq}-${args.level}-${objectName(args.file)}`, args.file);
+      const res = await saveMaterialItem({ seq: args.seq, level: args.level, title: args.title, note: args.note, itemId: args.itemId ?? null, file: uploaded });
       if (!res.ok) {
         if (uploaded) await removeUploaded(BUCKET, [uploaded.path]);
         setError(res.error ?? "저장하지 못했어요.");
@@ -79,6 +79,7 @@ function useItemSave() {
  */
 export function MaterialRow({
   seq,
+  level,
   date,
   today,
   monthLabel,
@@ -86,6 +87,8 @@ export function MaterialRow({
   noteImages,
 }: {
   seq: number;
+  /** 자료의 레벨 — 0 공통 · 1 · 2 · 3 (2026-10-12, 위 레벨 탭이 정한다). 회차 × 레벨이 한 칸 */
+  level: number;
   /** 고른 달에 이 회차가 열리는 날 (그 달 N번째 수업일). 없으면 null */
   date: string | null;
   today: string;
@@ -116,6 +119,7 @@ export function MaterialRow({
     if (noteError) return setError(noteError);
     const ok = await save({
       seq,
+      level,
       title: titleRef.current?.value ?? "",
       note,
       itemId: mode === "edit" ? item?.id : undefined,
@@ -242,7 +246,7 @@ export function MaterialRow({
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50/60 p-3 text-sm">
           <Icon name="warning" size={20} />
           <span className="text-ink">
-            {seq}회차 자료를 삭제할까요? 모든 달의 {seq}회차에서 빠져요 (학생이 이미 인증한 회차는 기록이 남아요).
+            {seq}회차 {studyLevelLabel(level)} 자료를 삭제할까요? 모든 달의 {seq}회차에서 빠져요 (학생이 이미 인증한 회차는 기록이 남아요).
           </span>
           <span className="ml-auto flex gap-1">
             <button type="button" onClick={onDelete} disabled={pending} className="btn-dark !bg-red-600 !px-3 !py-1.5 text-xs hover:!bg-red-700">

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireCrew, requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { isStudyKind, studyErrorMessage } from "@/lib/study";
+import { isStudyKind, STUDY_LEVELS, studyErrorMessage } from "@/lib/study";
 import { isHm } from "@/components/admin/sections/dates";
 
 export type StudyActionState = { ok?: boolean; error?: string; message?: string; values?: Record<string, string> };
@@ -70,21 +70,25 @@ export async function deleteStudy(_prev: StudyActionState, formData: FormData): 
 }
 
 /* ─── 시간대 ─────────────────────────────────────────────────────────────── */
-function parseSlot(formData: FormData): { fields?: { start_time: string; end_time: string; capacity: number | null }; error?: string } {
+/** 시간대 한 줄 — 시작 · 종료 · 정원 · **레벨(1 · 2, 꼭 고른다 — 2026-10-12 Alan "시간대마다 레벨을 고를 수 있도록")** */
+function parseSlot(formData: FormData): { fields?: { start_time: string; end_time: string; capacity: number | null; level: number }; error?: string } {
   const start = str(formData, "start_time");
   const end = str(formData, "end_time");
   const capRaw = str(formData, "capacity");
+  const level = Number(str(formData, "level"));
   if (!isHm(start) || !isHm(end)) return { error: "시작·종료 시간을 입력해 주세요." };
   if (end.slice(0, 5) <= start.slice(0, 5)) return { error: "종료 시간은 시작 시간보다 늦어야 해요." };
   const capacity = capRaw === "" ? null : Number(capRaw);
   if (capacity !== null && (!Number.isInteger(capacity) || capacity < 1 || capacity > 500)) return { error: "정원은 1~500명 사이로 입력하거나 비워 두세요." };
-  return { fields: { start_time: start.slice(0, 5), end_time: end.slice(0, 5), capacity } };
+  if (!STUDY_LEVELS.offline.includes(level)) return { error: "이 시간대의 레벨(1 · 2)을 골라 주세요." };
+  return { fields: { start_time: start.slice(0, 5), end_time: end.slice(0, 5), capacity, level } };
 }
 
 const slotValues = (formData: FormData) => ({
   start_time: str(formData, "start_time"),
   end_time: str(formData, "end_time"),
   capacity: str(formData, "capacity"),
+  level: str(formData, "level"),
 });
 
 export async function addSlot(_prev: StudyActionState, formData: FormData): Promise<StudyActionState> {
@@ -146,4 +150,21 @@ export async function cancelSignupByStaff(id: number): Promise<StudyActionState>
 
   revalidateStudies();
   return { ok: true };
+}
+
+/* ─── 레벨 변경 요청 승인 · 거절 (조교도 — 스터디는 조교가 운영한다) ─────────── */
+/**
+ * 학생이 낸 레벨 변경 요청을 승인하거나 거절한다 (2026-10-12 Alan "조교나 강사승인이 있어야지 변경이 가능하도록").
+ * DB 함수 `decide_study_level` 이 is_crew 를 다시 보고, 단어 스터디는 요청한 시간대로 옮긴다 (정원이 찼으면 study_slot_full).
+ */
+export async function decideStudyLevel(id: number, approve: boolean): Promise<StudyActionState> {
+  await requireCrew();
+  if (!Number.isInteger(id)) return { error: "잘못된 요청이에요." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("decide_study_level", { p_signup_id: id, p_approve: approve });
+  if (error) return { error: studyErrorMessage(error, approve ? "승인하지 못했어요." : "거절하지 못했어요.") };
+
+  revalidateStudies();
+  return { ok: true, message: approve ? "승인했어요 — 학생의 레벨이 바뀌었어요." : "거절했어요." };
 }

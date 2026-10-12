@@ -7,7 +7,7 @@ import { addSlot, createStudy, deleteSlot, deleteStudy, updateSlot, updateStudy,
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Icon } from "@/components/ui/Icon";
 import { cn, formatTime } from "@/lib/utils";
-import { isSlotKind, STUDY_KIND_DESC, STUDY_KIND_ICON, STUDY_KIND_LABEL, STUDY_STATUS_LABEL, type SlotLite } from "@/lib/study";
+import { isSlotKind, STUDY_KIND_DESC, STUDY_KIND_ICON, STUDY_KIND_LABEL, STUDY_LEVELS, STUDY_STATUS_LABEL, studyLevelLabel, type SlotLite } from "@/lib/study";
 import type { PlannerStudy } from "./StudyPlanner";
 
 const STATUS_OPTIONS = [
@@ -17,8 +17,7 @@ const STATUS_OPTIONS = [
 ] as const;
 
 const NOTICE_PLACEHOLDER: Record<string, string> = {
-  offline: "예: 월~금 수업 후 7층 스터디룸 · 교재 지참",
-  vocab: "예: 수업일마다 강의실 앞에서 단어 시험 · 단어장 범위는 수업 때 안내",
+  offline: "예: 수업일마다 7층 스터디룸에서 단어 점검 · 단어장 범위는 수업 때 안내",
   // 비대면 풀이는 내 스터디에서 인증한다 — 숙제업로드(정규 수업 숙제)로 안내하지 않는다 (2026-09-23 Alan)
   online: "예: 풀이한 페이지를 사진으로 찍어 내 스터디에서 인증해 주세요",
 };
@@ -99,6 +98,7 @@ export function StudyKindCard({ kind, study, termKey }: { kind: string; study: P
         <div className="mt-4 border-t border-line pt-4">
           <p className="mb-2 text-sm font-black text-ink">
             시간대 <span className="font-semibold text-slate">({study.slots.length})</span>
+            <span className="ml-2 text-xs font-semibold text-slate">시간대마다 레벨(1 · 2)이 있어요 — 학생은 시간대를 고르면 그 레벨로 신청돼요</span>
           </p>
           {study.slots.length > 0 && (
             <ul className="mb-3 space-y-2">
@@ -216,6 +216,10 @@ function SlotRow({ slot, index }: { slot: SlotLite; index: number }) {
           <span className="font-bold tabular-nums text-ink">
             {formatTime(slot.start_time)}–{formatTime(slot.end_time)}
           </span>
+          {/* 레벨이 비어 있으면(레벨이 생기기 전 시간대) 수정에서 골라야 학생이 이 시간대로 신청 · 변경할 수 있다 */}
+          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-bold", slot.level == null ? "bg-amber-100 text-amber-800" : "bg-brand-100 text-brand-700")}>
+            {studyLevelLabel(slot.level)}
+          </span>
           <span className={cn("text-xs font-semibold", full ? "text-red-600" : "text-slate")}>
             신청 {slot.applied_count}
             {slot.capacity !== null ? ` / 정원 ${slot.capacity}명` : "명 · 정원 없음"}
@@ -235,7 +239,7 @@ function SlotRow({ slot, index }: { slot: SlotLite; index: number }) {
       ) : (
         <form action={action} className="flex flex-wrap items-end gap-2">
           <input type="hidden" name="id" value={slot.id} />
-          <SlotInputs idPrefix={`slot-${slot.id}`} values={state.values ?? { start_time: formatTime(slot.start_time), end_time: formatTime(slot.end_time), capacity: slot.capacity?.toString() ?? "" }} />
+          <SlotInputs idPrefix={`slot-${slot.id}`} values={state.values ?? { start_time: formatTime(slot.start_time), end_time: formatTime(slot.end_time), capacity: slot.capacity?.toString() ?? "", level: slot.level?.toString() ?? "" }} />
           <div className="flex gap-1">
             <SubmitButton className="!px-4 !py-2" pendingText="저장 중…">
               저장
@@ -286,6 +290,15 @@ function SlotInputs({ idPrefix, values }: { idPrefix: string; values: Record<str
       <div>
         <label htmlFor={`${idPrefix}-cap`} className="label !mb-1 text-xs">정원 <span className="font-normal text-mist">(선택)</span></label>
         <input id={`${idPrefix}-cap`} name="capacity" type="number" min={1} max={500} inputMode="numeric" placeholder="제한 없음" defaultValue={values.capacity} className="input !w-[6.5rem] !px-3 !py-2 text-sm" />
+      </div>
+      <div>
+        <label htmlFor={`${idPrefix}-level`} className="label !mb-1 text-xs">레벨</label>
+        <select id={`${idPrefix}-level`} name="level" required defaultValue={values.level ?? ""} className="input select-chevron !w-[6.5rem] !px-3 !py-2 text-sm">
+          <option value="" disabled>고르기</option>
+          {STUDY_LEVELS.offline.map((l) => (
+            <option key={l} value={l}>{studyLevelLabel(l)}</option>
+          ))}
+        </select>
       </div>
     </>
   );

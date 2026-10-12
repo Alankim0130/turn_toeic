@@ -18,7 +18,7 @@ export const metadata: Metadata = { title: "스터디 시간 설정", robots: { 
  * 반 편성으로 가서 달력·반 목록을 지나 한참 스크롤해야 했다. 여기서는 그것만 한다.
  * 반 편성 화면의 같은 영역(`StudyPlanner`)은 그대로 두었다 — 편성하면서 바로 여는 흐름도 쓰이기 때문이다.
  *
- * 조교는 못 쓴다 — 조교에게 열린 관리자 화면은 교재주문·스터디 신청자 둘뿐이다 (등급 체계).
+ * 조교는 못 쓴다 — 시간대 · 레벨은 강사 · 관리자가 정한다 (등급 체계).
  */
 export default async function StudyPlanPage({ searchParams }: { searchParams: Promise<{ term?: string }> }) {
   await requireStaff();
@@ -42,7 +42,7 @@ export default async function StudyPlanPage({ searchParams }: { searchParams: Pr
   const term = sp.term ? pickTerm(terms, sp.term, today) : (thisMonth ?? pickTerm(terms, undefined, today));
 
   const header = (
-    <PageHeader icon="study" title="스터디 시간 설정" description="대면·단어 스터디의 시간대를 만들고, 비대면 스터디를 열어요. 신청은 수강생이 스터디 신청하기에서 합니다." />
+    <PageHeader icon="study" title="스터디 시간 설정" description="단어 스터디의 시간대(레벨 1 · 2)를 만들고, 비대면 스터디를 열어요. 신청은 수강생이 스터디 신청하기에서 합니다." />
   );
 
   if (!term) {
@@ -63,7 +63,7 @@ export default async function StudyPlanPage({ searchParams }: { searchParams: Pr
   const { data: studyRows } = await supabase
     .from("studies")
     .select(
-      "id, kind, status, notice, study_slots!study_slots_study_id_fkey(id, start_time, end_time, capacity, applied_count), study_signups!study_signups_study_id_fkey(count), study_materials(count)",
+      "id, kind, status, notice, study_slots!study_slots_study_id_fkey(id, start_time, end_time, capacity, applied_count, level), study_signups!study_signups_study_id_fkey(count), study_materials(count)",
     )
     .eq("term_id", term.id);
 
