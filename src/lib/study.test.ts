@@ -1,11 +1,13 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  copyStudyMessage,
   groupSlotsByLevel,
   hasLevelRequest,
   isSlotKind,
   MATERIAL_LEVELS,
   materialVisibleTo,
+  pickCopySource,
   STUDY_KIND_ICON,
   STUDY_KIND_LABEL,
   STUDY_KINDS,
@@ -134,5 +136,30 @@ describe("스터디 레벨 — 단어 1 · 2, 비대면 1 · 2 · 3", () => {
     expect(trig).toContain("raise exception 'study_level_locked'");
     expect(trig).toContain("raise exception 'study_level_required'");
     expect(ALL).toContain("before insert or update on public.study_signups\n  for each row execute function private.study_signups_level();");
+  });
+});
+
+describe("지난달 그대로 가져오기 (2026-10-12 Alan \"응 지난달 그대로 가져오기를 만들어줘\")", () => {
+  const c = (year: number, month: number, slotCount: number) => ({ term: { year, month }, slotCount });
+
+  it("이 달보다 앞선 달 중 시간대가 있는 가장 최근 달을 고른다 — 같은 달 · 뒤 달은 아니다", () => {
+    const picked = pickCopySource({ year: 2026, month: 11 }, [c(2026, 9, 2), c(2026, 10, 3), c(2026, 11, 1), c(2026, 12, 4)]);
+    expect(picked?.term).toEqual({ year: 2026, month: 10 });
+  });
+  it("지난달에 시간대가 없으면 그 앞 달로 거슬러 간다 (달을 건너뛴 뒤에도)", () => {
+    const picked = pickCopySource({ year: 2026, month: 11 }, [c(2026, 8, 2), c(2026, 10, 0)]);
+    expect(picked?.term).toEqual({ year: 2026, month: 8 });
+  });
+  it("해가 바뀌어도 기수 순서로 본다 — 2027년 1월의 지난달은 2026년 12월", () => {
+    const picked = pickCopySource({ year: 2027, month: 1 }, [c(2026, 11, 2), c(2026, 12, 3)]);
+    expect(picked?.term).toEqual({ year: 2026, month: 12 });
+  });
+  it("가져올 것이 없으면 null — 앞선 달이 없거나 전부 시간대가 비었을 때", () => {
+    expect(pickCopySource({ year: 2026, month: 9 }, [])).toBeNull();
+    expect(pickCopySource({ year: 2026, month: 10 }, [c(2026, 9, 0), c(2026, 10, 3), c(2026, 11, 2)])).toBeNull();
+  });
+  it("가져온 뒤 안내 — 레벨이 비어 있던 시간대가 있으면 수정에서 고르라고 덧붙인다", () => {
+    expect(copyStudyMessage({ month: 9 }, [{ level: 1 }, { level: 2 }])).toBe("9월 시간대 2개와 안내를 가져왔어요. 시간 · 정원을 확인한 뒤 '신청 받기'로 바꿔 주세요.");
+    expect(copyStudyMessage({ month: 9 }, [{ level: 1 }, { level: null }, { level: null }])).toContain("레벨 미정 2개는 수정에서 레벨을 골라 주세요.");
   });
 });

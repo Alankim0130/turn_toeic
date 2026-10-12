@@ -1,9 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireCrew, requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { isStudyKind, STUDY_LEVELS, studyErrorMessage } from "@/lib/study";
+import { isStudyKind, pickCopySource, STUDY_LEVELS, studyErrorMessage, termParam } from "@/lib/study";
 import { isHm } from "@/components/admin/sections/dates";
 
 export type StudyActionState = { ok?: boolean; error?: string; message?: string; values?: Record<string, string> };
@@ -13,6 +14,7 @@ const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 function revalidateStudies() {
   revalidatePath("/admin/sections");
   revalidatePath("/admin/study");
+  revalidatePath("/admin/study/plan");
   revalidatePath("/admin/study-materials");
   revalidatePath("/study");
   revalidatePath("/my/study");
@@ -135,6 +137,66 @@ export async function deleteSlot(id: number): Promise<StudyActionState> {
 
   revalidateStudies();
   return { ok: true };
+}
+
+/* ─── 지난달 그대로 가져오기 (단어 스터디) ───────────────────────────────── */
+/**
+ * 가장 최근 앞선 달의 단어 스터디에서 **시간대(시작 · 종료 · 정원 · 레벨)와 안내**를 이 달로 복사한다
+ * (2026-10-12 Alan "응 지난달 그대로 가져오기를 만들어줘"). 어느 달에서 가져올지는 화면이 보낸 값이 아니라 여기서 다시 고른다 (`pickCopySource`).
+ * 이 달 단어 스터디가 없으면 **준비 중**으로 만들고(강사가 확인한 뒤 '신청 받기'로 바꾼다), 있는데 시간대가 비어 있으면 시간대만 넣는다
+ * (안내는 비어 있을 때만 채운다 — 강사가 적어 둔 글을 덮지 않는다). 시간대가 이미 있으면 가져오지 않는다.
+ * 신청 수(applied_count)는 복사하지 않는다 — 새 달은 0 부터.
+ * 끝나면 같은 화면으로 **다시 간다**(`?copied=달&n=개수`) — 가져오는 순간 카드가 '없음' → '있음' 으로 바뀌어 버튼이 든 폼이 사라지므로
+ * 폼 안의 결과 글은 보이지 않는다. 화면(`page.tsx`)이 그 값을 읽어 바뀐 카드 위에 `copyStudyMessage` 를 적는다.
+ */
+export async function copyLastOfflineStudy(_prev: StudyActionState, formData: FormData): Promise<StudyActionState> {
+  await requireStaff();
+  const termId = Number(str(formData, "term_id"));
+  if (!Number.isInteger(termId)) return { error: "잘못된 요청이에요." };
+
+  const supabase = await createClient();
+  const [{ data: termRows, error: termErr }, { data: studyRows, error: studyErr }] = await Promise.all([
+    supabase.from("terms").select("id, year, month"),
+    supabase
+      .from("studies")
+      .select("id, term_id, notice, study_slots!study_slots_study_id_fkey(start_time, end_time, capacity, level)")
+      .eq("kind", "offline"),
+  ]);
+  if (termErr || studyErr) return { error: studyErrorMessage(termErr ?? studyErr) };
+  const terms = termRows ?? [];
+  const target = terms.find((t) => t.id === termId);
+  if (!target) return { error: "기수를 찾을 수 없어요." };
+
+  const byTerm = new Map(terms.map((t) => [t.id, t]));
+  const offline = (studyRows ?? []).flatMap((s) => {
+    const term = byTerm.get(s.term_id);
+    return term ? [{ ...s, term, slots: s.study_slots ?? [], slotCount: (s.study_slots ?? []).length }] : [];
+  });
+  const source = pickCopySource(target, offline);
+  if (!source) return { error: "가져올 지난달 단어 스터디가 없어요. 아래에서 시간대를 직접 추가해 주세요." };
+  const existing = offline.find((s) => s.term_id === termId) ?? null;
+  if (existing && existing.slotCount > 0) return { error: "이 달에 이미 시간대가 있어요. 지우고 다시 가져오거나 아래에서 고쳐 주세요." };
+
+  let studyId = existing?.id ?? null;
+  if (studyId == null) {
+    const { data, error } = await supabase
+      .from("studies")
+      .insert({ term_id: termId, kind: "offline", status: "draft", notice: source.notice })
+      .select("id")
+      .single();
+    if (error || !data) return { error: error?.code === "23505" ? "이 달에는 이미 같은 스터디가 있어요. 화면을 새로고침해 주세요." : studyErrorMessage(error) };
+    studyId = data.id;
+  } else if (!existing?.notice && source.notice) {
+    const { error } = await supabase.from("studies").update({ notice: source.notice }).eq("id", studyId);
+    if (error) return { error: studyErrorMessage(error) };
+  }
+
+  const rows = source.slots.map((l) => ({ study_id: studyId, start_time: l.start_time, end_time: l.end_time, capacity: l.capacity, level: l.level }));
+  const { error: slotErr } = await supabase.from("study_slots").insert(rows);
+  if (slotErr) return { error: slotErr.code === "23505" ? "같은 시작 시간의 시간대가 이미 있어요. 화면을 새로고침해 주세요." : studyErrorMessage(slotErr) };
+
+  revalidateStudies();
+  redirect(`/admin/study/plan?term=${termParam(target.year, target.month)}&copied=${source.term.month}&n=${rows.length}`);
 }
 
 /* ─── 스태프가 신청 취소 (학생 요청 대응) ───────────────────────────────── */

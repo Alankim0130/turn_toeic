@@ -131,6 +131,30 @@ export function parseTermParam(term?: string | null): { y: number; m: number } |
 /** 기수 비교용 정수 (연*12 + 월) */
 export const termIndex = (t: { year: number; month: number }) => t.year * 12 + t.month;
 
+/**
+ * 지난달 그대로 가져오기 — 어느 달에서 가져올지 (2026-10-12 Alan "대면스터디는 한번 설정해놓으면 다음달에 그대로 자동으로 불러오는것도 되는거 맞지?"
+ * → "응 지난달 그대로 가져오기를 만들어줘"). 이 달보다 **앞선** 기수 중 시간대가 하나라도 있는 단어 스터디 가운데 가장 최근 달.
+ * 같은 달 · 뒤 달 · 시간대가 없는 달은 고르지 않는다. 지난달에 단어 스터디가 없었으면 그 앞 달로 거슬러 간다 (달을 건너뛴 뒤에도 가져올 수 있게).
+ * **저절로 복사하지 않는다** — 강사가 모르는 사이 지난달 시간대로 신청을 받게 되지 않도록 버튼을 눌러야 한다.
+ */
+export function pickCopySource<T extends { term: { year: number; month: number }; slotCount: number }>(target: { year: number; month: number }, candidates: T[]): T | null {
+  const ti = termIndex(target);
+  return (
+    candidates
+      .filter((c) => c.slotCount > 0 && termIndex(c.term) < ti)
+      .sort((a, b) => termIndex(b.term) - termIndex(a.term))[0] ?? null
+  );
+}
+
+/** 가져온 뒤 안내 — 레벨이 비어 있던 시간대(레벨이 생기기 전 것)는 수정에서 골라야 학생이 신청할 수 있다 */
+export function copyStudyMessage(source: { month: number }, slots: { level: number | null }[]): string {
+  const missing = slots.filter((s) => s.level == null).length;
+  return (
+    `${source.month}월 시간대 ${slots.length}개와 안내를 가져왔어요. 시간 · 정원을 확인한 뒤 '신청 받기'로 바꿔 주세요.` +
+    (missing > 0 ? ` 레벨 미정 ${missing}개는 수정에서 레벨을 골라 주세요.` : "")
+  );
+}
+
 /** 스터디·자료·LC 음원 DB 에러 → 안내 문구 (트리거 메시지 study_slot_full / study_slot_rule 포함). 숙제업로드는 쓰지 않는다 */
 export function studyErrorMessage(error: { code?: string; message?: string } | null | undefined, fallback = "저장하지 못했어요. 잠시 후 다시 시도해 주세요.") {
   if (!error) return fallback;
