@@ -10,36 +10,39 @@ import { createClient } from "@/lib/supabase/server";
 import { cn, todayKST } from "@/lib/utils";
 import { termWindow } from "@/lib/term-window";
 import {
+  groupSlotsByLevel,
+  hasLevelRequest,
   isSlotFull,
   isSlotKind,
   slotTime,
-  sortSlots,
   STUDY_KIND_DESC,
   STUDY_KIND_ICON,
   STUDY_KIND_LABEL,
   STUDY_KINDS,
+  studyLevelLabel,
+  studyLevelsOf,
   termIndex,
 } from "@/lib/study";
 import { onlineSignupPhase, onlineStudyWindow, shortDay } from "@/lib/study-rounds";
 import { getMyOrders, getMyStudyEligibility, getMyStudySignups } from "@/app/my/_lib/queries";
-import { StudyCancelButton, StudySignupButton } from "./StudySignupButton";
+import { LevelRequestButton, OnlineSignupForm, StudyCancelButton, StudySignupButton } from "./StudySignupButton";
 
 export const metadata: Metadata = {
   title: "스터디 신청하기",
-  description: "역전토익 수강생 스터디. 대면스터디·비대면스터디·단어스터디 중 원하는 스터디를 매달 강사가 정한 시간대에 신청하세요.",
+  description: "역전토익 수강생 스터디. 단어 스터디·비대면스터디를 레벨에 맞춰 매달 신청하세요.",
   alternates: { canonical: "/study" },
   openGraph: {
     title: "스터디 신청하기 | 역전토익",
-    description: "대면스터디·비대면스터디·단어스터디. 매달 열리는 역전토익 스터디에 신청하세요.",
+    description: "단어 스터디·비대면스터디. 레벨 1 · 2 · 3 으로 매달 열리는 역전토익 스터디에 신청하세요.",
     url: "/study",
     images: [{ url: "/og.png", width: 1200, height: 630, alt: "역전토익" }],
   },
 };
 
+// 종류는 둘 — 단어 스터디(옛 대면) · 비대면 (2026-10-12 Alan "기존 단어스터디를 없애자")
 const STEPS = [
-  { icon: "offline", title: "대면스터디", desc: STUDY_KIND_DESC.offline },
-  { icon: "online", title: "비대면스터디", desc: STUDY_KIND_DESC.online },
-  { icon: "vocab", title: "단어스터디", desc: STUDY_KIND_DESC.vocab },
+  { icon: STUDY_KIND_ICON.offline, title: STUDY_KIND_LABEL.offline, desc: STUDY_KIND_DESC.offline },
+  { icon: STUDY_KIND_ICON.online, title: STUDY_KIND_LABEL.online, desc: STUDY_KIND_DESC.online },
 ] as const;
 
 export default async function StudyPage() {
@@ -51,7 +54,7 @@ export default async function StudyPage() {
   const [{ data: studyRows }, orders, signups] = await Promise.all([
     supabase
       .from("studies")
-      .select("id, kind, status, notice, term:terms(id, year, month, enrollment_opens_at, closes_at), study_slots!study_slots_study_id_fkey(id, start_time, end_time, capacity, applied_count)")
+      .select("id, kind, status, notice, term:terms(id, year, month, enrollment_opens_at, closes_at), study_slots!study_slots_study_id_fkey(id, start_time, end_time, capacity, applied_count, level)")
       .neq("status", "draft"),
     user ? getMyOrders() : Promise.resolve([]),
     user ? getMyStudySignups() : Promise.resolve([]),
@@ -105,7 +108,7 @@ export default async function StudyPage() {
       </div>
 
       {/* 스터디 소개 */}
-      <ul className="relative z-10 grid gap-4 md:grid-cols-3">
+      <ul className="relative z-10 grid gap-4 md:grid-cols-2">
         {STEPS.map((s, i) => (
           <Reveal key={s.title} delay={i * 90} as="li">
             <article className="card flex h-full gap-4 p-5">
@@ -186,7 +189,7 @@ export default async function StudyPage() {
                   </p>
                 </div>
               )}
-              <div className="grid gap-4 lg:grid-cols-3">
+              <div className="grid gap-4 lg:grid-cols-2">
                 {ordered.map((study, i) => {
                   const mine = mySignup.get(study.id);
                   // 비대면은 개강일부터 달력 3일만 신청 · 취소한다 (2026-10-05 Alan "개강후 3일동안만 신청받고 4일째부터 시작").
@@ -197,7 +200,9 @@ export default async function StudyPage() {
                   const phase = online ? onlineSignupPhase(opens, today) : null;
                   const open = study.status === "open" && (!online || phase === "open");
                   const canAct = !!user && eligible && open;
-                  const slots = sortSlots(study.study_slots ?? []);
+                  // 단어 스터디는 레벨별로 묶어 보여 준다 (시간대마다 레벨 — 2026-10-12 Alan). 내 레벨과 다른 시간대는 바로 못 옮기고 변경 요청이다
+                  const levelGroups = groupSlotsByLevel(study.study_slots ?? []);
+                  const pending = mine ? hasLevelRequest(mine) : false;
                   return (
                     <Reveal key={study.id} delay={i * 80} className="card flex flex-col p-5">
                       <div className="flex items-start justify-between gap-3">
@@ -230,50 +235,80 @@ export default async function StudyPage() {
                       {study.notice && <p className="mt-3 whitespace-pre-wrap rounded-xl bg-surface p-3 text-sm text-ink-soft">{study.notice}</p>}
 
                       {isSlotKind(study.kind) ? (
-                        slots.length === 0 ? (
+                        levelGroups.length === 0 ? (
                           <p className="mt-4 text-sm text-slate">시간대가 곧 열려요.</p>
                         ) : (
-                          <ul className="mt-4 space-y-2">
-                            {slots.map((slot, n) => {
-                              const isMine = mine?.slot_id === slot.id;
-                              const full = isSlotFull(slot);
-                              return (
-                                <li
-                                  key={slot.id}
-                                  className={cn(
-                                    "flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2.5",
-                                    isMine ? "border-brand-400 bg-brand-50" : "border-line bg-paper",
-                                  )}
-                                >
-                                  <div>
-                                    <p className="font-bold text-ink">
-                                      <span className="mr-1.5 text-sm font-black text-brand-600">{n + 1}타임</span>
-                                      <span className="tabular-nums">{slotTime(slot)}</span>
-                                    </p>
-                                    <p className={cn("text-xs", full && !isMine ? "font-semibold text-red-600" : "text-slate")}>
-                                      {slot.capacity !== null ? `정원 ${slot.capacity}명 · ${slot.applied_count}명 신청` : `${slot.applied_count}명 신청`}
-                                      {full && !isMine && " · 마감"}
-                                    </p>
-                                  </div>
-                                  {isMine ? (
-                                    <div className="flex flex-col items-end gap-1">
-                                      <span className="rounded-full bg-brand-500 px-2.5 py-0.5 text-xs font-black text-white">내 시간대</span>
-                                      {canAct && <StudyCancelButton studyId={study.id} />}
-                                    </div>
-                                  ) : (
-                                    canAct &&
-                                    !full && <StudySignupButton studyId={study.id} slotId={slot.id} label={mine ? "이 시간으로 변경" : "신청"} variant={mine ? "secondary" : "primary"} />
-                                  )}
-                                </li>
-                              );
-                            })}
-                          </ul>
+                          <div className="mt-4 space-y-3">
+                            {pending && mine && (
+                              <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                                {studyLevelLabel(mine.requested_level)} 시간대로 변경을 요청했어요 — 조교 · 강사가 승인하면 바뀌어요.{" "}
+                                <Link href="/my/study" className="underline">내 스터디</Link>에서 취소할 수 있어요.
+                              </p>
+                            )}
+                            {levelGroups.map((g) => (
+                              <div key={g.level ?? "none"}>
+                                <p className="mb-1.5 flex items-center gap-2 text-xs font-black text-ink">
+                                  <span className={cn("rounded-full px-2 py-0.5", g.level == null ? "bg-line text-slate" : "bg-brand-100 text-brand-700")}>{studyLevelLabel(g.level)}</span>
+                                  {mine && g.level != null && mine.level === g.level && <span className="text-[11px] font-bold text-brand-600">내 레벨</span>}
+                                </p>
+                                <ul className="space-y-2">
+                                  {g.slots.map((slot, n) => {
+                                    const isMine = mine?.slot_id === slot.id;
+                                    const full = isSlotFull(slot);
+                                    // 같은 레벨(또는 내 레벨이 아직 없음)이면 바로 옮기고, 다른 레벨이면 변경 요청. 레벨 미정 시간대로는 못 옮긴다
+                                    const sameLevel = !mine || mine.level == null || mine.level === slot.level;
+                                    return (
+                                      <li
+                                        key={slot.id}
+                                        className={cn(
+                                          "flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2.5",
+                                          isMine ? "border-brand-400 bg-brand-50" : "border-line bg-paper",
+                                        )}
+                                      >
+                                        <div>
+                                          <p className="font-bold text-ink">
+                                            <span className="mr-1.5 text-sm font-black text-brand-600">{n + 1}타임</span>
+                                            <span className="tabular-nums">{slotTime(slot)}</span>
+                                          </p>
+                                          <p className={cn("text-xs", full && !isMine ? "font-semibold text-red-600" : "text-slate")}>
+                                            {slot.capacity !== null ? `정원 ${slot.capacity}명 · ${slot.applied_count}명 신청` : `${slot.applied_count}명 신청`}
+                                            {full && !isMine && " · 마감"}
+                                          </p>
+                                        </div>
+                                        {isMine ? (
+                                          <div className="flex flex-col items-end gap-1">
+                                            <span className="rounded-full bg-brand-500 px-2.5 py-0.5 text-xs font-black text-white">내 시간대</span>
+                                            {canAct && <StudyCancelButton studyId={study.id} />}
+                                          </div>
+                                        ) : !mine ? (
+                                          canAct && !full && <StudySignupButton studyId={study.id} slotId={slot.id} label="신청" />
+                                        ) : sameLevel ? (
+                                          canAct && !full && <StudySignupButton studyId={study.id} slotId={slot.id} label="이 시간으로 변경" variant="secondary" />
+                                        ) : slot.level == null ? (
+                                          <span className="text-xs text-mist">레벨이 정해지면 옮길 수 있어요</span>
+                                        ) : (
+                                          !full && !pending && <LevelRequestButton signupId={mine.id} slotId={slot.id} label={`${studyLevelLabel(slot.level)}(으)로 변경 요청`} />
+                                        )}
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              </div>
+                            ))}
+                          </div>
                         )
                       ) : (
                         <div className="mt-4 rounded-xl border border-line bg-paper p-3 text-sm">
                           {mine ? (
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <span className="rounded-full bg-brand-500 px-2.5 py-0.5 text-xs font-black text-white">신청 완료</span>
+                              <span className="flex flex-wrap items-center gap-1.5">
+                                <span className="rounded-full bg-brand-500 px-2.5 py-0.5 text-xs font-black text-white">신청 완료</span>
+                                {/* 내 레벨 — 비어 있으면(레벨 전 신청) 내 스터디에서 한 번은 바로 고른다 (2026-10-12) */}
+                                <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-bold", mine.level == null ? "bg-amber-100 text-amber-800" : "bg-brand-100 text-brand-700")}>
+                                  {mine.level == null ? "레벨 미정" : studyLevelLabel(mine.level)}
+                                </span>
+                                {pending && <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800">{studyLevelLabel(mine.requested_level)} 변경 요청 중</span>}
+                              </span>
                               <span className="flex flex-wrap gap-1">
                                 {/* 비대면 풀이는 내 스터디에서 인증한다 — 숙제업로드(정규 수업 숙제)로 보내지 않는다 (2026-09-23 Alan) */}
                                 <Link href="/my/study" className="btn-secondary !px-3 !py-1.5 text-xs">
@@ -281,6 +316,7 @@ export default async function StudyPage() {
                                   자료 받기 · 인증
                                 </Link>
                               </span>
+                              <p className="w-full text-xs text-slate">{mine.level == null ? "레벨을 아직 안 골랐어요 — 내 스터디에서 고르면 그 레벨 자료가 열려요." : "레벨 변경은 내 스터디에서 요청해요 (조교 · 강사 승인)."}</p>
                               {canAct && (
                                 <div className="w-full">
                                   <StudyCancelButton studyId={study.id} warning="취소하면 자료를 더 받을 수 없어요." />
@@ -288,15 +324,15 @@ export default async function StudyPage() {
                               )}
                             </div>
                           ) : (
-                            <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-col gap-2">
                               <p className="text-slate">
                                 {studyWindow && phase === "after"
                                   ? "신청 기간이 끝났어요. 다음 달 개강일부터 3일 동안 다시 신청할 수 있어요."
                                   : studyWindow
-                                    ? `${shortDay(studyWindow.startsOn)}부터 수업일마다 그날 자료가 열려요.`
-                                    : "수업일마다 그날 자료가 열려요."}
+                                    ? `${shortDay(studyWindow.startsOn)}부터 수업일마다 그날 내 레벨의 자료가 열려요.`
+                                    : "수업일마다 그날 내 레벨의 자료가 열려요."}
                               </p>
-                              {canAct && <StudySignupButton studyId={study.id} slotId={null} label="신청하기" />}
+                              {canAct && <OnlineSignupForm studyId={study.id} levels={studyLevelsOf(study.kind)} />}
                             </div>
                           )}
                         </div>

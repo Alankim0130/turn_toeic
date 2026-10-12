@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireCrew } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { isSafeObjectPath, type UploadedFile } from "@/lib/upload";
-import { studyErrorMessage } from "@/lib/study";
+import { MATERIAL_LEVELS, studyErrorMessage, studyLevelLabel } from "@/lib/study";
 import { MATERIAL_ROUND_MAX } from "@/lib/study-rounds";
 import { droppedNoteImages, isMaterialNoteImage, materialNoteError, STUDY_MATERIAL_BUCKET as BUCKET } from "@/lib/study-note";
 import { noteImagePaths } from "@/lib/note-format";
@@ -49,14 +49,15 @@ async function removeNoteImagesIfUnused(supabase: Awaited<ReturnType<typeof crea
  * 비대면 자료 회차 저장 (2026-09-22 Alan — "1회차, 2회차... 이렇게 설정하고 매달 강사들이 설정한 일정표에 따라 적용").
  * 파일은 브라우저가 먼저 저장소(`items/…`)에 올리고, 여기서는 자료실 행만 만든다/고친다.
  * 그 달 날짜에 붙이는 일은 DB 가 한다 (자료실 트리거 → `private.sync_online_materials`).
- *  - itemId 없음: 새 회차 (파일 필수)
- *  - itemId 있음: 제목·안내 문구 수정, file 이 있으면 파일 교체 후 옛 파일 삭제
+ *  - itemId 없음: 새 회차 (파일 필수). `level` 은 0(공통) · 1 · 2 · 3 — 회차 × 레벨이 한 칸이다 (2026-10-12)
+ *  - itemId 있음: 제목·안내 문구 수정, file 이 있으면 파일 교체 후 옛 파일 삭제 (레벨은 바꾸지 않는다 — 다른 레벨에 올리려면 그 탭에서)
  * 안내 문구(2026-09-30 Alan "각 회차마다 안내문구")는 그 달 적용분으로 복사돼 학생 `/my/study` 의 그 회차 줄에 보인다.
  * 2026-10-05 부터 안내는 공지와 같은 서식 글(5만 자 · 사진 `notes/…`)이다 — `materialNoteError` 가 폼과 같은 말로 다시 보고,
  * 고치면서 뺀 사진은 아무 안내도 가리키지 않을 때만 저장소에서 지운다.
  */
 export async function saveMaterialItem(input: {
   seq: number;
+  level?: number;
   title: string;
   note?: string | null;
   itemId?: number | null;
@@ -65,11 +66,13 @@ export async function saveMaterialItem(input: {
   // 조교도 올린다 (2026-10-07 Alan) — DB 정책(study_material_items · 버킷 study-materials)도 crew 다 (마이그레이션 20261007100000)
   const { user } = await requireCrew();
   const seq = Number(input.seq);
+  const level = Number(input.level ?? 0);
   const title = String(input.title ?? "").trim();
   const note = String(input.note ?? "").trim();
   const file = input.file ?? null;
 
   if (!Number.isInteger(seq) || seq < 1 || seq > MATERIAL_ROUND_MAX) return { ok: false, error: "회차를 확인해 주세요." };
+  if (!(MATERIAL_LEVELS as readonly number[]).includes(level)) return { ok: false, error: "레벨을 확인해 주세요." };
   if (title.length > 100) return { ok: false, error: "제목은 100자 이내로 적어 주세요." };
   const noteError = materialNoteError(note);
   if (noteError) return { ok: false, error: noteError };
@@ -84,6 +87,7 @@ export async function saveMaterialItem(input: {
     if (!file) return { ok: false, error: "올릴 파일을 선택해 주세요." };
     const { error } = await supabase.from("study_material_items").insert({
       seq,
+      level,
       title: title || null,
       note: note || null,
       file_path: file.path,
@@ -93,7 +97,7 @@ export async function saveMaterialItem(input: {
       uploaded_by: user.id,
     });
     if (error) {
-      return { ok: false, error: error.code === "23505" ? "이 회차에는 이미 자료가 있어요. 새로고침한 뒤 '수정'에서 파일을 교체해 주세요." : studyErrorMessage(error) };
+      return { ok: false, error: error.code === "23505" ? `이 회차의 ${studyLevelLabel(level)} 자료가 이미 있어요. 새로고침한 뒤 '수정'에서 파일을 교체해 주세요.` : studyErrorMessage(error) };
     }
     revalidateMaterials();
     return { ok: true };

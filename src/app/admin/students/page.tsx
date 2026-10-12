@@ -28,8 +28,8 @@ const TABS = [
 ];
 const CREW_ROLES = ["instructor", "admin", "assistant"] as const;
 
-/** "대면스터디" → "대면" (명단은 칸이 좁다). 신청 순서는 STUDY_KINDS 를 따른다 */
-const studyShort = (kind: string) => (STUDY_KIND_LABEL[kind] ?? kind).replace("스터디", "");
+/** "단어 스터디" → "단어" · "비대면스터디" → "비대면" (명단은 칸이 좁다). 신청 순서는 STUDY_KINDS 를 따른다 */
+const studyShort = (kind: string) => (STUDY_KIND_LABEL[kind] ?? kind).replace(/\s*스터디$/, "");
 
 export default async function StudentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string }> }) {
   // 조교는 이 화면을 쓸 수 없다 — 학생명단은 개인정보가 있어 강사 · 관리자만 (2026-10-03 Alan. 그전에는 조교도 봤다).
@@ -82,7 +82,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
     ids.length
       ? supabase.rpc("student_auth_info", { p_ids: ids })
       : Promise.resolve({ data: [] as { user_id: string; email: string | null; providers: string[]; last_sign_in_at: string | null; avatar_url: string | null }[] }),
-    // 이번(또는 곧 올) 기수의 스터디 신청 — 대면 · 비대면 · 단어
+    // 이번(또는 곧 올) 기수의 스터디 신청 — 단어 · 비대면
     ids.length && term
       ? supabase.from("study_signups").select("user_id, study:studies!inner(kind, term_id)").in("user_id", ids).eq("study.term_id", term.id)
       : Promise.resolve({ data: [] as { user_id: string; study: { kind: string } | null }[] }),

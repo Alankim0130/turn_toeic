@@ -10,7 +10,7 @@ import { FilterTabs } from "@/components/admin/FilterTabs";
 import { TermChips } from "@/components/admin/TermChips";
 import { CheckinRoster } from "@/components/admin/studies/CheckinRoster";
 import { CheckinBoard, type CheckinGroup, type CheckinRow } from "@/components/admin/study-checkins/CheckinBoard";
-import { termParam } from "@/lib/study";
+import { STUDY_LEVEL_ALL, studyLevelLabel, studyLevelsOf, materialVisibleTo, termParam } from "@/lib/study";
 import { isCheckinChecked } from "@/lib/study-checkin";
 import { week5SectionIds, collapseWeek5 } from "@/lib/week5";
 import { requireCrew } from "@/lib/auth";
@@ -48,13 +48,15 @@ type Checkin = {
  * 학생 이름은 이름 · 등급만 주는 `getProfileNames` 로 읽는다 (조교는 profiles 를 못 읽는다 — 등급 체계 9-2).
  * **숙제점검과는 완전히 다른 일이다** (2026-09-19 Alan "철저하게 분리") — 사진 보기(`PhotoViewer`)만 함께 쓴다.
  */
-export default async function StudyCheckinsPage({ searchParams }: { searchParams: Promise<{ term?: string; view?: string; done?: string }> }) {
+export default async function StudyCheckinsPage({ searchParams }: { searchParams: Promise<{ term?: string; view?: string; done?: string; level?: string }> }) {
   await requireCrew();
   const sp = await searchParams;
   const supabase = await createClient();
   const today = todayKST();
   const view = sp.view === "grid" ? "grid" : "board";
   const done = sp.done === "1";
+  // 한눈에 보기의 레벨 거르기 (2026-10-12) — 비우면 전체. `none` = 레벨을 아직 안 고른 학생
+  const levelFilter = sp.level === "none" ? "none" : studyLevelsOf("online").includes(Number(sp.level)) ? Number(sp.level) : null;
 
   // 비대면 스터디가 있는 기수만 고른다
   const { data: onlineStudies } = await supabase.from("studies").select("id, term_id, status, term:terms(id, year, month, enrollment_opens_at, closes_at)").eq("kind", "online");
@@ -93,8 +95,9 @@ export default async function StudyCheckinsPage({ searchParams }: { searchParams
 
   const termKey = termParam(term.year, term.month);
   const [{ data: materialRows }, { data: signups }] = await Promise.all([
-    supabase.from("study_materials").select("id, seq, date, title").eq("study_id", study.id).order("date", { ascending: false }),
-    supabase.from("study_signups").select("user_id").eq("study_id", study.id),
+    // 자료는 레벨마다 한 줄 (0 = 공통) · 신청자는 레벨과 함께 — 그 레벨의 자료만 그 학생의 것이다 (2026-10-12)
+    supabase.from("study_materials").select("id, seq, level, date, title").eq("study_id", study.id).order("date", { ascending: false }).order("level"),
+    supabase.from("study_signups").select("user_id, level").eq("study_id", study.id),
   ]);
   const materials = materialRows ?? [];
   const { rows: checkins, legacy } = await getCheckins(
@@ -104,6 +107,9 @@ export default async function StudyCheckinsPage({ searchParams }: { searchParams
 
   // 이름 — 신청자 · 인증한 학생 · 확인한 사람 (이름 · 등급만 주는 함수로 — 조교는 profiles 를 못 읽는다)
   const signupIds = [...new Set((signups ?? []).map((s) => s.user_id))];
+  const levelOf = new Map((signups ?? []).map((s) => [s.user_id, s.level]));
+  // 레벨마다 몇 명 — 게시판 묶음의 "신청 N" 은 그 자료(레벨)를 받는 학생 수다
+  const signupCountFor = (materialLevel: number) => signupIds.filter((id) => materialVisibleTo(materialLevel, levelOf.get(id))).length;
   const studentIds = [...new Set([...signupIds, ...checkins.map((c) => c.user_id)])];
   const names = await getProfileNames(supabase, [...studentIds, ...checkins.flatMap((c) => (c.checked_by ? [c.checked_by] : []))]);
   const classesOf = await getTermClasses(supabase, studentIds, term.id);
@@ -136,10 +142,12 @@ export default async function StudyCheckinsPage({ searchParams }: { searchParams
       {view === "grid" ? (
         <GridView
           term={term}
+          termKey={termKey}
           materials={materials}
           checkins={checkins}
-          students={signupIds.map((id) => ({ id, name: names.get(id)?.name ?? "", classes: classesOf.get(id) ?? [] }))}
+          students={signupIds.map((id) => ({ id, name: names.get(id)?.name ?? "", classes: classesOf.get(id) ?? [], level: levelOf.get(id) ?? null }))}
           today={today}
+          levelFilter={levelFilter}
         />
       ) : (
         <BoardView
@@ -147,7 +155,7 @@ export default async function StudyCheckinsPage({ searchParams }: { searchParams
           termName={termLabel(term)}
           done={done}
           unchecked={unchecked}
-          groups={boardGroups({ materials, checkins, signups: signupIds.length, done, today, nameOf, classesOf })}
+          groups={boardGroups({ materials, checkins, signupCountFor, done, today, nameOf, classesOf })}
         />
       )}
     </>
@@ -202,27 +210,48 @@ function BoardView({ termKey, termName, done, unchecked, groups }: { termKey: st
 /** 한눈에 보기 — 학생 × 날짜 격자 + 날짜별 미인증 독촉 (예전 스터디 신청자 화면의 인증 현황) */
 function GridView({
   term,
+  termKey,
   materials,
   checkins,
   students,
   today,
+  levelFilter,
 }: {
   term: TermLite;
-  materials: { id: number; seq: number | null; date: string; title: string | null }[];
+  termKey: string;
+  materials: { id: number; seq: number | null; level: number; date: string; title: string | null }[];
   checkins: Checkin[];
-  students: { id: string; name: string; classes: string[] }[];
+  students: { id: string; name: string; classes: string[]; level: number | null }[];
   today: string;
+  /** 레벨 거르기 — null 전체 · 숫자 그 레벨 · "none" 레벨 미정 */
+  levelFilter: number | "none" | null;
 }) {
   if (students.length === 0) {
     return <EmptyState icon="online" title="아직 신청한 수강생이 없어요" description={`${termLabel(term)} 비대면 스터디를 신청한 수강생이 생기면 날짜별 인증 현황이 여기에 나와요.`} />;
   }
+  // 레벨마다 학생 수 — 탭의 숫자. 레벨을 안 고른 학생이 있을 때만 '레벨 미정' 탭
+  const countOf = (l: number | null) => students.filter((st) => (st.level ?? null) === l).length;
+  const shown = levelFilter === null ? students : students.filter((st) => (levelFilter === "none" ? st.level == null : st.level === levelFilter));
   return (
     <section>
       <h2 className="mb-2 text-base font-black text-ink">
         날짜별 인증 현황 <span className="text-sm font-semibold text-slate">— 자료를 풀고 인증하지 않은 학생에게 알림을 보낼 수 있어요</span>
       </h2>
+      {/* 레벨별로 본다 (2026-10-12) — 자료가 레벨마다 달라서. 숫자는 신청한 학생 수 */}
+      <FilterTabs
+        basePath="/admin/study-checkins"
+        paramKey="level"
+        current={levelFilter === null ? "" : String(levelFilter)}
+        keep={{ term: termKey, view: "grid" }}
+        variant="outline"
+        tabs={[
+          { value: "", label: "전체", count: students.length },
+          ...studyLevelsOf("online").map((l) => ({ value: String(l), label: studyLevelLabel(l), count: countOf(l) })),
+          ...(countOf(null) > 0 ? [{ value: "none", label: "레벨 미정", count: countOf(null) }] : []),
+        ]}
+      />
       <CheckinRoster
-        students={students}
+        students={shown}
         materials={materials}
         checkins={checkins.map((c) => ({ material_id: c.material_id, user_id: c.user_id, created_at: c.created_at, files: c.study_checkin_files.length }))}
         today={today}
@@ -236,9 +265,10 @@ function GridView({
  * 묶음 머리글의 숫자는 그 날 전체(인증 · 신청 · 확인 전)다 — 보고 있는 줄 수가 아니다.
  */
 function boardGroups(input: {
-  materials: { id: number; seq: number | null; date: string; title: string | null }[];
+  materials: { id: number; seq: number | null; level: number; date: string; title: string | null }[];
   checkins: Checkin[];
-  signups: number;
+  /** 그 자료(레벨)를 받는 학생 수 — 공통(0)은 전원 */
+  signupCountFor: (materialLevel: number) => number;
   done: boolean;
   today: string;
   nameOf: (id: string) => string;
@@ -280,10 +310,12 @@ function boardGroups(input: {
         photos,
       };
     });
-    const counts = [`인증 ${all.length}${input.signups ? ` / 신청 ${input.signups}` : ""}`, `확인 전 ${waiting}`, m.date > input.today ? "공개 전" : null].filter(Boolean).join(" · ");
-    // 자료 제목이 회차 이름 그대로(`2회차`)면 되풀이하지 않는다
+    const signups = input.signupCountFor(m.level);
+    const counts = [`인증 ${all.length}${signups ? ` / 신청 ${signups}` : ""}`, `확인 전 ${waiting}`, m.date > input.today ? "공개 전" : null].filter(Boolean).join(" · ");
+    // 자료 제목이 회차 이름 그대로(`2회차`)면 되풀이하지 않는다. 레벨은 늘 적는다 — 같은 날 자료가 레벨마다 있다 (공통은 '공통')
     const title = m.title && m.title.trim() !== `${m.seq}회차` ? ` · ${m.title.trim()}` : "";
-    return [{ key: m.id, title: `${round}${day}${title}`, counts, rows }];
+    const level = m.level === STUDY_LEVEL_ALL ? " · 공통" : ` · ${studyLevelLabel(m.level)}`;
+    return [{ key: m.id, title: `${round}${day}${level}${title}`, counts, rows }];
   });
 }
 

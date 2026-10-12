@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getSessionUser } from "@/lib/auth";
 import { todayKST } from "@/lib/utils";
 import { week5SectionIds } from "@/lib/week5";
+import { materialVisibleTo } from "@/lib/study";
 import type { EnrollSection } from "@/lib/enroll-options";
 import { fetchOpenEnrollSections } from "@/lib/open-sections";
 import { isMaterialSubject, materialAccess, materialLinks, type MaterialSubject } from "@/lib/class-materials";
@@ -455,15 +456,24 @@ export const getMyStudySignups = cache(async () => {
   const { data } = await supabase
     .from("study_signups")
     .select(
-      `id, study_id, slot_id, created_at,
+      // 레벨 · 변경 요청 칸은 2026-10-12 부터 (마이그레이션 20261012100000)
+      `id, study_id, slot_id, created_at, level, requested_level, requested_slot_id, requested_at, request_result, request_decided_at,
        study:studies!study_signups_study_id_fkey(id, kind, status, notice, term_id, term:terms(id, year, month, enrollment_opens_at)),
-       slot:study_slots!study_signups_slot_id_study_id_fkey(id, start_time, end_time)`,
+       slot:study_slots!study_signups_slot_id_study_id_fkey(id, start_time, end_time, level)`,
     )
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
   return (data ?? []).filter((s) => s.study);
 });
 export type MyStudySignup = Awaited<ReturnType<typeof getMyStudySignups>>[number];
+
+/** 스터디의 시간대(레벨 포함) — 모두에게 같은 공용 목록이라 좁히지 않는다 (단어 스터디의 레벨 변경 요청 칸이 고른다, 2026-10-12) */
+export async function getStudySlots(studyIds: number[]) {
+  if (studyIds.length === 0) return [];
+  const supabase = await createClient();
+  const { data } = await supabase.from("study_slots").select("id, study_id, start_time, end_time, capacity, applied_count, level").in("study_id", studyIds);
+  return data ?? [];
+}
 
 /** 내가 받을 수 있는 비대면 자료 (RLS: 신청했고, 수강 중이고, 해당 날짜가 된 것만) */
 /**
@@ -478,11 +488,13 @@ export async function getMyStudyMaterials() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("study_materials")
-    .select("id, study_id, seq, date, title, note, file_name, file_size, content_type, updated_at")
+    .select("id, study_id, seq, level, date, title, note, file_name, file_size, content_type, updated_at")
     .in("study_id", studyIds)
     .lte("date", todayKST())
     .order("date", { ascending: false });
-  return data ?? [];
+  // 내 레벨의 자료와 공통(0)만 — 정책의 학생 갈래와 같다 (2026-10-12). 레벨을 아직 안 고른 신청은 공통만
+  const levelOf = new Map(signups.map((g) => [g.study_id, g.level]));
+  return (data ?? []).filter((m) => materialVisibleTo(m.level, levelOf.get(m.study_id)));
 }
 export type MyStudyMaterial = Awaited<ReturnType<typeof getMyStudyMaterials>>[number];
 
