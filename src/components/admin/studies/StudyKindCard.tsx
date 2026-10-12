@@ -110,17 +110,19 @@ export function StudyKindCard({ kind, study, termKey }: { kind: string; study: P
           <AddSlotForm studyId={study.id} />
         </div>
       ) : (
-        <div className="mt-4 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
+        /* 글 아래에 버튼 줄 — 늘 세로다 (2026-10-12 Alan "pc모드에서 쫌 이상하게 보여"). 그전에는 sm 부터 글 · 버튼을 한 줄에 두어
+           두 장이 나란히 서는 PC 에서 글이 버튼 둘에 밀려 한 글자씩 세로로 쪼개졌다 (카드 폭 ~430px 에 버튼 둘이 ~300px) */
+        <div className="mt-4 flex flex-col gap-3 border-t border-line pt-4">
           <p className="text-sm text-slate">
             이 달에 들어간 자료 <strong className="text-ink">{study.materialCount}회차</strong> · 신청은 개강일부터 3일 동안만 받고, 1회차는 4일째부터의 첫 수업일이에요. 자료는 회차로 한 번 올리면 매달 수업일 순서대로 열려요.
           </p>
-          <div className="flex shrink-0 flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link href={`/admin/study-materials?term=${termKey}`} className="btn-primary !py-2">
               <Icon name="upload" size={18} className="brightness-0 invert" />
               날짜별 자료 올리기
             </Link>
-            {/* 비대면 풀이는 숙제점검이 아니라 인증 현황에서 본다 (2026-09-23 Alan — 두 일은 따로 관리한다) */}
-            <Link href={`/admin/study?term=${termKey}&kind=online`} className="btn-secondary !py-2">
+            {/* 비대면 풀이는 숙제점검이 아니라 비대면스터디 인증 게시판에서 본다 (2026-09-23 Alan — 두 일은 따로 관리한다 · 2026-10-08 제 화면으로) */}
+            <Link href={`/admin/study-checkins?term=${termKey}`} className="btn-secondary !py-2">
               <Icon name="study" size={18} />
               인증 현황
             </Link>

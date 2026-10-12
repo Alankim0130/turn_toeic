@@ -13,6 +13,8 @@ import {
   lectureCameo,
   lectureOpensAt,
   lectureState,
+  lectureSubjectBlock,
+  lectureSubjectNote,
   lectureTitle,
   needsReviewLink,
   seatsLeft,
@@ -22,16 +24,18 @@ import {
 import { InstructorCameo } from "@/components/ui/InstructorCameo";
 import { LectureCancelButton, LectureSignupButton, SignupOpensIn } from "@/components/my/LectureSignup";
 import { BreakableUrl, YBM_REVIEW_GUIDE_ID, YbmReviewGuide } from "@/components/my/YbmReviewGuide";
-import { getMyLectures, getMyLectureSignups } from "../_lib/queries";
+import { getMyLectures, getMyLectureSignups, getMyStudyEligibility } from "../_lib/queries";
 
 export const metadata: Metadata = { title: "특강 신청", robots: { index: false } };
 
 export default async function MyLecturePage() {
   // 잠금 판정과 데이터를 함께 받는다 (loadGated)
-  const g = await loadGated("lecture", () => Promise.all([getMyLectures(), getMyLectureSignups()]));
+  const g = await loadGated("lecture", () => Promise.all([getMyLectures(), getMyLectureSignups(), getMyStudyEligibility()]));
   if (g.locked) return g.locked;
-  const [lectures, mySignups] = g.data;
+  const [lectures, mySignups, { subjectsByTerm }] = g.data;
   const today = todayKST();
+  // 단과 학생은 제 과목 특강만 (2026-10-12 Alan — "RC 단과반은 LC특강신청이 안되고, LC단과는 RC특강신청이 안되도록"). 막는 것은 DB 트리거이고 여기서는 버튼을 그리지 않는다
+  const blockedFor = (l: (typeof lectures)[number]) => (mySignups.has(l.id) ? [] : lectureSubjectBlock(l.kinds, subjectsByTerm.get(l.term_id) ?? new Set<string>()));
 
   // 신청을 받는 특강만. 지난 특강은 내가 신청한 것만 남겨 기록을 보여 준다
   const open = lectures
@@ -39,7 +43,7 @@ export default async function MyLecturePage() {
     .sort((a, b) => a.date.localeCompare(b.date));
   // 3주차 모의고사 특강은 YBM 수강후기 링크를 올려야 신청된다 (2026-10-08 Alan) — 아직 할 일이 남은 특강이 있을 때만 쓰는 법을 보여 준다
   const reviewFor = (l: (typeof open)[number]) => needsReviewLink(l, l.term?.enrollment_opens_at);
-  const showGuide = open.some((l) => reviewFor(l) && !mySignups.has(l.id) && lectureState(l, today) !== "closed");
+  const showGuide = open.some((l) => reviewFor(l) && !mySignups.has(l.id) && lectureState(l, today) !== "closed" && blockedFor(l).length === 0);
 
   return (
     <div className="space-y-6">
@@ -68,6 +72,8 @@ export default async function MyLecturePage() {
             // 강사 캐리커처 + 한마디, 잠긴 특강의 D-day (2026-10-02 Alan)
             const cameo = lectureCameo(l.lecturer?.name, l.kinds);
             const dday = signupDday(l, today);
+            const blocked = blockedFor(l);
+            const mySubjects = subjectsByTerm.get(l.term_id) ?? new Set<string>();
             return (
               <Reveal key={l.id} delay={i * 60}>
                 <article className={cn("card flex h-full flex-col gap-3 p-4", applied && "border-brand-300 bg-brand-50/40")}>
@@ -79,8 +85,13 @@ export default async function MyLecturePage() {
                         {l.lecturer?.name && <span className="ml-2 font-bold text-violet-700">{l.lecturer.name}</span>}
                       </p>
                     </div>
-                    <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-bold", applied ? "bg-brand-500 text-white" : LECTURE_STATE_CLASS[state])}>
-                      {applied ? "신청 완료" : LECTURE_STATE_LABEL[state]}
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-full px-2.5 py-1 text-xs font-bold",
+                        applied ? "bg-brand-500 text-white" : blocked.length > 0 ? "bg-line text-slate" : LECTURE_STATE_CLASS[state],
+                      )}
+                    >
+                      {applied ? "신청 완료" : blocked.length > 0 ? "내 과목 아님" : LECTURE_STATE_LABEL[state]}
                     </span>
                   </div>
 
@@ -113,14 +124,22 @@ export default async function MyLecturePage() {
                     )}
                   </div>
 
-                  {state === "not_open" && dday !== null && (
-                    <SignupOpensIn opensAt={lectureOpensAt(l)} label={formatKstDateTime(lectureOpensAt(l))} dday={ddayLabel(dday)} />
+                  {blocked.length > 0 ? (
+                    <p className="rounded-xl bg-line/60 px-3 py-2.5 text-xs font-semibold text-slate">
+                      {lectureSubjectNote(blocked, mySubjects)} <span className="font-normal text-mist">내 수업 과목의 특강과 모의고사는 신청할 수 있어요.</span>
+                    </p>
+                  ) : (
+                    <>
+                      {state === "not_open" && dday !== null && (
+                        <SignupOpensIn opensAt={lectureOpensAt(l)} label={formatKstDateTime(lectureOpensAt(l))} dday={ddayLabel(dday)} />
+                      )}
+
+                      {review && (applied || state !== "closed") && <ReviewLinkNote applied={applied} reviewUrl={reviewUrl} notOpen={state === "not_open"} />}
+                    </>
                   )}
 
-                  {review && (applied || state !== "closed") && <ReviewLinkNote applied={applied} reviewUrl={reviewUrl} notOpen={state === "not_open"} />}
-
                   <div className="mt-auto flex flex-wrap items-center justify-end gap-2">
-                    {applied ? (
+                    {blocked.length > 0 ? null : applied ? (
                       state === "open" || state === "full" ? (
                         <LectureCancelButton lectureId={l.id} />
                       ) : (

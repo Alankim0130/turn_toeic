@@ -1,4 +1,6 @@
 import { CLASS_MATERIAL_LINK_URL_MAX, normalizeLinkUrl } from "@/lib/class-materials";
+import { isSubject, SUBJECT_LABEL, type Subject } from "@/lib/instructor-subject";
+import { isContainerProgram } from "@/lib/two-week";
 import { lectureKindLabel, sortLectureKinds } from "@/lib/utils";
 
 /**
@@ -198,3 +200,37 @@ export function reviewLinkError(message: string | null | undefined): string | nu
   if (message === "review_link_reused") return "예전 달 특강 신청에 쓴 후기 링크예요. 이번 달 후기를 새로 써서 그 링크를 올려 주세요.";
   return null;
 }
+
+/**
+ * **단과 학생은 제 과목 특강만** (2026-10-12 Alan — "특강신청에서 RC 단과반은 LC특강신청이 안되고, LC단과는 RC특강신청이 안되도록 설정이 되어야해").
+ *
+ * 반 하나가 주는 과목 — 단과 상품(`courses.course_type` lc · rc) = 그 과목 · 그릇 반(속성반 · 2주완성 — 품은 반이 두 과목) · **과목 칸이 빈 반**
+ * (묶음 120 · 140분 · 방학달 통짜 — 두 과목을 이어 듣는다. 아직 안 고른 반도 짐작해 막지 않는다) = 두 과목 · 시간 단위 반 = 그 반의 과목 칸(`class_sections.subject`).
+ * 학생명단 이름표 `RC단과` · `LC단과`(`singleSubjectOf`, section-type.ts)와 같은 읽기다. 반이 여럿이면 합집합 — 650 RC 단과 + 750 LC 단과면 두 과목 다.
+ * DB `private.lecture_subjects_of`(마이그레이션 20261012110000 — 신청을 넣을 때 트리거 `lecture_signups_eligible_subject` 가 막는다)와 같은 규칙 — 바꾸면 둘 다 (lecture.test.ts 가 SQL 도 본다).
+ */
+export function sectionSubjects(s: { subject?: string | null; course?: { course_type?: string | null; program?: string | null } | null }): Subject[] {
+  const type = s.course?.course_type;
+  if (isSubject(type)) return [type];
+  if (isContainerProgram(s.course?.program)) return ["lc", "rc"];
+  return isSubject(s.subject) ? [s.subject] : ["lc", "rc"];
+}
+
+/**
+ * 특강 종류(kinds) 중 내가 듣지 않는 과목 — 비어 있으면 신청할 수 있다. 모의고사만인 특강은 늘 비고(누구나), `RC특강 + 2차 모의고사` 처럼
+ * 과목이 든 특강은 그 과목을 들어야 한다. 내 과목을 모르면(빈 집합 — 그 달 수강생이 아님) 막지 않는다 — DB 도 그때는 정책(lecture_signup_open)이 막는다.
+ */
+export function lectureSubjectBlock(kinds: readonly string[] | null | undefined, mine: ReadonlySet<string>): Subject[] {
+  if (mine.size === 0) return [];
+  return (kinds ?? []).filter((k): k is Subject => isSubject(k) && !mine.has(k));
+}
+
+/** 막힌 특강 카드에 적는 말 — "RC 단과 수강생은 LC특강을 신청할 수 없어요" */
+export function lectureSubjectNote(blocked: readonly Subject[], mine: ReadonlySet<string>): string {
+  const me = [...mine].filter(isSubject).map((s) => SUBJECT_LABEL[s]).join(" · ");
+  const kinds = sortLectureKinds([...blocked]).map(lectureKindLabel).join(" · ");
+  return `${me} 단과 수강생은 ${kinds}을 신청할 수 없어요.`;
+}
+
+/** 신청을 넣을 때 DB 트리거가 낸 `lecture_subject_mismatch` → 학생에게 보일 말 (주소를 직접 불러 넣는 길도 같은 규칙이다) */
+export const LECTURE_SUBJECT_ERROR = "내 수업 과목이 아닌 특강이에요. RC 단과는 RC 특강, LC 단과는 LC 특강만 신청할 수 있어요.";
