@@ -131,13 +131,14 @@ describe("homeworkFilesError — 폼과 서버 액션이 같은 규칙", () => {
     expect(homeworkFilesError([...Array.from({ length: MAX_PHOTOS }, () => photo()), ...Array.from({ length: MAX_AUDIOS }, () => audio())])).toBeNull();
   });
 
-  it("사진 한도는 예전 그대로 10장 — 음성은 따로 센다", () => {
-    expect(MAX_PHOTOS).toBe(10);
+  it('사진 한도는 30장 (2026-10-12 Alan "이미지를 다 못올리는 학생들이 있어" — 그전 10장) — 음성은 따로 센다', () => {
+    expect(MAX_PHOTOS).toBe(30);
     expect(homeworkFilesError(Array.from({ length: MAX_PHOTOS + 1 }, () => photo()))).toContain(`${MAX_PHOTOS}장까지`);
     expect(homeworkFilesError(Array.from({ length: MAX_AUDIOS + 1 }, () => audio()))).toContain(`${MAX_AUDIOS}개까지`);
   });
 
-  it("크기 — 사진 20MB · 음성 50MB (끝값은 들어간다)", () => {
+  it("크기 — 사진 · 음성 모두 버킷 한도 50MB (끝값은 들어간다. 사진은 2026-10-12 전까지 앱이 20MB 로 막았다)", () => {
+    expect(MAX_PHOTO_MB).toBe(50);
     expect(homeworkFilesError([photo(MAX_PHOTO_MB * MB)])).toBeNull();
     expect(homeworkFilesError([photo(MAX_PHOTO_MB * MB + 1)])).toContain(`${MAX_PHOTO_MB}MB`);
     expect(homeworkFilesError([audio(MAX_AUDIO_MB * MB)])).toBeNull();
@@ -173,6 +174,19 @@ describe("homework 버킷 — 마이그레이션과 같은 값", () => {
     const audio = readFileSync(`${dir}/20261007120000_homework_audio.sql`, "utf8");
     expect(audio).toContain(`file_size_limit    = ${MAX_AUDIO_MB} * 1024 * 1024`);
     expect(MAX_PHOTO_MB).toBeLessThanOrEqual(MAX_AUDIO_MB);
+  });
+});
+
+describe("강사 사진 뷰어 — 축소본을 못 받은 사진은 원본으로 (2026-10-12 사진 한 장 50MB 까지 — 저장소는 25MB · 50MP 를 넘는 원본을 줄이지 못한다)", () => {
+  const viewer = readFileSync(new URL("../components/admin/PhotoViewer.tsx", import.meta.url), "utf8");
+
+  it("큰 그림은 ?w= 가 실패하면(onError) 같은 주소를 크기 없이 다시 받고, 작은 칸은 번호만 적는다", () => {
+    expect(viewer).toContain("onError={() => markRaw(photo.id)}");
+    expect(viewer).toContain("raw.has(photo.id) ? `${fileBase}/${photo.id}` : `${fileBase}/${photo.id}?w=${VIEW_WIDTH}`");
+    expect(viewer).toContain("onError={() => markRaw(p.id)}");
+    expect(viewer).toContain("raw.has(p.id) ? (");
+    // 원본도 실패하면 집합에 이미 있어 주소가 그대로다 — 끝없이 다시 받지 않는다
+    expect(viewer).toContain("prev.has(id) ? prev : new Set(prev).add(id)");
   });
 });
 

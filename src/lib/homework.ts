@@ -25,16 +25,22 @@ export const SUBJECT_ICON: Record<HomeworkSubject, IconName> = { rc: "rc", lc: "
 
 export const isSubject = (v: string): v is HomeworkSubject => (HOMEWORK_SUBJECTS as readonly string[]).includes(v);
 
-/** 제출 1건당 사진 수 */
-export const MAX_PHOTOS = 10;
 /**
- * 사진 한 장 크기. homework 버킷 한도는 음성 때문에 50MB 라(형식마다 따로 못 둔다) **사진 20MB 는 폼과 서버 액션이 본다**.
+ * 제출 1건당 사진 수 (2026-10-12 Alan — "숙제제출에서 용량이 초과되서 이미지를 다 못올리는 학생들이 있어. 업로드 용량을 쫌 더 늘려줘" — 10장 → 30장).
+ * 그전에는 10장이라 교재 여러 쪽을 찍은 학생은 폼이 "사진은 10장까지 올릴 수 있어서 N장은 빠졌어요" 로 나머지를 떨어뜨렸다.
+ * 사진은 브라우저가 저장소에 한 장씩 바로 올리고 서버 액션은 경로만 받으므로(본문 1MB 한도) 장수를 늘려도 서버 쪽은 그대로다.
  */
-export const MAX_PHOTO_MB = 20;
+export const MAX_PHOTOS = 30;
+/**
+ * 사진 한 장 크기 — **homework 버킷 한도(50MB, 마이그레이션 20261007120000)와 같다** (2026-10-12 — 그전에는 앱이 20MB 로 막았다).
+ * 버킷은 형식마다 한도를 따로 못 두어 사진 · 음성이 한 값이다. 25MB 를 넘는 사진은 저장소가 축소본(`?w=`)을 못 만들어
+ * 강사 뷰어(`PhotoViewer`)가 원본으로 되돌려 보여 준다.
+ */
+export const MAX_PHOTO_MB = 50;
 /**
  * 음성 파일 — 제출 1건당 개수 · 한 개 크기 (2026-10-07 Alan — "학생들이 숙제제출할때 음성파일도 올릴수 있도록 부탁해!").
  * 크기는 homework 버킷 한도(마이그레이션 20261007120000)와 같다 — LC 음원 버킷과 같은 50MB 다.
- * 사진과 따로 센다 — 사진만 내던 학생의 한도(10장)는 그대로다.
+ * 사진과 따로 센다.
  */
 export const MAX_AUDIOS = 5;
 export const MAX_AUDIO_MB = 50;

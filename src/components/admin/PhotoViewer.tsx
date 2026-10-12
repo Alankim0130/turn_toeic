@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 export type ViewerPhoto = { id: number; name: string };
 
-/** 크게 볼 때 받는 폭 — 원본(장당 20MB)을 그대로 받으면 휴대폰에서 한 장마다 한참 기다린다 */
+/** 크게 볼 때 받는 폭 — 원본(장당 50MB 까지)을 그대로 받으면 휴대폰에서 한 장마다 한참 기다린다 */
 const VIEW_WIDTH = 1200;
 /** 아래 줄 썸네일 폭 */
 const THUMB_WIDTH = 200;
@@ -52,6 +52,13 @@ export function PhotoViewer({ photos, student, fileBase }: { photos: ViewerPhoto
    */
   const [turn, setTurn] = useState({ at: 0, deg: 0 });
   const [box, setBox] = useState({ w: 0, h: 0 });
+  /**
+   * 축소본(`?w=`)을 못 받은 사진 — 저장소는 25MB · 50MP 를 넘는 원본을 줄이지 못한다 (2026-10-12 부터 사진 한 장이 50MB 까지라 생길 수 있다).
+   * 그 장은 큰 그림을 **원본으로** 다시 받고, 아래 작은 칸은 번호만 적는다 (작은 칸까지 원본을 받으면 같은 큰 파일을 두 번 받는다).
+   * 원본도 실패하면 집합에 이미 있어 주소가 더 바뀌지 않는다 — 끝없이 다시 받지 않는다.
+   */
+  const [raw, setRaw] = useState<Set<number>>(() => new Set());
+  const markRaw = (id: number) => setRaw((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
 
   const many = photos.length > 1;
   const move = useCallback((dir: 1 | -1) => setIndex((i) => stepIndex(i, dir, photos.length)), [photos.length]);
@@ -109,7 +116,8 @@ export function PhotoViewer({ photos, student, fileBase }: { photos: ViewerPhoto
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={photo.id}
-            src={`${fileBase}/${photo.id}?w=${VIEW_WIDTH}`}
+            src={raw.has(photo.id) ? `${fileBase}/${photo.id}` : `${fileBase}/${photo.id}?w=${VIEW_WIDTH}`}
+            onError={() => markRaw(photo.id)}
             alt={`${student} 사진 ${index + 1}`}
             style={{ ...(fit ?? {}), transform: `rotate(${deg}deg)` }}
             className={cn("h-auto w-auto object-contain", !fit && "max-h-full max-w-full")}
@@ -161,8 +169,12 @@ export function PhotoViewer({ photos, student, fileBase }: { photos: ViewerPhoto
                   aria-current={i === index}
                   className={cn("block overflow-hidden rounded-lg border-2 transition", i === index ? "border-brand-500" : "border-transparent opacity-60 hover:opacity-100")}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`${fileBase}/${p.id}?w=${THUMB_WIDTH}`} alt="" loading="lazy" className="size-12 object-cover" />
+                  {raw.has(p.id) ? (
+                    <span className="flex size-12 items-center justify-center bg-ink/80 text-[11px] font-bold text-white tabular-nums">{i + 1}</span>
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={`${fileBase}/${p.id}?w=${THUMB_WIDTH}`} alt="" loading="lazy" onError={() => markRaw(p.id)} className="size-12 object-cover" />
+                  )}
                 </button>
               </li>
             ))}
