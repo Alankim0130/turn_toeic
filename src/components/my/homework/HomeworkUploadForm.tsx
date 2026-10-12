@@ -32,7 +32,7 @@ const BUCKET = "homework";
 type Picked = { key: string; file: File; url: string; type: string; quiet?: boolean };
 
 /**
- * 사진 고르기(여러 장, 최대 10장) + **음성 파일 고르기**(최대 5개, 2026-10-07 Alan — "학생들이 숙제제출할때 음성파일도
+ * 사진 고르기(여러 장, 최대 `MAX_PHOTOS` 장 — 2026-10-12 부터 30장, 그전 10장) + **음성 파일 고르기**(최대 5개, 2026-10-07 Alan — "학생들이 숙제제출할때 음성파일도
  * 올릴수 있도록 부탁해!") + 질문(선택) → 브라우저에서 Storage 로 바로 올린 뒤 서버 액션에 등록.
  * `classDate` 는 학생이 달력에서 고른 **수업 날짜**다 (2026-09-19 Alan).
  *
