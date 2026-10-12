@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   CLASS_MATERIAL_BUCKET,
@@ -37,6 +37,9 @@ import {
   noteTooLong,
   sortMaterialFiles,
   titleFromFileName,
+  fileOrderOf,
+  moveItem,
+  sortClassMaterials,
 } from "./class-materials";
 import { isSafeObjectPath } from "./upload";
 
@@ -480,5 +483,79 @@ describe("링크 — 자료 하나에 0 ~ 20개 (2026-10-06 Alan '유튜브 링�
     // 링크가 없으면 예전 그대로
     expect(materialBadge([pdf], [])).toBe("PDF");
     expect(materialBadge([], [])).toBe("글");
+  });
+});
+
+/**
+ * 순서 조정 (2026-10-12 Alan — "자료가 잘못올라가서 지우고 새로 올렸을때 원래 위치로 조정을 못하고 있어. 게시물 순서를 조정할 수 있으면 좋겠어").
+ * 파일 순서는 수정 폼이 보낸 순서(fileOrderOf)로, 자료(게시물) 순서는 class_materials.sort_order + DB 함수 move_class_material 로.
+ */
+describe("순서 조정 — moveItem · sortClassMaterials · fileOrderOf", () => {
+  it("moveItem — 한 칸 위 · 아래, 끝이면 그대로, 원본은 건드리지 않는다", () => {
+    const list = ["a", "b", "c"];
+    expect(moveItem(list, 1, -1)).toEqual(["b", "a", "c"]);
+    expect(moveItem(list, 1, 1)).toEqual(["a", "c", "b"]);
+    expect(moveItem(list, 0, -1)).toEqual(["a", "b", "c"]);
+    expect(moveItem(list, 2, 1)).toEqual(["a", "b", "c"]);
+    expect(moveItem(list, 5, 1)).toEqual(["a", "b", "c"]);
+    expect(list).toEqual(["a", "b", "c"]);
+  });
+
+  it("sortClassMaterials — sort_order → 올린 순서 → id (관리자 회차 줄과 학생 일정표가 같은 순서)", () => {
+    const rows = [
+      { id: 3, sort_order: 1, created_at: "2026-10-10T00:00:00Z" },
+      { id: 1, sort_order: 0, created_at: "2026-10-11T00:00:00Z" },
+      { id: 2, sort_order: 0, created_at: "2026-10-10T00:00:00Z" },
+      { id: 4, sort_order: 0, created_at: "2026-10-10T00:00:00Z" },
+    ];
+    expect(sortClassMaterials(rows).map((r) => r.id)).toEqual([2, 4, 1, 3]);
+    expect(sortClassMaterials(null)).toEqual([]);
+  });
+
+  it("fileOrderOf — 보낸 순서대로 0 부터, 새 파일은 경로로, 모르는 값 · 두 번 온 값은 건너뛰고 안 온 것은 끝에", () => {
+    const staying = [{ id: 10 }, { id: 11 }, { id: 12 }];
+    const files = [{ path: "p/a.pdf" }, { path: "p/b.pdf" }];
+    // 새 파일 a 를 원래 자리(둘째)로 — "지우고 새로 올렸을때 원래 위치로"
+    const order = fileOrderOf(staying, files, [{ id: 10 }, { path: "p/a.pdf" }, { id: 11 }, { id: 12 }, { path: "p/b.pdf" }]);
+    expect([...order.entries()]).toEqual([
+      ["id:10", 0],
+      ["path:p/a.pdf", 1],
+      ["id:11", 2],
+      ["id:12", 3],
+      ["path:p/b.pdf", 4],
+    ]);
+    // 안 보냈으면 남긴 파일 → 새 파일
+    expect([...fileOrderOf(staying, files, null).keys()]).toEqual(["id:10", "id:11", "id:12", "path:p/a.pdf", "path:p/b.pdf"]);
+    // 모르는 id · 경로 · 두 번 온 값 · 일부만 온 순서
+    expect([...fileOrderOf(staying, files, [{ id: 99 }, { path: "x" }, { id: 12 }, { id: 12 }, null as never]).keys()]).toEqual([
+      "id:12",
+      "id:10",
+      "id:11",
+      "path:p/a.pdf",
+      "path:p/b.pdf",
+    ]);
+  });
+
+  it("DB — class_materials.sort_order 칸 · move_class_material 은 강사 · 관리자만(is_staff) · 이웃과 바꾸고 0 부터 다시 매긴다 · anon 없음", () => {
+    const dir = "supabase/migrations";
+    const sqls = readdirSync(dir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort()
+      .map((f) => readFileSync(`${dir}/${f}`, "utf8"));
+    const all = sqls.join("\n");
+    expect(all).toContain("alter table public.class_materials add column if not exists sort_order int not null default 0;");
+    const last = sqls.filter((t) => t.includes("function public.move_class_material(")).at(-1) ?? "";
+    const start = last.indexOf("function public.move_class_material(");
+    const fn = last.slice(start, last.indexOf("$$;", start));
+    expect(fn).toContain("if not private.is_staff() then");
+    expect(fn).toContain("security definer");
+    expect(fn).toContain("set search_path = ''");
+    expect(fn).toContain("order by m.sort_order, m.created_at, m.id");
+    expect(fn).toContain("set sort_order = x.n - 1");
+    expect(last).toContain("revoke all on function public.move_class_material(bigint, boolean) from public, anon;");
+    expect(last).toContain("grant execute on function public.move_class_material(bigint, boolean) to authenticated, service_role;");
+    // 관리자 · 학생 화면이 같은 순서로 읽는다
+    expect(readFileSync("src/app/admin/class-materials/page.tsx", "utf8")).toContain('.order("seq").order("sort_order").order("created_at").order("id")');
+    expect(readFileSync("src/app/my/materials/page.tsx", "utf8")).toContain("sortClassMaterials(byKey.get(r.key) ?? [])");
   });
 });

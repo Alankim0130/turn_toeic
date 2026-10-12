@@ -115,6 +115,23 @@ export function sortMaterialFiles<T extends { id: number; sort_order: number }>(
 }
 
 /**
+ * 같은 회차 안 자료(게시물) 순서 — `sort_order`, 같으면 올린 순서 (2026-10-12 Alan "게시물 순서를 조정할 수 있으면 좋겠어").
+ * 관리자 회차 줄과 학생 일정표가 같은 순서로 선다. 옮기는 것은 DB 함수 `move_class_material`(이웃과 자리 바꾸기 — 그 회차 번호를 0 부터 다시 매긴다).
+ */
+export function sortClassMaterials<T extends { id: number; sort_order: number; created_at: string }>(items: readonly T[] | null | undefined): T[] {
+  return [...(items ?? [])].sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at) || a.id - b.id);
+}
+
+/** 목록에서 한 칸 위 · 아래로 — 끝이면 그대로 (원본은 건드리지 않는다). 수정 폼의 파일 순서 · 올리기 폼의 고른 파일 순서가 쓴다 */
+export function moveItem<T>(list: readonly T[], index: number, delta: -1 | 1): T[] {
+  const to = index + delta;
+  if (index < 0 || index >= list.length || to < 0 || to >= list.length) return [...list];
+  const next = [...list];
+  [next[index], next[to]] = [next[to], next[index]];
+  return next;
+}
+
+/**
  * 링크 상한 — DB check(`private.class_material_links_ok`, 마이그레이션 20261006143000)와 같다 (`class-materials.test.ts` 가 본다).
  * 20개는 파일 상한과 같고, 주소 2,000자는 공유 주소(`?si=…` · 긴 검색어)를 넉넉히 받는다
  */
@@ -332,4 +349,35 @@ export function materialAccess(bySubject: Record<MaterialSubject, readonly numbe
   const mine = [...new Set(MATERIAL_SUBJECTS.flatMap((s) => bySubject[s]))].sort((a, b) => a - b);
   const listed = order.filter((l) => mine.includes(l));
   return (listed.length ? listed : mine).map((level) => ({ level, subjects: MATERIAL_SUBJECTS.filter((s) => bySubject[s].includes(level)) }));
+}
+
+/** 화면이 보낸 파일 순서 — 남긴 파일은 id, 이번에 올린 파일은 저장소 경로 (2026-10-12). 서버 액션 saveClassMaterial 이 받는다 */
+export type FileOrderItem = { id?: number | null; path?: string | null };
+
+/**
+ * 수정 뒤 파일 순서 — 화면이 보낸 순서(`fileOrder`)로 0 부터 번호를 매긴다. 모르는 값 · 두 번 온 값은 건너뛰고, 안 온 파일은 끝에
+ * 예전 순서(남긴 파일) → 고른 순서(새 파일)로 붙인다. 돌려주는 키는 `id:123` · `path:…`
+ */
+export function fileOrderOf(
+  staying: readonly { id: number }[],
+  files: readonly { path: string }[],
+  fileOrder: readonly FileOrderItem[] | null | undefined,
+): Map<string, number> {
+  const stayingIds = new Set(staying.map((f) => f.id));
+  const newPaths = new Set(files.map((f) => f.path));
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  const push = (key: string) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    keys.push(key);
+  };
+  for (const o of fileOrder ?? []) {
+    if (!o) continue;
+    if (typeof o.id === "number" && stayingIds.has(o.id)) push(`id:${o.id}`);
+    else if (typeof o.path === "string" && newPaths.has(o.path)) push(`path:${o.path}`);
+  }
+  for (const f of staying) push(`id:${f.id}`);
+  for (const f of files) push(`path:${f.path}`);
+  return new Map(keys.map((k, n) => [k, n]));
 }

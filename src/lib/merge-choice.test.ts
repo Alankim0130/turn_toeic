@@ -25,11 +25,11 @@ describe("newestLogin", () => {
 
 describe("loginLine", () => {
   it("로그인 방법과 마지막 접속을 한 줄로", () => {
-    expect(loginLine(["kakao"], "2026-10-01T03:00:00Z", "2026-10-02")).toBe("카카오 · 어제 로그인");
-    expect(loginLine(["email", "google"], "2026-10-02T03:00:00Z", "2026-10-02")).toBe("이메일 · 구글 · 오늘 로그인");
+    expect(loginLine(["kakao"], "2026-10-01T03:00:00Z", "2026-10-02")).toBe("카카오 · 어제 접속");
+    expect(loginLine(["email", "google"], "2026-10-02T03:00:00Z", "2026-10-02")).toBe("이메일 · 구글 · 오늘 접속");
   });
 
   it("방법을 모르면 이메일로, 접속 기록이 없으면 그렇게 적는다", () => {
-    expect(loginLine([], null, "2026-10-02")).toBe("이메일 · 로그인 기록 없음");
+    expect(loginLine([], null, "2026-10-02")).toBe("이메일 · 접속 기록 없음");
   });
 });

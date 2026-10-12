@@ -30,7 +30,7 @@ export type StudentLogin = { providers: string[]; last_sign_in_at: string | null
  *
  * 학생 쪽 통합은 두 계정 모두에 로그인해야 하지만, 여기서는 **강사가 확인하고 바로** 합친다.
  * 되돌리기 어려운 일이라 **"같은 사람이 맞다"를 체크해야** 버튼이 열린다.
- * 2026-10-02: 계정마다 **로그인 방법 · 최근 로그인**을 적고 가장 최근 계정에 표시를 둔다 — "어느 계정을 쓰고 있나" 가 남길 기준이다.
+ * 2026-10-02: 계정마다 **로그인 방법 · 최근 접속**을 적고 가장 최근 계정에 표시를 둔다 — "어느 계정을 쓰고 있나" 가 남길 기준이다.
  * 그리고 **학생이 고르게 보내기** — 두 계정에 알림이 가고 학생이 어느 계정에서든 남길 계정을 고르면 그 자리에서 합쳐진다.
  */
 export function MergeAccounts({
@@ -57,7 +57,7 @@ export function MergeAccounts({
   }
 
   const newestBadge = (id: string, newest: string | null) =>
-    newest === id ? <span className="rounded-lg bg-brand-500 px-2 py-0.5 text-xs font-black text-white">최근 로그인 계정</span> : null;
+    newest === id ? <span className="rounded-lg bg-brand-500 px-2 py-0.5 text-xs font-black text-white">최근 접속 계정</span> : null;
 
   return (
     <div className="mt-3 space-y-3">
@@ -145,14 +145,14 @@ export function MergeAccounts({
                   <input type="hidden" name="from_user" value={c.user_id} />
                   <input type="hidden" name="to_user" value={student.id} />
                   <SubmitButton pendingText="합치는 중…" className="w-full sm:w-full">
-                    이 학생에게 합치기{studentIsNewest ? " (최근 로그인)" : ""}
+                    이 학생에게 합치기{studentIsNewest ? " (최근 접속)" : ""}
                   </SubmitButton>
                 </form>
                 <form action={action}>
                   <input type="hidden" name="from_user" value={student.id} />
                   <input type="hidden" name="to_user" value={c.user_id} />
                   <SubmitButton pendingText="합치는 중…" className="btn-secondary w-full sm:w-full">
-                    저 계정에 합치기{newest === c.user_id ? " (최근 로그인)" : ""}
+                    저 계정에 합치기{newest === c.user_id ? " (최근 접속)" : ""}
                   </SubmitButton>
                 </form>
               </div>

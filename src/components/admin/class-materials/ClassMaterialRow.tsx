@@ -2,12 +2,12 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { deleteClassMaterial, saveClassMaterial } from "@/app/admin/class-materials/actions";
+import { deleteClassMaterial, moveClassMaterial, saveClassMaterial } from "@/app/admin/class-materials/actions";
 import { Icon } from "@/components/ui/Icon";
 import { MaterialNote } from "@/components/class-materials/MaterialNote";
 import { MaterialFileList } from "@/components/class-materials/MaterialFileList";
 import { MaterialLinkList } from "@/components/class-materials/MaterialLinkList";
-import { MaterialFilePicker, type PickedFile } from "./MaterialFilePicker";
+import { MaterialFilePicker, MoveButtons, type PickedFile } from "./MaterialFilePicker";
 import { linkRowsOf, MaterialLinkEditor, type LinkRow } from "./MaterialLinkEditor";
 import { NoteTextarea } from "./NoteTextarea";
 import {
@@ -25,10 +25,12 @@ import {
   materialBadge,
   materialLinks,
   materialObjectPath,
+  moveItem,
   noteHasText,
   noteTooLong,
   parseMaterialLinks,
   sortMaterialFiles,
+  type FileOrderItem,
   type MaterialFile,
   type MaterialSubject,
 } from "@/lib/class-materials";
@@ -51,9 +53,14 @@ export type ClassMaterialLite = {
   files: MaterialFile[] | null;
   /** 링크 0 ~ 20개 (class_materials.links jsonb, 2026-10-06) — 읽은 그대로 받아 `materialLinks` 가 고른다 */
   links: unknown;
+  /** 같은 회차 안 순서 (2026-10-12) — 관리자 · 학생 화면이 (sort_order, created_at) 로 정렬한다 */
+  sort_order: number;
   created_at: string;
   updated_at: string;
 };
+
+/** 수정 폼의 파일 한 줄 — 올려 둔 파일(id)이거나 이번에 고른 파일(key). 둘을 한 목록으로 두고 위 · 아래로 옮긴다 (2026-10-12) */
+type FileRef = { kind: "old"; id: number } | { kind: "new"; key: string };
 
 /** 넓은 화면의 줄 자리 — 제목 줄 다음부터 안내 · 파일 목록 · 링크 목록이 있는 것만 차례로 선다 (빈 줄이 남으면 격자 간격이 두 번 들어간다) */
 const SM_ROW = ["sm:row-start-2", "sm:row-start-3", "sm:row-start-4"] as const;
@@ -61,11 +68,26 @@ const SM_ROW = ["sm:row-start-2", "sm:row-start-3", "sm:row-start-4"] as const;
 /**
  * 수업자료실 자료 한 줄 (2026-10-05) — 받기 · 수정 · 삭제.
  * **자료 하나에 파일 0 ~ 20개** (2026-10-06): 파일이 하나면 오른쪽 위 `받기`, 여럿이면 안내 아래 파일 목록(파일마다 받기), 없으면 글만.
- * 수정에서는 제목 · 안내에 더해 **파일 빼기 · 더하기**, 그리고 **레벨 · 과목 · 과정 · 회차를 옮길 수 있다** — 다른 칸에 잘못 올렸을 때 지우고 다시 올리지 않게.
+ * 수정에서는 제목 · 안내에 더해 **파일 빼기 · 더하기 · 순서 바꾸기**(남긴 파일과 새 파일을 한 줄로 — 2026-10-12 Alan "지우고 새로 올렸을때 원래 위치로 조정을 못하고 있어"),
+ * 그리고 **레벨 · 과목 · 과정 · 회차를 옮길 수 있다** — 다른 칸에 잘못 올렸을 때 지우고 다시 올리지 않게.
  * 옮기면 이 칸 목록에서 빠지고 옮긴 칸에 선다. 과정 · 회차가 없는 옛 자료는 수정에서 둘을 골라야 저장된다 (그래야 학생에게 열린다).
+ * **자료(게시물) 자체도 같은 회차 안에서 위 · 아래로 옮긴다** (`position` — 회차 줄이 준다. 같은 날 Alan "게시물 순서를 조정할 수 있으면 좋겠어") — DB 함수 `move_class_material`.
  * `plain` = 회차 카드 안에 놓일 때 (카드 안에 카드를 겹치지 않게 테두리만).
  */
-export function ClassMaterialRow({ item, levels, disabled, plain = false }: { item: ClassMaterialLite; levels: number[]; disabled: boolean; plain?: boolean }) {
+export function ClassMaterialRow({
+  item,
+  levels,
+  disabled,
+  plain = false,
+  position,
+}: {
+  item: ClassMaterialLite;
+  levels: number[];
+  disabled: boolean;
+  plain?: boolean;
+  /** 같은 회차 안의 자리 — 있으면 위 · 아래 단추가 선다 (맨 위 · 맨 아래는 그쪽이 흐려진다) */
+  position?: { first: boolean; last: boolean };
+}) {
   const router = useRouter();
   const [mode, setMode] = useState<"view" | "edit" | "confirm">("view");
   const [busy, setBusy] = useState(false);
@@ -76,6 +98,9 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
   // 수정 — 뺄 파일(되살릴 수 있게 표시만) · 새로 더할 파일 · 링크 칸
   const [removed, setRemoved] = useState<Set<number>>(() => new Set());
   const [added, setAdded] = useState<PickedFile[]>([]);
+  // 파일 순서 — 올려 둔 파일과 새로 고른 파일을 한 줄로 (저장할 때 이 순서가 sort_order 가 된다)
+  const [order, setOrder] = useState<FileRef[]>([]);
+  const [moving, setMoving] = useState(false);
   const [linkRows, setLinkRows] = useState<LinkRow[]>([]);
   const [badLink, setBadLink] = useState<number | null>(null);
   const levelRef = useRef<HTMLSelectElement>(null);
@@ -86,6 +111,8 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
   const noteRef = useRef<HTMLTextAreaElement>(null);
 
   const files = sortMaterialFiles(item.files);
+  const fileById = new Map(files.map((f) => [f.id, f]));
+  const addedByKey = new Map(added.map((p) => [p.key, p]));
   const links = materialLinks(item.links);
   const single = files.length === 1 ? files[0] : null;
   const edited = item.updated_at.slice(0, 16) !== item.created_at.slice(0, 16);
@@ -109,6 +136,7 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
     setPickProblem(null);
     setRemoved(new Set());
     setAdded([]);
+    setOrder(files.map((f) => ({ kind: "old", id: f.id })));
     setLinkRows(linkRowsOf(links));
     setBadLink(null);
     setMode("edit");
@@ -145,6 +173,11 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
         uploaded.push(await uploadFile(CLASS_MATERIAL_BUCKET, materialObjectPath(level, subject, p.file), p.file));
       }
       setProgress("저장하는 중…");
+      // 파일 순서 — 남긴 파일은 id, 새 파일은 올린 경로 (uploaded 는 added 와 같은 순서다)
+      const pathByKey = new Map(added.map((p, k) => [p.key, uploaded[k]?.path]));
+      const fileOrder = order.flatMap((r): FileOrderItem[] =>
+        r.kind === "old" ? (removed.has(r.id) ? [] : [{ id: r.id }]) : pathByKey.get(r.key) ? [{ path: pathByKey.get(r.key) }] : [],
+      );
       const res = await saveClassMaterial({
         id: item.id,
         level,
@@ -156,6 +189,7 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
         files: uploaded,
         removeFileIds: [...removed],
         links: parsed.links,
+        fileOrder,
       });
       if (!res.ok) {
         await removeUploaded(CLASS_MATERIAL_BUCKET, uploaded.map((u) => u.path));
@@ -181,6 +215,30 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
       setMode("view");
       router.refresh();
     });
+
+  /** 고른 파일이 바뀌면 순서 목록도 맞춘다 — 새로 고른 것은 끝에, 뺀 것은 목록에서도 */
+  const changeAdded = (next: PickedFile[]) => {
+    setAdded(next);
+    setOrder((prev) => {
+      const keys = new Set(next.map((p) => p.key));
+      const kept = prev.filter((r) => r.kind === "old" || keys.has(r.key));
+      const have = new Set(kept.flatMap((r) => (r.kind === "new" ? [r.key] : [])));
+      return [...kept, ...next.filter((p) => !have.has(p.key)).map((p): FileRef => ({ kind: "new", key: p.key }))];
+    });
+  };
+
+  /** 자료(게시물)를 같은 회차 안에서 한 칸 위 · 아래로 */
+  async function onMoveItem(delta: -1 | 1) {
+    setError(null);
+    setMoving(true);
+    try {
+      const res = await moveClassMaterial(item.id, delta === -1);
+      if (!res.ok) return setError(res.error ?? "순서를 바꾸지 못했어요.");
+      router.refresh();
+    } finally {
+      setMoving(false);
+    }
+  }
 
   const toggleRemove = (id: number) =>
     setRemoved((prev) => {
@@ -223,6 +281,9 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
                 <Icon name="download" size={14} />
                 받기
               </a>
+            )}
+            {!disabled && position && (
+              <MoveButtons name={item.title} first={position.first} last={position.last} disabled={moving || pending} onMove={onMoveItem} />
             )}
             {!disabled && (
               <>
@@ -304,33 +365,62 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
           </div>
           <div>
             <p className="label !mb-1 text-xs">
-              파일 <span className="font-normal text-mist">(빼거나 더할 수 있어요 · {CLASS_MATERIAL_FILES_MAX}개까지 · 하나에 50MB 이하)</span>
+              파일 <span className="font-normal text-mist">(빼거나 더하거나 순서를 바꿀 수 있어요 · {CLASS_MATERIAL_FILES_MAX}개까지 · 하나에 50MB 이하)</span>
             </p>
-            {files.length > 0 && (
-              <ul className="mb-1.5 space-y-1.5" aria-label="올려 둔 파일">
-                {files.map((f) => {
-                  const out = removed.has(f.id);
+            {/* 올려 둔 파일과 새로 고른 파일을 한 줄로 — 위 · 아래 단추로 옮긴 순서가 곧 학생이 보는 순서다 (2026-10-12) */}
+            {order.length > 0 && (
+              <ul className="mb-1.5 space-y-1.5" aria-label="파일 순서">
+                {order.map((r, i) => {
+                  if (r.kind === "old") {
+                    const f = fileById.get(r.id);
+                    if (!f) return null;
+                    const out = removed.has(f.id);
+                    return (
+                      <li
+                        key={`old-${f.id}`}
+                        className={cn("flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm", out ? "border-dashed border-red-200 bg-red-50/50" : "border-line bg-paper")}
+                      >
+                        <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-black", out ? "bg-surface text-mist" : "bg-brand-50 text-brand-700")}>
+                          {fileKindLabel(f.file_name, f.content_type)}
+                        </span>
+                        <span className={cn("min-w-0 flex-1 [overflow-wrap:anywhere]", out ? "text-mist line-through" : "text-ink")}>{f.file_name}</span>
+                        {out && <span className="shrink-0 text-[11px] font-bold text-red-600">저장하면 빠져요</span>}
+                        <MoveButtons name={f.file_name} first={i === 0} last={i === order.length - 1} disabled={busy || out} onMove={(d) => setOrder((prev) => moveItem(prev, i, d))} />
+                        <button
+                          type="button"
+                          onClick={() => toggleRemove(f.id)}
+                          disabled={busy}
+                          aria-label={out ? `${f.file_name} 되살리기` : `${f.file_name} 빼기`}
+                          className={cn(
+                            "shrink-0 rounded-full px-2 py-0.5 text-xs font-bold transition disabled:opacity-50",
+                            out ? "text-brand-700 hover:bg-brand-50" : "text-slate hover:bg-red-50 hover:text-red-600",
+                          )}
+                        >
+                          {out ? "되살리기" : "빼기"}
+                        </button>
+                      </li>
+                    );
+                  }
+                  const p = addedByKey.get(r.key);
+                  if (!p) return null;
                   return (
-                    <li
-                      key={f.id}
-                      className={cn("flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm", out ? "border-dashed border-red-200 bg-red-50/50" : "border-line bg-paper")}
-                    >
-                      <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-black", out ? "bg-surface text-mist" : "bg-brand-50 text-brand-700")}>
-                        {fileKindLabel(f.file_name, f.content_type)}
-                      </span>
-                      <span className={cn("min-w-0 flex-1 [overflow-wrap:anywhere]", out ? "text-mist line-through" : "text-ink")}>{f.file_name}</span>
-                      {out && <span className="shrink-0 text-[11px] font-bold text-red-600">저장하면 빠져요</span>}
+                    <li key={`new-${p.key}`} className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50/40 px-2.5 py-1.5 text-sm">
+                      <span className="shrink-0 rounded-md bg-brand-50 px-1.5 py-0.5 text-[10px] font-black text-brand-700">{fileKindLabel(p.file.name, p.file.type)}</span>
+                      <span className="min-w-0 flex-1 text-ink [overflow-wrap:anywhere]">{p.file.name}</span>
+                      <span className="shrink-0 text-[11px] font-bold text-brand-700">새 파일</span>
+                      <span className="shrink-0 text-xs tabular-nums text-mist">{formatBytes(p.file.size)}</span>
+                      <MoveButtons name={p.file.name} first={i === 0} last={i === order.length - 1} disabled={busy} onMove={(d) => setOrder((prev) => moveItem(prev, i, d))} />
                       <button
                         type="button"
-                        onClick={() => toggleRemove(f.id)}
+                        onClick={() => {
+                          setPickProblem(null);
+                          changeAdded(added.filter((x) => x.key !== p.key));
+                        }}
                         disabled={busy}
-                        aria-label={out ? `${f.file_name} 되살리기` : `${f.file_name} 빼기`}
-                        className={cn(
-                          "shrink-0 rounded-full px-2 py-0.5 text-xs font-bold transition disabled:opacity-50",
-                          out ? "text-brand-700 hover:bg-brand-50" : "text-slate hover:bg-red-50 hover:text-red-600",
-                        )}
+                        aria-label={`${p.file.name} 빼기`}
+                        className="shrink-0 rounded-full px-2 py-0.5 text-xs font-bold text-slate transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
                       >
-                        {out ? "되살리기" : "빼기"}
+                        빼기
                       </button>
                     </li>
                   );
@@ -340,10 +430,11 @@ export function ClassMaterialRow({ item, levels, disabled, plain = false }: { it
             <MaterialFilePicker
               id={`cm-files-${item.id}`}
               files={added}
-              onChange={setAdded}
+              onChange={changeAdded}
               onProblem={setPickProblem}
               room={Math.max(CLASS_MATERIAL_FILES_MAX - staying.length, 0)}
               disabled={busy}
+              showList={false}
             />
             {pickProblem && <p className="mt-1 text-xs font-semibold text-amber-700">{pickProblem}</p>}
           </div>

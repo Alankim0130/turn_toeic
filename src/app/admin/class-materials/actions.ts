@@ -10,6 +10,7 @@ import {
   CLASS_MATERIAL_MAX_BYTES,
   CLASS_MATERIAL_TITLE_MAX,
   defaultMaterialTitle,
+  fileOrderOf,
   isMaterialSubject,
   materialFolder,
   materialLinks,
@@ -17,6 +18,7 @@ import {
   noteTooLong,
   parseMaterialLinks,
   sortMaterialFiles,
+  type FileOrderItem,
   type LinkInput,
 } from "@/lib/class-materials";
 import { isRoundSet, ROUND_MAX } from "@/lib/class-rounds";
@@ -38,16 +40,17 @@ function errorMessage(error: { code?: string; message?: string } | null, fallbac
   return fallback;
 }
 
-/** 파일 행으로 — 순서는 고른 순서 그대로 (`start` 다음부터) */
-const fileRows = (materialId: number, files: UploadedFile[], start = 0) =>
+/** 파일 행으로 — 순서는 `orderOf`(경로 → 번호)가 있으면 그것, 없으면 고른 순서 그대로 */
+const fileRows = (materialId: number, files: UploadedFile[], orderOf?: ReadonlyMap<string, number>) =>
   files.map((f, k) => ({
     material_id: materialId,
     file_path: f.path,
     file_name: f.name.trim().slice(0, 200),
     file_size: f.size,
     content_type: f.type || null,
-    sort_order: start + k,
+    sort_order: orderOf?.get(f.path) ?? k,
   }));
+
 
 /**
  * 수업자료실 자료 저장 (2026-10-05 Alan — "레벨별 구분과 RC, LC가 구분되어야해" → 같은 날 "A/B 과정 전부다 나눠서" · 회차마다 수업일에 열기 →
@@ -56,7 +59,8 @@ const fileRows = (materialId: number, files: UploadedFile[], start = 0) =>
  * **자료 하나 = 제목 + 안내 + 파일 0 ~ 20개 + 링크 0 ~ 20개** (게시판 글 하나). 파일은 브라우저가 먼저 저장소(`class-materials/{레벨}-{과목}/…`)에 올리고,
  * 여기서는 자료 행과 파일 행(class_material_files)만 만든다/고친다. 링크는 자료 행의 `links` 칸이라 함께 저장된다 (2026-10-06 Alan — "유튜브 링크를 … 여러개").
  *  - id 없음: 새 자료 — 글 · 파일 · 링크 중 하나는 있어야 한다
- *  - id 있음: 레벨 · 과목 · 과정 · 회차 · 제목 · 안내 · 링크 수정 + 새 파일 더하기(`files`) + 파일 빼기(`removeFileIds` — 저장소에서도 지운다).
+ *  - id 있음: 레벨 · 과목 · 과정 · 회차 · 제목 · 안내 · 링크 수정 + 새 파일 더하기(`files`) + 파일 빼기(`removeFileIds` — 저장소에서도 지운다)
+ *    + **파일 순서**(`fileOrder` — 남긴 파일과 새 파일을 한 줄로, 2026-10-12 Alan "지우고 새로 올렸을때 원래 위치로 조정을 못하고 있어").
  *    `links` 를 안 보내면(undefined) 링크는 그대로 둔다 — 보내면 그 목록으로 갈아 끼운다(빈 배열이면 다 뺀다)
  * 링크는 폼과 같은 `parseMaterialLinks` 로 다시 읽는다 — 화면이 보낸 값을 믿지 않는다 (http · https 만, 20개, 이름 100자).
  * **과정(A/B)과 회차는 늘 받는다** — 없으면 학생에게 영영 열리지 않는다 (칸이 생기기 전에 올린 자료도 수정하면서 정한다).
@@ -78,6 +82,8 @@ export async function saveClassMaterial(input: {
   removeFileIds?: number[] | null;
   /** 링크 목록 (2026-10-06) — 고칠 때 안 보내면 그대로 둔다 */
   links?: LinkInput[] | null;
+  /** 고칠 때 파일 순서 (2026-10-12) — 남긴 파일은 id, 새 파일은 경로. 안 보내면 남긴 파일 → 새 파일 순서 그대로 */
+  fileOrder?: FileOrderItem[] | null;
 }): Promise<ClassMaterialResult> {
   const { user, profile } = await requireStaff();
   // 테스트 등급이면 RLS 가 학생으로 본다 — 저장이 "권한 없음" 으로 막히기 전에 까닭을 말한다
@@ -163,11 +169,14 @@ export async function saveClassMaterial(input: {
   }
   if (staying.length + files.length > CLASS_MATERIAL_FILES_MAX) return { ok: false, error: `파일은 한 자료에 ${CLASS_MATERIAL_FILES_MAX}개까지예요. 몇 개를 빼고 더해 주세요.` };
 
+  // 파일 순서 — 화면이 보낸 순서로 0 부터 (남긴 파일 · 새 파일 함께). 새 파일은 그 번호로 넣고, 남긴 파일은 아래 4) 에서 번호가 달라진 것만 고친다
+  const orderOf = fileOrderOf(staying, files, input.fileOrder);
+  const orderByPath = new Map(files.map((f) => [f.path, orderOf.get(`path:${f.path}`) ?? 0]));
+
   // 1) 새 파일 행 — 실패하면 아무것도 바뀌지 않은 채 돌아간다
   let added: number[] = [];
   if (files.length > 0) {
-    const start = Math.max(-1, ...staying.map((f) => f.sort_order)) + 1;
-    const { data, error } = await supabase.from("class_material_files").insert(fileRows(id, files, start)).select("id");
+    const { data, error } = await supabase.from("class_material_files").insert(fileRows(id, files, orderByPath)).select("id");
     if (error) return { ok: false, error: errorMessage(error) };
     added = (data ?? []).map((r) => r.id);
   }
@@ -211,6 +220,36 @@ export async function saveClassMaterial(input: {
     if (gone?.length) await supabase.storage.from(CLASS_MATERIAL_BUCKET).remove(gone.map((g) => g.file_path));
   }
 
+  // 4) 남긴 파일의 순서 — 번호가 달라진 것만 (보통 한두 개). 하나라도 못 적으면 알린다 — 제목 · 파일은 이미 저장됐다
+  const reordered = staying.filter((f) => f.sort_order !== orderOf.get(`id:${f.id}`));
+  if (reordered.length > 0) {
+    const results = await Promise.all(
+      reordered.map((f) => supabase.from("class_material_files").update({ sort_order: orderOf.get(`id:${f.id}`) ?? f.sort_order }).eq("id", f.id).eq("material_id", id)),
+    );
+    if (results.some((r) => r.error)) {
+      revalidateMaterials();
+      return { ok: false, error: "저장했지만 파일 순서를 다 적지 못했어요. 새로고침한 뒤 다시 옮겨 주세요." };
+    }
+  }
+
+  revalidateMaterials();
+  return { ok: true };
+}
+
+/**
+ * 자료(게시물)를 같은 회차 안에서 한 칸 위 · 아래로 (2026-10-12 Alan "게시물 순서를 조정할 수 있으면 좋겠어").
+ * DB 함수 `move_class_material` 이 한 트랜잭션에서 이웃과 자리를 바꾸고 그 회차 번호를 0 부터 다시 매긴다 — 강사 · 관리자만 (함수가 다시 본다).
+ */
+export async function moveClassMaterial(id: number, up: boolean): Promise<ClassMaterialResult> {
+  const { profile } = await requireStaff();
+  if (profile.test_role) return { ok: false, error: "테스트 등급을 켠 동안에는 순서를 바꿀 수 없어요. 위 띠에서 테스트를 끝낸 뒤 해 주세요." };
+  if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "잘못된 요청이에요." };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("move_class_material", { p_id: id, p_up: up });
+  if (error) {
+    if (error.message === "material_not_found") return { ok: false, error: "자료를 찾을 수 없어요. 새로고침해 주세요." };
+    return { ok: false, error: errorMessage(error, "순서를 바꾸지 못했어요. 잠시 후 다시 시도해 주세요.") };
+  }
   revalidateMaterials();
   return { ok: true };
 }

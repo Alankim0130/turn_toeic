@@ -78,9 +78,12 @@ export function newestLogin(accounts: readonly { id: string; lastSignInAt: strin
   return best;
 }
 
-/** "카카오 · 어제 로그인" — 합치기 후보 줄에 적는 한 토막. 접속 기록이 없으면 "로그인 기록 없음" */
+/**
+ * "카카오 · 어제 접속" — 합치기 후보 줄에 적는 한 토막. 접속 기록이 없으면 "접속 기록 없음".
+ * 값은 마지막 **접속**(로그인 · 세션 갱신 중 가장 늦은 때 — DB `private.last_active_at`, 2026-10-12)이라 "로그인" 이라고 적지 않는다
+ */
 export function loginLine(providers: readonly string[] | null | undefined, lastSignInAt: string | null | undefined, today: string): string {
   const method = loginLabel(providers) || "이메일";
   const seen = lastSeenLabel(lastSignInAt, today);
-  return seen ? `${method} · ${seen} 로그인` : `${method} · 로그인 기록 없음`;
+  return seen ? `${method} · ${seen} 접속` : `${method} · 접속 기록 없음`;
 }

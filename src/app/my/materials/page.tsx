@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ClassMaterialsView } from "@/components/my/ClassMaterialsView";
 import { formatDate, todayKST, TRACK_LABEL } from "@/lib/utils";
-import { initialSubject, type MaterialSubject } from "@/lib/class-materials";
+import { initialSubject, sortClassMaterials, type MaterialSubject } from "@/lib/class-materials";
 import { cellKey, cellsOfSection, isRoundOpen, roundKey, roundsOf } from "@/lib/class-rounds";
 import { bookTimesLabel } from "@/lib/lc-audio";
 import { getMyAccessibleSections, getMyClassMaterials, getMyClassNotices, getMyOrders, getMyStudyEligibility } from "../_lib/queries";
@@ -99,7 +99,8 @@ export default async function ClassMaterialsPage({ searchParams }: { searchParam
   const opened = rows
     .filter((r) => isRoundOpen(r.date, today))
     .reverse()
-    .map((r) => ({ ...r, items: byKey.get(r.key) ?? [] }))
+    // 회차 안 순서는 강사가 정한 순서(sort_order) → 올린 순서 — 관리자 회차 줄과 같다 (2026-10-12)
+    .map((r) => ({ ...r, items: sortClassMaterials(byKey.get(r.key) ?? []) }))
     .filter((r) => r.items.length > 0);
   const upcoming = rows.filter((r) => !isRoundOpen(r.date, today));
 

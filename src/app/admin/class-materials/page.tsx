@@ -79,10 +79,11 @@ export default async function ClassMaterialsAdminPage({ searchParams }: { search
   const count = async (l: number, s: MaterialSubject, b: RoundSet) =>
     (await supabase.from("class_materials").select("id", { count: "exact", head: true }).eq("level", l).eq("subject", s).eq("book_set", b)).count ?? 0;
   // 파일은 자료마다 0 ~ 20개 (class_material_files, 2026-10-06) — 줄이 순서대로 정렬한다. 링크(links)는 자료 행의 칸 (같은 날)
-  const cols = "id, level, subject, book_set, seq, title, note, links, created_at, updated_at, files:class_material_files(id, file_name, file_size, content_type, sort_order)";
+  const cols = "id, level, subject, book_set, seq, title, note, links, sort_order, created_at, updated_at, files:class_material_files(id, file_name, file_size, content_type, sort_order)";
 
   const [{ data: rows, error }, { data: loose }, levelCounts, cellCounts, { data: sectionRows }, { data: noticeRows }] = await Promise.all([
-    supabase.from("class_materials").select(cols).eq("level", level).eq("subject", subject).eq("book_set", set).order("seq").order("created_at"),
+    // 회차 안 순서는 sort_order → 올린 순서 (2026-10-12 — 강사가 ▲▼ 로 옮긴다. 학생 화면 sortClassMaterials 와 같은 순서)
+    supabase.from("class_materials").select(cols).eq("level", level).eq("subject", subject).eq("book_set", set).order("seq").order("sort_order").order("created_at").order("id"),
     // 과정 · 회차를 정하기 전에 올린 자료 (2026-10-05 오전 — 칸이 생기기 전). 학생에게 보이지 않는다
     supabase.from("class_materials").select(cols).eq("level", level).eq("subject", subject).is("book_set", null).order("created_at", { ascending: false }),
     Promise.all(levels.map(async (l) => [l, await count(l, subject, set)] as const)),

@@ -51,8 +51,16 @@ export function ClassMaterialRound({
 
       {items.length > 0 ? (
         <ul className="mt-3 space-y-2">
-          {items.map((m) => (
-            <ClassMaterialRow key={`${m.id}-${m.updated_at}`} item={m} levels={levels} disabled={disabled} plain />
+          {/* 회차 안 순서 — 줄마다 위 · 아래 단추 (2026-10-12 Alan "게시물 순서를 조정할 수 있으면 좋겠어"). 학생 화면도 같은 순서로 선다 */}
+          {items.map((m, i) => (
+            <ClassMaterialRow
+              key={`${m.id}-${m.updated_at}-${m.sort_order}`}
+              item={m}
+              levels={levels}
+              disabled={disabled}
+              plain
+              position={{ first: i === 0, last: i === items.length - 1 }}
+            />
           ))}
         </ul>
       ) : (

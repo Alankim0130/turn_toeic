@@ -2,11 +2,33 @@
 
 import { useRef } from "react";
 import { Icon } from "@/components/ui/Icon";
-import { CLASS_MATERIAL_FILES_MAX, CLASS_MATERIAL_MAX_BYTES, fileKindLabel } from "@/lib/class-materials";
+import { CLASS_MATERIAL_FILES_MAX, CLASS_MATERIAL_MAX_BYTES, fileKindLabel, moveItem } from "@/lib/class-materials";
 import { formatBytes } from "@/lib/study";
 
 /** 고른 파일 — 아직 올리지 않았다 (올리기를 누르면 브라우저가 저장소에 올린다) */
 export type PickedFile = { key: string; file: File };
+
+/**
+ * 한 칸 위 · 아래 단추 (2026-10-12 Alan "게시물 순서를 조정할 수 있으면 좋겠어") — 고른 파일 · 올려 둔 파일 · 회차 안 자료 줄이 함께 쓴다.
+ * 끝에서는 그쪽 단추가 흐려진다. 꺾쇠는 도형(인라인 SVG)이다 — 이모지를 쓰지 않는다
+ */
+export function MoveButtons({ name, first, last, disabled = false, onMove }: { name: string; first: boolean; last: boolean; disabled?: boolean; onMove: (delta: -1 | 1) => void }) {
+  const cls = "rounded-md p-1 text-slate transition hover:bg-brand-50 hover:text-brand-700 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate";
+  return (
+    <span className="flex shrink-0 items-center">
+      <button type="button" onClick={() => onMove(-1)} disabled={disabled || first} aria-label={`${name} 위로`} title="위로" className={cls}>
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <path d="M3.5 10.5 8 6l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <button type="button" onClick={() => onMove(1)} disabled={disabled || last} aria-label={`${name} 아래로`} title="아래로" className={cls}>
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <path d="M3.5 5.5 8 10l4.5-4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+    </span>
+  );
+}
 
 /**
  * 수업자료실 파일 고르기 — 여러 개를 한 번에, 더 고르면 뒤에 붙는다 (2026-10-06 Alan — "파일을 한번에 여러개 올릴 수 있도록").
@@ -14,6 +36,8 @@ export type PickedFile = { key: string; file: File };
  * (예전에는 칸이 `required` 라 파일 없이 누르면 브라우저가 "파일을 선택하세요" 로 막았다).
  * 50MB 를 넘는 파일 · 같은 파일 두 번 · `room` 을 넘는 만큼은 빼고 까닭을 `onProblem` 으로 알린다.
  * 칸이 `sr-only` 라 고르는 길은 점선 상자(label)다 — 숙제 사진 고르기와 같은 꼴.
+ * 고른 파일 줄마다 위 · 아래 단추로 순서를 바꾼다 (2026-10-12) — 저장되는 순서가 곧 학생이 보는 순서다.
+ * 수정 폼은 남긴 파일과 새 파일을 한 줄로 그리므로 `showList={false}` 로 고르는 상자만 쓴다.
  */
 export function MaterialFilePicker({
   id,
@@ -22,6 +46,7 @@ export function MaterialFilePicker({
   onProblem,
   room = CLASS_MATERIAL_FILES_MAX,
   disabled = false,
+  showList = true,
 }: {
   id: string;
   files: PickedFile[];
@@ -31,6 +56,8 @@ export function MaterialFilePicker({
   /** 이번에 더할 수 있는 파일 수 (수정이면 남겨 둔 파일만큼 줄어든다) */
   room?: number;
   disabled?: boolean;
+  /** 고른 파일 목록을 여기서 그릴지 — 수정 폼은 제 목록(남긴 파일 + 새 파일)을 그린다 */
+  showList?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -59,13 +86,14 @@ export function MaterialFilePicker({
 
   return (
     <div className="space-y-1.5">
-      {files.length > 0 && (
+      {showList && files.length > 0 && (
         <ul className="space-y-1.5" aria-label="고른 파일">
-          {files.map((p) => (
+          {files.map((p, i) => (
             <li key={p.key} className="flex items-center gap-2 rounded-lg border border-line bg-paper px-2.5 py-1.5 text-sm">
               <span className="shrink-0 rounded-md bg-brand-50 px-1.5 py-0.5 text-[10px] font-black text-brand-700">{fileKindLabel(p.file.name, p.file.type)}</span>
               <span className="min-w-0 flex-1 text-ink [overflow-wrap:anywhere]">{p.file.name}</span>
               <span className="shrink-0 text-xs tabular-nums text-mist">{formatBytes(p.file.size)}</span>
+              <MoveButtons name={p.file.name} first={i === 0} last={i === files.length - 1} disabled={disabled} onMove={(d) => onChange(moveItem(files, i, d))} />
               <button
                 type="button"
                 onClick={() => {
