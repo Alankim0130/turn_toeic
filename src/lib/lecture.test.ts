@@ -6,8 +6,11 @@ import {
   isYbmReviewUrl,
   kstDateOf,
   lectureCameo,
+  LECTURE_SUBJECT_ERROR,
   lectureOpensAt,
   lectureState,
+  lectureSubjectBlock,
+  lectureSubjectNote,
   lectureWeek,
   needsReviewLink,
   parseReviewLink,
@@ -15,6 +18,7 @@ import {
   reviewLinkError,
   reviewLinkKey,
   REVIEW_LECTURE_WEEK,
+  sectionSubjects,
   shiftDate,
   signupDday,
   YBM_REVIEW_LINK_RE,
@@ -303,5 +307,83 @@ describe("reviewLinkKey — 후기 링크는 한 번만 (2026-10-08 Alan \"후�
     // 서버 액션이 셋 다 학생 말로 바꾼다
     for (const code of ["review_link_required", "review_link_taken", "review_link_reused"]) expect(reviewLinkError(code), code).toBeTruthy();
     expect(reviewLinkError("lecture_full")).toBeNull();
+  });
+});
+
+/**
+ * 단과 학생은 제 과목 특강만 (2026-10-12 Alan — "특강신청에서 RC 단과반은 LC특강신청이 안되고, LC단과는 RC특강신청이 안되도록").
+ * 반이 주는 과목은 학생명단 이름표(singleSubjectOf)와 같은 읽기이고, DB private.lecture_subjects_of · 트리거 lecture_signups_eligible_subject 와 같은 규칙이다.
+ */
+describe("단과 학생은 제 과목 특강만 — sectionSubjects · lectureSubjectBlock", () => {
+  const score = { course_type: "full", program: "score" };
+  const rcUnit = { subject: "rc", course: score };
+  const lcUnit = { subject: "lc", course: score };
+  const bundle = { subject: null, course: score }; // 120 · 140분 묶음 · 방학달 통짜 — 두 과목을 이어 듣는다
+  const sparta = { subject: null, course: { course_type: "full", program: "sparta" } };
+  const twoweek = { subject: null, course: { course_type: "full", program: "twoweek" } };
+  const mine = (...sections: Parameters<typeof sectionSubjects>[0][]) => new Set(sections.flatMap(sectionSubjects));
+
+  it("반이 주는 과목 — 시간 단위 반은 과목 칸, 단과 상품은 그 과목, 그릇 반 · 과목 칸이 빈 반은 두 과목", () => {
+    expect(sectionSubjects(rcUnit)).toEqual(["rc"]);
+    expect(sectionSubjects(lcUnit)).toEqual(["lc"]);
+    expect(sectionSubjects({ subject: "lc", course: { course_type: "rc", program: "score" } })).toEqual(["rc"]);
+    expect(sectionSubjects(bundle).sort()).toEqual(["lc", "rc"]);
+    expect(sectionSubjects(sparta).sort()).toEqual(["lc", "rc"]);
+    expect(sectionSubjects(twoweek).sort()).toEqual(["lc", "rc"]);
+    expect(sectionSubjects({ subject: "x", course: score }).sort()).toEqual(["lc", "rc"]); // 모르는 값은 짐작해 막지 않는다
+  });
+
+  it("RC 단과는 LC특강 · LC 단과는 RC특강을 못 한다 — 과목이 든 특강은 그 과목을 들어야 한다", () => {
+    expect(lectureSubjectBlock(["lc"], mine(rcUnit))).toEqual(["lc"]);
+    expect(lectureSubjectBlock(["rc"], mine(rcUnit))).toEqual([]);
+    expect(lectureSubjectBlock(["rc"], mine(lcUnit))).toEqual(["rc"]);
+    expect(lectureSubjectBlock(["rc", "mock2"], mine(lcUnit))).toEqual(["rc"]); // RC특강 + 2차 모의고사도 LC 단과에게는 막힌다
+    expect(lectureSubjectBlock(["rc", "mock2"], mine(rcUnit))).toEqual([]);
+  });
+
+  it("모의고사만인 특강은 누구나 · 종합(두 과목) · 속성반 · 2주완성 · 묶음 · 단과 둘을 함께 듣는 학생은 막히지 않는다", () => {
+    expect(lectureSubjectBlock(["mock1"], mine(rcUnit))).toEqual([]);
+    expect(lectureSubjectBlock([], mine(lcUnit))).toEqual([]);
+    expect(lectureSubjectBlock(null, mine(lcUnit))).toEqual([]);
+    for (const s of [bundle, sparta, twoweek]) {
+      expect(lectureSubjectBlock(["lc"], mine(s))).toEqual([]);
+      expect(lectureSubjectBlock(["rc"], mine(s))).toEqual([]);
+    }
+    expect(lectureSubjectBlock(["lc"], mine(rcUnit, lcUnit))).toEqual([]); // 주5일 60분 · 650 RC 단과 + 750 LC 단과
+  });
+
+  it("내 과목을 모르면(빈 집합) 막지 않는다 — 그때는 DB 정책(lecture_signup_open)이 막는다", () => {
+    expect(lectureSubjectBlock(["lc"], new Set())).toEqual([]);
+  });
+
+  it("문구 — 'RC 단과 수강생은 LC특강을 신청할 수 없어요'", () => {
+    expect(lectureSubjectNote(["lc"], mine(rcUnit))).toBe("RC 단과 수강생은 LC특강을 신청할 수 없어요.");
+    expect(lectureSubjectNote(["rc"], mine(lcUnit))).toBe("LC 단과 수강생은 RC특강을 신청할 수 없어요.");
+    expect(LECTURE_SUBJECT_ERROR).toContain("RC 단과는 RC 특강");
+  });
+
+  it("DB(private.lecture_subjects_of — 마지막 정의)와 같은 규칙 · 트리거가 review 검사보다 먼저 · 서버 액션이 오류를 말로 바꾼다", () => {
+    const dir = "supabase/migrations";
+    const sqls = readdirSync(dir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort()
+      .map((f) => readFileSync(`${dir}/${f}`, "utf8"));
+    const last = sqls.filter((t) => t.includes("function private.lecture_subjects_of(")).at(-1) ?? "";
+    const start = last.indexOf("function private.lecture_subjects_of(");
+    const fn = last.slice(start, last.indexOf("$$;", start));
+    expect(fn).toContain("when c.course_type in ('lc', 'rc') then array[c.course_type]"); // 단과 상품 = 그 과목
+    expect(fn).toContain("when c.program <> 'score' or s.subject is null then array['lc', 'rc']"); // 그릇 반 · 과목 칸 없음 = 두 과목
+    expect(fn).toContain("when s.subject in ('lc', 'rc') then array[s.subject]"); // 시간 단위 반 = 과목 칸
+    expect(fn).toContain("else array['lc', 'rc']"); // 모르는 값은 막지 않는다
+    // 그 달 수강 중인 직접 배정만 — is_term_enrollee 와 같은 조건
+    expect(fn).toContain("e.status = 'active'");
+    expect(fn).toContain("o.status = 'active'");
+    expect(fn).toContain("private.today_kst() between s.enrollment_opens_at and s.closes_at");
+    const all = sqls.join("\n");
+    expect(all).toMatch(/before insert on public\.lecture_signups[\s\S]*?lecture_signups_eligible_subject/);
+    expect(all).toContain("raise exception 'lecture_subject_mismatch'");
+    // BEFORE INSERT 트리거는 이름순으로 돈다 — 과목 검사가 후기 링크 검사보다 먼저여야 "링크를 올려라" 가 먼저 뜨지 않는다
+    expect("lecture_signups_eligible_subject" < "lecture_signups_review_check").toBe(true);
+    expect(readFileSync("src/app/my/class/actions.ts", "utf8")).toContain('error.message === "lecture_subject_mismatch"');
   });
 });

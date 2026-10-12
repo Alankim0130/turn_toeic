@@ -10,6 +10,8 @@ import { isMaterialSubject, materialAccess, materialLinks, type MaterialSubject 
 import { cellKey, cellLevels, isRoundOpen, isRoundSet, roundCells, roundDates, roundKey } from "@/lib/class-rounds";
 import { clipToOwnRange } from "@/lib/two-week";
 import { noticeVisible, scopeOf } from "@/lib/class-notices";
+import { sectionSubjects } from "@/lib/lecture";
+import type { Subject } from "@/lib/instructor-subject";
 
 /**
  * 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다.
@@ -435,6 +437,8 @@ export async function getMyStudyEligibility(orders?: MyOrder[]) {
   const signupTerms = new Set<number>();
   const accessTerms = new Set<number>();
   const opensOn = new Map<number, string>(); // 예비등록생: 기수별 개강일
+  // 기수마다 내가 듣는 과목 — 단과 학생은 제 과목 특강만 신청한다 (2026-10-12 Alan, DB private.lecture_subjects_of 와 같은 반 · 같은 규칙)
+  const subjectsByTerm = new Map<number, Set<Subject>>();
   for (const o of list) {
     for (const e of o.enrollments) {
       if (e.status !== "active" || !e.section || today > e.section.closes_at) continue;
@@ -442,10 +446,13 @@ export async function getMyStudyEligibility(orders?: MyOrder[]) {
       if (e.section.enrollment_opens_at <= today) {
         signupTerms.add(e.section.term_id);
         accessTerms.add(e.section.term_id);
+        const subjects = subjectsByTerm.get(e.section.term_id) ?? new Set<Subject>();
+        for (const s of sectionSubjects(e.section)) subjects.add(s);
+        subjectsByTerm.set(e.section.term_id, subjects);
       } else opensOn.set(e.section.term_id, e.section.enrollment_opens_at);
     }
   }
-  return { signupTerms, accessTerms, opensOn };
+  return { signupTerms, accessTerms, opensOn, subjectsByTerm };
 }
 
 /** 내 스터디 신청 (기수·유형·시간대 포함) */
