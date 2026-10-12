@@ -1984,7 +1984,11 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   - **레벨이 생기기 전 신청(10월 비대면)은 레벨이 비어 있다** — 내 스터디에서 **한 번은 바로** 고른다(`set_study_level` — 레벨이 없으면 승인 없이 적용). 그때까지는 공통 자료만 받는다.
     화면의 레벨 글자는 `레벨 1 · 2 · 3` 뿐이다 — 레벨 설명 글은 Alan 이 주면 넣는다.
   - **자료는 레벨마다 올린다** — `study_material_items.level` 0 = **모든 레벨 공통** · 1 · 2 · 3, **회차 × 레벨이 한 칸**(unique). `/admin/study-materials` 맨 위 레벨 탭(`?level=`).
-    그 달 적용분(`study_materials.level`)은 `private.sync_online_materials` 가 레벨까지 복사한다. **지금까지 올린 자료는 전부 공통(0)이다** — 레벨 없이 신청한 10월 학생도 그대로 받는다.
+    그 달 적용분(`study_materials.level`)은 `private.sync_online_materials` 가 레벨까지 복사한다. 레벨이 생기기 전에 올린 자료는 전부 공통(0)으로 잡혔다 —
+    **1회차는 같은 날 Alan "여기에 올라가 있는 1회차 내용을 레벨 1 1회차로 올려줘" 로 마이그레이션 20261012140000 이 레벨 1 로 옮겼다** (안내가 "Lv1에서는 …" 인 Lv1 자료였다).
+    자료의 레벨만 바꾸면 동기화가 레벨 1 줄을 새로 만들고 인증이 붙은 공통 줄은 남겨(인증을 지키려고) 같은 자료가 두 줄로 서므로, **그 달 적용분 줄도 함께 레벨 1 로 옮겨** 그날 인증이
+    그 줄을 따라가게 했다 (재생 DB 로 인증 있음 · 없음 · 레벨 1 자료가 이미 있음 · Lv1 표시 없음 · 다시 돌림을 확인). 그래서 레벨을 아직 안 고른 10월 학생은 레벨 1 을 고른 뒤에 1회차를 본다 —
+    공통 1회차는 더 없다. **자료의 레벨을 화면에서 옮기는 길은 없다** (수정 폼은 레벨을 바꾸지 않는다 — 다른 레벨은 그 탭에서 새로 올린다). 또 옮길 일이 생기면 같은 꼴의 마이그레이션이거나, Alan 에게 묻고 수정 폼에 레벨 칸을 더한다.
   - **학생은 내 레벨의 자료와 공통만 — 화면이 아니라 DB 가 막는다.** 조회 정책 `study_materials: 신청자·스태프·조교 조회` 가 `level = 0 or level = 내 신청의 level`, 인증 정책
     `study_checkins: 본인 인증` 도 같다. 저장소(`study-materials`)는 그 행으로 판정하므로 다른 레벨 파일은 서명 주소도 못 만든다. 앱은 `materialVisibleTo`(`getMyStudyMaterials`)로 한 번 더 좁힌다
     (등급 체계 10). 재생 DB 세션 시험(2026-10-12): 레벨1 학생 0,1 · 레벨2 학생 0,2 · 레벨 미정 학생 0 · 조교 0,1,2 · 레벨1 학생이 레벨2 자료에 인증 0건 · 저장소도 같은 집합.
@@ -3474,7 +3478,7 @@ create table study_signups (               -- 스터디 신청. 한 스터디에
 
 create table study_material_items (        -- 비대면 자료 회차별 자료실 (20260922124700). 한 번 올리면 매달 쓴다. 스태프 · 조교가 본다
   id bigint primary key, seq int,            -- 1~60회차. unique (seq, level) — 회차 × 레벨이 한 칸 (20261012100000)
-  level smallint not null default 0,         -- 0 모든 레벨 공통 · 1 · 2 · 3 (2026-10-12). 지금까지 올린 자료는 전부 0
+  level smallint not null default 0,         -- 0 모든 레벨 공통 · 1 · 2 · 3 (2026-10-12). 레벨 전 자료는 전부 0 — 1회차만 20261012140000 이 레벨 1 로 옮겼다
   title text, file_path text unique, file_name text, file_size bigint, content_type text,
   note text                                  -- 회차 안내 (20260930100000 → 서식 글 5만 자 · 사진 [img=notes/…], 20261005180000). 그 달 적용분 study_materials.note 로 복사된다
 );
