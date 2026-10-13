@@ -47,6 +47,7 @@ export function MaterialFilePicker({
   room = CLASS_MATERIAL_FILES_MAX,
   disabled = false,
   showList = true,
+  unit = "자료",
 }: {
   id: string;
   files: PickedFile[];
@@ -58,6 +59,8 @@ export function MaterialFilePicker({
   disabled?: boolean;
   /** 고른 파일 목록을 여기서 그릴지 — 수정 폼은 제 목록(남긴 파일 + 새 파일)을 그린다 */
   showList?: boolean;
+  /** 상한 안내의 이름 — `파일은 한 자료에 20개까지` · 공지 폼은 `공지` (2026-10-13) */
+  unit?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -79,7 +82,7 @@ export function MaterialFilePicker({
       next.push({ key: crypto.randomUUID(), file: f });
     }
     const left = Math.max(room - files.length, 0);
-    if (next.length > left) problems.push(`파일은 한 자료에 ${CLASS_MATERIAL_FILES_MAX}개까지라 ${next.length - left}개는 빠졌어요`);
+    if (next.length > left) problems.push(`파일은 한 ${unit}에 ${CLASS_MATERIAL_FILES_MAX}개까지라 ${next.length - left}개는 빠졌어요`);
     onChange([...files, ...next.slice(0, left)]);
     onProblem(problems.length ? problems.join(" · ") : null);
   }

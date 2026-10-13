@@ -460,6 +460,47 @@ export type Database = {
           },
         ]
       }
+      class_notice_files: {
+        Row: {
+          content_type: string | null
+          created_at: string
+          file_name: string
+          file_path: string
+          file_size: number | null
+          id: number
+          notice_id: number
+          sort_order: number
+        }
+        Insert: {
+          content_type?: string | null
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          id?: number
+          notice_id: number
+          sort_order?: number
+        }
+        Update: {
+          content_type?: string | null
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          id?: number
+          notice_id?: number
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "class_notice_files_notice_id_fkey"
+            columns: ["notice_id"]
+            isOneToOne: false
+            referencedRelation: "class_notices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       class_notices: {
         Row: {
           author_id: string | null
@@ -468,6 +509,7 @@ export type Database = {
           created_at: string
           id: number
           levels: number[]
+          links: Json
           published: boolean
           subjects: string[]
           title: string
@@ -480,6 +522,7 @@ export type Database = {
           created_at?: string
           id?: number
           levels?: number[]
+          links?: Json
           published?: boolean
           subjects?: string[]
           title: string
@@ -492,6 +535,7 @@ export type Database = {
           created_at?: string
           id?: number
           levels?: number[]
+          links?: Json
           published?: boolean
           subjects?: string[]
           title?: string

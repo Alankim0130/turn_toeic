@@ -4,12 +4,14 @@ import { isAudioType, isImageType } from "@/lib/upload";
 import { COVER_REDIRECT_MAX_AGE, stableCoverUrl } from "@/lib/stable-signed-url";
 
 /**
- * 비공개 파일 열기: /files/material/12 · /files/homework/34 · /files/audio/56 · /files/textbook/78 · /files/item/9 · /files/class/3
+ * 비공개 파일 열기: /files/material/12 · /files/homework/34 · /files/audio/56 · /files/textbook/78 · /files/item/9 · /files/class/3 · /files/notice/5
  *  - item = 비대면 자료 회차 자료실(study_material_items, 스태프만 — 학생은 그 달에 적용된 material 로 받는다)
  *  - class = 수업자료실 파일(class_material_files, 2026-10-06 — 자료 하나에 파일 여러 개라 **id 는 파일 id** 다).
  *    파일 행은 부모 자료(class_materials)가 보이는 사람에게만 보여서, 남의 칸 · 아직 안 열린 회차의 id 는 404 다.
  *    2026-10-05 에 올린 파일은 자료와 같은 id 로 옮겼다 — 그날 받은 링크가 그대로 같은 파일이다 (마이그레이션 20261006100000)
  *  - checkin = 비대면 스터디 인증 사진(study_checkin_files, 2026-10-08 비대면스터디 인증 게시판). 본인 · 강사 · 관리자 · 조교만 보인다
+ *  - notice = 수업자료실 공지의 첨부 파일(class_notice_files, 2026-10-13 — "공지사항에서도 파일올리기"). 저장소는 class-materials 의 notices/ 폴더.
+ *    파일 행은 부모 공지(class_notices)가 보이는 사람에게만 보여서, 남의 범위 · 내린 공지의 id 는 404 다
  *  - 사용자 세션으로 행을 조회하므로 RLS 가 접근 권한을 정한다 (못 보면 404).
  *  - 저장소 서명 URL 도 사용자 세션으로 만들어 storage 정책을 한 번 더 통과한다.
  *    **LC 교재 표지만 예외** (2026-10-09 Alan "Lc음원듣기에서도 교재 이미지 불러오는게 시간이 쫌 걸려") — 하루 동안 모두가 같은 서명 주소를 쓴다
@@ -24,6 +26,7 @@ const BUCKET = {
   audio: "lc-audio",
   textbook: "lc-textbooks",
   class: "class-materials",
+  notice: "class-materials",
   checkin: "study-checkins",
 } as const;
 type Kind = keyof typeof BUCKET;
@@ -53,6 +56,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         ? await supabase.from("study_material_items").select(cols).eq("id", id).maybeSingle()
       : kind === "class"
         ? await supabase.from("class_material_files").select(cols).eq("id", id).maybeSingle()
+      : kind === "notice"
+        ? await supabase.from("class_notice_files").select(cols).eq("id", id).maybeSingle()
       : kind === "checkin"
         ? await supabase.from("study_checkin_files").select(cols).eq("id", id).maybeSingle()
       : kind === "homework"

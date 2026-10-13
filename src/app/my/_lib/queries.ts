@@ -6,10 +6,10 @@ import { week5SectionIds } from "@/lib/week5";
 import { materialVisibleTo } from "@/lib/study";
 import type { EnrollSection } from "@/lib/enroll-options";
 import { fetchOpenEnrollSections } from "@/lib/open-sections";
-import { isMaterialSubject, materialAccess, materialLinks, type MaterialSubject } from "@/lib/class-materials";
+import { isMaterialSubject, materialAccess, materialLinks, sortMaterialFiles, type MaterialSubject } from "@/lib/class-materials";
 import { cellKey, cellLevels, isRoundOpen, isRoundSet, roundCells, roundDates, roundKey } from "@/lib/class-rounds";
 import { clipToOwnRange } from "@/lib/two-week";
-import { noticeVisible, scopeOf } from "@/lib/class-notices";
+import { noticeAttachLabel, noticeVisible, scopeOf } from "@/lib/class-notices";
 import { sectionSubjects } from "@/lib/lecture";
 import type { Subject } from "@/lib/instructor-subject";
 
@@ -603,7 +603,8 @@ export async function getMyClassMaterials() {
   return { access, dates, materials };
 }
 
-const NOTICE_LIST_COLS = "id, title, levels, subjects, author_name, created_at, updated_at, published";
+/** 공지 목록 칸 — 첨부 파일은 개수만(목록 줄의 `파일 2개`), 링크는 그대로 (2026-10-13). 파일 행은 그 공지가 보일 때만 온다 (class_notice_files 정책) */
+const NOTICE_LIST_COLS = "id, title, levels, subjects, links, author_name, created_at, updated_at, published, class_notice_files(id)";
 
 /**
  * 수업자료실 공지 (2026-10-05) — **내 범위 공지만**: 지금 수강 중이고, 범위 공지면 내 과정 칸이 레벨 · 과목에 맞는다 (`noticeVisible`).
@@ -617,17 +618,25 @@ export async function getMyClassNotices() {
   if (!enrolled) return [];
   // 내린 공지(published = false)는 학생에게 없다 (2026-10-06 Alan) — RLS 도 거르지만 스태프가 학생 모드로 볼 때를 위해 여기서도 (등급 체계 10)
   const { data } = await supabase.from("class_notices").select(NOTICE_LIST_COLS).eq("published", true).order("created_at", { ascending: false }).limit(200);
-  return (data ?? []).filter((n) => noticeVisible(scopeOf(n), cells, enrolled));
+  return (data ?? [])
+    .filter((n) => noticeVisible(scopeOf(n), cells, enrolled))
+    .map((n) => ({ ...n, attach: noticeAttachLabel(n.class_notice_files?.length ?? 0, materialLinks(n.links)) }));
 }
 
-/** 공지 한 편 — 목록과 같은 규칙으로 내 범위가 아니면 null */
+/** 공지 한 편 — 목록과 같은 규칙으로 내 범위가 아니면 null. 첨부 파일(순서대로) · 링크를 함께 (2026-10-13) */
 export async function getMyClassNotice(id: number) {
   if (!Number.isInteger(id) || id <= 0) return null;
   const supabase = await createClient();
   const [sections, { accessTerms }] = await Promise.all([getMyAccessibleSections(), getMyStudyEligibility()]);
   const cells = [...roundCells(sections)];
-  const { data } = await supabase.from("class_notices").select(`${NOTICE_LIST_COLS}, body`).eq("id", id).eq("published", true).maybeSingle();
-  return data && noticeVisible(scopeOf(data), cells, accessTerms.size > 0) ? data : null;
+  const { data } = await supabase
+    .from("class_notices")
+    .select("id, title, levels, subjects, links, author_name, created_at, updated_at, published, body, class_notice_files(id, file_name, file_size, content_type, sort_order)")
+    .eq("id", id)
+    .eq("published", true)
+    .maybeSingle();
+  if (!data || !noticeVisible(scopeOf(data), cells, accessTerms.size > 0)) return null;
+  return { ...data, files: sortMaterialFiles(data.class_notice_files), links: materialLinks(data.links) };
 }
 
 /** 라벨 */

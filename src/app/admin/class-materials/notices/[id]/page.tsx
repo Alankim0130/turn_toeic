@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { NoticeForm } from "@/components/admin/class-notices/NoticeForm";
 import { NoticePublishToggle } from "@/components/admin/class-notices/NoticePublishToggle";
 import { CLASS_NOTICE_BUCKET, scopeOf } from "@/lib/class-notices";
+import { materialLinks, sortMaterialFiles } from "@/lib/class-materials";
 import { signNoteImages } from "@/lib/note-images";
 import { formatDate } from "@/lib/utils";
 import { backTo } from "../_back";
@@ -25,7 +26,11 @@ export default async function EditClassNoticePage({
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   const supabase = await createClient();
   const [{ data: notice }, { data: levelRows }] = await Promise.all([
-    supabase.from("class_notices").select("id, title, body, levels, subjects, author_name, created_at, updated_at, published").eq("id", Number(id)).maybeSingle(),
+    supabase
+      .from("class_notices")
+      .select("id, title, body, levels, subjects, links, author_name, created_at, updated_at, published, class_notice_files(id, file_name, file_size, content_type, sort_order)")
+      .eq("id", Number(id))
+      .maybeSingle(),
     supabase.from("lc_levels").select("level").order("sort_order").order("level"),
   ]);
   if (!notice) notFound();
@@ -44,12 +49,21 @@ export default async function EditClassNoticePage({
           {notice.published ? "공지" : "내림"}
         </span>
         <span className="min-w-0 flex-1 text-sm text-slate">
-          {notice.published ? "학생 수업자료실 맨 위에 보이는 중이에요. 내리면 글·사진은 그대로 두고 학생에게만 안 보여요." : "내려 둔 공지예요 — 학생에게 보이지 않아요. 다시 올리면 그대로 보여요."}
+          {notice.published ? "학생 수업자료실 맨 위에 보이는 중이에요. 내리면 글·사진·파일은 그대로 두고 학생에게만 안 보여요." : "내려 둔 공지예요 — 학생에게 보이지 않아요. 다시 올리면 그대로 보여요."}
         </span>
         <NoticePublishToggle id={notice.id} published={notice.published} title={notice.title} />
       </div>
       <NoticeForm
-        notice={{ id: notice.id, title: notice.title, body: notice.body, levels: scope.levels, subjects: scope.subjects }}
+        notice={{
+          id: notice.id,
+          title: notice.title,
+          body: notice.body,
+          levels: scope.levels,
+          subjects: scope.subjects,
+          // 첨부 파일 · 링크 (2026-10-13 — "공지사항에서도 파일올리기 등등")
+          files: sortMaterialFiles(notice.class_notice_files),
+          links: materialLinks(notice.links),
+        }}
         levels={(levelRows ?? []).map((l) => l.level)}
         imageUrls={imageUrls}
         defaultLevels={[]}

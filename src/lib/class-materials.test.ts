@@ -38,8 +38,11 @@ import {
   sortMaterialFiles,
   titleFromFileName,
   fileOrderOf,
+  fileOrderItems,
   moveItem,
   sortClassMaterials,
+  withPicked,
+  type FileRef,
 } from "./class-materials";
 import { isSafeObjectPath } from "./upload";
 
@@ -533,6 +536,28 @@ describe("순서 조정 — moveItem · sortClassMaterials · fileOrderOf", () =
       "id:11",
       "path:p/a.pdf",
       "path:p/b.pdf",
+    ]);
+  });
+
+  it("withPicked · fileOrderItems — 수정 폼(수업자료 · 공지)이 함께 쓰는 순서 목록 (2026-10-13 공지 첨부 파일)", () => {
+    const old: FileRef[] = [
+      { kind: "old", id: 10 },
+      { kind: "old", id: 11 },
+    ];
+    // 새로 고른 파일은 끝에 붙는다
+    const a = withPicked(old, [{ key: "a" }, { key: "b" }]);
+    expect(a).toEqual([...old, { kind: "new", key: "a" }, { kind: "new", key: "b" }]);
+    // 옮긴 순서는 지키고, 고른 목록에서 뺀 파일은 순서에서도 빠진다 (올려 둔 파일 줄은 그대로)
+    const moved = moveItem(a, 2, -1); // a 를 11 앞으로
+    expect(withPicked(moved, [{ key: "b" }])).toEqual([{ kind: "old", id: 10 }, { kind: "old", id: 11 }, { kind: "new", key: "b" }]);
+    expect(withPicked(moved, [{ key: "a" }, { key: "b" }, { key: "c" }]).map((r) => (r.kind === "old" ? r.id : r.key))).toEqual([10, "a", 11, "b", "c"]);
+    // 저장할 순서 — 뺀 파일 · 아직 못 올린 파일은 건너뛴다
+    const items = fileOrderItems(withPicked(moved, [{ key: "a" }, { key: "b" }]), new Set([11]), new Map([["a", "notices/a.pdf"], ["b", undefined]]));
+    expect(items).toEqual([{ id: 10 }, { path: "notices/a.pdf" }]);
+    // 서버가 같은 순서로 번호를 매긴다
+    expect([...fileOrderOf([{ id: 10 }], [{ path: "notices/a.pdf" }], items).entries()]).toEqual([
+      ["id:10", 0],
+      ["path:notices/a.pdf", 1],
     ]);
   });
 

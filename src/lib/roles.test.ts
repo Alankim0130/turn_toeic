@@ -363,6 +363,22 @@ describe("LC 교재 · 음원 · 수업자료실 조회는 내 과정 칸 · 열
     for (const [key, body] of writes) expect(body, key).toMatch(/^[^]*private\.is_staff\(\)[^]*$/);
   });
 
+  it("class_notice_files — 공지 첨부 파일 행은 부모 공지가 보일 때만 (2026-10-13), 쓰기는 강사·관리자", () => {
+    const policies = new Map<string, string>();
+    for (const f of readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort()) {
+      for (const [, verb, name, body] of sqlOf(f).matchAll(/(create|drop) policy (?:if exists )?"([^"]+)" on public\.class_notice_files([^;]*);/g)) {
+        if (verb === "create") policies.set(name, body);
+        else policies.delete(name);
+      }
+    }
+    const selects = [...policies].filter(([, body]) => /for select/.test(body));
+    expect(selects.length, "class_notice_files 조회 정책을 못 찾았다").toBe(1);
+    expect(selects[0][1].replace(/\s+/g, " ")).toContain("exists (select 1 from public.class_notices n where n.id = class_notice_files.notice_id)");
+    const writes = [...policies].filter(([, body]) => /for (insert|update|delete)/.test(body));
+    expect(writes.length).toBe(3);
+    for (const [name, body] of writes) expect(body, name).toContain("private.is_staff()");
+  });
+
   it("저장소 class-materials — 강사·관리자, 아니면 보이는 파일 행이 있어야 서명 URL 이 나온다 (2026-10-06)", () => {
     const storage = new Map<string, string>();
     for (const f of readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort()) {
@@ -377,6 +393,8 @@ describe("LC 교재 · 음원 · 수업자료실 조회는 내 과정 칸 · 열
     expect(flat).toContain("bucket_id = 'class-materials'");
     expect(flat).toContain("(select private.is_staff())");
     expect(flat).toContain("exists (select 1 from public.class_material_files f where f.file_path = objects.name)");
+    // 공지 첨부 파일(2026-10-13)도 같은 버킷의 notices/ 폴더 — 보이는 공지 파일 행이 있어야 한다 (부모 공지의 범위 · 내림을 거친다)
+    expect(flat).toContain("exists (select 1 from public.class_notice_files f where f.file_path = objects.name)");
     expect(flat).not.toMatch(/has_term_access|has_section_access|using\s*\(\s*true\s*\)/);
     // 옛 갈래(class_materials.file_path)는 20261006110000 이 뺐다 — 그 칸은 지워졌다
     expect(flat).not.toContain("public.class_materials m where m.file_path");
