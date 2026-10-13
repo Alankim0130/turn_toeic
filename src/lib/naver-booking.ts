@@ -132,6 +132,52 @@ export function bookingsByDay<T extends { slot_at: string; booking_count: number
   return [...days.values()];
 }
 
+/** 칸 시작 시각 → "16:30" (한국, 24시간제 — 네이버 예약 현황 달력의 시각 표기. 첫토익과 같은 꼴) */
+export function slotClock(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+export type CalendarSlot = { slot_at: string; booking_count: number; stock: number; is_sale_day: boolean };
+
+/**
+ * 네이버 예약 현황 달력이 ‹ › 로 넘기는 달들 — **오늘이 든 달부터 조회 범위(60일 뒤)가 든 달까지** (2026-10-13 Alan — 첫토익 달력 모양).
+ * 칸 기록(`naver_booking_slots`)은 오늘부터 60일 뒤까지만 있고 하루 지난 칸은 지워지므로 그 밖의 달은 넘겨도 보여 줄 것이 없다
+ */
+export function calendarMonths(today: string, daysAhead = NAVER_DAYS_AHEAD): { year: number; month: number }[] {
+  const last = (() => {
+    const t = new Date(`${today}T00:00:00+09:00`);
+    t.setUTCDate(t.getUTCDate() + daysAhead);
+    return t.toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+  })();
+  const out: { year: number; month: number }[] = [];
+  let y = Number(today.slice(0, 4));
+  let m = Number(today.slice(5, 7));
+  const endY = Number(last.slice(0, 4));
+  const endM = Number(last.slice(5, 7));
+  while (y < endY || (y === endY && m <= endM)) {
+    out.push({ year: y, month: m });
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * 고른 날의 상태 — 네이버 예약 현황의 "예약 N건" · `HH:MM 상담 예약` 줄 · "예약 가능 시간" (첫토익 화면과 같은 세 가지).
+ * - `booked`: 예약이 하나라도 있는 칸 (시각순). `total` 은 그 날 예약 인원 합계 — 정원이 2명이라 한 칸에 둘이 잡힐 수 있어 칸 수가 아니라 인원으로 센다
+ * - `available`: 네이버 예약 페이지에서 지금 고를 수 있는 칸 — 예약을 받는 날(`is_sale_day`)이고 정원이 남은 칸. 지난 시각은 뺀다 (이미 고를 수 없다)
+ * - `collected`: 그 날 수집된 칸이 하나라도 있나 — 없으면 상담 운영일이 아니거나 아직 확인 전이다
+ */
+export function dayDetail<T extends CalendarSlot>(slots: T[], now = Date.now()): { booked: T[]; available: T[]; total: number; collected: boolean } {
+  const sorted = [...slots].sort((a, b) => new Date(a.slot_at).getTime() - new Date(b.slot_at).getTime());
+  const booked = sorted.filter((s) => s.booking_count > 0);
+  const available = sorted.filter((s) => s.is_sale_day && s.booking_count < s.stock && new Date(s.slot_at).getTime() >= now);
+  return { booked, available, total: booked.reduce((n, s) => n + s.booking_count, 0), collected: sorted.length > 0 };
+}
+
 /** 그 칸이 이미 지났나 — 오늘 예약 중 지난 시각은 흐리게 적는다 */
 export function slotPassed(iso: string, now = Date.now()): boolean {
   return new Date(iso).getTime() < now;

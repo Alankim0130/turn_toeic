@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bookingEventMessage, bookingsByDay, checkedAgo, naverBookingIds, naverRange, parseHourly, slotDay, slotLabel, slotPassed, slotTime } from "./naver-booking";
+import { bookingEventMessage, bookingsByDay, calendarMonths, checkedAgo, dayDetail, naverBookingIds, naverRange, parseHourly, slotClock, slotDay, slotLabel, slotPassed, slotTime } from "./naver-booking";
 import { site } from "./site";
 
 /** 2026-09-21 실측 응답의 칸 하나 (역전토익 강사상담, 정원 2명) */
@@ -123,5 +123,58 @@ describe("대시보드 오늘 · 내일 위젯과 네이버 예약 화면 — �
     expect(checkedAgo("2026-09-23T06:20:00.000Z", now)).toBe("10분 전");
     expect(checkedAgo("2026-09-23T03:30:00.000Z", now)).toBe("3시간 전");
     expect(checkedAgo("2026-09-21T06:20:00.000Z", now)).toBe("9월 21일(월) 오후 3:20");
+  });
+});
+
+describe("네이버 예약 현황 달력 (2026-10-13 Alan — 첫토익 화면처럼 달력 + 고른 날의 예약)", () => {
+  const slot = (iso: string, booking_count: number, extra: Partial<{ stock: number; is_sale_day: boolean }> = {}) => ({
+    slot_at: iso,
+    booking_count,
+    stock: extra.stock ?? 2,
+    is_sale_day: extra.is_sale_day ?? true,
+  });
+
+  it("시각은 24시간제 HH:MM (한국)", () => {
+    expect(slotClock("2026-10-13T07:30:00.000Z")).toBe("16:30");
+    expect(slotClock("2026-10-13T23:00:00.000Z")).toBe("08:00");
+  });
+
+  it("넘길 수 있는 달 = 오늘이 든 달부터 60일 뒤가 든 달까지 (해를 넘겨도)", () => {
+    expect(calendarMonths("2026-10-13")).toEqual([
+      { year: 2026, month: 10 },
+      { year: 2026, month: 11 },
+      { year: 2026, month: 12 },
+    ]);
+    expect(calendarMonths("2026-12-20")).toEqual([
+      { year: 2026, month: 12 },
+      { year: 2027, month: 1 },
+      { year: 2027, month: 2 },
+    ]);
+    // 같은 달 안에 끝나면 한 달뿐
+    expect(calendarMonths("2026-10-01", 20)).toEqual([{ year: 2026, month: 10 }]);
+  });
+
+  it("고른 날: 예약 칸은 시각순 · 인원 합계 · 빈 시간은 받는 날의 정원이 남은 칸만 · 지난 칸은 빈 시간에서 뺀다", () => {
+    const now = new Date("2026-10-13T06:00:00.000Z").getTime(); // 15:00 KST
+    const d = dayDetail(
+      [
+        slot("2026-10-13T08:00:00.000Z", 0), // 17:00 빈 칸
+        slot("2026-10-13T07:30:00.000Z", 1), // 16:30 예약 1
+        slot("2026-10-13T07:00:00.000Z", 2), // 16:00 꽉 참
+        slot("2026-10-13T06:30:00.000Z", 0), // 15:30 빈 칸
+        slot("2026-10-13T05:00:00.000Z", 0), // 14:00 지남 — 빈 시간에 넣지 않는다
+        slot("2026-10-13T04:00:00.000Z", 1), // 13:00 지났지만 예약은 그대로 센다
+        slot("2026-10-13T09:00:00.000Z", 0, { is_sale_day: false }), // 받지 않는 칸
+      ],
+      now,
+    );
+    expect(d.booked.map((s) => slotClock(s.slot_at))).toEqual(["13:00", "16:00", "16:30"]);
+    expect(d.total).toBe(4);
+    expect(d.available.map((s) => slotClock(s.slot_at))).toEqual(["15:30", "16:30", "17:00"]);
+    expect(d.collected).toBe(true);
+  });
+
+  it("수집된 칸이 없는 날", () => {
+    expect(dayDetail([])).toEqual({ booked: [], available: [], total: 0, collected: false });
   });
 });
