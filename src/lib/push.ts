@@ -18,7 +18,7 @@ export const NOTIFICATION_KINDS: { key: NotificationKind; label: string; desc: s
   { key: "verification", label: "등업신청 접수", desc: "수강생이 수강증을 올리면 바로" },
   { key: "textbook_order", label: "불라방 교재주문", desc: "교재 배송 신청이 들어오면 바로" },
   { key: "contact", label: "연락하기 문의", desc: "새 문의가 오면 바로" },
-  { key: "daily_digest", label: "하루 요약", desc: "매일 밤 9시쯤 스터디 신청·숙제업로드·신규 가입 수" },
+  { key: "daily_digest", label: "하루 요약", desc: "매일 밤 9시쯤 스터디 신청·숙제업로드·신규 가입 수 · 개강이 다가오는데 비대면 스터디를 아직 안 열었으면 그것부터" },
 ];
 
 export type PushMessage = { title: string; body: string; url?: string; tag?: string };

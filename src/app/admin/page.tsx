@@ -18,6 +18,8 @@ import { forInstructor, linkKindLabel, nowKst, pickFocus } from "@/lib/live-link
 import { requireStaff } from "@/lib/auth";
 import { isPickup, pickupLabel } from "@/lib/textbook";
 import { isTextbookAccountMissing } from "@/lib/textbook-guide";
+import { loadOnlineStudyReminders, onlineReminderText } from "@/lib/online-study-reminder";
+import { termParam } from "@/lib/study";
 
 export const metadata: Metadata = { title: "대시보드", robots: { index: false } };
 
@@ -52,7 +54,7 @@ export default async function AdminDashboardPage() {
   const today = todayKST();
   const tomorrow = shiftDate(today, 1);
 
-  const [courseRows, courseBlocks, courseList, term, textbook, textbookCount, profiles, pendingVer, pendingHomework, newContacts, naver, naverStatus, liveSessions, textbookAccountMissing] = await Promise.all([
+  const [courseRows, courseBlocks, courseList, term, textbook, textbookCount, profiles, pendingVer, pendingHomework, newContacts, naver, naverStatus, liveSessions, textbookAccountMissing, onlineReminders] = await Promise.all([
     // 등록생 위젯 — 지금 수강 중인 등록의 반 배정을 강좌마다 사람 수로 센다 (2026-09-23 Alan)
     getActiveCourseRows(supabase, today),
     // 60분 · 120분 가르기 — 지금 기수 반 전체의 시간대 (2026-10-13 Alan)
@@ -86,6 +88,9 @@ export default async function AdminDashboardPage() {
     getLiveLinkSessions(supabase, { from: today, to: shiftDate(today, 13) }),
     // 입금 계좌가 없어 학생이 교재를 주문하지 못하는가 (2026-10-07 — 학생이 캡처해 보내고서야 알았다. 주문이 안 들어와 아래 위젯은 조용했다)
     isTextbookAccountMissing(supabase),
+    // 개강이 다가오는데 그 달 비대면 스터디가 아직 안 열렸는가 (2026-10-13 Alan "비대면 스터디 올리라고 강사님에게 알려주면") —
+    // 서비스 롤로 읽는다 (가드가 먼저다): 테스트 등급이면 세션으로는 '준비 중' 스터디가 안 보여 이미 만든 것을 없다고 알린다
+    loadOnlineStudyReminders(createAdminClient(), today),
   ]);
 
   /* 수업시간대별 인원수 — 강좌(행) × 시간대(열) 표 */
@@ -180,6 +185,24 @@ export default async function AdminDashboardPage() {
           에서 은행 · 계좌번호 · 예금주를 넣어 주세요.
         </Alert>
       )}
+
+      {/* 비대면 스터디를 아직 안 열었으면 (2026-10-13) — 신청은 개강일부터 사흘뿐이라 늦게 열면 그 달은 아무도 신청하지 못한다.
+          개강 7일 전부터 신청 마지막 날까지만 선다 (online-study-reminder.ts) */}
+      {onlineReminders.map((r) => {
+        const t = onlineReminderText(r, today);
+        return (
+          <Alert key={r.termId} kind="warning" title={t.title} className="mb-6">
+            {t.lead}{" "}
+            <Link
+              href={`/admin/study/plan?term=${termParam(r.year, r.month)}`}
+              className="font-bold text-brand-700 underline decoration-brand-200 underline-offset-2 hover:decoration-brand-500"
+            >
+              스터디 시간 설정
+            </Link>
+            {t.action}
+          </Alert>
+        );
+      })}
 
       {/* 처리 대기 — 손이 가야 하는 것부터 */}
       <section aria-labelledby="todo-title" className="mb-8">
