@@ -146,12 +146,18 @@ export function pickCopySource<T extends { term: { year: number; month: number }
   );
 }
 
-/** 가져온 뒤 안내 — 레벨이 비어 있던 시간대(레벨이 생기기 전 것)는 수정에서 골라야 학생이 신청할 수 있다 */
-export function copyStudyMessage(source: { month: number }, slots: { level: number | null }[]): string {
+/**
+ * 가져온 뒤 안내 — 레벨이 비어 있던 시간대(레벨이 생기기 전 것)는 수정에서 골라야 학생이 신청할 수 있다.
+ * 안내 글은 그대로 복사하므로 지난달 이름(`10월`)이 적혀 있으면 이 달 학생 화면에 그대로 선다 (2026-10-13 월 넘김 리허설 — "10월 단어 스터디 · 302호" 가
+ * 11월 스터디 신청 카드에 떴다). 글을 고쳐 쓰지는 않고(날짜까지 섞여 있을 수 있다) 고치라고만 말한다
+ */
+export function copyStudyMessage(source: { month: number }, slots: { level: number | null }[], notice?: string | null, target?: { month: number }): string {
   const missing = slots.filter((s) => s.level == null).length;
+  const staleMonth = !!notice && new RegExp(`(^|[^0-9])${source.month}월`).test(notice);
   return (
     `${source.month}월 시간대 ${slots.length}개와 안내를 가져왔어요. 시간 · 정원을 확인한 뒤 '신청 받기'로 바꿔 주세요.` +
-    (missing > 0 ? ` 레벨 미정 ${missing}개는 수정에서 레벨을 골라 주세요.` : "")
+    (missing > 0 ? ` 레벨 미정 ${missing}개는 수정에서 레벨을 골라 주세요.` : "") +
+    (staleMonth ? ` 안내에 '${source.month}월' 이 그대로 있어요 — ${target ? `${target.month}월에 맞게 ` : ""}고쳐 주세요.` : "")
   );
 }
 

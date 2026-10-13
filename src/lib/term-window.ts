@@ -23,14 +23,25 @@ export function termWindow(t: TermRow): { opens: string; closes: string; dated: 
 
 /**
  * 지금 보여 줄 기수:
- * 1. 오늘이 기간 안인 기수 (둘이 겹치면 먼저 끝나는 쪽 — 지금 수업이 이어지는 달)
+ * 1. 오늘이 기간 안인 기수. 둘이 겹치면 **오늘이 든 달(1일~말일)의 기수**(개강일·종강일을 정한 것만) — 없으면 먼저 끝나는 쪽
  * 2. 없으면 앞으로 시작할 가장 가까운 기수 — 지난 기수가 끝났으면 새 기수로 넘어간다
  * 3. 그것도 없으면 가장 최근에 끝난 기수
  * `datedOnly` 면 개강일·종강일을 정한 기수만 본다 (출석 — 날짜 없는 달에는 출석이 없다).
+ *
+ * **겹칠 때 그 달 기수가 먼저다** (2026-10-13 월 넘김 리허설) — 지난 달 종강일을 다음 달 개강일 뒤로 잡으면(마지막 회차 녹화본을 더 보게)
+ * 두 기수가 며칠 겹친다. 그전 규칙(먼저 끝나는 쪽)으로는 그동안 출석 · 숙제 미제출 · 스터디 · 특강 · 비대면 자료 화면이 수업이 다 끝난 지난 달을
+ * 먼저 보여 줘서, 11월 비대면 신청 기간(개강일부터 3일)에 강사 화면이 10월 스터디를 띄웠다. 다음 달 개강일을 이번 달 안으로 당겨 잡은 경우
+ * (10월 수업이 아직 이어지는 10월 말)는 그대로 이번 달이다 — 오늘이 든 달의 기수라서.
  */
 export function pickCurrentTerm<T extends TermRow>(terms: readonly T[], today: string, opts: { datedOnly?: boolean } = {}): T | null {
   const list = terms.map((t) => ({ t, w: termWindow(t) })).filter((x) => !opts.datedOnly || x.w.dated);
   const now = list.filter((x) => x.w.opens <= today && today <= x.w.closes).sort((a, b) => a.w.closes.localeCompare(b.w.closes) || a.w.opens.localeCompare(b.w.opens));
+  if (now.length > 1) {
+    const [y, m] = [Number(today.slice(0, 4)), Number(today.slice(5, 7))];
+    // 날짜를 정한 기수만 — 날짜가 없어 그 달 1일~말일로 대신한 기수(아직 개강일을 안 찍은 다음 달)가 진짜 기간 안의 기수를 이기면 안 된다
+    const thisMonth = now.find((x) => x.w.dated && x.t.year === y && x.t.month === m);
+    if (thisMonth) return thisMonth.t;
+  }
   if (now[0]) return now[0].t;
   const next = list.filter((x) => x.w.opens > today).sort((a, b) => a.w.opens.localeCompare(b.w.opens));
   if (next[0]) return next[0].t;

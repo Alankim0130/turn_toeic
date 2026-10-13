@@ -162,4 +162,14 @@ describe("지난달 그대로 가져오기 (2026-10-12 Alan \"응 지난달 그�
     expect(copyStudyMessage({ month: 9 }, [{ level: 1 }, { level: 2 }])).toBe("9월 시간대 2개와 안내를 가져왔어요. 시간 · 정원을 확인한 뒤 '신청 받기'로 바꿔 주세요.");
     expect(copyStudyMessage({ month: 9 }, [{ level: 1 }, { level: null }, { level: null }])).toContain("레벨 미정 2개는 수정에서 레벨을 골라 주세요.");
   });
+
+  it("가져온 안내에 지난달 이름이 그대로 있으면 고치라고 말한다 (2026-10-13 월 넘김 리허설)", () => {
+    const slots = [{ level: 1 }];
+    expect(copyStudyMessage({ month: 10 }, slots, "10월 단어 스터디 · 302호", { month: 11 })).toContain("안내에 '10월' 이 그대로 있어요 — 11월에 맞게 고쳐 주세요.");
+    expect(copyStudyMessage({ month: 10 }, slots, "단어 스터디 · 302호", { month: 11 })).not.toContain("그대로 있어요");
+    expect(copyStudyMessage({ month: 10 }, slots, null, { month: 11 })).not.toContain("그대로 있어요");
+    // 1월에서 가져올 때 '11월' · '12월' 을 1월로 보지 않는다
+    expect(copyStudyMessage({ month: 1 }, slots, "11월 기말 대비 · 12월 일정", { month: 2 })).not.toContain("그대로 있어요");
+    expect(copyStudyMessage({ month: 1 }, slots, "1월 단어 스터디", { month: 2 })).toContain("'1월'");
+  });
 });

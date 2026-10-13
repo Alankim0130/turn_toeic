@@ -97,7 +97,7 @@ export default async function StudyPlanPage({ searchParams }: { searchParams: Pr
   const offlineStudy = studies.find((s) => s.kind === "offline") ?? null;
   const copiedNotice =
     offlineStudy && Number.isInteger(copiedMonth) && copiedMonth >= 1 && copiedMonth <= 12 && offlineStudy.slots.length === copiedCount
-      ? copyStudyMessage({ month: copiedMonth }, offlineStudy.slots)
+      ? copyStudyMessage({ month: copiedMonth }, offlineStudy.slots, offlineStudy.notice, term)
       : null;
 
   return (
