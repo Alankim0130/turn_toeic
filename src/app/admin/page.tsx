@@ -11,7 +11,8 @@ import { BarChart } from "@/components/admin/charts/BarChart";
 import { courseHeadcounts, headcountTotal } from "@/lib/course-headcount";
 import { bookingsByDay, checkedAgo, NAVER_PAGE, slotPassed, slotTime } from "@/lib/naver-booking";
 import { shiftDate } from "@/lib/term-window";
-import { countBy, GENDER_LABEL, getActiveCourseRows, getCurrentOrUpcomingTerm, termLabel } from "./_lib/queries";
+import { countBy, GENDER_LABEL, getActiveCourseRows, getActiveSectionBlocks, getCurrentOrUpcomingTerm, termLabel } from "./_lib/queries";
+import { minutesLabel } from "@/lib/time-blocks";
 import { getLiveLinkSessions } from "./_lib/live-links";
 import { forInstructor, linkKindLabel, nowKst, pickFocus } from "@/lib/live-links";
 import { requireStaff } from "@/lib/auth";
@@ -51,9 +52,11 @@ export default async function AdminDashboardPage() {
   const today = todayKST();
   const tomorrow = shiftDate(today, 1);
 
-  const [courseRows, courseList, term, textbook, textbookCount, profiles, pendingVer, pendingHomework, newContacts, naver, naverStatus, liveSessions, textbookAccountMissing] = await Promise.all([
+  const [courseRows, courseBlocks, courseList, term, textbook, textbookCount, profiles, pendingVer, pendingHomework, newContacts, naver, naverStatus, liveSessions, textbookAccountMissing] = await Promise.all([
     // 등록생 위젯 — 지금 수강 중인 등록의 반 배정을 강좌마다 사람 수로 센다 (2026-09-23 Alan)
     getActiveCourseRows(supabase, today),
+    // 60분 · 120분 가르기 — 지금 기수 반 전체의 시간대 (2026-10-13 Alan)
+    getActiveSectionBlocks(supabase, today),
     supabase.from("courses").select("id, name, program, target_score, is_active"),
     getCurrentOrUpcomingTerm(supabase, today),
     supabase
@@ -139,7 +142,7 @@ export default async function AdminDashboardPage() {
   const univData = countBy(profiles.data ?? [], (p) => p.university).slice(0, 5);
 
   // 오늘 현황 — 등록생 위젯 · 네이버 예약 위젯 (2026-09-23 Alan: 예비등록생 · 졸업생 칸은 뺐다)
-  const headcounts = courseRows && !courseList.error ? courseHeadcounts(courseList.data ?? [], courseRows) : null;
+  const headcounts = courseRows && !courseList.error ? courseHeadcounts(courseList.data ?? [], courseRows, courseBlocks) : null;
   const headTotal = courseRows ? headcountTotal(courseRows) : { count: 0, live: 0 };
   // 불라방이 한 명이라도 있으면 줄마다 괄호 칸을 둔다 — 괄호가 없는 줄도 같은 폭을 비워 둬야 숫자가 한 줄로 선다
   const anyLive = headTotal.live > 0 || (headcounts ?? []).some((h) => h.live > 0);
@@ -264,7 +267,9 @@ export default async function AdminDashboardPage() {
           </Link>
 
           {/* 등록생 — 강좌마다 지금 수강 중인 사람 수를 크게. 주5일·120분 학생도 한 사람 (`courseHeadcounts`).
-              괄호는 그중 불라방 인원 (2026-10-06 Alan "등록생부분에서 불라방인원은 괄호로") — 큰 숫자는 그대로 전체다 */}
+              괄호는 그중 불라방 인원 (2026-10-06 Alan "등록생부분에서 불라방인원은 괄호로") — 큰 숫자는 그대로 전체다.
+              이름 아래 작은 줄은 분량별 인원 `60분 12명 · 120분 26명` (2026-10-13 Alan "60분수업 학생과 120분 수업학생 … 구분해서") —
+              분량은 반의 시간대에서 나온다 (850 은 70분 · 140분). 그릇 반(속성반 · 2주완성) · 분량을 모르는 달(방학달 통짜)에는 줄이 없다 */}
           <Link href="/admin/students?tab=active" className="card flex flex-col p-4 transition hover:-translate-y-0.5 hover:shadow-pink sm:p-5 lg:col-span-3">
             <div className="flex items-center gap-2">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50">
@@ -283,8 +288,15 @@ export default async function AdminDashboardPage() {
                 <ul className="divide-y divide-line">
                   {headcounts.map((h) => (
                     <li key={h.id} className="flex items-center justify-between gap-3 py-2">
-                      <span className="text-sm font-black text-ink sm:text-base">{h.label}</span>
-                      <span className="flex items-baseline gap-0.5">
+                      <span className="flex min-w-0 flex-col">
+                        <span className="text-sm font-black text-ink sm:text-base">{h.label}</span>
+                        {h.kinds.length > 0 && (
+                          <span className="text-xs font-semibold text-slate">
+                            {h.kinds.map((k) => `${minutesLabel(k.minutes)} ${k.count.toLocaleString("ko-KR")}명`).join(" · ")}
+                          </span>
+                        )}
+                      </span>
+                      <span className="flex shrink-0 items-baseline gap-0.5">
                         <span className={cn("text-2xl font-black leading-none tabular-nums", h.count > 0 ? "text-ink" : "text-mist")}>
                           {h.count.toLocaleString("ko-KR")}
                         </span>
