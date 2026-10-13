@@ -20,7 +20,8 @@ import { signedAvatarUrl } from "@/lib/avatar-url";
 import { StudentReceipts, type StudentReceipt } from "@/components/admin/students/StudentReceipts";
 import { receiptFacts, receiptNameMismatch, receiptVerdict } from "@/lib/receipt-history";
 import type { PickerSection } from "@/components/admin/SectionPicker";
-import { enrollmentLines, GENDER_LABEL, pickTerm, termLabel, TERM_COLUMNS } from "../../_lib/queries";
+import { enrollmentLines, enrollmentPhases, GENDER_LABEL, pickTerm, termLabel, TERM_COLUMNS } from "../../_lib/queries";
+import { orderPhase } from "@/lib/enrollment-window";
 import { termParam } from "@/lib/study";
 
 export const metadata: Metadata = { title: "학생 관리", robots: { index: false } };
@@ -59,7 +60,7 @@ export default async function StudentDetailPage({
     supabase
       .from("enrollments")
       .select(
-        "id, mode, status, order_id, section:class_sections!enrollments_section_id_fkey(id, term_id, course_id, track, start_time, end_time, time_block, closes_at, term:terms(year, month), course:courses(name))",
+        "id, mode, status, order_id, section:class_sections!enrollments_section_id_fkey(id, term_id, course_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(name))",
       )
       .eq("student_id", id)
       .order("id"),
@@ -301,20 +302,31 @@ export default async function StudentDetailPage({
             <p className="rounded-xl bg-brand-50/60 px-4 py-6 text-center text-sm text-slate">아직 배정된 반이 없어요.</p>
           ) : (
             <ul className="divide-y divide-line">
-              {lines.map((l) => (
+              {lines.map((l) => {
+                // 단계는 반의 개강일 · 종강일로 (2026-10-13) — 미리 배정된 다음 달 반은 `예비등록` 이고 개강일을 함께 적는다
+                const phases = enrollmentPhases(l, today);
+                return (
                 <li key={l.key} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
                   <span className="min-w-0">
                     <span className="font-bold text-ink">{l.label}</span>
-                    {l.closesAt && <span className="ml-2 text-xs text-slate">{formatDate(l.closesAt, { month: "long", day: "numeric" })} 종강</span>}
+                    {l.opensAt && phases.includes("preliminary") && (
+                      <span className="ml-2 text-xs text-slate">{formatDate(l.opensAt, { month: "long", day: "numeric" })} 개강 ·</span>
+                    )}
+                    {l.closesAt && (
+                      <span className={phases.includes("preliminary") ? "ml-1 text-xs text-slate" : "ml-2 text-xs text-slate"}>
+                        {formatDate(l.closesAt, { month: "long", day: "numeric" })} 종강
+                      </span>
+                    )}
                   </span>
                   <span className="flex shrink-0 flex-wrap items-center gap-2">
-                    {l.statuses.map((st) => (
+                    {phases.map((st) => (
                       <StatusBadge key={st} status={st} />
                     ))}
                     <RemoveEnrollment enrollmentIds={l.ids} label={l.label} week5={l.week5} />
                   </span>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
 
@@ -353,7 +365,8 @@ export default async function StudentDetailPage({
                     </span>
                     <span className="flex items-center gap-2">
                       {!o.verification_id && <span className="chip text-xs">스태프 배정</span>}
-                      <StatusBadge status={o.status} />
+                      {/* 저장된 상태는 자정 배치가 맞추기 전까지 하루 늦을 수 있어 날짜로 적는다 (/my 등록 현황과 같은 규칙) */}
+                      <StatusBadge status={orderPhase(o, today)} />
                     </span>
                   </li>
                 ))}

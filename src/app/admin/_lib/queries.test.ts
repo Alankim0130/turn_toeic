@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { enrollmentLines, sectionChip, sectionSummary } from "./queries";
+import { enrollmentLines, enrollmentPhases, sectionChip, sectionSummary } from "./queries";
 import { week5SectionIds, collapseWeek5 } from "@/lib/week5";
 
 const term = { year: 2026, month: 9 };
@@ -76,7 +76,7 @@ describe("명단 카드가 주5일 두 줄을 한 줄로 합친다", () => {
 
 describe("학생 관리 반 배정 — 주5일은 한 줄 (2026-10-02 Alan)", () => {
   const oct = { year: 2026, month: 10 };
-  const sec = (id: number, track: string, extra: Partial<{ term_id: number; time_block: string; closes_at: string }> = {}) => ({
+  const sec = (id: number, track: string, extra: Partial<{ term_id: number; time_block: string; enrollment_opens_at: string; closes_at: string; term: { year: number; month: number } }> = {}) => ({
     id,
     term_id: 10,
     course_id: 65,
@@ -99,7 +99,7 @@ describe("학생 관리 반 배정 — 주5일은 한 줄 (2026-10-02 Alan)", ()
       { withEnd: true },
     );
     expect(lines).toEqual([
-      { key: "21-22", ids: [21, 22], week5: true, label: "10월 · 650+ 왕기초반 · 주5일 · 10:00~12:10 · 현장", closesAt: "2026-11-01", statuses: ["active"] },
+      { key: "21-22", ids: [21, 22], week5: true, label: "10월 · 650+ 왕기초반 · 주5일 · 10:00~12:10 · 현장", opensAt: null, closesAt: "2026-11-01", statuses: ["active"] },
     ]);
   });
 
@@ -133,8 +133,31 @@ describe("학생 관리 반 배정 — 주5일은 한 줄 (2026-10-02 Alan)", ()
 
   it("반이 지워진 배정도 한 줄로 남는다 (해제할 수 있게)", () => {
     expect(enrollmentLines([{ id: 41, mode: "onsite", section: null }])).toEqual([
-      { key: "41", ids: [41], week5: false, label: "반 미배정", closesAt: null, statuses: ["active"] },
+      { key: "41", ids: [41], week5: false, label: "반 미배정", opensAt: null, closesAt: null, statuses: ["active"] },
     ]);
+  });
+
+  it("단계는 반의 개강일 · 종강일로 — 미리 배정된 다음 달 반은 예비등록, 종강 뒤는 만료 (2026-10-13 월 넘김 점검)", () => {
+    const [oct10, nov11] = enrollmentLines([
+      { id: 51, mode: "live", status: "active", section: sec(1, "mwf", { enrollment_opens_at: "2026-10-06", closes_at: "2026-11-03" }) },
+      { id: 52, mode: "live", status: "active", section: sec(7, "mwf", { term_id: 11, term: { year: 2026, month: 11 }, enrollment_opens_at: "2026-11-04", closes_at: "2026-12-01" }) },
+    ]);
+    expect([oct10.opensAt, oct10.closesAt, nov11.opensAt, nov11.closesAt]).toEqual(["2026-10-06", "2026-11-03", "2026-11-04", "2026-12-01"]);
+    // 10월 셋째 주 — 10월은 수강 중, 11월은 예비등록 (배정 행은 둘 다 active 지만 뜻이 다르다)
+    expect(enrollmentPhases(oct10, "2026-10-20")).toEqual(["active"]);
+    expect(enrollmentPhases(nov11, "2026-10-20")).toEqual(["preliminary"]);
+    // 10월 종강일까지는 수강 중 · 다음 날 만료 / 11월 개강일부터 수강 중
+    expect(enrollmentPhases(oct10, "2026-11-03")).toEqual(["active"]);
+    expect(enrollmentPhases(oct10, "2026-11-04")).toEqual(["expired"]);
+    expect(enrollmentPhases(nov11, "2026-11-04")).toEqual(["active"]);
+    expect(enrollmentPhases(nov11, "2026-12-02")).toEqual(["expired"]);
+  });
+
+  it("단계 — 날짜를 모르는 줄 · active 가 아닌 배정은 그대로 둔다", () => {
+    expect(enrollmentPhases({ opensAt: null, closesAt: null, statuses: ["active"] }, "2026-10-20")).toEqual(["active"]);
+    expect(enrollmentPhases({ opensAt: "2026-10-06", closesAt: "2026-11-03", statuses: ["pending_section"] }, "2026-10-20")).toEqual(["pending_section"]);
+    // 주5일 두 트랙이 같은 단계면 하나만
+    expect(enrollmentPhases({ opensAt: "2026-11-04", closesAt: "2026-12-01", statuses: ["active", "active"] }, "2026-10-20")).toEqual(["preliminary"]);
   });
 
   it("sectionSummary 의 예전 부르기(방식 하나)는 그대로다", () => {
