@@ -53,6 +53,7 @@ const ERRORS: Record<string, string> = {
  * 오늘이 든 기수(없으면 다음 기수)의 개강일~종강일 안에서만 보여 준다. 기수 고르기는 `pickCurrentTerm`(날짜를 정한 기수만),
  * 명단·격자·처리의 기간 판정은 DB 함수가 다시 한다 (20260922113000 · 20261001100000).
  * **끝난 기수는 종강 뒤 7일 동안만** `?term=YYYY-MM` 링크로 열 수 있다 — 종강일 수업에 못 찍은 학생의 출석 인정 같은 정정을 다음 날 할 수 있게. 결석 알림은 그 기수에 보내지 않는다.
+ * 지난 달 종강일을 이번 달 개강일 뒤로 잡아 두 기수가 겹치면 지금 기수는 이번 달이고(`pickCurrentTerm`, 2026-10-13) 지난 달은 같은 링크로 연다 (아직 종강 전이어도).
  *
  * 화면은 둘이다 (2026-10-01 Alan — "강사모드에서 학생들 출결상태를 편하게 볼 수 있으면"):
  * - **날짜별**(기본) — 그 날 반마다 출석(찍은 시각)·지각, 맨 위에 **결석 학생과 한 번에 알림 보내기**(강사·관리자만), 학생마다 `처리`(출석 인정 · 결석 · 되돌리기, 사유 필수).
@@ -76,11 +77,14 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   const { data: termRows } = await supabase.from("terms").select("id, year, month, enrollment_opens_at, closes_at");
   const dated = (termRows ?? []).filter((t) => termWindow(t).dated);
   const current = pickCurrentTerm(dated, today, { datedOnly: true });
-  // 방금 끝난 기수 — 종강 뒤 7일 동안만 정정하러 열 수 있다
+  // 지난 기수 — 종강 뒤 7일 동안만 정정하러 열 수 있다. 지난 달 종강일을 이번 달 개강일 뒤로 잡아 두 기수가 겹치는 동안(아직 종강 전)도
+  // 같은 길로 연다 — 겹치면 지금 기수는 이번 달이라(`pickCurrentTerm`, 2026-10-13) 지난 달 출석을 정정할 길이 따로 있어야 한다
   const graceFrom = shiftDate(today, -GRACE_DAYS);
-  const recent = dated
-    .filter((t) => t.id !== current?.id && termWindow(t).closes < today && termWindow(t).closes >= graceFrom)
-    .sort((a, b) => termWindow(b).closes.localeCompare(termWindow(a).closes))[0];
+  const recent = current
+    ? dated
+        .filter((t) => t.id !== current.id && termWindow(t).opens < termWindow(current).opens && termWindow(t).opens <= today && termWindow(t).closes >= graceFrom)
+        .sort((a, b) => termWindow(b).closes.localeCompare(termWindow(a).closes))[0]
+    : undefined;
   const key = (t: { year: number; month: number }) => `${t.year}-${String(t.month).padStart(2, "0")}`;
   const term = (recent && termParam === key(recent) ? recent : null) ?? current;
   const viewingPast = !!term && term.id !== current?.id;
@@ -121,16 +125,19 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
       {today > closes && !viewingPast && <p className="mt-2 text-sm font-bold text-amber-800">이 기수는 끝났어요. 다음 달 개강일·종강일을 저장하면 그 달로 넘어가요.</p>}
       {viewingPast && (
         <p className="mt-2 text-sm font-bold text-amber-800">
-          끝난 기수를 정정하고 있어요 (종강 뒤 {GRACE_DAYS}일까지).{" "}
+          지난 기수를 정정하고 있어요 (종강 뒤 {GRACE_DAYS}일까지).{" "}
           <Link href="/admin/attendance" className="text-brand-600 hover:underline">지금 기수로 →</Link>
         </p>
       )}
       {!viewingPast && recent && (
         <p className="mt-2 text-sm">
-          <Link href={`/admin/attendance?term=${key(recent)}&date=${termWindow(recent).closes}`} className="font-bold text-brand-600 hover:underline">
+          {/* 한눈에 보기로 연다 — 그 기수의 수업일만 서고, 날짜를 누르면 그 날 명단으로 간다 (종강일은 수업이 없는 날일 수 있다) */}
+          <Link href={`/admin/attendance?term=${key(recent)}&view=board`} className="font-bold text-brand-600 hover:underline">
             지난 {recent.month}월 기수 정정하기 →
           </Link>
-          <span className="ml-1 text-xs text-slate">종강 뒤 {GRACE_DAYS}일까지 열려요 (못 찍은 날의 출석 인정 등)</span>
+          <span className="ml-1 text-xs text-slate">
+            {termWindow(recent).closes >= today ? `${md(termWindow(recent).closes)} 종강 · ` : ""}종강 뒤 {GRACE_DAYS}일까지 열려요 (못 찍은 날의 출석 인정 등)
+          </span>
         </p>
       )}
     </section>

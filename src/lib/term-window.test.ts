@@ -38,10 +38,27 @@ describe("지금 기수 — 강사가 정한 개강일~종강일", () => {
     expect(pickCurrentTerm([], "2026-12-01")).toBeNull();
   });
 
-  it("두 기수가 겹치면 먼저 끝나는 쪽 (지금 수업이 이어지는 달)", () => {
+  it("다음 달 개강일을 이번 달 안으로 당겨 잡아 겹치면 — 이번 달 안은 이번 달 기수 (수업이 이어지는 달)", () => {
     const early: TermRow = { ...OCT, enrollment_opens_at: "2026-09-28" };
     expect(pickCurrentTerm([SEP, early], "2026-09-29")?.id).toBe(8);
     expect(pickCurrentTerm([SEP, early], "2026-10-04")?.id).toBe(40);
+  });
+
+  it("지난 달 종강일을 다음 달 개강일 뒤로 잡아 겹치면 — 다음 달에 들어선 날은 다음 달 기수 (2026-10-13 월 넘김 리허설)", () => {
+    // 10월 마지막 수업 10/30 · 녹화본을 더 보게 종강 11/6 · 11월 개강 11/4
+    const lateOct: TermRow = { ...OCT, closes_at: "2026-11-06" };
+    const nov: TermRow = { id: 41, year: 2026, month: 11, enrollment_opens_at: "2026-11-04", closes_at: "2026-12-03" };
+    expect(pickCurrentTerm([lateOct, nov], "2026-11-03")?.id).toBe(40);
+    expect(pickCurrentTerm([lateOct, nov], "2026-11-04")?.id).toBe(41);
+    expect(pickCurrentTerm([lateOct, nov], "2026-11-06")?.id).toBe(41);
+    expect(pickCurrentTerm([lateOct, nov], "2026-11-07")?.id).toBe(41);
+    expect(pickCurrentTerm([nov, lateOct], "2026-11-05", { datedOnly: true })?.id).toBe(41);
+    // 그 달 기수가 겹친 둘 중에 없으면 예전처럼 먼저 끝나는 쪽
+    const sepLong: TermRow = { ...SEP, closes_at: "2026-11-10" };
+    expect(pickCurrentTerm([sepLong, nov], "2026-11-05")?.id).toBe(41);
+    expect(pickCurrentTerm([sepLong, { ...OCT, closes_at: "2026-11-20" }], "2026-11-05")?.id).toBe(8);
+    // 날짜를 아직 안 찍은 그 달 기수(1일~말일로 대신)는 날짜를 정한 지난 기수를 이기지 않는다
+    expect(pickCurrentTerm([OCT, NOV], "2026-11-01")?.id).toBe(40);
   });
 });
 

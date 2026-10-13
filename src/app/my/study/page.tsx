@@ -8,7 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { cn, formatDate, todayKST } from "@/lib/utils";
 import { formatBytes, isSlotKind, slotTime, STUDY_KIND_ICON, STUDY_KIND_LABEL, STUDY_LEVEL_ALL, STUDY_STATUS_LABEL, studyLevelLabel, studyLevelsOf, termIndex } from "@/lib/study";
 import { StudyLevelPanel } from "@/components/my/study/StudyLevelPanel";
-import { getMyOrders, getMyStudyCheckins, getMyStudyEligibility, getMyStudyMaterials, getMyStudySignups, getStudySlots, termLabel } from "../_lib/queries";
+import { getMyOrders, getMyStudyCheckins, getMyStudyEligibility, getMyStudyMaterials, getMyStudySignups, getStudySlots, termLabel, type MyStudySignup } from "../_lib/queries";
 import { getSessionProfile } from "@/lib/auth";
 import { loadGated } from "@/components/student/StudentGate";
 import { CheckinPanel } from "@/components/my/study/CheckinPanel";
@@ -59,22 +59,29 @@ export default async function MyStudyPage() {
     </PageHeader>
   );
 
-  if (signups.length === 0) {
+  const sorted = [...signups].sort((a, b) => termIndex(b.study!.term ?? { year: 0, month: 0 }) - termIndex(a.study!.term ?? { year: 0, month: 0 }));
+  // 지금 듣는 · 곧 들을 기수의 신청만 펼친다 — 끝난 달 신청은 아래에 접어 둔다 (2026-10-13 월 넘김 리허설:
+  // 11월 개강일에 계속 다니는 학생이 이 화면을 열면 끝난 10월 비대면 스터디가 '신청 받는 중' 으로 서고 "자료를 받을 수 없어요" 가 떴다.
+  // 11월 비대면 신청은 개강일부터 3일뿐인데 그 말은 어디에도 없었다)
+  const live = new Set([...accessTerms, ...opensOn.keys()]);
+  const current = sorted.filter((s) => live.has(s.study!.term_id));
+  const past = sorted.filter((s) => !live.has(s.study!.term_id));
+  const onlineSignups = current.filter((s) => s.study!.kind === "online");
+
+  if (current.length === 0) {
     return (
       <div className="space-y-8">
         {header}
         <EmptyState
           icon="study"
-          title="아직 신청한 스터디가 없어요"
-          description="단어 스터디 · 비대면 스터디 중 원하는 스터디를 레벨에 맞춰 신청해 보세요. 그 달 수강생은 개강일부터 신청할 수 있어요."
+          title={past.length > 0 ? "이번 달에 신청한 스터디가 없어요" : "아직 신청한 스터디가 없어요"}
+          description="단어 스터디 · 비대면 스터디 중 원하는 스터디를 레벨에 맞춰 신청해 보세요. 그 달 수강생은 개강일부터 신청할 수 있고, 비대면 스터디는 개강일부터 3일 동안만 신청받아요."
           action={{ href: "/study", label: "스터디 신청하러 가기" }}
         />
+        <PastSignups list={past} />
       </div>
     );
   }
-
-  const sorted = [...signups].sort((a, b) => termIndex(b.study!.term ?? { year: 0, month: 0 }) - termIndex(a.study!.term ?? { year: 0, month: 0 }));
-  const onlineSignups = sorted.filter((s) => s.study!.kind === "online");
 
   return (
     <div className="space-y-8">
@@ -84,7 +91,7 @@ export default async function MyStudyPage() {
       <section aria-labelledby="my-signups-title">
         <h2 id="my-signups-title" className="mb-3 text-lg font-black text-ink">신청한 스터디</h2>
         <ul className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {sorted.map((s, i) => {
+          {current.map((s, i) => {
             const study = s.study!;
             return (
               <Reveal key={s.id} delay={i * 60} as="li">
@@ -225,7 +232,37 @@ export default async function MyStudyPage() {
           </section>
         );
       })}
+
+      <PastSignups list={past} />
     </div>
+  );
+}
+
+/**
+ * 끝난 달의 신청 — 접어 둔다. 그 달 자료는 종강일에 닫혀(수강생만 · 종강일까지) 받을 것이 없으니 달 · 종류 · 레벨만 적는다.
+ * 지우지 않는 것은 "지난달에 무엇을 했나" 를 되볼 길이라서다 (신청 기록은 그대로 남는다)
+ */
+function PastSignups({ list }: { list: MyStudySignup[] }) {
+  if (list.length === 0) return null;
+  return (
+    <details className="card overflow-hidden">
+      <summary className="cursor-pointer list-none px-5 py-4 text-sm font-bold text-slate [&::-webkit-details-marker]:hidden">
+        지난 스터디 {list.length}개 <span className="font-normal text-mist">· 종강한 달이라 자료는 닫혔어요</span>
+      </summary>
+      <ul className="divide-y divide-line border-t border-line">
+        {list.map((s) => {
+          const study = s.study!;
+          return (
+            <li key={s.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 px-5 py-3 text-sm">
+              <span className="font-bold text-ink">{termLabel(study.term)}</span>
+              <span className="text-slate">{STUDY_KIND_LABEL[study.kind]}</span>
+              {isSlotKind(study.kind) && s.slot && <span className="tabular-nums text-slate">{slotTime(s.slot)}</span>}
+              {s.level != null && <span className="rounded-full bg-line px-2 py-0.5 text-[11px] font-bold text-slate">{studyLevelLabel(s.level)}</span>}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
   );
 }
 
