@@ -7,7 +7,7 @@ import { FilterTabs } from "@/components/admin/FilterTabs";
 import { TermChips } from "@/components/admin/TermChips";
 import { ClassMaterialRound } from "@/components/admin/class-materials/ClassMaterialRound";
 import { ClassMaterialRow } from "@/components/admin/class-materials/ClassMaterialRow";
-import { isMaterialSubject, MATERIAL_SUBJECT_LABEL, MATERIAL_SUBJECTS, type MaterialSubject } from "@/lib/class-materials";
+import { isMaterialSubject, MATERIAL_SUBJECT_LABEL, MATERIAL_SUBJECTS, materialLinks, type MaterialSubject } from "@/lib/class-materials";
 import { isRoundSet, ROUND_SET_LABEL, ROUND_SETS, roundRowCount, type RoundSet } from "@/lib/class-rounds";
 import { bookTimesLabel } from "@/lib/lc-audio";
 import { termParam } from "@/lib/study";
@@ -17,7 +17,7 @@ import { requireStaff } from "@/lib/auth";
 import Link from "next/link";
 import { NoticeList } from "@/components/class-materials/NoticeList";
 import { NoticePublishToggle } from "@/components/admin/class-notices/NoticePublishToggle";
-import { noticeCovers, partitionNotices, scopeLabel, scopeOf } from "@/lib/class-notices";
+import { noticeAttachLabel, noticeCovers, partitionNotices, scopeLabel, scopeOf } from "@/lib/class-notices";
 import { pickTerm, termLabel, TERM_COLUMNS } from "../_lib/queries";
 
 export const metadata: Metadata = { title: "수업자료실", robots: { index: false } };
@@ -98,12 +98,19 @@ export default async function ClassMaterialsAdminPage({ searchParams }: { search
           .eq("course.target_score", level)
           .or(`subject.is.null,subject.eq.${subject}`)
       : Promise.resolve({ data: [] as never[] }),
-    supabase.from("class_notices").select("id, title, levels, subjects, author_name, created_at, published").order("created_at", { ascending: false }).limit(200),
+    supabase
+      .from("class_notices")
+      .select("id, title, levels, subjects, links, author_name, created_at, published, class_notice_files(id)")
+      .order("created_at", { ascending: false })
+      .limit(200),
   ]);
   // 공지 — 지금 보고 있는 레벨 · 과목 학생에게도 보이는 것 (전체 공지 포함). 다른 범위 공지는 그 레벨 · 과목에서 보인다.
   // 내린 공지(published = false)는 따로 모아 아래에 접어 둔다 (2026-10-06 Alan — 다음 달에 다시 올린다)
   const allNotices = noticeRows ?? [];
-  const covering = allNotices.filter((n) => noticeCovers(scopeOf(n), level, subject)).map((n) => ({ ...n, scope: scopeLabel(scopeOf(n)) }));
+  // 줄마다 범위 · 첨부(`파일 2개 · 영상 1개`, 2026-10-13)
+  const covering = allNotices
+    .filter((n) => noticeCovers(scopeOf(n), level, subject))
+    .map((n) => ({ ...n, scope: scopeLabel(scopeOf(n)), attach: noticeAttachLabel(n.class_notice_files?.length ?? 0, materialLinks(n.links)) }));
   const { live: notices, down: downNotices } = partitionNotices(covering);
   const allLive = allNotices.filter((n) => n.published);
   const byLevel = new Map(levelCounts);

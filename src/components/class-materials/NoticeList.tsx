@@ -4,7 +4,16 @@ import { cn } from "@/lib/utils";
 
 const dateLabel = (iso: string) => new Date(iso).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", year: "2-digit", month: "2-digit", day: "2-digit" }).replace(/\s/g, "").replace(/\.$/, "");
 
-export type NoticeListItem = { id: number; title: string; author_name: string | null; created_at: string; scope?: string; published?: boolean };
+export type NoticeListItem = {
+  id: number;
+  title: string;
+  author_name: string | null;
+  created_at: string;
+  scope?: string;
+  published?: boolean;
+  /** 붙은 것 — `파일 2개 · 영상 1개` (2026-10-13 첨부 파일 · 링크). 비면 그리지 않는다 */
+  attach?: string;
+};
 
 /**
  * 수업자료실 공지 목록 (2026-10-05 Alan — 게시판처럼 "공지 · 제목 · 작성자 · 작성일" 줄, 누르면 공지 페이지가 새로 열린다).
@@ -12,6 +21,7 @@ export type NoticeListItem = { id: number; title: string; author_name: string | 
  * (2026-10-06 Alan "등록했다가 내리기"). `trailing` 은 줄 오른쪽에 링크 밖으로 두는 조각(관리자의 내리기 · 다시 올리기 토글) —
  * 링크 안에 버튼을 넣으면 HTML 이 깨지므로 형제로 둔다.
  * 휴대폰에서는 제목 아래로 작성자 · 날짜를 내린다 (한 줄에 다 두면 제목이 잘린다).
+ * 첨부 파일 · 링크가 붙은 공지는 `파일 2개 · 영상 1개` 를 적는다 (2026-10-13) — 휴대폰은 작성자 줄에, 넓은 화면은 제목 오른쪽에.
  */
 export function NoticeList({
   items,
@@ -40,8 +50,10 @@ export function NoticeList({
                   {n.scope && <span className="font-bold text-ink-soft">{n.scope}</span>}
                   <span>{n.author_name ?? "강사"}</span>
                   <span className="tabular-nums">{dateLabel(n.created_at)}</span>
+                  {n.attach && <span className="font-bold text-ink-soft">{n.attach}</span>}
                 </span>
               </span>
+              {n.attach && <span className="hidden shrink-0 text-xs font-bold text-slate sm:inline">{n.attach}</span>}
               {n.scope && <span className="hidden shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-bold text-brand-700 sm:inline">{n.scope}</span>}
               <span className="hidden w-20 shrink-0 truncate text-right text-sm text-ink-soft sm:inline">{n.author_name ?? "강사"}</span>
               <span className="hidden w-20 shrink-0 text-right text-sm tabular-nums text-mist sm:inline">{dateLabel(n.created_at)}</span>

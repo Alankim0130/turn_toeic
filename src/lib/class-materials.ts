@@ -355,6 +355,29 @@ export function materialAccess(bySubject: Record<MaterialSubject, readonly numbe
 export type FileOrderItem = { id?: number | null; path?: string | null };
 
 /**
+ * 수정 폼의 파일 한 줄 — 올려 둔 파일(id)이거나 이번에 고른 파일(key). 둘을 한 목록으로 두고 위 · 아래로 옮긴다 (2026-10-12).
+ * 수업자료 수정 폼(`ClassMaterialRow`)과 공지 폼(`NoticeForm`, 2026-10-13)이 함께 쓴다
+ */
+export type FileRef = { kind: "old"; id: number } | { kind: "new"; key: string };
+
+/** 고른 파일이 바뀌면 순서 목록도 맞춘다 — 새로 고른 것은 끝에, 고른 목록에서 뺀 것은 순서에서도 뺀다 (올려 둔 파일 줄은 그대로) */
+export function withPicked(prev: readonly FileRef[], picked: readonly { key: string }[]): FileRef[] {
+  const keys = new Set(picked.map((p) => p.key));
+  const kept = prev.filter((r) => r.kind === "old" || keys.has(r.key));
+  const have = new Set(kept.flatMap((r) => (r.kind === "new" ? [r.key] : [])));
+  return [...kept, ...picked.filter((p) => !have.has(p.key)).map((p): FileRef => ({ kind: "new", key: p.key }))];
+}
+
+/** 저장할 파일 순서(서버 액션의 `fileOrder`) — 남긴 파일은 id, 새 파일은 올린 경로. 뺀 파일 · 아직 못 올린 파일은 건너뛴다 */
+export function fileOrderItems(order: readonly FileRef[], removed: ReadonlySet<number>, pathByKey: ReadonlyMap<string, string | undefined>): FileOrderItem[] {
+  return order.flatMap((r): FileOrderItem[] => {
+    if (r.kind === "old") return removed.has(r.id) ? [] : [{ id: r.id }];
+    const path = pathByKey.get(r.key);
+    return path ? [{ path }] : [];
+  });
+}
+
+/**
  * 수정 뒤 파일 순서 — 화면이 보낸 순서(`fileOrder`)로 0 부터 번호를 매긴다. 모르는 값 · 두 번 온 값은 건너뛰고, 안 온 파일은 끝에
  * 예전 순서(남긴 파일) → 고른 순서(새 파일)로 붙인다. 돌려주는 키는 `id:123` · `path:…`
  */
