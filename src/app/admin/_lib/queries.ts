@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database.types";
-import type { HeadcountRow } from "@/lib/course-headcount";
+import type { HeadcountBlock, HeadcountRow } from "@/lib/course-headcount";
 import { pickCurrentTerm } from "@/lib/term-window";
 import { formatTime, TRACK_LABEL, MODE_LABEL } from "@/lib/utils";
 import { groupWeek5, week5SectionIds, WEEK5_LABEL, type Week5Section } from "@/lib/week5";
@@ -191,7 +191,7 @@ export async function getActiveCourseRows(supabase: DB, today: string): Promise<
     const { data, error } = await supabase
       .from("enrollments")
       .select(
-        "id, student_id, mode, order:enrollment_orders!inner(activates_on, access_until), student:profiles!enrollments_student_id_fkey(role), section:class_sections!enrollments_section_id_fkey(course_id)",
+        "id, student_id, mode, order:enrollment_orders!inner(activates_on, access_until), student:profiles!enrollments_student_id_fkey(role), section:class_sections!enrollments_section_id_fkey(course_id, term_id, time_block)",
       )
       .eq("status", "active")
       .lte("order.activates_on", today)
@@ -199,10 +199,33 @@ export async function getActiveCourseRows(supabase: DB, today: string): Promise<
       .order("id")
       .range(from, from + PAGE - 1);
     if (error) return null;
-    for (const r of data ?? []) out.push({ student_id: r.student_id, role: r.student?.role ?? null, course_id: r.section?.course_id ?? null, mode: r.mode });
+    for (const r of data ?? [])
+      out.push({
+        student_id: r.student_id,
+        role: r.student?.role ?? null,
+        course_id: r.section?.course_id ?? null,
+        term_id: r.section?.term_id ?? null,
+        time_block: r.section?.time_block ?? null,
+        mode: r.mode,
+      });
     if ((data ?? []).length < PAGE) break;
   }
   return out;
+}
+
+/**
+ * 등록생 위젯의 60분 · 120분 가르기 재료 (2026-10-13) — **지금 수강 중인 기수의 반 전체**(개강일~종강일 안)의 (기수 · 강좌 · 시간대).
+ * 배정만으로 트리를 만들면 아무도 안 듣는 70분 반이 빠져 140분 묶음의 합을 못 낸다 (`blockMinutesIndex`). 못 읽으면 빈 목록 — 큰 숫자는 그대로 서고 분량 줄만 빠진다.
+ */
+export async function getActiveSectionBlocks(supabase: DB, today: string): Promise<HeadcountBlock[]> {
+  const { data } = await supabase
+    .from("class_sections")
+    .select("course_id, term_id, time_block")
+    .lte("enrollment_opens_at", today)
+    .gte("closes_at", today)
+    .neq("status", "draft")
+    .limit(1000);
+  return data ?? [];
 }
 
 export const GENDER_LABEL: Record<string, string> = {
