@@ -104,6 +104,13 @@ describe("DB 함수 attendance_scan 의 규칙 — 마지막 마이그레이션 
     }
     expect(lastDef("my_attendance_summary")).toContain("st.status in ('present', 'manual')");
   });
+
+  it("학생 출석 카드 · 내 출석의 '종강' 은 내 반의 종강일 — 2주완성은 앞 절반 마지막 날 (2026-10-13)", () => {
+    // 기수 종강일(t.closes_at)을 돌려주면 2주완성 학생에게 들을 수 없는 날까지 '종강' 으로 적힌다
+    expect(lastDef("my_attendance_summary")).toContain("t.enrollment_opens_at, max(dy.closes_at),");
+    expect(lastDef("my_attendance_days")).toContain("t.enrollment_opens_at, max(en.closes_at) over (partition by en.term_id),");
+    for (const name of ["my_attendance_days", "my_attendance_summary"]) expect(lastDef(name), name).not.toContain("t.closes_at");
+  });
 });
 
 describe("찍은 QR → 출석 토큰 (앱 안 카메라)", () => {
