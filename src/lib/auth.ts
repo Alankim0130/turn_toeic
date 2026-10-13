@@ -2,6 +2,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { todayKST } from "@/lib/utils";
+import { orderPhase } from "@/lib/enrollment-window";
 import type { Database } from "@/lib/supabase/database.types";
 
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -184,14 +185,32 @@ export const getStudentAccess = cache(async (): Promise<StudentAccess> => {
   ]);
 
   // 테스트 등급을 켠 스태프는 그 등급의 학생처럼 판정한다 (RLS 도 같은 등급으로 본다)
-  const role = effectiveRole(profile);
   /**
    * **스태프·조교도 배정으로 판정한다** (2026-10-02 Alan "수강생전용 페이지를 전부다 개강일에 맞춰서 오픈"). 2026-09-16~10-02 에는
    * 크루면 무조건 열어 줬는데, 10월 반에 배정된 관리자가 개강 전 학생 모드에서 모든 것이 열려 "학생이 뭘 보는지" 를 알 수 없었다.
    * 열어 볼 권한(RLS)은 그대로다 — 학생 모드 **화면**만 학생과 같다. 반에 배정하면(테스터) 그 학생과 똑같이 열린다.
    */
 
-  const live = data ?? [];
+  let live = data ?? [];
+  let grade = effectiveRole(profile);
+  /**
+   * **자정 배치의 안전장치** (2026-10-13 Alan "매달 반복할때 오류가 안나오도록"). 저장된 등록 상태 · 등급은 pg_cron 이 매일 00:00 KST 에 날짜로 다시 맞추는데,
+   * RLS(`has_term_access` 등)는 그 저장된 값(`o.status = 'active'` · 등급 student)을 함께 보므로 **개강일에 배치가 못 돌면 예비등록생은 그날 잠긴 채로 남는다**
+   * (재생 DB 로 확인 — 종강 다음 날 닫히는 것은 날짜만으로 되지만 개강일에 열리는 것은 배치가 있어야 했다). 그래서 저장된 상태가 날짜와 어긋난 등록이 보이면
+   * `public.refresh_my_enrollment_status()` 로 **내 것만** 그 자리에서 배치와 같은 두 걸음(상태 다시 계산 · 등급 다시 정함)을 밟고 다시 읽는다 — 평소(배치가 돈 뒤)에는 부르지 않는다.
+   */
+  if (live.some((o) => o.status !== orderPhase(o, today))) {
+    const { error } = await supabase.rpc("refresh_my_enrollment_status");
+    if (!error) {
+      const [{ data: p }, { data: again }] = await Promise.all([
+        supabase.from("profiles").select("role, test_role").eq("id", user.id).maybeSingle(),
+        supabase.from("enrollment_orders").select("status, activates_on, access_until").eq("user_id", user.id).gte("access_until", today),
+      ]);
+      if (p) grade = effectiveRole(p);
+      if (again) live = again;
+    }
+  }
+  const role = grade;
   // 지금 수강 중 = 개강일 ≤ 오늘 ≤ 종강일 · 예비등록 = 오늘 < 개강일
   const current = live.filter((o) => o.activates_on <= today);
   const upcoming = live.filter((o) => today < o.activates_on);

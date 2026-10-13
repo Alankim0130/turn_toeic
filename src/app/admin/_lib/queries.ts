@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database.types";
 import type { HeadcountBlock, HeadcountRow } from "@/lib/course-headcount";
 import { pickCurrentTerm } from "@/lib/term-window";
+import { orderPhase } from "@/lib/enrollment-window";
 import { formatTime, TRACK_LABEL, MODE_LABEL } from "@/lib/utils";
 import { groupWeek5, week5SectionIds, WEEK5_LABEL, type Week5Section } from "@/lib/week5";
 
@@ -59,11 +60,29 @@ export type EnrollmentLine = {
   week5: boolean;
   /** "10월 · 650+ 왕기초반 · 주5일 · 10:00~12:10 · 현장" */
   label: string;
+  /** 두 반의 개강일 중 이른 쪽 (등록 기간의 시작과 같은 규칙) — 개강 전이면 `예비등록` 으로 적는다 (2026-10-13) */
+  opensAt: string | null;
   /** 두 반의 종강일 중 늦은 쪽 (시청 만료일과 같은 규칙) */
   closesAt: string | null;
   /** 배정 상태 — 보통 하나. 두 트랙이 다르면 둘 다 */
   statuses: string[];
 };
+
+/**
+ * 배정 줄의 단계 — **반의 개강일 · 종강일로** 정한다 (2026-10-13 Alan 월 넘김 점검 — 10월 수강생이 미리 올린 11월 수강증으로 배정된 11월 반이
+ * 개강 전인데도 `수강 중` 으로 보였다). 배정 행의 `active` 는 "살아 있는 배정" 이라는 뜻이지 수강 중이라는 뜻이 아니다 —
+ * 개강 전이면 `preliminary`(예비등록), 종강 뒤면 `expired`(만료), 그 사이면 `active`(수강 중). 등록 상태와 같은 규칙(`orderPhase`)이다.
+ * 날짜를 모르는 줄(반이 지워짐)과 `active` 가 아닌 배정(예전 2개월 등록의 반 대기 · 완료)은 그대로 둔다.
+ */
+export function enrollmentPhases(line: Pick<EnrollmentLine, "opensAt" | "closesAt" | "statuses">, today: string): string[] {
+  const opens = line.opensAt;
+  const closes = line.closesAt;
+  return [
+    ...new Set(
+      line.statuses.map((st) => (st === "active" && opens && closes ? orderPhase({ activates_on: opens, access_until: closes }, today) : st)),
+    ),
+  ];
+}
 
 /**
  * 학생 한 명의 반 배정을 줄로 (2026-10-02 Alan — "반배정에서 주5일반을 고르면 저렇게 2개반으로 표시가 되고 있어. 주5일반으로 하나로").
@@ -76,19 +95,21 @@ export function enrollmentLines(
     id: number;
     mode: string | null;
     status?: string | null;
-    section: (SummarySection & Week5Section & { closes_at?: string | null }) | null;
+    section: (SummarySection & Week5Section & { enrollment_opens_at?: string | null; closes_at?: string | null }) | null;
   }[],
   opts: { withEnd?: boolean } = {},
 ): EnrollmentLine[] {
   const week5 = week5SectionIds(rows.flatMap((e) => (e.section ? [e.section] : [])));
   return groupWeek5([...rows], (e) => e.section, week5).map((group) => {
     const pair = group.length > 1;
+    const opens = group.map((e) => e.section?.enrollment_opens_at).filter((d): d is string => !!d).sort();
     const closes = group.map((e) => e.section?.closes_at).filter((d): d is string => !!d).sort();
     return {
       key: group.map((e) => e.id).join("-"),
       ids: group.map((e) => e.id),
       week5: pair,
       label: sectionSummary(group[0].section, group.map((e) => e.mode), { withEnd: opts.withEnd, week5: pair }),
+      opensAt: opens[0] ?? null,
       closesAt: closes.at(-1) ?? null,
       statuses: [...new Set(group.map((e) => e.status ?? "active"))],
     };

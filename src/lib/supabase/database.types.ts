@@ -2489,6 +2489,7 @@ export type Database = {
       }
       my_section_ids: { Args: never; Returns: number[] }
       my_last_active_at: { Args: never; Returns: string | null }
+      refresh_my_enrollment_status: { Args: never; Returns: undefined }
       move_class_material: { Args: { p_id: number; p_up: boolean }; Returns: undefined }
       my_schedule_section_ids: { Args: never; Returns: number[] }
       save_term_schedule: {
