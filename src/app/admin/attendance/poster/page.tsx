@@ -3,8 +3,9 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
+import { PdfDownloadButton } from "@/components/admin/PdfDownloadButton";
 import { isStaff, requireCrew } from "@/lib/auth";
-import { issuedLabel } from "@/lib/attendance-poster";
+import { issuedLabel, posterFileName } from "@/lib/attendance-poster";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 import { rotateAttendancePoster } from "./actions";
@@ -23,7 +24,8 @@ export default async function AttendancePosterPage({ searchParams }: { searchPar
   const { made, error } = await searchParams;
   const supabase = await createClient();
   const { data } = await supabase.rpc("attendance_poster_token");
-  const issued = issuedLabel((data as { created_at?: string } | null)?.created_at);
+  const createdAt = (data as { created_at?: string } | null)?.created_at;
+  const issued = issuedLabel(createdAt);
   const staff = isStaff(profile.role);
 
   return (
@@ -62,10 +64,13 @@ export default async function AttendancePosterPage({ searchParams }: { searchPar
               "발행 시각을 읽지 못했어요."
             )}
           </p>
-          <a href="/admin/attendance/poster/download" download className="btn-primary mt-4">
-            <Icon name="download" size={18} />
-            포스터 PDF 받기
-          </a>
+          {/* 아이폰 · 아이패드는 attachment 를 무시하고 화면에 띄우기만 해서 저장 창(파일에 저장 · 프린트)을 연다 (2026-10-14) */}
+          <div className="mt-4">
+            <PdfDownloadButton href="/admin/attendance/poster/download" fileName={posterFileName(createdAt)} className="btn-primary">
+              <Icon name="download" size={18} />
+              포스터 PDF 받기
+            </PdfDownloadButton>
+          </div>
           <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-slate">
             <li>인쇄 설정: 용지 A4 · 방향 가로 · 배율 &ldquo;실제 크기&rdquo;(100%)</li>
             <li>가운데 점선을 자르면 A5 두 장 — 선생님마다 한 장씩이고 QR 은 같아요.</li>
@@ -78,7 +83,7 @@ export default async function AttendancePosterPage({ searchParams }: { searchPar
           {staff ? (
             <form action={rotateAttendancePoster} className="mt-2 space-y-3">
               <p className="text-sm text-slate">
-                포스터 사진이 돌아다닌다 싶을 때 새 QR 로 바꿔요. 사진을 찍어 보내면 교실 밖에서도 찍히기 때문이에요 (수업 시간·현장 수강생·입실 30분 뒤 퇴실은 서버가 그대로 막아요).
+                포스터 사진이 돌아다닌다 싶을 때 새 QR 로 바꿔요. 사진을 찍어 보내면 교실 밖에서도 찍히기 때문이에요 (수업 시간 · 현장 수강생인지는 서버가 그대로 확인해요).
                 <b className="text-ink"> 누르는 순간 붙어 있는 종이는 모두 찍히지 않아요</b> — 새 포스터를 받아 바꿔 붙여야 해요.
               </p>
               <label className="flex items-center gap-2 text-sm font-bold text-ink">
