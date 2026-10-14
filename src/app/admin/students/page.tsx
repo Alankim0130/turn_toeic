@@ -8,7 +8,7 @@ import { signedAvatarUrls } from "@/lib/avatar-url";
 import { STUDY_KIND_LABEL, STUDY_KINDS, termParam } from "@/lib/study";
 import { week5SectionIds, groupWeek5 } from "@/lib/week5";
 import { SINGLE_SUBJECT_LABEL, singleSubjectOf } from "@/lib/section-type";
-import { groupByLevel, isRosterSubject, rosterPeriod, rosterTerms, ROSTER_SUBJECTS, type RosterSubject } from "@/lib/class-roster";
+import { groupByLevel, rosterPeriod, rosterTerms } from "@/lib/class-roster";
 import { pickCurrentTerm } from "@/lib/term-window";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -38,12 +38,12 @@ const studyShort = (kind: string) => (STUDY_KIND_LABEL[kind] ?? kind).replace(/\
 export default async function StudentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; q?: string; view?: string; subject?: string; term?: string }>;
+  searchParams: Promise<{ tab?: string; q?: string; view?: string; term?: string }>;
 }) {
   // 조교는 이 화면을 쓸 수 없다 — 학생명단은 개인정보가 있어 강사 · 관리자만 (2026-10-03 Alan. 그전에는 조교도 봤다).
   // 레이아웃이 조교를 통과시키므로 화면마다 막는다
   const { profile: me } = await requireStaff();
-  const { tab: tabParam, q: qParam, view: viewParam, subject: subjectParam, term: termQuery } = await searchParams;
+  const { tab: tabParam, q: qParam, view: viewParam, term: termQuery } = await searchParams;
   // 예전 주소(tab=testers)도 받는다 — 2026-10-02 에 탭 이름이 강사·조교로 바뀌었다
   const tab = tabParam === "testers" ? "staff" : TABS.some((t) => t.value === tabParam) ? (tabParam as string) : "active";
   const q = (qParam ?? "").trim();
@@ -51,8 +51,6 @@ export default async function StudentsPage({
   // 등록생 · 예비등록생 탭에서, 이름을 찾는 중이 아닐 때. 보기를 고르지 않으면 PC 는 반별 명단 · 휴대폰은 카드 (둘 다 그리고 화면 폭으로 숨긴다)
   const view = viewParam === "classes" || viewParam === "cards" ? viewParam : null;
   const classTab = (tab === "active" || tab === "preliminary") && !q;
-  // 과목 — 강사는 자기 과목부터 (숙제점검과 같다), 관리자는 LC (Alan 이 보낸 종이 명단이 LC 였다)
-  const subject: RosterSubject = isRosterSubject(subjectParam) ? subjectParam : isRosterSubject(me.subject) ? me.subject : "lc";
 
   const supabase = await createClient();
   const today = todayKST();
@@ -67,7 +65,7 @@ export default async function StudentsPage({
     (tab === "preliminary" ? rosterOptions.find((t) => today < (t.enrollment_opens_at ?? "")) : undefined) ??
     pickCurrentTerm(rosterOptions, today);
   // 명단과 따로 도는 조회 — 카드 쪽 조회를 기다리지 않게 먼저 띄운다
-  const classRosterP = classTab && rosterTerm ? loadClassRoster(supabase, rosterTerm, subject, today) : Promise.resolve(null);
+  const classRosterP = classTab && rosterTerm ? loadClassRoster(supabase, rosterTerm, today) : Promise.resolve(null);
 
   // 대상 프로필
   // 합쳐진 옛 계정(merged_into)은 명단에서 뺀다 — 로그인도 못 하고 기록은 남은 계정에 있다 (2026-10-02)
@@ -127,14 +125,13 @@ export default async function StudentsPage({
   const counts = { active: roster.activeIds.length, preliminary: roster.preliminaryIds.length };
   const rows = profiles ?? [];
   const classRoster = await classRosterP;
-  /** 지금 주소에서 몇 칸만 바꾼 주소 — 과목 · 달 · 보기를 들고 다닌다 */
+  /** 지금 주소에서 몇 칸만 바꾼 주소 — 달 · 보기를 들고 다닌다 */
   const href = (patch: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
     const now: Record<string, string | undefined> = {
       tab,
       q: q || undefined,
       view: view ?? undefined,
-      subject: isRosterSubject(subjectParam) ? subjectParam : undefined,
       term: termQuery,
       ...patch,
     };
@@ -254,7 +251,7 @@ export default async function StudentsPage({
         basePath="/admin/students"
         paramKey="tab"
         current={tab}
-        keep={{ q, view: view ?? undefined, subject: isRosterSubject(subjectParam) ? subjectParam : undefined }}
+        keep={{ q, view: view ?? undefined }}
         tabs={TABS.map((t) => ({
           ...t,
           count: t.value === "active" ? counts.active : t.value === "preliminary" ? counts.preliminary : t.value === "staff" ? (testerCount ?? undefined) : undefined,
@@ -287,14 +284,13 @@ export default async function StudentsPage({
                   ok={classRoster.ok}
                   heading={`${rosterTerm.month}월 반별 명단`}
                   period={rosterPeriod(rosterTerm)}
-                  subjectHref={Object.fromEntries(ROSTER_SUBJECTS.map((s) => [s, href({ subject: s })])) as Record<RosterSubject, string>}
                   terms={rosterOptions.map((t) => ({
                     key: termParam(t.year, t.month),
                     label: `${t.month}월`,
                     href: href({ term: termParam(t.year, t.month) }),
                     active: t.id === rosterTerm.id,
                   }))}
-                  pdfHref={`/admin/students/roster-pdf?term=${termParam(rosterTerm.year, rosterTerm.month)}&subject=${subject}`}
+                  pdfHref={`/admin/students/roster-pdf?term=${termParam(rosterTerm.year, rosterTerm.month)}`}
                 />
               ) : (
                 <p className="card px-4 py-6 text-center text-sm text-slate">지금 수업 중이거나 곧 시작하는 달이 없어요. 반 편성에서 다음 달을 열면 여기에 반별 명단이 생겨요.</p>

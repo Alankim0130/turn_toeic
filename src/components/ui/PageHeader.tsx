@@ -13,13 +13,15 @@ export function PageHeader({
 }) {
   return (
     <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div className="flex items-center gap-3">
+      {/* 휴대폰에서 설명이 길면 타일이 눌려 아이콘이 찌그러졌다 (2026-10-14 Alan "교재주문 앞에 이모티콘도 망가져있어") —
+          타일은 줄지 않고(shrink-0) 글은 줄어들며(min-w-0), 휴대폰에서는 타일을 제목 줄에 맞춘다 */}
+      <div className="flex min-w-0 items-start gap-3 sm:items-center">
         {icon && (
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 ring-1 ring-brand-100">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-50 ring-1 ring-brand-100">
             <Icon name={icon} size={30} />
           </span>
         )}
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-black tracking-tight text-ink sm:text-3xl">{title}</h1>
           {description && <p className="mt-1 text-sm text-slate sm:text-base">{description}</p>}
         </div>

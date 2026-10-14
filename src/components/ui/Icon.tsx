@@ -36,11 +36,13 @@ export function Icon({
       width={size}
       height={size}
       priority={priority}
-      className={cn("inline-block shrink-0 select-none", className)}
+      className={cn("inline-block max-w-none shrink-0 select-none", className)}
       /**
        * 아이콘 원본은 정사각형이다. Tailwind preflight 가 img 에 height:auto 를 주기 때문에
        * flex 컨테이너(기본 align-items:stretch) 안에서는 세로로 늘어나 찌그러진다.
        * 가로·세로를 CSS 로 못박아 어디에 놓아도 비율이 그대로 유지되게 한다.
+       * preflight 의 `max-width: 100%` 도 끈다(`max-w-none`) — 감싼 칸이 아이콘보다 좁아지면 세로는 그대로인데 가로만 줄어
+       * 홀쭉하게 찌그러졌다 (2026-10-14 휴대폰 화면 제목 아이콘). 칸이 좁으면 찌그러지는 대신 넘친다.
        */
       style={{ width: size, height: size }}
     />

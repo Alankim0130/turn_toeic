@@ -1,4 +1,4 @@
-import { buildClassRoster, type ClassRoster, type RosterEnrollment, type RosterPerson, type RosterSection, type RosterSubject } from "@/lib/class-roster";
+import { buildClassRoster, type ClassRoster, type RosterEnrollment, type RosterPerson, type RosterSection } from "@/lib/class-roster";
 import type { DB, TermLite } from "../../_lib/queries";
 
 /**
@@ -11,15 +11,15 @@ const PAGE = 1000;
 /** 강사 · 관리자 · 조교 계정 — 학생 화면을 보려고 넣은 테스트 배정이라 명단에 넣지 않는다 (숙제 미제출 알림 · 학생명단 강사·조교 탭과 같은 집합) */
 const STAFF_ROLES = new Set(["instructor", "admin", "assistant"]);
 
-const EMPTY = (subject: RosterSubject): ClassRoster => ({ subject, levels: [], empty: [], total: 0, elsewhere: 0 });
+const EMPTY: ClassRoster = { levels: [], empty: [], total: 0, unplaced: 0 };
 
-export async function loadClassRoster(supabase: DB, term: TermLite, subject: RosterSubject, today: string): Promise<{ roster: ClassRoster; ok: boolean }> {
+export async function loadClassRoster(supabase: DB, term: TermLite, today: string): Promise<{ roster: ClassRoster; ok: boolean }> {
   const { data: rows, error } = await supabase
     .from("class_sections")
     .select("id, track, time_block, subject, book_set, recorded, closes_at, course_id, course:courses(name, target_score, program)")
     .eq("term_id", term.id)
     .order("id");
-  if (error) return { roster: EMPTY(subject), ok: false };
+  if (error) return { roster: EMPTY, ok: false };
   const sections: RosterSection[] = (rows ?? []).map((s) => ({
     id: s.id,
     track: s.track,
@@ -34,7 +34,7 @@ export async function loadClassRoster(supabase: DB, term: TermLite, subject: Ros
     courseName: s.course?.name ?? null,
   }));
   const ids = sections.map((s) => s.id);
-  if (ids.length === 0) return { roster: EMPTY(subject), ok: true };
+  if (ids.length === 0) return { roster: EMPTY, ok: true };
 
   type Row = { student_id: string; section_id: number | null; mode: string; student: { name: string; role: string; merged_into: string | null } | null };
   const page = (from: number, count: boolean) =>
@@ -66,5 +66,5 @@ export async function loadClassRoster(supabase: DB, term: TermLite, subject: Ros
     people.set(r.student_id, { name: r.student?.name ?? "", staff: STAFF_ROLES.has(r.student?.role ?? "") });
     enrollments.push({ studentId: r.student_id, sectionId: r.section_id, mode: r.mode });
   }
-  return { roster: buildClassRoster({ sections, includes, enrollments, people, subject, today }), ok };
+  return { roster: buildClassRoster({ sections, includes, enrollments, people, today }), ok };
 }

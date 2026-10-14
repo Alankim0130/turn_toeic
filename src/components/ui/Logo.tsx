@@ -44,7 +44,7 @@ export function Logo({
 }
 
 export function Symbol({ size = 28, className }: { size?: number; className?: string }) {
-  // 심볼 원본은 정사각형. flex 안에서 세로로 늘어나지 않도록 크기를 CSS 로 못박는다
+  // 심볼 원본은 정사각형. flex 안에서 세로로 늘어나지 않도록 크기를 CSS 로 못박는다 (max-w-none — 좁은 칸에서 가로만 줄어 찌그러지지 않게, Icon 과 같다)
   return (
     <Image
       src="/brand/symbol.png"
@@ -52,7 +52,7 @@ export function Symbol({ size = 28, className }: { size?: number; className?: st
       aria-hidden
       width={size}
       height={size}
-      className={cn("select-none", className)}
+      className={cn("max-w-none select-none", className)}
       style={{ width: size, height: size }}
     />
   );

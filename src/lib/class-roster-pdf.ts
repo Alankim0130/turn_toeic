@@ -4,8 +4,9 @@
  *
  * - **A4 세로 · 레벨마다 새 쪽.** 한 쪽에 두 레벨을 섞지 않는다 — 650 쪽 · 750 쪽 · 850 쪽을 따로 뽑아 그 반에 들고 갈 수 있게.
  *   (처음 몇 시간은 A4 가로 한 장에 모든 레벨을 화면처럼 늘어놓고 자리가 모자랄 때만 넘겼다. 레벨 하나는 칸이 2 ~ 4개라 세로가 맞는다)
- * - 쪽 머리: 달 · 과목 제목 · 기간, 레벨 색 띠에 레벨(`650`)과 그 레벨 학생 수, 범례. 칸 = 수업 한 반이고 머리는 `650B (화목금)` + 시간 · 사람 수,
- *   아래로 이름 가나다순 · 이름 뒤 표시 `(불/프)`. 색은 종이 명단과 같은 엑셀 연한 색(`ROSTER_TONES`).
+ * - 쪽 머리: 달 제목 · 기간, 레벨 색 띠에 레벨(`650`)과 그 레벨 학생 수, 범례. 칸 = 한 레벨의 수업 시간 한 칸(월수금 · 화목금을 합친다)이고
+ *   머리는 `650B 10:00~11:00` + `월 RC · 화 LC · 사람 수`, 아래로 이름 가나다순 · 이름 뒤 표시 `(불/RC)`. LC · RC 를 나누지 않은 한 장이다
+ *   (2026-10-14 저녁 Alan "lc, rc구분하지말고 합쳐서"). 색은 종이 명단과 같은 엑셀 연한 색(`ROSTER_TONES`).
  * - **칸은 쪽 폭을 고르게 나눈다** (칸 하나면 반 폭). 한 레벨의 칸이 30mm 보다 좁아지면(일곱 칸부터) 고르게 나눠 다음 쪽에 이어 그린다.
  * - 줄 높이는 그 레벨이 한 쪽에 들어가게 4.0 ~ 6.6mm 사이에서 맞추고, 그래도 넘치면 쪽마다 고르게 나눠 다음 쪽에 머리를 다시 그리고 이어 적는다(`이어서`).
  *   **바탕은 이름이 있는 줄까지만 칠한다** — 학생이 몇 안 되는 레벨이 쪽 바닥까지 색을 칠하지 않게 (잉크를 아낀다).
@@ -16,7 +17,7 @@
  */
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, PrintScaling, rgb, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
-import { columnDetail, columnHeading, marksText, ROSTER_MARKS, ROSTER_SUBJECT_LABEL, toneOf, type ClassRoster, type RosterColumn, type RosterLevel } from "./class-roster";
+import { columnDetail, columnHeading, marksText, ROSTER_MARKS, toneOf, type ClassRoster, type RosterColumn, type RosterLevel } from "./class-roster";
 
 /** 쪽 하나에 무엇을 그렸나 — 테스트가 쪽마다 레벨이 하나인지 · 빈 반을 어느 쪽에 적었는지 본다 */
 export type RosterPdfPage = { level: string | null; columns: string[]; part: number; footer: string };
@@ -136,9 +137,8 @@ export function rowLayout(maxRows: number, avail: number): { rowH: number; perPa
 
 const nameSize = (rowH: number) => Math.min(10.5, Math.max(7, rowH * 1.62));
 
-/** 바닥에 적는 학생이 없는 반 — "학생이 없는 반 2개: 650A (화목금) 18:30~19:30 인강, …" */
-const emptyNote = (cols: readonly RosterColumn[]) =>
-  `학생이 없는 반 ${cols.length}개: ${cols.map((c) => [columnHeading(c), columnDetail(c)].filter(Boolean).join(" ")).join(", ")}`;
+/** 바닥에 적는 학생이 없는 시간 — "학생이 없는 시간 2개: 650B 18:30~19:30 (월 RC · 화 LC 인강), …" */
+const emptyNote = (cols: readonly RosterColumn[]) => `학생이 없는 시간 ${cols.length}개: ${cols.map((c) => `${columnHeading(c)} (${columnDetail(c)})`).join(", ")}`;
 
 export async function buildClassRosterPdf({
   roster,
@@ -148,7 +148,7 @@ export async function buildClassRosterPdf({
   font,
 }: {
   roster: ClassRoster;
-  /** "2026년 10월 반별 명단" */
+  /** "2026년 10월 반별 명단" — 쪽 맨 위 제목 */
   title: string;
   /** "10/6 개강 ~ 11/3 종강" */
   period: string;
@@ -160,8 +160,7 @@ export async function buildClassRosterPdf({
   doc.registerFontkit(fontkit);
   // subset 을 켠다 — 쓴 글자만 넣어 파일이 작다 (글꼴은 글리프 길이를 짝수로 맞춘 파일이라 잘라 넣어도 모양이 밀리지 않는다)
   const pdfFont = await doc.embedFont(font, { subset: true });
-  const subject = ROSTER_SUBJECT_LABEL[roster.subject];
-  const heading = `${title} · ${subject} 수업`;
+  const heading = title;
   const legend = ROSTER_MARKS.map((m) => `(${m.mark}) ${m.label}`).join("   ");
 
   type Sheet = { block: RosterBlock | null; from: number; to: number; rowH: number; part: number; levelStart: boolean; levelEnd: boolean };
@@ -225,7 +224,13 @@ export async function buildClassRosterPdf({
         const inner = colW - 0.3; // 칸 사이 흰 줄
         cv.rect(cx, GRID_TOP, inner, HEAD_H, hex(tone.head));
         cv.rect(cx, GRID_TOP + HEAD_H, inner, bodyH, hex(tone.body));
-        cv.line([{ t: columnHeading(col), size: 10, color: hex(tone.ink) }], { top: GRID_TOP + 1.2, lh: 5.6, x: cx + PAD, maxW: inner - PAD * 2 });
+        cv.line(
+          [
+            { t: col.title, size: 10, color: hex(tone.ink) },
+            { t: col.time ?? "", size: 8, color: hex(tone.ink) },
+          ],
+          { top: GRID_TOP + 1.2, lh: 5.6, x: cx + PAD, maxW: inner - PAD * 2 },
+        );
         const more = sheet.part > 0 ? " · 이어서" : "";
         cv.line([{ t: [columnDetail(col), `${col.students.length}명${more}`].filter(Boolean).join(" · "), size: 7, color: C.sub }], {
           top: GRID_TOP + 6.8,
@@ -252,7 +257,7 @@ export async function buildClassRosterPdf({
       ...(block && sheet.levelEnd ? roster.empty.filter((c) => c.level === block.level.level) : []),
       ...(index === sheets.length - 1 ? orphans : []),
     ];
-    const footer = empties.length > 0 ? emptyNote(empties) : `역전토익 학생명단 · ${subject} 수업 반별`;
+    const footer = empties.length > 0 ? emptyNote(empties) : "역전토익 학생명단 · 반별";
     const footTop = PAGE_H - BOTTOM - FOOT_H + 1;
     cv.line([{ t: footer, size: 7, color: C.mute }], { top: footTop, lh: 4, x: MX, maxW: USABLE * 0.84 });
     cv.line([{ t: `${index + 1} / ${sheets.length}`, size: 7, color: C.mute }], { top: footTop, lh: 4, x: PAGE_W - MX, right: true });
