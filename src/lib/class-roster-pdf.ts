@@ -8,10 +8,13 @@
  *   머리는 `650B 10:00~11:00` + `월 RC · 화 LC · 사람 수`, 아래로 이름 가나다순 · 이름 뒤 표시 `(불/RC)`. LC · RC 를 나누지 않은 한 장이다
  *   (2026-10-14 저녁 Alan "lc, rc구분하지말고 합쳐서"). 색은 종이 명단과 같은 엑셀 연한 색(`ROSTER_TONES`).
  * - **칸은 쪽 폭을 고르게 나눈다** (칸 하나면 반 폭). 한 레벨의 칸이 30mm 보다 좁아지면(일곱 칸부터) 고르게 나눠 다음 쪽에 이어 그린다.
- * - 줄 높이는 그 레벨이 한 쪽에 들어가게 4.0 ~ 6.6mm 사이에서 맞추고, 그래도 넘치면 쪽마다 고르게 나눠 다음 쪽에 머리를 다시 그리고 이어 적는다(`이어서`).
+ * - **이름은 늘 10pt · 줄 높이도 고정이다** (같은 날 Alan "한 레벨을 한 페이지에 다 넣을려고 글자크기가 조절바뀌는데, 이게 아니라 글자크기는 10으로 해줘").
+ *   그전에는 레벨을 한 쪽에 넣으려고 줄 높이(4.0 ~ 6.6mm)와 글자(7 ~ 10.5pt)를 학생 수에 맞춰 줄였다 — 레벨마다 글자 크기가 달랐다. **다시 줄여 한 쪽에 몰지 말 것.**
+ *   한 쪽에 `ROWS_PER_PAGE` 줄이고, 넘치면 쪽마다 고르게 나눠(45명 → 23 + 22 — 앞 쪽을 꽉 채우고 뒤 쪽에 몇 줄만 남기지 않게) 다음 쪽에 머리를 다시 그리고 이어 적는다(`이어서`).
+ *   이어지는 쪽에는 이름이 남은 칸만 그린다 (앞 쪽에서 다 적은 칸을 빈 칸으로 세우지 않는다).
  *   **바탕은 이름이 있는 줄까지만 칠한다** — 학생이 몇 안 되는 레벨이 쪽 바닥까지 색을 칠하지 않게 (잉크를 아낀다).
  * - 학생이 없는 반은 칸을 그리지 않고 그 레벨 마지막 쪽 바닥에 이름만 적는다. 학생이 하나도 없는 레벨은 쪽이 없고 그 반들은 맨 마지막 쪽 바닥에 적는다.
- * - 이름이 칸보다 길면 그 칸만 글자를 줄인다 (`shrunk` — 테스트가 지어낸 긴 이름으로 본다).
+ * - 이름이 칸 폭보다 길면 그 이름 하나만 글자를 줄인다 (`shrunk` — 옆 칸을 덮지 않게. 한국 이름은 여섯 칸 레벨에서도 다 10pt 로 들어간다 — 테스트가 지어낸 긴 이름으로 본다).
  * - 글꼴은 `assets/roster-fonts/roster-bold.ttf`(한글 11,172자 · 글리프 길이 짝수 — 까닭은 `scripts/roster-font.mjs`). 그리기만 하고 읽기는 라우트가 한다.
  * - 좌표는 mm, 위에서 아래로 잰다 (출석 포스터 PDF 와 같은 방식).
  */
@@ -27,7 +30,7 @@ export type RosterPdf = {
   layout: RosterPdfPage[];
   /** 그린 글자 — 글꼴에 빠진 글자가 없는지 테스트가 본다 */
   drawn: string[];
-  /** 칸보다 길어 글자를 줄여 그린 이름 */
+  /** 칸 폭보다 길어 그 이름만 글자를 줄여 그린 것 — 학생 수로는 줄이지 않는다 */
   shrunk: string[];
 };
 
@@ -45,10 +48,14 @@ const FOOT_H = 5;
 const USABLE = PAGE_W - MX * 2;
 /** 칸이 이보다 좁아지면 그 레벨을 다음 쪽으로 나눈다 — 세로 A4 에 여섯 칸 (이름 · 칸 머리가 줄지 않고 들어간다) */
 const MIN_COL = 30;
-export const MIN_ROW = 4.0;
-const MAX_ROW = 6.6;
-/** 한 쪽에 들어가는 이름 줄의 높이 (mm) */
+/** 이름 글자 크기 (pt) — 학생 수와 상관없이 늘 이것 (2026-10-14 Alan "글자크기는 10으로 해줘"). 표시 `(불/RC)` 는 그 0.8 배 */
+export const NAME_PT = 10;
+/** 이름 한 줄 높이 (mm) — 10pt 이름에 맞춘 고정 값 (엑셀 명단처럼 글자 위아래에 조금씩 여백) */
+export const ROW_H = 5.6;
+/** 한 쪽에서 이름 줄이 쓸 수 있는 높이 (mm) */
 export const ROWS_AVAIL = PAGE_H - GRID_TOP - HEAD_H - BOTTOM - FOOT_H;
+/** 한 쪽에 들어가는 이름 줄 수 — 이보다 많은 칸은 다음 쪽에 이어 적는다 */
+export const ROWS_PER_PAGE = Math.floor((ROWS_AVAIL + 1e-6) / ROW_H);
 const PAD = 1.6;
 
 /** Pretendard 세로 치수 (unitsPerEm 2048 · ascent 1950 · descent -494) — 포스터 PDF 와 같다 */
@@ -125,17 +132,18 @@ export function splitPages(levels: readonly RosterLevel[], usable = USABLE): Ros
 export const columnWidth = (n: number, usable = USABLE) => usable / Math.max(2, n);
 
 /**
- * 줄 높이 — 한 쪽에 다 들어가게 4.0 ~ 6.6mm. 4.0mm 로도 넘치면 쪽 수를 정하고 **쪽마다 고르게 나눠** 줄을 다시 키운다
- * (70명 → 35 + 35 줄을 6.6mm 로. 앞 쪽에 57줄을 작은 글씨로 몰고 뒤 쪽에 13줄만 남기지 않는다)
+ * 한 레벨(의 칸들)을 몇 쪽에 몇 줄씩 — 줄 높이 · 글자는 고정이고(`ROW_H` · `NAME_PT`) 한 쪽에 `cap` 줄까지.
+ * 넘치면 쪽 수를 정하고 **쪽마다 고르게 나눈다** (45명 → 23 + 22, 60명 → 30 + 30 — 앞 쪽을 꽉 채우고 뒤 쪽에 몇 줄만 남기지 않는다).
+ * 글자를 줄여 한 쪽에 몰지 않는다 (2026-10-14 Alan "글자크기는 10으로 해줘").
  */
-export function rowLayout(maxRows: number, avail: number): { rowH: number; perPage: number; pages: number } {
-  const cap = Math.max(1, Math.floor((avail + 1e-6) / MIN_ROW));
-  const pages = Math.max(1, Math.ceil(maxRows / cap));
-  const perPage = Math.max(1, Math.ceil(maxRows / pages));
-  return { rowH: Math.min(MAX_ROW, Math.max(MIN_ROW, avail / perPage)), perPage, pages };
+export function rowLayout(maxRows: number, cap = ROWS_PER_PAGE): { perPage: number; pages: number } {
+  const pages = Math.max(1, Math.ceil(maxRows / Math.max(1, cap)));
+  return { perPage: Math.max(1, Math.ceil(maxRows / pages)), pages };
 }
 
-const nameSize = (rowH: number) => Math.min(10.5, Math.max(7, rowH * 1.62));
+/** 이 쪽에 그릴 칸 — `from` 번째 이름부터 적는 쪽이면 그보다 이름이 많은 칸만 (i = 첫 쪽에서의 자리) */
+const shownColumns = (block: RosterBlock, from: number) =>
+  block.columns.map((col, i) => ({ col, i })).filter(({ col }) => col.students.length > from);
 
 /** 바닥에 적는 학생이 없는 시간 — "학생이 없는 시간 2개: 650B 18:30~19:30 (월 RC · 화 LC 인강), …" */
 const emptyNote = (cols: readonly RosterColumn[]) => `학생이 없는 시간 ${cols.length}개: ${cols.map((c) => `${columnHeading(c)} (${columnDetail(c)})`).join(", ")}`;
@@ -163,13 +171,13 @@ export async function buildClassRosterPdf({
   const heading = title;
   const legend = ROSTER_MARKS.map((m) => `(${m.mark}) ${m.label}`).join("   ");
 
-  type Sheet = { block: RosterBlock | null; from: number; to: number; rowH: number; part: number; levelStart: boolean; levelEnd: boolean };
+  type Sheet = { block: RosterBlock | null; from: number; to: number; part: number; levelStart: boolean; levelEnd: boolean };
   const sheets: Sheet[] = [];
   for (const block of splitPages(roster.levels)) {
     const maxRows = Math.max(0, ...block.columns.map((c) => c.students.length));
-    const { rowH, perPage, pages } = rowLayout(maxRows, ROWS_AVAIL);
+    const { perPage, pages } = rowLayout(maxRows);
     for (let p = 0; p < pages; p++) {
-      sheets.push({ block, from: p * perPage, to: Math.min(maxRows, (p + 1) * perPage), rowH, part: p, levelStart: false, levelEnd: false });
+      sheets.push({ block, from: p * perPage, to: Math.min(maxRows, (p + 1) * perPage), part: p, levelStart: false, levelEnd: false });
     }
   }
   // 레벨의 첫 쪽 · 마지막 쪽 — 칸이 많아 나뉜 레벨도 한 레벨로 본다
@@ -177,7 +185,7 @@ export async function buildClassRosterPdf({
     s.levelStart = sheets[i - 1]?.block?.level !== s.block?.level;
     s.levelEnd = sheets[i + 1]?.block?.level !== s.block?.level;
   });
-  if (sheets.length === 0) sheets.push({ block: null, from: 0, to: 0, rowH: MAX_ROW, part: 0, levelStart: true, levelEnd: true });
+  if (sheets.length === 0) sheets.push({ block: null, from: 0, to: 0, part: 0, levelStart: true, levelEnd: true });
 
   // 학생이 없는 반 — 그 레벨 마지막 쪽에. 학생이 하나도 없는 레벨(쪽이 없다)의 반은 맨 마지막 쪽에
   const printed = new Set(roster.levels.map((l) => l.level));
@@ -217,9 +225,10 @@ export async function buildClassRosterPdf({
       // ─ 칸 ─ 바탕은 이 쪽에 이름이 있는 줄까지만
       const tone = toneOf(block.level.tone);
       const colW = columnWidth(block.columns.length);
-      const bodyH = (sheet.to - sheet.from) * sheet.rowH;
-      const size = nameSize(sheet.rowH);
-      block.columns.forEach((col, i) => {
+      const bodyH = (sheet.to - sheet.from) * ROW_H;
+      // 이어지는 쪽에는 이름이 남은 칸만 — 앞 쪽에서 다 적은 칸을 빈 칸으로 세우면 '이어서' 인데 이름이 없어 빠진 것처럼 보인다.
+      // 칸 자리는 첫 쪽과 같다 (쪽을 위아래로 이어 놓으면 칸이 맞는다)
+      shownColumns(block, sheet.from).forEach(({ col, i }) => {
         const cx = MX + i * colW;
         const inner = colW - 0.3; // 칸 사이 흰 줄
         cv.rect(cx, GRID_TOP, inner, HEAD_H, hex(tone.head));
@@ -239,14 +248,14 @@ export async function buildClassRosterPdf({
           maxW: inner - PAD * 2,
         });
         col.students.slice(sheet.from, sheet.to).forEach((st, r) => {
-          const top = GRID_TOP + HEAD_H + r * sheet.rowH;
+          const top = GRID_TOP + HEAD_H + r * ROW_H;
           if (r > 0) cv.rect(cx, top - 0.1, inner, 0.2, C.white);
           cv.line(
             [
-              { t: st.name || "이름 없음", size, color: C.ink },
-              { t: marksText(st.marks), size: size * 0.8, color: C.mark },
+              { t: st.name || "이름 없음", size: NAME_PT, color: C.ink },
+              { t: marksText(st.marks), size: NAME_PT * 0.8, color: C.mark },
             ],
-            { top, lh: sheet.rowH, x: cx + PAD, maxW: inner - PAD * 2 },
+            { top, lh: ROW_H, x: cx + PAD, maxW: inner - PAD * 2 },
           );
         });
       });
@@ -262,7 +271,7 @@ export async function buildClassRosterPdf({
     cv.line([{ t: footer, size: 7, color: C.mute }], { top: footTop, lh: 4, x: MX, maxW: USABLE * 0.84 });
     cv.line([{ t: `${index + 1} / ${sheets.length}`, size: 7, color: C.mute }], { top: footTop, lh: 4, x: PAGE_W - MX, right: true });
 
-    layout.push({ level: block?.level.label ?? null, columns: block?.columns.map(columnHeading) ?? [], part: sheet.part, footer });
+    layout.push({ level: block?.level.label ?? null, columns: block ? shownColumns(block, sheet.from).map(({ col }) => columnHeading(col)) : [], part: sheet.part, footer });
     all.drawn.push(...cv.drawn);
     all.shrunk.push(...cv.shrunk);
   });
