@@ -60,8 +60,8 @@ export function ClassRosterView({
               </Link>
             ))}
           </span>
-          {/* 라우트가 attachment 로 내려 준다 — Link 로 두면 화면에 미리 받아 둔다(PDF 를 만든다) */}
-          <a href={pdfHref} className="btn-primary !px-4 !py-2 text-sm">
+          {/* 라우트가 attachment 로 내려 준다 — Link 로 두면 화면에 미리 받아 둔다(PDF 를 만든다). A4 세로 · 레벨마다 새 쪽 (2026-10-14 Alan) */}
+          <a href={pdfHref} className="btn-primary !px-4 !py-2 text-sm" title="A4 세로 · 레벨마다 새 쪽에서 시작해요">
             PDF 받기
           </a>
         </div>
