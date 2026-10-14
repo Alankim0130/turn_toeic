@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { Alert } from "@/components/ui/Alert";
+import { PdfDownloadButton } from "@/components/admin/PdfDownloadButton";
 import { columnDetail, columnHeading, marksText, ROSTER_MARKS, toneOf, type ClassRoster } from "@/lib/class-roster";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +22,7 @@ export function ClassRosterView({
   period,
   terms,
   pdfHref,
+  pdfName,
 }: {
   roster: ClassRoster;
   ok: boolean;
@@ -31,6 +33,8 @@ export function ClassRosterView({
   /** 고를 수 있는 달 — 둘 이상일 때만 칩을 그린다 */
   terms: { key: string; label: string; href: string; active: boolean }[];
   pdfHref: string;
+  /** 저장 이름 — `역전토익_반별명단_2026-10.pdf` (응답 머리에서 못 읽을 때) */
+  pdfName: string;
 }) {
   return (
     <section aria-labelledby="class-roster-title" className="card p-4 sm:p-5">
@@ -43,10 +47,11 @@ export function ClassRosterView({
             {[period, `학생 ${roster.total}명`, "반마다 이름 가나다순"].filter(Boolean).join(" · ")}
           </p>
         </div>
-        {/* 라우트가 attachment 로 내려 준다 — Link 로 두면 화면에 미리 받아 둔다(PDF 를 만든다). A4 세로 · 레벨마다 새 쪽 (2026-10-14 Alan) */}
-        <a href={pdfHref} className="btn-primary !px-4 !py-2 text-sm" title="A4 세로 · 레벨마다 새 쪽에서 시작해요">
+        {/* 라우트가 attachment 로 내려 준다 — Link 로 두면 화면에 미리 받아 둔다(PDF 를 만든다). A4 세로 · 레벨마다 새 쪽 (2026-10-14 Alan).
+            아이폰 · 아이패드는 attachment 를 무시하고 화면에 띄우기만 해서 저장 창(파일에 저장 · 프린트)을 연다 — PdfDownloadButton */}
+        <PdfDownloadButton href={pdfHref} fileName={pdfName} align="end" className="btn-primary !px-4 !py-2 text-sm" title="A4 세로 · 레벨마다 새 쪽에서 시작해요">
           PDF 받기
-        </a>
+        </PdfDownloadButton>
       </div>
 
       {terms.length > 1 && (

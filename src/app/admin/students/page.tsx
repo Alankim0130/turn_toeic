@@ -8,7 +8,7 @@ import { signedAvatarUrls } from "@/lib/avatar-url";
 import { STUDY_KIND_LABEL, STUDY_KINDS, termParam } from "@/lib/study";
 import { week5SectionIds, groupWeek5 } from "@/lib/week5";
 import { SINGLE_SUBJECT_LABEL, singleSubjectOf } from "@/lib/section-type";
-import { groupByLevel, rosterPeriod, rosterTerms } from "@/lib/class-roster";
+import { groupByLevel, rosterFileName, rosterPeriod, rosterTerms } from "@/lib/class-roster";
 import { pickCurrentTerm } from "@/lib/term-window";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -291,6 +291,7 @@ export default async function StudentsPage({
                     active: t.id === rosterTerm.id,
                   }))}
                   pdfHref={`/admin/students/roster-pdf?term=${termParam(rosterTerm.year, rosterTerm.month)}`}
+                  pdfName={rosterFileName(rosterTerm)}
                 />
               ) : (
                 <p className="card px-4 py-6 text-center text-sm text-slate">지금 수업 중이거나 곧 시작하는 달이 없어요. 반 편성에서 다음 달을 열면 여기에 반별 명단이 생겨요.</p>
