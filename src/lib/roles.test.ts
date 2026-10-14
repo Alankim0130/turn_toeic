@@ -638,3 +638,92 @@ describe("숙제 미제출 알림 — 조교도 보내고, 학생에게 조교 �
     expect(src).toContain("homeworkMissingMessage(");
   });
 });
+
+/**
+ * 숙제 제출 기한 · 미제출 알림 신청 (2026-10-14 Alan — "항상 다음수업 시간까지 제출기간이 되는거야 … 시간은 오후 5시야" ·
+ * "숙제검사알림을 받고 싶은 사람은 숙제제출하는 곳 페이지에서 신청하기 버튼을 누르면 좋겠어. 그럼 안 누른사람에게는 알림보내기 명단에서 빠지고").
+ * 신청은 **본인만** 넣고 지우고, 신청하지 않은 학생에게는 보내는 사람이 누구든 **DB 가 미제출 알림을 넣지 않는다.**
+ */
+describe("숙제 미제출 알림 신청 · 제출 기한 (마이그레이션을 순서대로 재생한 마지막 모양)", () => {
+  const DIR = "supabase/migrations";
+  const files = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
+  const sqlOf = (f: string) =>
+    readFileSync(join(DIR, f), "utf8")
+      .split("\n")
+      .map((l) => (l.trim().startsWith("--") ? "" : l))
+      .join("\n");
+  const lastFn = (name: string) => {
+    let fn = "";
+    const re = new RegExp(`create or replace function ${name.replace(".", "\\.")}\\(([\\s\\S]*?)\\$\\$([\\s\\S]*?)\\$\\$`, "g");
+    for (const f of files) for (const m of sqlOf(f).matchAll(re)) fn = m[1] + "$$" + m[2];
+    return fn.replace(/\s+/g, " ");
+  };
+  const all = files.map(sqlOf).join("\n").replace(/\s+/g, " ");
+
+  it("신청 표 — 조회는 스태프(조교) 확인이 먼저 · 본인 · 넣기와 지우기는 본인만, 넣을 때는 user_id 칸만", () => {
+    const live = new Map<string, string>();
+    for (const f of files) {
+      for (const [, verb, name, body] of sqlOf(f).matchAll(/(create|drop) policy (?:if exists )?"([^"]+)" on public\.homework_missing_optins([^;]*);/g)) {
+        if (verb === "create") live.set(name, body.replace(/\s+/g, " "));
+        else live.delete(name);
+      }
+    }
+    const by = (kind: string) => [...live].filter(([, b]) => new RegExp(`for ${kind}\\b`).test(b));
+    expect(by("select")).toHaveLength(1);
+    expect(by("select")[0][1]).toContain("using ((select private.is_crew()) or user_id = (select auth.uid()))");
+    expect(by("insert")).toHaveLength(1);
+    expect(by("insert")[0][1]).toContain("with check (user_id = (select auth.uid()))");
+    expect(by("delete")).toHaveLength(1);
+    expect(by("delete")[0][1]).toContain("using (user_id = (select auth.uid()))");
+    expect(by("update")).toHaveLength(0);
+    expect(all).toContain("alter table public.homework_missing_optins enable row level security");
+    expect(all).toContain("grant select, delete on public.homework_missing_optins to authenticated");
+    expect(all).toContain("grant insert (user_id) on public.homework_missing_optins to authenticated");
+  });
+
+  it("신청하지 않은 학생에게는 미제출 알림이 들어가지 않는다 — BEFORE INSERT 트리거가 그 줄만 건너뛴다 (보내는 사람이 누구든)", () => {
+    let alive = false;
+    for (const f of files) {
+      for (const m of sqlOf(f).matchAll(/(create|drop) trigger (?:if exists )?student_messages_homework_missing_optin\b([^;]*);/g)) {
+        alive = m[1] === "create" && /before insert on public\.student_messages/.test(m[2]);
+      }
+    }
+    expect(alive, "student_messages_homework_missing_optin 트리거(before insert)가 없다").toBe(true);
+    const body = lastFn("private.student_messages_homework_missing_optin");
+    expect(body).toContain("new.kind = 'homework_missing'");
+    expect(body).toContain("not exists (select 1 from public.homework_missing_optins o where o.user_id = new.user_id)");
+    expect(body).toContain("return null;");
+  });
+
+  it("기한 날짜 함수 — 같은 트랙의 다음 수업일(반 편성 달력, 기수를 넘어서도) · 날짜만 준다 · 비로그인은 못 부른다", () => {
+    const fn = lastFn("public.homework_due_dates");
+    expect(fn).toContain("returns table (class_date date, due_date date)");
+    expect(fn).toContain("security definer set search_path = ''");
+    expect(fn).toContain("(select min(n.date) from public.term_class_dates n where n.track = d.track and n.date > d.date)");
+    expect(fn).not.toMatch(/term_id\s*=/); // 기수로 자르지 않는다 — 그 달 마지막 수업의 기한은 다음 달 첫 같은 트랙 수업일
+    expect(all).toContain("revoke all on function public.homework_due_dates(date[]) from public, anon");
+    expect(all).toContain("grant execute on function public.homework_due_dates(date[]) to authenticated");
+  });
+
+  it("계정을 합치면 신청도 남길 계정으로 (merge_accounts 의 마지막 정의)", () => {
+    const fn = lastFn("private.merge_accounts");
+    expect(fn).toContain("insert into public.homework_missing_optins (user_id, created_at) select p_to, o.created_at from public.homework_missing_optins o where o.user_id = p_from on conflict (user_id) do nothing");
+    expect(fn).toContain("delete from public.homework_missing_optins where user_id = p_from");
+    // 앞서 옮기던 것도 그대로다
+    expect(fn).toContain("update public.homework_submissions set user_id = p_to where user_id = p_from");
+    expect(fn).toContain("update private.reserved_staff set claimed_by = p_to where claimed_by = p_from");
+  });
+
+  it("앱 — 보내기는 신청한 학생만(서버가 다시 읽는다) · 학생 신청은 본인 세션으로", () => {
+    const send = readFileSync("src/app/admin/homework/missing/actions.ts", "utf8");
+    expect(send).toContain("r.alerts && r.missing.length > 0");
+    const loader = readFileSync("src/app/admin/homework/_lib/missing.ts", "utf8");
+    expect(loader).toContain('.from("homework_missing_optins")');
+    expect(loader).toContain('supabase.rpc("homework_due_dates"');
+    const student = readFileSync("src/app/my/homework/actions.ts", "utf8");
+    const toggle = student.slice(student.indexOf("export async function setHomeworkMissingAlert"));
+    expect(toggle).toContain('from("homework_missing_optins").insert({ user_id: user.id })');
+    expect(toggle).toContain('.delete().eq("user_id", user.id)');
+    expect(toggle).not.toMatch(/createAdminClient|service_role|SERVICE_ROLE/);
+  });
+});

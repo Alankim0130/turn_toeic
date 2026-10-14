@@ -528,6 +528,31 @@ export async function getMyHomework(filter?: { level?: number; subject?: string 
 }
 export type MyHomework = Awaited<ReturnType<typeof getMyHomework>>[number];
 
+/**
+ * 숙제 미제출 알림을 신청했는가 (2026-10-14 Alan — "숙제검사알림을 받고 싶은 사람은 숙제제출하는 곳 페이지에서 신청하기 버튼을 누르면 좋겠어").
+ * **`user_id` 로 좁힌다** — 정책 `homework_missing_optins: 본인·스태프·조교 조회` 는 강사 · 관리자 · 조교에게 모든 학생의 신청을 연다 (머리말).
+ */
+export async function getMyHomeworkAlert(): Promise<boolean> {
+  const user = await getSessionUser();
+  if (!user) return false;
+  const supabase = await createClient();
+  const { data } = await supabase.from("homework_missing_optins").select("user_id").eq("user_id", user.id).maybeSingle();
+  return !!data;
+}
+
+/**
+ * 수업일마다 숙제 기한 날짜 = 같은 트랙의 다음 수업일 (DB `homework_due_dates` — 반 편성 달력, 기수를 넘어서도. 시각은 오후 5시).
+ * 달력에 다음 수업일이 아직 없으면 null. 조회가 실패하면 null 을 돌려준다 — 화면은 기한 줄을 그리지 않는다 (틀린 기한을 적느니).
+ */
+export async function getHomeworkDueDates(dates: readonly string[]): Promise<Map<string, string | null> | null> {
+  const unique = [...new Set(dates)];
+  if (unique.length === 0) return new Map();
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("homework_due_dates", { p_dates: unique });
+  if (error) return null;
+  return new Map((data ?? []).map((r) => [r.class_date, r.due_date]));
+}
+
 /** 숙제업로드 1단계 레벨 목록 (lc_levels — 레벨을 더하면 여기서도 늘어난다) */
 export async function getHomeworkLevels() {
   const supabase = await createClient();

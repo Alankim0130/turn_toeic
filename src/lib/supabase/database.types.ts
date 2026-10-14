@@ -1068,6 +1068,29 @@ export type Database = {
           },
         ]
       }
+      homework_missing_optins: {
+        Row: {
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "homework_missing_optins_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       homework_submissions: {
         Row: {
           checked_at: string | null
@@ -2650,6 +2673,10 @@ export type Database = {
       verification_twins: {
         Args: { p_id: number }
         Returns: { user_id: string; same_person: boolean }[]
+      }
+      homework_due_dates: {
+        Args: { p_dates: string[] }
+        Returns: { class_date: string; due_date: string | null }[]
       }
       homework_missing_notices: {
         Args: { p_term_id: number }

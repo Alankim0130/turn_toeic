@@ -75,6 +75,8 @@ const WIDE_OPEN_TABLES = [
   "account_merge_requests",
   "attendance_stamps",
   "attendance_events",
+  // 숙제 미제출 알림 신청 (2026-10-14 — 정책 `본인 or 강사 · 관리자 · 조교`). 학생 화면은 내 신청 한 줄만 읽는다
+  "homework_missing_optins",
   "profiles",
 ];
 
@@ -131,6 +133,7 @@ describe("/my 조회는 내 것으로 한 번 더 좁힌다", () => {
     expect(found("lc_audio_tracks", "LcBookPage")).toBe(true);
     expect(found("class_materials", "getMyClassMaterials")).toBe(true);
     expect(found("class_notices", "getMyClassNotices")).toBe(true);
+    expect(found("homework_missing_optins", "getMyHomeworkAlert")).toBe(true);
   });
 
   it.each(WIDE_OPEN_TABLES)("%s 를 읽는 곳은 전부 좁힌다", (table) => {

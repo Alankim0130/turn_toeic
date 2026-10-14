@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { requireCrew } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { todayKST } from "@/lib/utils";
 import { buildMissingBoard, homeworkMissingMessage, missingRelated, MISSING_TITLE_MAX, rowOf, type MissingRow } from "@/lib/homework-missing";
 import { TERM_COLUMNS } from "../../_lib/queries";
 import { loadMissingData, sectionSortKey } from "../_lib/missing";
@@ -11,13 +10,16 @@ import { loadMissingData, sectionSortKey } from "../_lib/missing";
 /** 한 번에 보내는 학생 수 — 한 레벨의 한 달 학생이 이 안에 든다 (방학 600명도 레벨마다 나뉜다) */
 const MAX_RECIPIENTS = 300;
 
-export type MissingNoticeResult = { ok: true; sent: number; skipped: number } | { ok: false; error: string };
+export type MissingNoticeResult = { ok: true; sent: number; skipped: number; unsubscribed: number } | { ok: false; error: string };
 
 /**
  * 숙제 미제출 알림 보내기 (2026-10-08 Alan — "안한사람은 일괄선택해서 알림메시지도 보낼 수 있으면 좋겠어" · "조교도 보낸다").
  *
  * 화면이 보낸 것은 **받을 학생 · 레벨 · 제목**뿐이다 — 글은 서버가 **지금 다시 세어** 학생마다 만든다 (`homeworkMissingMessage`).
+ * 세는 기준은 **제출 기한**(같은 트랙 다음 수업일 오후 5시 — 2026-10-14 Alan)이 지난 숙제다.
  * 화면을 열어 둔 사이 학생이 숙제를 냈으면 그 날짜는 빠지고, 다 냈으면 그 학생에게는 보내지 않는다 (`skipped`).
+ * **알림을 신청하지 않은 학생에게는 보내지 않는다** (같은 날 Alan — "안 누른사람에게는 알림보내기 명단에서 빠지고") — 그 사이 신청을 취소했으면 빠진다
+ * (`unsubscribed`). DB 트리거도 신청하지 않은 학생의 줄은 넣지 않는다 (두 겹).
  * 학생 알림함(`student_messages`, kind `homework_missing`)으로만 간다 — 문자 · 카톡 · 푸시는 없다.
  *
  * **강사가 아닌 사람(조교 · 관리자)이 보내도 학생에게는 안 낸 과목의 선생님 이름으로 간다** — DB 트리거(`private.student_messages_homework_missing_sender`)가 바꾼다
@@ -43,9 +45,19 @@ export async function sendHomeworkMissingNotice(input: { termId: number; level: 
   const data = await loadMissingData(supabase, term, { students: ids });
   // 일부를 못 읽었으면 낸 숙제가 '안 냄' 으로 보이거나 강사 · 관리자 계정을 못 가린다 — 틀린 알림을 보내느니 멈춘다
   if (!data.ok) return { ok: false, error: "숙제 기록을 다 읽지 못했어요. 잠시 뒤 다시 해 주세요." };
-  const board = buildMissingBoard({ level, today: todayKST(), ...data, sortKeyOf: sectionSortKey(data.meta) });
-  const rows = ids.map((id) => rowOf(board, id)).filter((r): r is MissingRow => !!r && r.missing.length > 0);
-  if (rows.length === 0) return { ok: false, error: "고른 학생은 지금 안 낸 숙제가 없어요. 새로고침해 주세요." };
+  const board = buildMissingBoard({ level, ...data, sortKeyOf: sectionSortKey(data.meta) });
+  const found = ids.map((id) => rowOf(board, id)).filter((r): r is MissingRow => !!r);
+  const unsubscribed = found.filter((r) => !r.alerts).length;
+  const rows = found.filter((r) => r.alerts && r.missing.length > 0);
+  if (rows.length === 0) {
+    return {
+      ok: false,
+      error:
+        found.length > 0 && unsubscribed === found.length
+          ? "고른 학생은 숙제 미제출 알림을 신청하지 않았어요. 새로고침해 주세요."
+          : "고른 학생은 지금 기한이 지난 숙제가 없어요. 새로고침해 주세요.",
+    };
+  }
 
   const { error } = await supabase.from("student_messages").insert(
     rows.map((r) => ({
@@ -62,5 +74,5 @@ export async function sendHomeworkMissingNotice(input: { termId: number; level: 
 
   revalidatePath("/admin/homework/missing");
   revalidatePath("/my", "layout"); // 학생 알림함 배지
-  return { ok: true, sent: rows.length, skipped: ids.length - rows.length };
+  return { ok: true, sent: rows.length, skipped: ids.length - rows.length - unsubscribed, unsubscribed };
 }

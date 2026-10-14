@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { HomeworkAlertCard } from "@/components/my/homework/HomeworkAlertCard";
 import { HomeworkCalendar, type HomeworkDay, type HomeworkMonth } from "@/components/my/homework/HomeworkCalendar";
 import { SubmissionCard } from "@/components/my/homework/SubmissionCard";
 import type { CalendarMark } from "@/components/my/MonthCalendar";
 import { requireUser } from "@/lib/auth";
 import { initialDay, initialMonth } from "@/lib/class-day";
 import { levelsOfDay } from "@/lib/homework";
+import { isOverdue } from "@/lib/homework-missing";
 import { formatDate, todayKST } from "@/lib/utils";
-import { getHomeworkLevels, getMyHomework, getMySessions, getMyStudyEligibility } from "../_lib/queries";
+import { getHomeworkDueDates, getHomeworkLevels, getMyHomework, getMyHomeworkAlert, getMySessions, getMyStudyEligibility } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "숙제업로드",
@@ -23,12 +25,13 @@ type Course = { target_score?: number | null; includes_levels?: number[] | null 
  * 넘길 수 있더라도 반·기수 전체를 실어 보낼 이유가 없다 (내 시간표와 같은 규칙).
  */
 export default async function HomeworkPage() {
-  const [{ user }, sessions, levels, mine, { opensOn }] = await Promise.all([
+  const [{ user }, sessions, levels, mine, { opensOn }, alertOn] = await Promise.all([
     requireUser("/my/homework"),
     getMySessions(),
     getHomeworkLevels(),
     getMyHomework(),
     getMyStudyEligibility(),
+    getMyHomeworkAlert(),
   ]);
   const today = todayKST();
 
@@ -43,12 +46,15 @@ export default async function HomeworkPage() {
     byDate.set(s.date, b);
   }
 
+  // 숙제 기한 = 같은 트랙의 다음 수업일 오후 5시 (2026-10-14 Alan) — 날짜는 반 편성 달력에서. 못 읽으면 기한 줄을 그리지 않는다
+  const due = await getHomeworkDueDates([...byDate.keys()]);
   const days: HomeworkDay[] = [...byDate.entries()]
     .map(([date, b]) => ({
       date,
       course: [...b.courses].join(" · ") || "수업",
       // lc_levels 에 없는 레벨은 뺀다 — 제출이 FK(23503)로 튕긴다
       levels: levelsOfDay(b.list).filter((l) => levels.includes(l)),
+      ...(due ? { due: due.get(date) ?? null, overdue: isOverdue(due.get(date)) } : {}),
     }))
     .filter((d) => d.levels.length > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -103,6 +109,9 @@ export default async function HomeworkPage() {
 
   return (
     <div className="space-y-8">
+      {/* 숙제 미제출 알림 신청 (2026-10-14 Alan) — 신청한 학생만 선생님의 미제출 알림 명단에 나온다 */}
+      <HomeworkAlertCard on={alertOn} />
+
       <HomeworkCalendar
         userId={user.id}
         today={today}
