@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import fontkit from "@pdf-lib/fontkit";
-import { PDFDocument } from "pdf-lib";
+import { decodePDFRawStream, PDFArray, PDFDocument, PDFRawStream, PDFRef } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import { buildClassRoster, type RosterEnrollment, type RosterLevel, type RosterPerson, type RosterSection } from "./class-roster";
-import { buildClassRosterPdf, columnWidth, MIN_ROW, ROWS_AVAIL, rowLayout, splitPages } from "./class-roster-pdf";
+import { buildClassRosterPdf, columnWidth, NAME_PT, ROW_H, ROWS_AVAIL, ROWS_PER_PAGE, rowLayout, splitPages } from "./class-roster-pdf";
 
 const FONT_PATH = path.join(process.cwd(), "assets/roster-fonts/roster-bold.ttf");
 const font = new Uint8Array(readFileSync(FONT_PATH));
@@ -77,6 +77,23 @@ function rosterOf(counts: number[], extra: { name: string; sectionIndex: number 
 const build = (counts: number[], extra: { name: string; sectionIndex: number }[] = [], perLevel = 2) =>
   buildClassRosterPdf({ roster: rosterOf(counts, extra, perLevel), title: "2026년 10월 반별 명단", period: "10/6 개강 ~ 11/3 종강", printedAt: "2026-10-14 21:05", font });
 
+/** PDF 에 실제로 쓰인 글자 크기 (pt) — 쪽마다 내용 스트림을 풀어 `Tf` 를 모은다 */
+async function fontSizes(bytes: Uint8Array): Promise<number[]> {
+  const doc = await PDFDocument.load(bytes);
+  const sizes = new Set<number>();
+  for (const page of doc.getPages()) {
+    const contents = page.node.Contents();
+    const items = contents instanceof PDFArray ? contents.asArray() : contents ? [contents] : [];
+    for (const item of items) {
+      const stream = item instanceof PDFRef ? doc.context.lookup(item) : item;
+      if (!(stream instanceof PDFRawStream)) continue;
+      const ops = Buffer.from(decodePDFRawStream(stream).decode()).toString("latin1");
+      for (const m of ops.matchAll(/\/\S+\s+([\d.]+)\s+Tf/g)) sizes.add(Number(m[1]));
+    }
+  }
+  return [...sizes].sort((a, b) => a - b);
+}
+
 const level = (label: string, n: number, tone: number): RosterLevel => ({
   key: label,
   level: Number(label),
@@ -118,19 +135,40 @@ describe("반별 명단 PDF", () => {
     expect(pdf.bytes.length).toBeLessThan(120_000);
   });
 
-  it("한 레벨이 길면 그 레벨 안에서 고르게 나눠 이어 쓰고(4.0mm 로도 넘칠 때), 다음 레벨은 새 쪽에서 시작한다", async () => {
-    expect(rowLayout(20, 150).rowH).toBeCloseTo(6.6);
-    expect(rowLayout(30, 150).rowH).toBeCloseTo(5);
-    expect(rowLayout(60, 150)).toMatchObject({ rowH: 5, perPage: 30, pages: 2 }); // 37줄 + 23줄이 아니라 30 + 30
-    // 세로 A4 한 쪽 — 6.6mm 로 35줄까지, 줄을 줄여 57줄까지. 58줄부터는 두 쪽에 고르게 나눠 줄을 다시 키운다
-    expect(rowLayout(35, ROWS_AVAIL)).toMatchObject({ rowH: 6.6, pages: 1 });
-    expect(rowLayout(57, ROWS_AVAIL)).toMatchObject({ pages: 1 });
-    expect(rowLayout(57, ROWS_AVAIL).rowH).toBeGreaterThanOrEqual(MIN_ROW);
-    expect(rowLayout(58, ROWS_AVAIL)).toMatchObject({ rowH: 6.6, perPage: 29, pages: 2 });
-    expect(rowLayout(70, ROWS_AVAIL)).toMatchObject({ rowH: 6.6, perPage: 35, pages: 2 });
-    const pdf = await build([70, 10, 5, 5]);
+  it("이름은 학생이 몇 명이든 늘 10pt — 레벨을 한 쪽에 넣으려고 글자를 줄이지 않는다 (2026-10-14 Alan \"글자크기는 10으로 해줘\")", async () => {
+    expect(NAME_PT).toBe(10);
+    // 실제 PDF 에 쓰인 글자 크기가 학생 수와 상관없이 같다 — 예전에는 45명 칸이면 이름이 8.3pt 로 줄었다
+    const small = await build([8, 6, 5, 4]);
+    const big = await build([45, 20, 38, 30, 60, 60]);
+    const fixed = [7, 7.5, 8, 9.5, 10, 14, 18]; // 바닥 · 칸 둘째 줄 7, 기간 · 범례 7.5, 시간 · 표시 8, 학생 수 9.5, 이름 · 칸 이름 10, 제목 14, 레벨 18
+    expect(await fontSizes(small.bytes)).toEqual(fixed);
+    expect(await fontSizes(big.bytes)).toEqual(fixed);
+    expect(big.shrunk).toEqual([]);
+  });
+
+  it("한 쪽에 41줄 — 넘치면 그 레벨 안에서 쪽마다 고르게 나눠 이어 쓰고, 이어지는 쪽에는 이름이 남은 칸만 그린다", async () => {
+    // 줄 높이 고정 (5.6mm) — 한 쪽에 41줄. 한 반 40명 남짓은 한 쪽에 든다
+    expect(ROW_H).toBe(5.6);
+    expect(ROWS_PER_PAGE).toBe(Math.floor(ROWS_AVAIL / ROW_H));
+    expect(ROWS_PER_PAGE).toBe(41);
+    expect(rowLayout(20)).toEqual({ perPage: 20, pages: 1 });
+    expect(rowLayout(41)).toEqual({ perPage: 41, pages: 1 });
+    expect(rowLayout(42)).toEqual({ perPage: 21, pages: 2 }); // 41 + 1 이 아니라 21 + 21
+    expect(rowLayout(45)).toEqual({ perPage: 23, pages: 2 }); // 23 + 22
+    expect(rowLayout(60)).toEqual({ perPage: 30, pages: 2 });
+    expect(rowLayout(90)).toEqual({ perPage: 30, pages: 3 });
+    expect(rowLayout(0)).toEqual({ perPage: 1, pages: 1 });
+    const pdf = await build([45, 20, 5, 5]);
     expect(pdf.layout.map((p) => `${p.level}:${p.part}`)).toEqual(["650:0", "650:1", "750:0"]);
-    expect(pdf.drawn.join("\n")).toContain("이어서");
+    // 650 둘째 쪽 — 45명 칸만 이어서 (20명 칸은 첫 쪽에 다 적었다)
+    expect(pdf.layout.map((p) => p.columns)).toEqual([["650A 10:00~10:50", "650A 11:00~11:50"], ["650A 10:00~10:50"], ["750A 12:00~12:50", "750A 13:00~13:50"]]);
+    const text = pdf.drawn.join("\n");
+    expect(text).toContain("학생 65명 · 이어서");
+    expect(text).toContain("45명 · 이어서");
+    expect(text).not.toContain("20명 · 이어서");
+    // 두 칸 다 이어지면 둘 다 그린다
+    const both = await build([60, 58]);
+    expect(both.layout.map((p) => p.columns.length)).toEqual([2, 2]);
   });
 
   it("칸이 많은 레벨은 고르게 나눠 다음 쪽에 이어 그린다 — 칸이 30mm 보다 좁아지지 않게 (세로 A4 에 여섯 칸)", () => {
