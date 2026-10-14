@@ -68,6 +68,11 @@ const nextConfig: NextConfig = {
      * (`src/app/admin/_lib/handover-doc.ts`). `docs/` 는 함수에 실리지 않으므로 여기 적는다. 서버 액션도 이 화면 함수에서 돈다.
      */
     "/admin/handover": ["./docs/HANDOVER.md"],
+    /**
+     * 반별 명단 PDF (2026-10-14) — 학생 이름을 찍는 한글 글꼴(약 2MB, `assets/roster-fonts/`)을 서버에서 읽는다 (`class-roster-font.ts`).
+     * `assets/` 는 함수에 실리지 않으므로 여기 적는다. 파일을 바꾸면 여기도 고친다.
+     */
+    "/admin/students/roster-pdf": ["./assets/roster-fonts/*.ttf"],
   },
 
   /**
