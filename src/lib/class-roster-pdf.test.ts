@@ -71,7 +71,7 @@ function rosterOf(counts: number[], extra: { name: string; sectionIndex: number 
     people.set(`x${j}`, { name: e.name, staff: false });
     enrollments.push({ studentId: `x${j}`, sectionId: e.sectionIndex + 1, mode: "onsite" });
   });
-  return buildClassRoster({ sections, includes: new Map(), enrollments, people, subject: "lc", today: "2026-10-14" });
+  return buildClassRoster({ sections, includes: new Map(), enrollments, people, today: "2026-10-14" });
 }
 
 const build = (counts: number[], extra: { name: string; sectionIndex: number }[] = [], perLevel = 2) =>
@@ -83,7 +83,7 @@ const level = (label: string, n: number, tone: number): RosterLevel => ({
   label,
   tone,
   count: n,
-  columns: Array.from({ length: n }, (_, i) => ({ sectionId: tone * 100 + i, level: Number(label), title: label, track: "mwf", time: null, recorded: false, bothSubjects: false, students: [] })),
+  columns: Array.from({ length: n }, (_, i) => ({ key: `${label}-${i}`, sectionIds: [tone * 100 + i], level: Number(label), title: label, time: null, tracks: [], students: [] })),
 });
 
 describe("반별 명단 PDF", () => {
@@ -97,12 +97,16 @@ describe("반별 명단 PDF", () => {
     }
     expect(pdf.layout.map((p) => p.level)).toEqual(["650", "750", "850"]);
     expect(pdf.layout.map((p) => p.columns)).toEqual([
-      ["650A (월수금)", "650A (화목금)"],
-      ["750A (월수금)", "750A (화목금)"],
-      ["850A (월수금)", "850A (화목금)"],
+      ["650A 10:00~10:50", "650A 11:00~11:50"],
+      ["750A 12:00~12:50", "750A 13:00~13:50"],
+      ["850A 14:00~14:50", "850A 15:00~15:50"],
     ]);
     const text = pdf.drawn.join("\n");
-    expect(text).toContain("2026년 10월 반별 명단 · LC 수업");
+    // LC · RC 를 합친 한 장 — 제목에 과목이 없다 (2026-10-14 저녁 Alan "lc, rc구분하지말고 합쳐서")
+    expect(text).toContain("2026년 10월 반별 명단");
+    expect(text).not.toContain("LC 수업");
+    expect(text).toContain("월 LC"); // 칸 머리 둘째 줄 — 트랙마다 과목
+    expect(text).toContain("(LC) LC단과"); // 범례
     expect(text).toContain("학생 21명"); // 650 레벨 띠 — 그 레벨 학생 수
     expect(text).toContain("(불)");
     expect(text).toContain("가온");
@@ -143,12 +147,12 @@ describe("반별 명단 PDF", () => {
   it("학생이 없는 반은 그 레벨 쪽 바닥에 · 학생이 하나도 없는 레벨의 반은 맨 마지막 쪽 바닥에 적는다", async () => {
     const pdf = await build([5, 0, 4, 3]);
     expect(pdf.layout.map((p) => p.level)).toEqual(["650", "750"]);
-    expect(pdf.layout[0].footer).toBe("학생이 없는 반 1개: 650A (화목금) 11:00~11:50");
-    expect(pdf.layout[1].footer).not.toContain("학생이 없는 반");
+    expect(pdf.layout[0].footer).toBe("학생이 없는 시간 1개: 650A 11:00~11:50 (화 LC)");
+    expect(pdf.layout[1].footer).not.toContain("학생이 없는");
     const orphan = await build([5, 5, 0, 0, 4, 4]);
     expect(orphan.layout.map((p) => p.level)).toEqual(["650", "850"]);
-    expect(orphan.layout[0].footer).not.toContain("학생이 없는 반");
-    expect(orphan.layout[1].footer).toBe("학생이 없는 반 2개: 750A (월수금) 12:00~12:50, 750A (화목금) 13:00~13:50");
+    expect(orphan.layout[0].footer).not.toContain("학생이 없는");
+    expect(orphan.layout[1].footer).toBe("학생이 없는 시간 2개: 750A 12:00~12:50 (월 LC), 750A 13:00~13:50 (화 LC)");
   });
 
   it("이름이 칸보다 길면 그 칸만 글자를 줄인다 (여섯 칸 레벨 — 칸 폭 약 31mm)", async () => {
