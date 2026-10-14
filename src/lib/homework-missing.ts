@@ -15,10 +15,39 @@ import { HOMEWORK_SUBJECTS, type HomeworkSubject, homeworkLabel, isSubject } fro
  *    120분 · 속성반은 두 과목. 과목 칸이 빈 반(방학달 통짜 반 · 아직 안 고름)은 두 과목
  *  - 레벨은 그 시간 단위 반의 강좌 레벨 — 속성반 학생은 650 칸과 850 칸을 따로 갖는다 (레벨 탭마다 따로 보인다)
  *  - **반에 들어온 날(배정일, KST)부터 종강일까지** — 출석 한눈에 보기와 같은 규칙. 개강 뒤에 등록한 학생에게 그 전 수업 숙제는 묻지 않는다
- *  - **어제까지 지난 수업만 미제출로 센다** — 오늘 수업 숙제는 아직 낼 때가 아니다 (첫토익과 같다 — "오늘 회차는 아직 수업 전")
+ *  - **제출 기한이 지나야 미제출로 센다** (2026-10-14 Alan — "항상 다음수업 시간까지 제출기간이 되는거야 … 주5반은 월수금숙제 원리와
+ *    화목금 숙제원리를 그대로 따라가면 돼. 그리고 시간은 오후 5시야"). 기한 = **그 수업과 같은 트랙의 다음 수업일 오후 5시(KST)** —
+ *    월수금 월요일 숙제는 수요일 5시, 금요일 숙제는 다음 주 월요일 5시, 화목금도 같다. 다음 수업일은 반 편성 달력(`term_class_dates`)이 정하고
+ *    기수를 넘어서도 본다 (그 달 마지막 수업의 숙제 = 다음 달 첫 같은 트랙 수업일). DB `public.homework_due_dates` 가 날짜를 주고 시각은 여기서 붙인다.
+ *    다음 수업일이 아직 달력에 없으면(다음 달 편성 전) 기한을 모르는 것이라 미제출로 세지 않는다 — 틀린 알림을 보내느니 기다린다.
+ *    (2026-10-08 ~ 10-14 에는 "어제까지 지난 수업" 이었다 — 월요일 숙제가 화요일 0시에 벌써 '안 냄' 이 됐다)
+ *  - **알림은 신청한 학생에게만** (같은 날 Alan — "숙제검사알림을 받고 싶은 사람은 숙제제출하는 곳 페이지에서 신청하기 버튼을 누르면 좋겠어.
+ *    그럼 안 누른사람에게는 알림보내기 명단에서 빠지고 누른사람은 추가되어서 진행되면 좋겠어"). 줄마다 `alerts`(신청했나)를 달고,
+ *    화면은 신청한 학생만 그린다 (`onlyAlerted` — 신청 안 한 학생은 체크박스로 볼 수만 있다). 전체선택 · 보내기는 신청한 학생만.
  *
  * 화면(`/admin/homework/missing`)과 서버 액션이 이 파일 하나로 계산한다 — 보내기 전에 서버가 다시 세서 알림 글을 만든다.
  */
+
+/** 숙제 제출 기한의 시각 — 다음 같은 트랙 수업일의 오후 5시 (KST) */
+export const HOMEWORK_DUE_TIME = "17:00";
+export const HOMEWORK_DUE_LABEL = "오후 5시";
+
+/** 기한 날짜(YYYY-MM-DD)의 오후 5시 — 견줄 수 있는 시각(ms). 날짜 꼴이 틀리면 NaN */
+export function dueAt(due: string): number {
+  return /^\d{4}-\d{2}-\d{2}$/.test(due) ? Date.parse(`${due}T${HOMEWORK_DUE_TIME}:00+09:00`) : NaN;
+}
+
+/** 기한이 지났는가 — 5시를 **넘기면** 지난 것이다 (Alan "5시를 넘겼으니 제출기간이 지났지?"). 기한을 모르면(다음 수업일이 달력에 없음) 지나지 않은 것으로 본다 */
+export function isOverdue(due: string | null | undefined, now: number = Date.now()): boolean {
+  if (!due) return false;
+  const at = dueAt(due);
+  return Number.isFinite(at) && now > at;
+}
+
+/** "10/16(금) 오후 5시" — 학생 달력 · 관리자 칸 설명에 쓴다 */
+export function dueLabel(due: string): string {
+  return `${shortDay(due)} ${HOMEWORK_DUE_LABEL}`;
+}
 
 /** 반 하나 — 격자 계산에 필요한 것만 */
 export type MissingSection = {
@@ -41,7 +70,7 @@ export type MissingEnrollment = { studentId: string; sectionId: number; from: st
 /** 낸 숙제 하나 — 수업일 · 레벨 · 과목 */
 export type MissingSubmission = { userId: string; date: string; level: number; subject: string };
 
-/** 칸 하나: 냄 · 안 냄(지난 수업) · 아직(오늘 · 앞으로) · 해당 없음(배정 전 · 그 시간 수업이 아님) */
+/** 칸 하나: 냄 · 안 냄(기한 지남) · 아직(기한 전) · 해당 없음(배정 전 · 그 시간 수업이 아님) */
 export type MissingCell = "done" | "missing" | "upcoming" | "none";
 
 const slotKey = (date: string, subject: string) => `${date}|${subject}`;
@@ -99,22 +128,28 @@ export type MissingColumn = {
   track: string | null;
   /** 그 날 숙제 과목 (RC 먼저) */
   subjects: HomeworkSubject[];
+  /** 그 날 숙제의 기한 날짜 (같은 트랙 다음 수업일 — 오후 5시) · 모르면 null */
+  due: string | null;
+  /** 기한이 지났는가 */
+  overdue: boolean;
 };
 
-/** 미제출 날짜 하나 */
-export type MissingSlot = { date: string; subject: HomeworkSubject };
+/** 미제출 숙제 하나 — 수업일 · 과목 · 기한 날짜 */
+export type MissingSlot = { date: string; subject: HomeworkSubject; due: string };
 
 export type MissingRow = {
   id: string;
   name: string;
+  /** 숙제 미제출 알림을 신청했나 — 아니면 고를 수도 보낼 수도 없다 (2026-10-14 Alan) */
+  alerts: boolean;
   /** 열마다 · 그 열의 과목마다 */
   cells: MissingCell[][];
-  /** 지난 수업 숙제 칸 수 · 그중 낸 칸 수 */
+  /** 기한이 지난 숙제 칸 수 · 그중 낸 칸 수 */
   past: number;
   done: number;
-  /** 안 낸 지난 수업 숙제 — 날짜 순, 같은 날은 RC 먼저 */
+  /** 기한이 지났는데 안 낸 숙제 — 날짜 순, 같은 날은 RC 먼저 */
   missing: MissingSlot[];
-  /** 제출률 % — 지난 수업이 없으면 null (0% 로 적지 않는다) */
+  /** 제출률 % — 기한이 지난 숙제가 없으면 null (0% 로 적지 않는다) */
   rate: number | null;
 };
 
@@ -132,25 +167,37 @@ type GroupSortKey = (string | number)[];
  * 레벨 하나의 격자 — 직접 배정된 반이 같은 학생끼리 한 묶음(카드)이다.
  * 열은 그 묶음의 반들이 그 레벨에 숙제가 있는 수업일(개강일 ~ 종강일), 칸은 학생마다 배정일부터 센다.
  * 그 레벨에 숙제가 하나도 없는 학생 · 묶음은 빠진다 (속성반 학생은 650 탭과 850 탭에 다 선다).
+ * 칸이 '안 냄' 이 되는 것은 **그 날 숙제의 기한(`due` — 같은 트랙 다음 수업일, 오후 5시)이 지났을 때**다 (2026-10-14 — 머리말).
  *
  * **강사 · 관리자 · 조교 계정(`staff`)은 반에 배정돼 있어도 넣지 않는다** (2026-10-08 Alan — "미제출 알림에 리스트 명단에 강사계정과 관리자 계정도
  * 포함되어있어. 이건 빼줘"). 학생 화면을 보려고 넣은 테스트 배정이다 — 줄 · 묶음 · 탭 숫자 · 전체선택 · 보내기 어디에도 없다
  * (처음엔 출석 한눈에 보기처럼 `테스터` 표를 달아 맨 아래에 뒀다). 그 계정만 배정된 반은 카드도 없다.
  *
- * 묶음 순서는 `sortKeyOf`(반 id → 정렬 키)가 정한다 — 반 이름 · 시간 같은 것은 화면 쪽이 안다. 줄 순서는 **안 낸 숙제가 많은 학생 → 이름**.
+ * **알림을 신청하지 않은 학생도 줄은 만든다** (`alerts: false`) — 화면이 기본으로 빼고(`onlyAlerted`) 체크박스를 켜면 볼 수만 있게 그린다.
+ * 탭 숫자 · 전체선택 · 보내기는 신청한 학생만 센다.
+ *
+ * 묶음 순서는 `sortKeyOf`(반 id → 정렬 키)가 정한다 — 반 이름 · 시간 같은 것은 화면 쪽이 안다.
+ * 줄 순서는 **알림 신청한 학생 먼저 → 안 낸 숙제가 많은 학생 → 이름**.
  */
 export function buildMissingBoard(input: {
   level: number;
-  today: string;
+  /** 지금 (ms) — 기한과 견준다. 안 주면 지금 시각 (시험은 정해진 시각을 준다) */
+  now?: number;
+  /** 수업일 → 그 날 숙제의 기한 날짜 (DB `homework_due_dates`). 없거나 null 이면 기한을 모른다 — 미제출로 세지 않는다 */
+  due: ReadonlyMap<string, string | null>;
   sections: ReadonlyMap<number, MissingSection>;
   includes: ReadonlyMap<number, readonly number[]>;
   enrollments: readonly MissingEnrollment[];
   submissions: readonly MissingSubmission[];
   /** 이름과 강사 · 관리자 · 조교 계정인지 (`staff` 면 명단에 넣지 않는다) */
   people: ReadonlyMap<string, { name: string; staff: boolean }>;
+  /** 숙제 미제출 알림을 신청한 학생 */
+  alerts: ReadonlySet<string>;
   sortKeyOf?: (sectionId: number) => GroupSortKey;
 }): MissingGroup[] {
-  const { level, today, sections, includes } = input;
+  const { level, sections, includes } = input;
+  const now = input.now ?? Date.now();
+  const dueOf = (date: string) => input.due.get(date) ?? null;
 
   // 학생 → 직접 배정 (강사 · 관리자 · 조교 계정의 테스트 배정은 뺀다)
   const byStudent = new Map<string, MissingEnrollment[]>();
@@ -185,12 +232,17 @@ export function buildMissingBoard(input: {
     for (const id of g.sectionIds) slotsOfSection(id, level, includes, sections, null, colSlots);
     if (colSlots.size === 0) continue;
     const trackOf = (d: string) => g.sectionIds.map((id) => sections.get(id)).find((s) => s?.dates.includes(d))?.track ?? null;
-    const columns: MissingColumn[] = [...colSlots.keys()].sort().map((date, i) => ({
-      date,
-      seq: i + 1,
-      track: trackOf(date),
-      subjects: HOMEWORK_SUBJECTS.filter((s) => colSlots.get(date)!.has(s)),
-    }));
+    const columns: MissingColumn[] = [...colSlots.keys()].sort().map((date, i) => {
+      const due = dueOf(date);
+      return {
+        date,
+        seq: i + 1,
+        track: trackOf(date),
+        subjects: HOMEWORK_SUBJECTS.filter((s) => colSlots.get(date)!.has(s)),
+        due,
+        overdue: isOverdue(due, now),
+      };
+    });
 
     const rows: MissingRow[] = g.students.map((id) => {
       const mine = expectedSlots(byStudent.get(id) ?? [], level, includes, sections);
@@ -202,18 +254,20 @@ export function buildMissingBoard(input: {
         c.subjects.map((subject): MissingCell => {
           const submitted = done.has(slotKey(c.date, subject));
           if (!mine.get(c.date)?.has(subject)) return submitted ? "done" : "none";
-          if (c.date < today) {
+          // 기한(같은 트랙 다음 수업일 오후 5시)이 지난 숙제만 센다 — 기한 전에 낸 것은 '냄' 으로 보이되 제출률에는 기한이 지난 뒤 들어간다
+          if (c.overdue) {
             past++;
             if (submitted) doneCount++;
-            else missing.push({ date: c.date, subject });
+            else missing.push({ date: c.date, subject, due: c.due! });
           }
-          return submitted ? "done" : c.date < today ? "missing" : "upcoming";
+          return submitted ? "done" : c.overdue ? "missing" : "upcoming";
         }),
       );
       const person = input.people.get(id);
       return {
         id,
         name: person?.name ?? "",
+        alerts: input.alerts.has(id),
         cells,
         past,
         done: doneCount,
@@ -221,8 +275,8 @@ export function buildMissingBoard(input: {
         rate: past > 0 ? Math.round((doneCount / past) * 100) : null,
       };
     });
-    // 안 낸 숙제가 많은 학생 → 이름 순
-    rows.sort((a, b) => b.missing.length - a.missing.length || a.name.localeCompare(b.name, "ko"));
+    // 알림 신청한 학생 먼저 → 안 낸 숙제가 많은 학생 → 이름 순
+    rows.sort((a, b) => Number(b.alerts) - Number(a.alerts) || b.missing.length - a.missing.length || a.name.localeCompare(b.name, "ko"));
     out.push({ key, sectionIds: g.sectionIds, columns, rows });
   }
 
@@ -246,11 +300,33 @@ function compareKeys(a: GroupSortKey, b: GroupSortKey): number {
   return 0;
 }
 
-/** 레벨 탭의 숫자 — 안 낸 숙제가 있는 학생 수 (한 사람은 한 번) */
+/** 화면에 그릴 묶음 — 알림을 신청한 학생만 (아무도 없는 묶음은 뺀다). 체크박스로 신청 안 한 학생도 볼 때는 이것을 거치지 않는다 */
+export function onlyAlerted(groups: readonly MissingGroup[]): MissingGroup[] {
+  return groups.map((g) => ({ ...g, rows: g.rows.filter((r) => r.alerts) })).filter((g) => g.rows.length > 0);
+}
+
+/** 레벨 탭의 숫자 — **알림을 신청한 학생 중** 기한이 지난 숙제를 안 낸 학생 수 (한 사람은 한 번) */
 export function missingStudentCount(groups: readonly MissingGroup[]): number {
   const ids = new Set<string>();
-  for (const g of groups) for (const r of g.rows) if (r.missing.length > 0) ids.add(r.id);
+  for (const g of groups) for (const r of g.rows) if (r.alerts && r.missing.length > 0) ids.add(r.id);
   return ids.size;
+}
+
+/** 알림을 신청하지 않은 학생 수 (한 사람은 한 번) — 체크박스 이름에 적는다 */
+export function unalertedCount(groups: readonly MissingGroup[]): number {
+  const ids = new Set<string>();
+  for (const g of groups) for (const r of g.rows) if (!r.alerts) ids.add(r.id);
+  return ids.size;
+}
+
+/**
+ * **새로 기한이 지난** 안 낸 숙제 — 그 레벨에서 마지막으로 미제출 알림을 받은 뒤(`lastSent`, ms)에 기한이 지난 것.
+ * 알림 글은 그때 기한이 지난 안 낸 숙제를 다 적으므로, 알림 뒤에 기한이 지난 숙제만 아직 안 알린 것이다
+ * (Alan 의 예 — 수요일 밤에는 월요일 숙제, 목요일 저녁에는 화요일 숙제). 알림을 받은 적이 없으면 안 낸 숙제 전부.
+ */
+export function newMissingOf(row: Pick<MissingRow, "missing">, lastSent: number | null | undefined): MissingSlot[] {
+  if (lastSent == null || !Number.isFinite(lastSent)) return [...row.missing];
+  return row.missing.filter((m) => dueAt(m.due) > lastSent);
 }
 
 /**
@@ -268,12 +344,14 @@ export function missingStatus(rate: number | null): MissingStatus {
 export const MISSING_STATUS_LABEL: Record<MissingStatus, string> = { perfect: "개근", good: "양호", warn: "주의", risk: "위험", none: "시작 전" };
 
 /**
- * '미제출 전체선택' 이 고르는 학생 — 안 낸 지난 수업 숙제가 있는 학생 (첫토익 "제출률 100% 미만").
- * **오늘 이미 미제출 알림을 받은 학생은 뺀다** — 같은 날 두 번 가지 않게 (결석 알림과 같은 규칙). 손으로는 다시 고를 수 있다.
+ * '미제출 전체선택' 이 고르는 학생 — **알림을 신청했고 · 마지막 알림 뒤에 새로 기한이 지난 숙제를 안 낸** 학생 (`newMissingOf`).
+ * 2026-10-14 Alan: "목요일 오후 6시라면 화요일 숙제를 제출하는거고 마감이 되었지? 그럼 미제출 알림을 보낼려면 화요일반 미제출한사람에 대해서
+ * 알림을 보내면 돼" — 수요일 밤에 월요일 숙제로 알림을 받은 월수금 학생은 목요일 저녁에 다시 골라지지 않는다 (손으로는 고를 수 있다).
+ * 2026-10-08 ~ 10-14 에는 "오늘 이미 알림을 받은 학생" 만 뺐다 — 다음 날이면 같은 숙제로 또 골라졌다.
  */
-export function defaultPicks(groups: readonly MissingGroup[], notifiedToday: ReadonlySet<string> = new Set()): string[] {
+export function defaultPicks(groups: readonly MissingGroup[], lastSent: ReadonlyMap<string, number> = new Map()): string[] {
   const ids = new Set<string>();
-  for (const g of groups) for (const r of g.rows) if (r.missing.length > 0 && !notifiedToday.has(r.id)) ids.add(r.id);
+  for (const g of groups) for (const r of g.rows) if (r.alerts && newMissingOf(r, lastSent.get(r.id)).length > 0) ids.add(r.id);
   return [...ids];
 }
 
@@ -312,8 +390,9 @@ const DATES_PER_LINE = 24;
 /**
  * 학생 한 명에게 갈 알림 글 — 학생마다 이름과 안 낸 날짜가 다르다 (첫토익처럼 "각 학생 이름과 상황에 맞게").
  * 학생은 숙제제출 달력에서 **날짜**로 찾으므로 회차 번호가 아니라 날짜를 적고, 레벨도 적는다 (속성반은 한 날짜에 레벨이 둘이다).
+ * 적는 것은 **기한이 지난** 안 낸 숙제 전부다 — 새로 기한이 지난 것만이 아니라 전에 알린 것도 아직 안 냈으면 다시 적는다.
  */
-export function homeworkMissingMessage(input: { name: string; level: number; missing: readonly MissingSlot[]; past: number; done: number }): string {
+export function homeworkMissingMessage(input: { name: string; level: number; missing: readonly Pick<MissingSlot, "date" | "subject">[]; past: number; done: number }): string {
   const lines: string[] = [];
   for (const subject of HOMEWORK_SUBJECTS) {
     const days = [...new Set(input.missing.filter((m) => m.subject === subject).map((m) => m.date))].sort();
@@ -324,17 +403,17 @@ export function homeworkMissingMessage(input: { name: string; level: number; mis
   }
   const who = input.name.trim() ? `${input.name.trim()} 학생, ` : "";
   const body = [
-    `${who}아직 올리지 않은 숙제가 있어요.`,
+    `${who}제출 기한이 지났는데 아직 올리지 않은 숙제가 있어요.`,
     "",
     ...lines,
     "",
-    `숙제제출에서 그 수업 날짜를 눌러 올려 주세요. 지금까지 숙제 ${input.past}개 중 ${input.done}개를 냈어요.`,
+    `숙제제출에서 그 수업 날짜를 눌러 올려 주세요. 숙제는 다음 수업일 ${HOMEWORK_DUE_LABEL}까지 내요. 기한이 지난 숙제 ${input.past}개 중 ${input.done}개를 냈어요.`,
   ].join("\n");
   return body.length > BODY_MAX ? `${body.slice(0, BODY_MAX - 1)}…` : body;
 }
 
 /** 알림에 붙이는 표시 — 조교가 보내면 DB 트리거가 이 과목들의 선생님 이름을 보낸 이름으로 적는다 (RC 먼저) */
-export function missingRelated(termId: number, level: number, missing: readonly MissingSlot[]) {
+export function missingRelated(termId: number, level: number, missing: readonly Pick<MissingSlot, "date" | "subject">[]) {
   return {
     termId,
     level,

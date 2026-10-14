@@ -9,8 +9,20 @@ import { Icon } from "@/components/ui/Icon";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { TermChips } from "@/components/admin/TermChips";
 import { MissingBoard, type MissingGroupView } from "@/components/admin/homework/MissingBoard";
-import { buildMissingBoard, defaultPicks, missingStudentCount, monthDay, shortDay, weekdayOf, type MissingGroup } from "@/lib/homework-missing";
+import {
+  buildMissingBoard,
+  defaultPicks,
+  HOMEWORK_DUE_LABEL,
+  missingStudentCount,
+  monthDay,
+  onlyAlerted,
+  shortDay,
+  unalertedCount,
+  weekdayOf,
+  type MissingGroup,
+} from "@/lib/homework-missing";
 import { termParam } from "@/lib/study";
+import { cn } from "@/lib/utils";
 import { requireCrew } from "@/lib/auth";
 import { pickTerm, termLabel, TERM_COLUMNS } from "../../_lib/queries";
 import { groupClasses, loadMissingData, sectionSortKey } from "../_lib/missing";
@@ -30,12 +42,17 @@ const TERM_CHIPS = 6;
  * 기수(월)를 고르고 레벨 탭(650 · 750 · 850, 숫자 = 안 낸 숙제가 있는 학생 수)을 고르면, 직접 배정된 반이 같은 학생끼리 카드 한 장 —
  * 열은 강사가 반 편성 달력에 정한 그 달 수업일(반의 회차)이고 칸은 그 날 RC · LC 숙제를 냈는지다. 세는 규칙은 `src/lib/homework-missing.ts`.
  * `전체` 레벨 칸은 두지 않는다 (숙제점검과 같다 — 2026-09-22 Alan "'전체' '모든레벨' 이 버튼은 없애줘").
+ *
+ * 2026-10-14 Alan — **'안 냄' 은 제출 기한(같은 트랙 다음 수업일 오후 5시)이 지난 숙제**이고, **명단은 숙제제출 화면에서 알림을 신청한 학생만**이다.
+ * 신청하지 않은 학생은 `알림 신청 안 한 학생도 보기`(`?all=1` — 숙제점검의 `점검완료 포함` 과 같은 자리 · 같은 모양)로 볼 수만 있다 (고를 수 없다).
+ * 미제출 전체선택은 마지막 알림 뒤에 새로 기한이 지난 숙제가 있는 학생을 고른다 (`defaultPicks`).
  */
-export default async function HomeworkMissingPage({ searchParams }: { searchParams: Promise<{ term?: string; level?: string }> }) {
+export default async function HomeworkMissingPage({ searchParams }: { searchParams: Promise<{ term?: string; level?: string; all?: string }> }) {
   await requireCrew();
   const sp = await searchParams;
   const supabase = await createClient();
   const today = todayKST();
+  const showAll = sp.all === "1";
 
   const [{ data: termRows }, { data: levelRows }] = await Promise.all([
     supabase.from("terms").select(TERM_COLUMNS).order("year", { ascending: false }).order("month", { ascending: false }).limit(24),
@@ -81,15 +98,19 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
     supabase.rpc("homework_missing_notices", { p_term_id: term.id }),
   ]);
   const sortKeyOf = sectionSortKey(data.meta);
-  const boards = new Map<number, MissingGroup[]>(levels.map((l) => [l, buildMissingBoard({ level: l, today, ...data, sortKeyOf })]));
+  const boards = new Map<number, MissingGroup[]>(levels.map((l) => [l, buildMissingBoard({ level: l, ...data, sortKeyOf })]));
   const level = levels.includes(Number(sp.level)) ? Number(sp.level) : (levels[0] ?? null);
-  const board = level != null ? (boards.get(level) ?? []) : [];
+  const full = level != null ? (boards.get(level) ?? []) : [];
+  // 명단은 알림을 신청한 학생만 (2026-10-14 Alan "안 누른사람에게는 알림보내기 명단에서 빠지고") — 체크박스를 켜면 신청 안 한 학생도 볼 수만 있다
+  const board = showAll ? full : onlyAlerted(full);
+  const unalerted = unalertedCount(full);
+  const alerted = new Set(full.flatMap((g) => g.rows.filter((r) => r.alerts).map((r) => r.id))).size;
 
-  // 이 레벨에서 마지막으로 미제출 알림을 받은 때 — 오늘 받은 학생은 '미제출 전체선택' 에서 뺀다 (같은 날 두 번 가지 않게)
+  // 이 레벨에서 마지막으로 미제출 알림을 받은 때 — 그 뒤에 새로 기한이 지난 숙제가 없으면 '미제출 전체선택' 에서 뺀다 (같은 숙제로 거듭 가지 않게)
   const sentAt = new Map<string, string>();
   for (const r of sentRows ?? []) if (r.level === level && (!sentAt.has(r.user_id) || sentAt.get(r.user_id)! < r.sent_at)) sentAt.set(r.user_id, r.sent_at);
+  const lastSent = new Map([...sentAt].map(([id, at]) => [id, Date.parse(at)] as const));
   const sentDay = (iso: string) => new Date(iso).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
-  const notifiedToday = new Set([...sentAt].filter(([, at]) => sentDay(at) === today).map(([id]) => id));
   const sentTime = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false });
   const sentLabel = (iso: string) => (sentDay(iso) === today ? `오늘 ${sentTime(iso)}` : shortDay(sentDay(iso)));
 
@@ -101,11 +122,11 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
       md: monthDay(c.date),
       weekday: weekdayOf(c.date),
       isToday: c.date === today,
-      past: c.date < today,
     })),
     rows: g.rows.map((r) => ({ ...r, sent: sentAt.has(r.id) ? sentLabel(sentAt.get(r.id)!) : null })),
   }));
-  const flagged = missingStudentCount(board);
+  const flagged = missingStudentCount(full);
+  const allHref = `/admin/homework/missing?term=${termKey}${level != null ? `&level=${level}` : ""}${showAll ? "" : "&all=1"}`;
 
   return (
     <>
@@ -126,21 +147,49 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
         </Alert>
       )}
 
-      <p className="mb-1 text-sm font-bold text-ink-soft">
-        {termLabel(term)} · {level ?? "-"} · 안 낸 숙제가 있는 학생 <span className="text-ink tabular-nums">{flagged}</span>명
-      </p>
+      {/* 몇 명을 보고 있는지 + 알림을 신청하지 않은 학생도 볼지 (숙제점검의 '점검완료 포함' 과 같은 자리 · 같은 모양) */}
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <p className="text-sm font-bold text-ink-soft">
+          {termLabel(term)} · {level ?? "-"} · 알림 신청 <span className="text-ink tabular-nums">{alerted}</span>명 중 기한 지난 숙제를 안 낸 학생{" "}
+          <span className="text-ink tabular-nums">{flagged}</span>명
+        </p>
+        {(unalerted > 0 || showAll) && (
+          <Link href={allHref} className="flex items-center gap-2 text-sm font-bold text-ink-soft transition hover:text-brand-600">
+            <span
+              aria-hidden
+              className={cn("flex size-5 items-center justify-center rounded-md border-2 transition", showAll ? "border-brand-500 bg-brand-500 text-white" : "border-line bg-paper")}
+            >
+              {showAll && (
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-none stroke-current stroke-[3.5]">
+                  <path d="m5 13 5 5L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </span>
+            알림 신청 안 한 학생도 보기 <span className="tabular-nums text-mist">({unalerted}명)</span>
+            <span className="sr-only">{showAll ? " — 지금 켜짐, 누르면 끕니다" : " — 지금 꺼짐, 누르면 켭니다"}</span>
+          </Link>
+        )}
+      </div>
       <p className="mb-4 text-xs text-mist">
-        어제까지 지난 수업만 &lsquo;안 냄&rsquo; 으로 세요 — 오늘 수업 숙제는 아직 낼 때가 아니에요. 반에 들어오기 전 수업은 세지 않아요. 칸의 숫자 탭은 그 레벨에서 안 낸 숙제가 있는 학생 수예요.
+        숙제 기한은 같은 트랙의 다음 수업일 {HOMEWORK_DUE_LABEL}예요 (월수금 월요일 숙제는 수요일 5시, 금요일 숙제는 다음 주 첫 수업일 5시 · 화목금도 같고, 주5일은 두 트랙을
+        따로 봐요). 그 시간이 지나도 안 냈으면 &lsquo;안 냄&rsquo; 이에요. 명단에는 숙제제출 화면에서 &lsquo;숙제 미제출 알림&rsquo; 을 신청한 학생만 나오고, 미제출 전체선택은 마지막
+        알림 뒤에 새로 기한이 지난 숙제가 있는 학생을 골라요.
       </p>
 
-      {groups.length === 0 ? (
+      {full.length === 0 ? (
         <EmptyState
           icon="homework"
           title={`${level ?? ""} 숙제를 내는 반이 없어요`}
           description="이 달에 이 레벨 반에 배정된 학생이 없거나 수업일이 아직 없어요. 다른 레벨 칸을 눌러 보세요."
         />
+      ) : groups.length === 0 ? (
+        <EmptyState
+          icon="bell"
+          title="아직 알림을 신청한 학생이 없어요"
+          description={`학생이 숙제제출 화면에서 '숙제 미제출 알림' 을 신청하면 여기에 나와요. 신청하지 않은 학생 ${unalerted}명은 위의 '알림 신청 안 한 학생도 보기' 로 볼 수 있어요.`}
+        />
       ) : (
-        <MissingBoard termId={term.id} level={level!} groups={groups} picks={defaultPicks(board, notifiedToday)} />
+        <MissingBoard termId={term.id} level={level!} groups={groups} picks={defaultPicks(full, lastSent)} />
       )}
     </>
   );

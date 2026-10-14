@@ -4,14 +4,19 @@ import { useState } from "react";
 import { MonthCalendar, type CalendarMark } from "@/components/my/MonthCalendar";
 import { Icon } from "@/components/ui/Icon";
 import { classDayLabel, HOMEWORK_SUBJECTS, homeworkLabel, SUBJECT_DESC, SUBJECT_LABEL, type HomeworkSubject } from "@/lib/homework";
+import { dueLabel, HOMEWORK_DUE_LABEL } from "@/lib/homework-missing";
 import { cn, formatDate } from "@/lib/utils";
 import { HomeworkUploadForm } from "./HomeworkUploadForm";
 import { SubmissionCard, type SubmissionLite } from "./SubmissionCard";
 
 /** 달력 한 달치 — 서버가 만들어서 넘긴다 */
 export type HomeworkMonth = { year: number; month: number; marks: CalendarMark[]; initial: string | null };
-/** 수업일 한 줄: 그 날 강좌 이름과 **낼 수 있는 레벨들** (스파르타는 두 레벨) */
-export type HomeworkDay = { date: string; course: string; levels: number[] };
+/**
+ * 수업일 한 줄: 그 날 강좌 이름과 **낼 수 있는 레벨들** (스파르타는 두 레벨),
+ * 그리고 **제출 기한** — 같은 트랙의 다음 수업일 오후 5시 (2026-10-14 Alan). 기한 날짜를 못 읽었으면 `due` 가 없다 (줄을 그리지 않는다),
+ * 다음 수업일이 아직 달력에 없으면 null.
+ */
+export type HomeworkDay = { date: string; course: string; levels: number[]; due?: string | null; overdue?: boolean };
 
 /**
  * 숙제업로드 — **달력에서 수업 날짜를 고르고 RC·LC 를 낸다** (2026-09-19 Alan —
@@ -96,6 +101,11 @@ export function HomeworkCalendar({
                   {classDayLabel(day.date)} {formatDate(day.date, { weekday: "short" })} 수업
                 </p>
                 <p className="mt-0.5 truncate text-xs text-slate">{day.course}</p>
+                {day.due !== undefined && (
+                  <p className={cn("mt-1 text-xs font-bold", day.overdue ? "text-amber-700" : "text-ink-soft")}>
+                    {day.due ? `제출 기한 ${dueLabel(day.due)}까지${day.overdue ? " · 지났어요" : ""}` : `제출 기한 다음 수업일 ${HOMEWORK_DUE_LABEL}까지`}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-3 p-4">

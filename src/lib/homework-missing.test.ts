@@ -2,15 +2,22 @@ import { describe, expect, it } from "vitest";
 import {
   buildMissingBoard,
   defaultPicks,
+  dueAt,
+  dueLabel,
   expectedSlots,
+  HOMEWORK_DUE_LABEL,
   HOMEWORK_MISSING_TITLE,
   homeworkMissingMessage,
+  isOverdue,
   MISSING_TITLE_MAX,
   missingRelated,
   missingStatus,
   missingStudentCount,
+  newMissingOf,
+  onlyAlerted,
   rowOf,
   shortDay,
+  unalertedCount,
   type MissingEnrollment,
   type MissingSection,
   type MissingSubmission,
@@ -62,6 +69,16 @@ const INCLUDES = new Map<number, number[]>([
 ]);
 
 const asObj = (m: Map<string, Set<string>>) => Object.fromEntries([...m].sort().map(([d, s]) => [d, [...s].sort()]));
+
+/**
+ * 수업일 → 숙제 기한 날짜 = 같은 트랙의 다음 수업일 (DB `homework_due_dates` 가 반 편성 달력에서 주는 것과 같은 꼴).
+ * 트랙의 마지막 수업일은 `after` 가 있으면 그 날(다음 달 첫 같은 트랙 수업일), 없으면 모른다(null).
+ */
+const nextOf = (dates: readonly string[], after: string | null = null): [string, string | null][] =>
+  dates.map((d, i) => [d, dates[i + 1] ?? after]);
+const DUE = new Map([...nextOf(MWF), ...nextOf(TTF)]);
+/** KST 시각 → ms */
+const at = (kst: string) => Date.parse(`${kst}:00+09:00`);
 
 describe("낼 숙제 칸 — 반이 정한다 (날짜 · 레벨 · 과목)", () => {
   it("주3일 60분 단과 — 그 트랙 수업일마다 그 시간의 과목 하나", () => {
@@ -116,7 +133,8 @@ describe("낼 숙제 칸 — 반이 정한다 (날짜 · 레벨 · 과목)", () 
 });
 
 describe("격자 — 반마다 한 카드, 수업일 열 × RC · LC", () => {
-  const today = "2026-10-12"; // 10/7 · 10/9 는 지났고 10/12 는 오늘
+  // 10/12(월) 오후 6시 — 월수금 10/7(기한 10/9) · 10/9(기한 10/12 5시)는 기한이 지났고, 화목금 10/6(기한 10/8)만 지났다 (10/8 은 10/13 5시까지)
+  const now = at("2026-10-12T18:00");
   const people = new Map([
     ["kim", { name: "김가나", staff: false }],
     ["lee", { name: "이다라", staff: false }],
@@ -151,14 +169,18 @@ describe("격자 — 반마다 한 카드, 수업일 열 × RC · LC", () => {
     // 다른 레벨로 낸 것은 이 레벨 격자에 안 보인다
     { userId: "kim", date: "2026-10-09", level: 750, subject: "lc" },
   ];
+  // 알림 신청 — 학생 넷 모두 (신청하지 않은 학생은 아래 "알림 신청" 에서 따로 본다)
+  const alerts = new Set(["kim", "lee", "park", "late"]);
   const board = buildMissingBoard({
     level: 650,
-    today,
+    now,
+    due: DUE,
     sections: SECTIONS,
     includes: INCLUDES,
     enrollments,
     submissions,
     people,
+    alerts,
     // 반 정렬 키 — 시간 단위 반 → 묶음 순으로 보이게 (화면은 과정 · 레벨 · 시간 · 트랙으로 준다)
     sortKeyOf: (id) => [id],
   });
@@ -167,31 +189,31 @@ describe("격자 — 반마다 한 카드, 수업일 열 × RC · LC", () => {
     expect(board.map((g) => g.key)).toEqual(["1,3", "10"]);
   });
 
-  it("열 — 반의 수업일 순서대로 1회 · 2회 …, 트랙과 그 날 과목을 단다", () => {
+  it("열 — 반의 수업일 순서대로 1회 · 2회 …, 트랙 · 그 날 과목 · 기한(같은 트랙 다음 수업일)을 단다", () => {
     const week5 = board[0];
-    expect(week5.columns.map((c) => [c.seq, c.date, c.track, c.subjects.join("")])).toEqual([
-      [1, "2026-10-06", "ttf", "lc"],
-      [2, "2026-10-07", "mwf", "rc"],
-      [3, "2026-10-08", "ttf", "lc"],
-      [4, "2026-10-09", "mwf", "rc"],
-      [5, "2026-10-12", "mwf", "rc"],
-      [6, "2026-10-13", "ttf", "lc"],
-      [7, "2026-10-14", "mwf", "rc"],
-      [8, "2026-10-15", "ttf", "lc"],
+    expect(week5.columns.map((c) => [c.seq, c.date, c.track, c.subjects.join(""), c.due, c.overdue])).toEqual([
+      [1, "2026-10-06", "ttf", "lc", "2026-10-08", true],
+      [2, "2026-10-07", "mwf", "rc", "2026-10-09", true],
+      [3, "2026-10-08", "ttf", "lc", "2026-10-13", false], // 목요일 숙제는 다음 화요일 5시까지
+      [4, "2026-10-09", "mwf", "rc", "2026-10-12", true], // 금요일 숙제는 다음 월요일 5시까지 — 6시라 지났다
+      [5, "2026-10-12", "mwf", "rc", "2026-10-14", false],
+      [6, "2026-10-13", "ttf", "lc", "2026-10-15", false],
+      [7, "2026-10-14", "mwf", "rc", null, false], // 다음 수업일이 달력에 없으면 기한을 모른다
+      [8, "2026-10-15", "ttf", "lc", null, false],
     ]);
     expect(board[1].columns.map((c) => c.subjects)).toEqual(MWF.map(() => ["rc", "lc"]));
   });
 
-  it("칸 — 냄 · 지난 수업인데 안 냄 · 오늘과 앞으로는 아직 · 들어오기 전은 해당 없음", () => {
+  it("칸 — 냄 · 기한이 지났는데 안 냄 · 기한 전은 아직 · 들어오기 전은 해당 없음", () => {
     const g = board[1];
     const kim = g.rows.find((r) => r.id === "kim")!;
     expect(kim.cells).toEqual([
       ["done", "done"],
       ["done", "missing"],
-      ["upcoming", "upcoming"], // 오늘 (10/12) 은 아직 낼 때가 아니다
+      ["upcoming", "upcoming"], // 오늘 (10/12) 수업 숙제는 수요일 5시까지다
       ["upcoming", "upcoming"],
     ]);
-    expect(kim).toMatchObject({ past: 4, done: 3, rate: 75, missing: [{ date: "2026-10-09", subject: "lc" }] });
+    expect(kim).toMatchObject({ past: 4, done: 3, rate: 75, alerts: true, missing: [{ date: "2026-10-09", subject: "lc", due: "2026-10-12" }] });
 
     const late = g.rows.find((r) => r.id === "late")!;
     expect(late.cells[0]).toEqual(["done", "none"]); // 10/7 — 들어오기 전 (그래도 낸 것은 보인다)
@@ -219,17 +241,22 @@ describe("격자 — 반마다 한 카드, 수업일 열 × RC · LC", () => {
     expect(board[1].rows).toHaveLength(3);
   });
 
-  it("주5일 60분 학생 — 월수금 날은 RC 칸만, 화목금 날은 LC 칸만", () => {
+  it("주5일 60분 학생 — 월수금 날은 RC 칸만, 화목금 날은 LC 칸만 · 기한도 트랙마다 따로", () => {
     const park = board[0].rows[0];
     expect(park.cells.map((c) => c.length)).toEqual([1, 1, 1, 1, 1, 1, 1, 1]);
-    expect(park.missing.map((m) => `${m.date} ${m.subject}`)).toEqual(["2026-10-06 lc", "2026-10-07 rc", "2026-10-08 lc", "2026-10-09 rc"]);
-    expect(park.rate).toBe(0);
+    // 10/8(목) 화목금 숙제는 다음 화목금 수업 10/13(화) 5시까지라 아직이다 — 월수금 10/12 가 끼어 있어도 상관없다
+    expect(park.missing.map((m) => `${m.date} ${m.subject}`)).toEqual(["2026-10-06 lc", "2026-10-07 rc", "2026-10-09 rc"]);
+    expect(park.cells[2]).toEqual(["upcoming"]);
+    expect(park).toMatchObject({ past: 3, done: 0, rate: 0 });
   });
 
-  it("탭 숫자 · 전체선택 — 안 낸 숙제가 있는 학생만, 오늘 이미 알림을 받은 학생은 빼고", () => {
+  it("탭 숫자 · 전체선택 — 기한 지난 숙제를 안 낸 학생, 마지막 알림 뒤에 새로 기한이 지난 것이 없는 학생은 빼고", () => {
     expect(missingStudentCount(board)).toBe(3); // late · kim · park (lee 는 다 냄, 강사 · 조교 계정은 명단에 없다)
     expect(defaultPicks(board).sort()).toEqual(["kim", "late", "park"]);
-    expect(defaultPicks(board, new Set(["kim"])).sort()).toEqual(["late", "park"]);
+    // 김가나는 10/12 6시 반에 알림을 받았다 — 안 낸 10/9 LC 의 기한(10/12 5시)이 그보다 앞이라 이미 알린 숙제다
+    expect(defaultPicks(board, new Map([["kim", at("2026-10-12T18:30")]])).sort()).toEqual(["late", "park"]);
+    // 기한보다 앞서 받은 알림은 이 숙제를 몰랐다 — 다시 골라진다
+    expect(defaultPicks(board, new Map([["kim", at("2026-10-12T16:00")]])).sort()).toEqual(["kim", "late", "park"]);
     expect(rowOf(board, "park")?.name).toBe("박마바");
     expect(rowOf(board, "nobody")).toBeNull();
   });
@@ -239,25 +266,169 @@ describe("격자 — 반마다 한 카드, 수업일 열 × RC · LC", () => {
       { studentId: "sp", sectionId: 11, from: "2026-10-01" },
       { studentId: "kim", sectionId: 10, from: "2026-10-01" },
     ];
-    const at = (level: number) =>
-      buildMissingBoard({ level, today, sections: SECTIONS, includes: INCLUDES, enrollments: e, submissions: [], people }).flatMap((g) => g.rows.map((r) => r.id));
-    expect(at(650).sort()).toEqual(["kim", "sp"]);
-    expect(at(850)).toEqual(["sp"]);
-    expect(at(750)).toEqual([]);
+    const ids = (level: number) =>
+      buildMissingBoard({ level, now, due: DUE, sections: SECTIONS, includes: INCLUDES, enrollments: e, submissions: [], people, alerts }).flatMap((g) =>
+        g.rows.map((r) => r.id),
+      );
+    expect(ids(650).sort()).toEqual(["kim", "sp"]);
+    expect(ids(850)).toEqual(["sp"]);
+    expect(ids(750)).toEqual([]);
   });
 
-  it("지난 수업이 없으면 제출률은 비운다 (0% 로 적지 않는다)", () => {
+  it("기한이 지난 숙제가 없으면 제출률은 비운다 (0% 로 적지 않는다)", () => {
     const early = buildMissingBoard({
       level: 650,
-      today: "2026-10-01",
+      now: at("2026-10-08T10:00"), // 10/7(수) 수업은 끝났지만 숙제는 10/9(금) 5시까지다
+      due: DUE,
       sections: SECTIONS,
       includes: INCLUDES,
       enrollments: [{ studentId: "kim", sectionId: 1, from: "2026-10-01" }],
       submissions: [],
       people,
+      alerts,
     });
     expect(early[0].rows[0]).toMatchObject({ past: 0, rate: null, missing: [] });
+    expect(early[0].rows[0].cells[0]).toEqual(["upcoming"]);
     expect(missingStudentCount(early)).toBe(0);
+  });
+});
+
+describe("제출 기한 — 같은 트랙의 다음 수업일 오후 5시 (2026-10-14 Alan)", () => {
+  const people = new Map([
+    ["mwf", { name: "월수금", staff: false }],
+    ["ttf", { name: "화목금", staff: false }],
+    ["w5", { name: "주오일", staff: false }],
+  ]);
+  const enrollments: MissingEnrollment[] = [
+    { studentId: "mwf", sectionId: 1, from: "2026-10-01" }, // 650 10:00 월수금 RC (단과)
+    { studentId: "ttf", sectionId: 3, from: "2026-10-01" }, // 650 10:00 화목금 LC (단과)
+    { studentId: "w5", sectionId: 1, from: "2026-10-01" }, // 주5일 60분 — 월수금 RC + 화목금 LC
+    { studentId: "w5", sectionId: 3, from: "2026-10-01" },
+  ];
+  // 지난 숙제는 다 냈고 10/12(월) · 10/13(화) 숙제만 안 냈다
+  const submissions: MissingSubmission[] = [
+    ...["mwf", "w5"].flatMap((u) => ["2026-10-07", "2026-10-09"].map((date) => ({ userId: u, date, level: 650, subject: "rc" }))),
+    ...["ttf", "w5"].flatMap((u) => ["2026-10-06", "2026-10-08"].map((date) => ({ userId: u, date, level: 650, subject: "lc" }))),
+  ];
+  const alerts = new Set(["mwf", "ttf", "w5"]);
+  const boardAt = (kst: string) =>
+    buildMissingBoard({ level: 650, now: at(kst), due: DUE, sections: SECTIONS, includes: INCLUDES, enrollments, submissions, people, alerts });
+  const missingOf = (kst: string, id: string) => (rowOf(boardAt(kst), id)?.missing ?? []).map((m) => `${m.date} ${m.subject}`);
+
+  it("기한 시각 — 그 날 오후 5시(KST), 5시를 넘기면 지난 것 · 기한을 모르면 지나지 않은 것", () => {
+    expect(dueAt("2026-10-14")).toBe(Date.parse("2026-10-14T08:00:00Z"));
+    expect(isOverdue("2026-10-14", at("2026-10-14T16:59"))).toBe(false);
+    expect(isOverdue("2026-10-14", dueAt("2026-10-14"))).toBe(false); // 정각 5시까지는 낸 것으로 친다
+    expect(isOverdue("2026-10-14", dueAt("2026-10-14") + 1000)).toBe(true);
+    expect(isOverdue("2026-10-14", at("2026-10-14T22:00"))).toBe(true);
+    expect(isOverdue(null, at("2027-01-01T00:00"))).toBe(false);
+    expect(isOverdue("10월 14일", at("2027-01-01T00:00"))).toBe(false);
+    expect(dueLabel("2026-10-14")).toBe("10/14(수) 오후 5시");
+    expect(HOMEWORK_DUE_LABEL).toBe("오후 5시");
+  });
+
+  it("Alan 의 예 1 — 수요일 오후 10시: 월요일 숙제(기한 수요일 5시)가 미제출이다. 4시 59분에는 아직", () => {
+    expect(missingOf("2026-10-14T22:00", "mwf")).toEqual(["2026-10-12 rc"]);
+    expect(missingOf("2026-10-14T16:59", "mwf")).toEqual([]);
+    // 화목금 학생의 화요일 숙제는 목요일 5시까지라 수요일 밤에는 아직이다
+    expect(missingOf("2026-10-14T22:00", "ttf")).toEqual([]);
+  });
+
+  it("Alan 의 예 2 — 목요일 오후 6시: 화요일 숙제(기한 목요일 5시)가 미제출이다", () => {
+    expect(missingOf("2026-10-15T18:00", "ttf")).toEqual(["2026-10-13 lc"]);
+    expect(missingOf("2026-10-15T16:00", "ttf")).toEqual([]);
+  });
+
+  it("주5일은 월수금 숙제 · 화목금 숙제가 각자 제 트랙의 기한을 따른다", () => {
+    expect(missingOf("2026-10-14T22:00", "w5")).toEqual(["2026-10-12 rc"]);
+    expect(missingOf("2026-10-15T18:00", "w5")).toEqual(["2026-10-12 rc", "2026-10-13 lc"]);
+  });
+
+  it("그 달 마지막 수업의 숙제 — 다음 수업일이 달력에 없으면 기한을 몰라 미제출로 세지 않고, 다음 달 달력이 생기면 그 첫 같은 트랙 수업일이 기한이다", () => {
+    const late = (due: ReadonlyMap<string, string | null>, kst: string) =>
+      buildMissingBoard({
+        level: 650,
+        now: at(kst),
+        due,
+        sections: SECTIONS,
+        includes: INCLUDES,
+        enrollments: [{ studentId: "mwf", sectionId: 1, from: "2026-10-01" }],
+        submissions: submissions.filter((x) => x.userId === "mwf"),
+        people,
+        alerts,
+      })[0].rows[0];
+    // 10/14(수)가 이 달력의 마지막 월수금 수업일이다
+    expect(late(DUE, "2026-12-31T23:00").missing.map((m) => m.date)).toEqual(["2026-10-12"]);
+    const nextMonth = new Map([...nextOf(MWF, "2026-11-04"), ...nextOf(TTF, "2026-11-05")]);
+    expect(late(nextMonth, "2026-11-04T16:00").missing.map((m) => m.date)).toEqual(["2026-10-12"]);
+    expect(late(nextMonth, "2026-11-04T18:00").missing.map((m) => m.date)).toEqual(["2026-10-12", "2026-10-14"]);
+  });
+
+  it("전체선택 — 마지막 알림 뒤에 새로 기한이 지난 숙제가 있는 학생만 (수요일 밤 알림 → 목요일 저녁에는 화요일 숙제를 안 낸 학생)", () => {
+    // 수요일 밤 10시: 월요일 숙제를 안 낸 월수금 · 주5일 학생
+    const wed = boardAt("2026-10-14T22:00");
+    expect(defaultPicks(wed).sort()).toEqual(["mwf", "w5"]);
+    // 그때 두 학생에게 알림을 보냈다 → 목요일 저녁 6시
+    const sent = new Map([
+      ["mwf", at("2026-10-14T22:05")],
+      ["w5", at("2026-10-14T22:05")],
+    ]);
+    const thu = boardAt("2026-10-15T18:00");
+    // 월수금 학생은 월요일 숙제를 아직 안 냈지만 이미 알렸다 — 새로 기한이 지난 것은 화요일 숙제뿐이다
+    expect(defaultPicks(thu, sent).sort()).toEqual(["ttf", "w5"]);
+    expect(newMissingOf(rowOf(thu, "w5")!, sent.get("w5")).map((m) => m.date)).toEqual(["2026-10-13"]);
+    expect(newMissingOf(rowOf(thu, "mwf")!, sent.get("mwf"))).toEqual([]);
+    expect(newMissingOf(rowOf(thu, "ttf")!, undefined).map((m) => m.date)).toEqual(["2026-10-13"]);
+    // 알림 글은 아직 안 낸 것을 다 적는다 — 주5일 학생에게는 월요일 숙제도 다시 적힌다
+    const w5 = rowOf(thu, "w5")!;
+    expect(homeworkMissingMessage({ name: "주오일", level: 650, missing: w5.missing, past: w5.past, done: w5.done })).toContain("10/12(월)");
+  });
+});
+
+describe("알림 신청 — 신청한 학생만 명단 · 전체선택 · 보내기 (2026-10-14 Alan)", () => {
+  const people = new Map([
+    ["yes", { name: "가신청", staff: false }],
+    ["no", { name: "나안함", staff: false }],
+    ["no2", { name: "다안함", staff: false }],
+  ]);
+  const enrollments: MissingEnrollment[] = [
+    { studentId: "yes", sectionId: 10, from: "2026-10-01" },
+    { studentId: "no", sectionId: 10, from: "2026-10-01" },
+    { studentId: "no2", sectionId: 1, from: "2026-10-01" }, // 이 반에는 신청 안 한 학생뿐이다
+  ];
+  const board = buildMissingBoard({
+    level: 650,
+    now: at("2026-10-12T18:00"),
+    due: DUE,
+    sections: SECTIONS,
+    includes: INCLUDES,
+    enrollments,
+    submissions: [],
+    people,
+    alerts: new Set(["yes"]),
+    sortKeyOf: (id) => [id],
+  });
+
+  it("줄은 다 만들고 신청 여부를 단다 — 신청한 학생이 먼저 선다", () => {
+    const g = board.find((x) => x.key === "10")!;
+    expect(g.rows.map((r) => [r.id, r.alerts])).toEqual([
+      ["yes", true],
+      ["no", false],
+    ]);
+    expect(unalertedCount(board)).toBe(2);
+  });
+
+  it("화면은 신청한 학생만 — 신청한 학생이 없는 반은 카드도 없다", () => {
+    const shown = onlyAlerted(board);
+    expect(shown.map((g) => g.key)).toEqual(["10"]);
+    expect(shown[0].rows.map((r) => r.id)).toEqual(["yes"]);
+    expect(unalertedCount(shown)).toBe(0);
+  });
+
+  it("탭 숫자 · 전체선택은 신청한 학생만 센다 — 안 낸 숙제가 있어도 신청 안 한 학생은 고르지 않는다", () => {
+    expect(rowOf(board, "no")!.missing.length).toBeGreaterThan(0);
+    expect(missingStudentCount(board)).toBe(1);
+    expect(defaultPicks(board)).toEqual(["yes"]);
   });
 });
 
@@ -296,12 +467,12 @@ describe("알림 글", () => {
     });
     expect(body).toBe(
       [
-        "김가나 학생, 아직 올리지 않은 숙제가 있어요.",
+        "김가나 학생, 제출 기한이 지났는데 아직 올리지 않은 숙제가 있어요.",
         "",
         "· 650 · RC — 10/7(수), 10/12(월)",
         "· 650 · LC — 10/9(금)",
         "",
-        "숙제제출에서 그 수업 날짜를 눌러 올려 주세요. 지금까지 숙제 12개 중 9개를 냈어요.",
+        "숙제제출에서 그 수업 날짜를 눌러 올려 주세요. 숙제는 다음 수업일 오후 5시까지 내요. 기한이 지난 숙제 12개 중 9개를 냈어요.",
       ].join("\n"),
     );
   });

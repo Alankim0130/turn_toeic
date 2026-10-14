@@ -8,6 +8,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Icon } from "@/components/ui/Icon";
 import { SUBJECT_LABEL, type HomeworkSubject } from "@/lib/homework";
 import {
+  dueLabel,
   HOMEWORK_MISSING_TITLE,
   homeworkMissingMessage,
   MISSING_STATUS_LABEL,
@@ -24,12 +25,15 @@ export type MissingColumnView = {
   seq: number;
   track: string | null;
   subjects: HomeworkSubject[];
+  /** 그 날 숙제의 기한 날짜 (같은 트랙 다음 수업일 오후 5시) · 모르면 null */
+  due: string | null;
+  /** 기한이 지났는가 — 머리글을 진하게 칠한다 */
+  overdue: boolean;
   /** "10/9" */
   md: string;
   /** "목" */
   weekday: string;
   isToday: boolean;
-  past: boolean;
 };
 export type MissingRowView = MissingRow & {
   /** 이 레벨에서 마지막으로 미제출 알림을 받은 때 — "오늘 14:20" · "10/8" */
@@ -46,7 +50,7 @@ const STATUS_BADGE: Record<MissingStatus, string> = {
   risk: "bg-red-100 text-red-700",
   none: "bg-surface text-mist",
 };
-const CELL_LABEL: Record<MissingCell, string> = { done: "냄", missing: "안 냄", upcoming: "아직 (오늘 · 앞으로)", none: "해당 없음 (반에 들어오기 전)" };
+const CELL_LABEL: Record<MissingCell, string> = { done: "냄", missing: "안 냄 (기한 지남)", upcoming: "아직 (기한 전)", none: "해당 없음 (반에 들어오기 전)" };
 const MARK_CLASS: Record<MissingCell, string> = { done: "hw-mark-done", missing: "hw-mark-missing", upcoming: "hw-mark-upcoming", none: "hw-mark-none" };
 
 /**
@@ -64,12 +68,15 @@ function CellMark({ kind, label }: { kind: MissingCell; label?: string }) {
  * 구조는 첫토익 그대로 — 반마다 카드, 학생 줄 × 수업일 열(N회 · 날짜 · 트랙 · RC LC), 제출률, 위에 단계 점(개근 · 양호 · 주의 · 위험)과
  * **미제출 전체선택**, 고르면 아래에 **N명 선택 · 알림 보내기** 막대가 서고 팝업에서 제목을 고치고 학생마다 만들어진 글을 미리 본다. 색은 우리 핫핑크다.
  *
- * - 학생 줄은 **안 낸 숙제가 많은 학생 → 이름** (`buildMissingBoard` — 강사 · 관리자 · 조교 계정은 줄이 없다). 고른 줄은 연분홍으로 칠할 뿐 자리를 옮기지 않는다
+ * - 학생 줄은 **알림 신청한 학생 → 안 낸 숙제가 많은 학생 → 이름** (`buildMissingBoard` — 강사 · 관리자 · 조교 계정은 줄이 없다). 고른 줄은 연분홍으로 칠할 뿐 자리를 옮기지 않는다
  *   (첫토익은 고른 학생을 위로 올리는데, 누를 때마다 줄이 뛰어 다음 학생을 잘못 누르게 된다).
  * - 이름 칸만 왼쪽에 고정하고 날짜는 카드 안에서 가로로 민다. **제출률은 이름 아래에 둔다** — 첫토익처럼 줄 끝 칸에 두면 한 달 20일 × RC · LC 가
  *   화면을 넘어 휴대폰에서는 밀어야 보였다. 칸 안에 `sr-only` 를 두지 않는다 (가로 스크롤 상자를 빠져나가
  *   화면 전체가 옆으로 밀린다 — 출석 · 비대면 인증 격자와 같은 함정) — 설명은 `aria-label` · `title`.
  * - 보내기는 서버가 **지금 다시 세어** 학생마다 글을 만든다 — 여기 미리보기와 같은 함수(`homeworkMissingMessage`)다.
+ * - **알림을 신청하지 않은 학생**(`alerts` 거짓 — 2026-10-14 Alan)은 기본으로 줄이 없고, `알림 신청 안 한 학생도 보기` 를 켜면
+ *   회색 줄로 선다 — 체크박스가 없고 `알림 미신청` 표를 단다 (고를 수도 보낼 수도 없다).
+ * - '안 냄' 은 **제출 기한(같은 트랙 다음 수업일 오후 5시)이 지난** 숙제다 — 머리글의 회차 · 날짜는 기한이 지난 열만 진하게, 기한은 머리글 `title` 에 적는다.
  */
 export function MissingBoard({ termId, level, groups, picks }: { termId: number; level: number; groups: MissingGroupView[]; picks: string[] }) {
   const router = useRouter();
@@ -81,7 +88,7 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
   const [msg, setMsg] = useState<{ kind: "success" | "warning"; text: string } | null>(null);
 
   const rowsById = useMemo(() => new Map(groups.flatMap((g) => g.rows.map((r) => [r.id, r] as const))), [groups]);
-  const chosen = [...selected].map((id) => rowsById.get(id)).filter((r): r is MissingRowView => !!r);
+  const chosen = [...selected].map((id) => rowsById.get(id)).filter((r): r is MissingRowView => !!r && r.alerts);
   const toSend = chosen.filter((r) => r.missing.length > 0);
   const preview = (previewId ? toSend.find((r) => r.id === previewId) : undefined) ?? toSend[0] ?? null;
 
@@ -112,7 +119,10 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
     if (!res.ok) return setMsg({ kind: "warning", text: res.error });
     setMsg({
       kind: "success",
-      text: `${res.sent}명에게 숙제 알림을 보냈어요. 학생 알림함(마이페이지 → 알림)에서 볼 수 있어요.${res.skipped > 0 ? ` 그 사이 숙제를 다 낸 ${res.skipped}명은 뺐어요.` : ""}`,
+      text:
+        `${res.sent}명에게 숙제 알림을 보냈어요. 학생 알림함(마이페이지 → 알림)에서 볼 수 있어요.` +
+        (res.skipped > 0 ? ` 그 사이 숙제를 다 낸 ${res.skipped}명은 뺐어요.` : "") +
+        (res.unsubscribed > 0 ? ` 그 사이 알림 신청을 취소한 ${res.unsubscribed}명은 뺐어요.` : ""),
     });
     setCompose(false);
     setSelected(new Set());
@@ -141,10 +151,10 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
             <CellMark kind="done" /> 냄
           </li>
           <li className="flex items-center gap-1">
-            <CellMark kind="missing" /> 안 냄
+            <CellMark kind="missing" /> 안 냄 (기한 지남)
           </li>
           <li className="flex items-center gap-1">
-            <CellMark kind="upcoming" /> 아직
+            <CellMark kind="upcoming" /> 아직 (기한 전)
           </li>
         </ul>
         <div className="flex items-center gap-2">
@@ -166,11 +176,11 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
               <rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="none" stroke="currentColor" strokeWidth="1.6" />
               <path d="M4.6 8.2l2.2 2.2 4.6-4.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            {/* 고를 학생이 없는 까닭이 둘이다 — 다 냈거나, 안 낸 학생이 모두 오늘 이미 알림을 받았다 (전체선택은 그 학생을 뺀다) */}
+            {/* 고를 학생이 없는 까닭이 둘이다 — 다 냈거나, 안 낸 숙제를 모두 이미 알렸다 (마지막 알림 뒤에 새로 기한이 지난 것이 없다) */}
             {picks.length > 0
               ? `미제출 전체선택 (${picks.length}명)`
-              : groups.some((g) => g.rows.some((r) => r.missing.length > 0))
-                ? "오늘 모두 알림을 보냈어요"
+              : groups.some((g) => g.rows.some((r) => r.alerts && r.missing.length > 0))
+                ? "안 낸 숙제는 모두 알렸어요"
                 : "안 낸 학생이 없어요"}
           </button>
         </div>
@@ -274,7 +284,7 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
 /** 이 카드에서 고른 학생 id — 글자 하나로 넘겨(쉼표로 이음, uuid 에는 쉼표가 없다) 고른 학생이 바뀐 카드만 다시 그린다 */
 const pickedIn = (group: MissingGroupView, selected: ReadonlySet<string>) =>
   group.rows
-    .filter((r) => selected.has(r.id))
+    .filter((r) => r.alerts && selected.has(r.id))
     .map((r) => r.id)
     .join(",");
 
@@ -286,7 +296,7 @@ const GroupCard = memo(function GroupCard({ group, picked, onToggle }: { group: 
   const selected = useMemo(() => new Set(picked ? picked.split(",") : []), [picked]);
   const tracks = new Set(group.columns.map((c) => c.track).filter(Boolean));
   const showTrack = tracks.size > 1;
-  const flagged = group.rows.filter((r) => r.missing.length > 0).length;
+  const flagged = group.rows.filter((r) => r.alerts && r.missing.length > 0).length;
 
   return (
     <section className="hw-board-card card overflow-hidden">
@@ -314,9 +324,14 @@ const GroupCard = memo(function GroupCard({ group, picked, onToggle }: { group: 
             <tr>
               <th className="sticky left-0 z-10 bg-surface px-3 py-2 text-left font-bold">학생</th>
               {group.columns.map((c) => (
-                <th key={c.date} scope="col" className={cn("px-1 py-1.5 text-center align-bottom font-bold", c.isToday && "bg-brand-50")}>
-                  <span className={cn("block text-[11px] font-black", c.past ? "text-brand-600" : "text-mist")}>{c.seq}회</span>
-                  <span className={cn("block whitespace-nowrap text-[11px] tabular-nums", c.past ? "text-ink" : "text-mist")}>
+                <th
+                  key={c.date}
+                  scope="col"
+                  title={c.due ? `숙제 기한 ${dueLabel(c.due)}${c.overdue ? " (지났어요)" : ""}` : "숙제 기한 — 다음 수업일이 아직 달력에 없어요"}
+                  className={cn("px-1 py-1.5 text-center align-bottom font-bold", c.isToday && "bg-brand-50")}
+                >
+                  <span className={cn("block text-[11px] font-black", c.overdue ? "text-brand-600" : "text-mist")}>{c.seq}회</span>
+                  <span className={cn("block whitespace-nowrap text-[11px] tabular-nums", c.overdue ? "text-ink" : "text-mist")}>
                     {c.md}
                     <span className="text-[10px] font-semibold"> {c.weekday}</span>
                   </span>
@@ -336,23 +351,33 @@ const GroupCard = memo(function GroupCard({ group, picked, onToggle }: { group: 
           </thead>
           <tbody className="divide-y divide-line">
             {group.rows.map((r) => {
-              const on = selected.has(r.id);
+              const on = r.alerts && selected.has(r.id);
               const status = missingStatus(r.rate);
-              const tint = on ? "bg-brand-50" : "bg-paper";
+              const tint = on ? "bg-brand-50" : r.alerts ? "bg-paper" : "bg-surface";
               return (
-                <tr key={r.id} className={tint}>
+                <tr key={r.id} className={cn(tint, !r.alerts && "text-mist")}>
                   <th scope="row" className={cn("sticky left-0 z-10 px-3 py-2 text-left align-middle font-normal", tint)}>
-                    <label className="flex cursor-pointer items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={(e) => onToggle(r.id, e.target.checked)}
-                        aria-label={`${r.name || "이름 없음"} 고르기`}
-                        className="size-4 shrink-0 accent-brand-500"
-                      />
-                      <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[status])} title={MISSING_STATUS_LABEL[status]} aria-hidden />
-                      <span className="whitespace-nowrap font-bold text-ink">{r.name || "이름 없음"}</span>
-                    </label>
+                    {r.alerts ? (
+                      <label className="flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={(e) => onToggle(r.id, e.target.checked)}
+                          aria-label={`${r.name || "이름 없음"} 고르기`}
+                          className="size-4 shrink-0 accent-brand-500"
+                        />
+                        <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[status])} title={MISSING_STATUS_LABEL[status]} aria-hidden />
+                        <span className="whitespace-nowrap font-bold text-ink">{r.name || "이름 없음"}</span>
+                      </label>
+                    ) : (
+                      // 알림을 신청하지 않은 학생 — 볼 수만 있다 (체크박스 자리는 비워 이름 줄을 맞춘다)
+                      <span className="flex items-center gap-2">
+                        <span className="size-4 shrink-0" aria-hidden />
+                        <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[status])} title={MISSING_STATUS_LABEL[status]} aria-hidden />
+                        <span className="whitespace-nowrap font-bold text-ink-soft">{r.name || "이름 없음"}</span>
+                        <span className="whitespace-nowrap rounded-md bg-paper px-1.5 py-0.5 text-[10px] font-bold text-slate ring-1 ring-line">알림 미신청</span>
+                      </span>
+                    )}
                     {/* 제출률은 이름 아래 — 날짜가 많아 가로로 밀어도 늘 보이게 (첫토익은 줄 끝 칸이라 휴대폰에서는 밀어야 보였다) */}
                     <span className="mt-1 flex items-center gap-1.5 whitespace-nowrap pl-6">
                       <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-black tabular-nums", STATUS_BADGE[status])}>{r.rate === null ? "–" : `${r.rate}%`}</span>
