@@ -3,11 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { rosterDisposition, rosterFileName } from "./class-roster";
 import { posterDisposition, posterFileName } from "./attendance-poster";
-import { DOWNLOAD_TEXT, MESSAGE_MAX, fileNameFromDisposition, messageText, prefersShareSheet, responseKind, shareFailure } from "./file-download";
+import { DOWNLOAD_TEXT, downloadText, FILE_KINDS, MESSAGE_MAX, fileNameFromDisposition, messageText, prefersShareSheet, responseKind, shareFailure } from "./file-download";
 
 /**
  * 아이폰에서 PDF 받기 (2026-10-14 Alan — 반별 명단 `PDF 받기` 를 누르고 "모바일에서 보는거는되는데 실제로 다운을 안 받아져").
  * 아이폰 · 아이패드는 attachment 를 무시하고 PDF 를 화면에 띄우기만 한다 — 공유 시트(파일에 저장 · 프린트)로 받는다.
+ * 2026-10-15 학생명단 Word 받기도 같은 버튼(`FileDownloadButton`, 전 이름 `PdfDownloadButton`)이다.
  * 되돌려도 PC 에서는 멀쩡해서 늦게 발견된다 — 규칙과 버튼 · 쓰는 곳을 못박는다.
  */
 
@@ -47,9 +48,10 @@ describe("공유 시트로 받는 기기 (prefersShareSheet)", () => {
 });
 
 describe("저장 이름 (fileNameFromDisposition)", () => {
-  it("우리 라우트의 머리에서 한글 이름을 그대로 읽는다 — 반별 명단 · 출석 포스터", () => {
+  it("우리 라우트의 머리에서 한글 이름을 그대로 읽는다 — 반별 명단(PDF · Word) · 출석 포스터", () => {
     expect(fileNameFromDisposition(rosterDisposition({ year: 2026, month: 10 }), "x.pdf")).toBe(rosterFileName({ year: 2026, month: 10 }));
     expect(fileNameFromDisposition(rosterDisposition({ year: 2026, month: 10 }), "x.pdf")).toBe("역전토익_반별명단_2026-10.pdf");
+    expect(fileNameFromDisposition(rosterDisposition({ year: 2026, month: 10 }, "track", "docx"), "x.docx", "docx")).toBe("역전토익_레벨별명단_2026-10.docx");
     const iso = "2026-10-14T12:05:00.000Z";
     expect(fileNameFromDisposition(posterDisposition(iso), "x.pdf")).toBe(posterFileName(iso));
     expect(fileNameFromDisposition(posterDisposition(null), "x.pdf")).toBe("역전토익_출석QR포스터.pdf");
@@ -70,6 +72,7 @@ describe("저장 이름 (fileNameFromDisposition)", () => {
     expect(fileNameFromDisposition("attachment", "명단.pdf")).toBe("명단.pdf");
     expect(fileNameFromDisposition(null, "명단.pdf")).toBe("명단.pdf");
     expect(fileNameFromDisposition(undefined, "")).toBe("download.pdf");
+    expect(fileNameFromDisposition(undefined, "", "docx")).toBe("download.docx");
   });
 
   it("경로 · 못 쓰는 글자 · 제어 문자는 지운다 (저장 창이 폴더를 만들거나 깨진 이름으로 저장하지 않게)", () => {
@@ -80,9 +83,12 @@ describe("저장 이름 (fileNameFromDisposition)", () => {
 });
 
 describe("받은 응답 다루기 (responseKind · messageText)", () => {
-  it("PDF 면 저장 창", () => {
-    expect(responseKind({ ok: true, contentType: "application/pdf" })).toBe("pdf");
-    expect(responseKind({ ok: true, contentType: "application/pdf", redirected: false })).toBe("pdf");
+  it("바라던 파일이면 저장 창 — PDF 버튼은 PDF, Word 버튼은 Word 만", () => {
+    expect(responseKind({ ok: true, contentType: "application/pdf" })).toBe("file");
+    expect(responseKind({ ok: true, contentType: "application/pdf", redirected: false })).toBe("file");
+    expect(responseKind({ ok: true, contentType: FILE_KINDS.docx.mime }, "docx")).toBe("file");
+    expect(responseKind({ ok: true, contentType: "application/pdf" }, "docx")).toBe("error");
+    expect(responseKind({ ok: true, contentType: FILE_KINDS.docx.mime }, "pdf")).toBe("error");
   });
 
   it("우리 라우트의 글 오류(400 · 404 · 503 text/plain)는 그 글을 보여 준다", () => {
@@ -100,6 +106,15 @@ describe("받은 응답 다루기 (responseKind · messageText)", () => {
     expect(responseKind({ ok: true, contentType: "text/html" })).toBe("error");
     expect(responseKind({ ok: false, contentType: "application/pdf" })).toBe("error");
     expect(responseKind({ ok: true, contentType: null })).toBe("error");
+  });
+
+  it("버튼 글 — PDF 와 Word 는 이름만 다르다 (PDF 글은 예전 그대로)", () => {
+    expect(DOWNLOAD_TEXT).toEqual(downloadText("pdf"));
+    expect(DOWNLOAD_TEXT.loading).toBe("PDF 만드는 중…");
+    expect(DOWNLOAD_TEXT.failed).toBe("PDF 를 받지 못했어요. 잠시 뒤 다시 받아 주세요.");
+    expect(downloadText("docx").loading).toBe("Word 만드는 중…");
+    expect(downloadText("docx").ready).toContain("Word 앱");
+    expect(downloadText("docx").again).toBe(DOWNLOAD_TEXT.again);
   });
 
   it("글 오류는 줄여 보여 주고, 비었으면 일반 안내", () => {
@@ -127,11 +142,11 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), "utf8")
 /** 주석을 뺀 코드 */
 const code = (p: string) => read(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
-describe("PDF 받기 버튼 (src/components/admin/PdfDownloadButton.tsx)", () => {
-  const src = code("src/components/admin/PdfDownloadButton.tsx");
+describe("파일 받기 버튼 (src/components/admin/FileDownloadButton.tsx)", () => {
+  const src = code("src/components/admin/FileDownloadButton.tsx");
 
   it("아이폰 · 아이패드가 아니면 링크를 막지 않는다 — 판정이 preventDefault 보다 먼저", () => {
-    expect(src).toMatch(/if \(!shareSheetReady\(\)\) return;[^\n]*\n\s*e\.preventDefault\(\);/);
+    expect(src).toMatch(/if \(!shareSheetReady\(kind\)\) return;[^\n]*\n\s*e\.preventDefault\(\);/);
     expect(src).toMatch(/prefersShareSheet\(\{ userAgent: navigator\.userAgent, platform: navigator\.platform, maxTouchPoints: navigator\.maxTouchPoints \}\)/);
     expect(src).toMatch(/navigator\.canShare\(\{ files: \[new File\(/);
   });
@@ -153,13 +168,17 @@ describe("PDF 받기 버튼 (src/components/admin/PdfDownloadButton.tsx)", () =>
   });
 });
 
-describe("PDF 를 받는 곳은 PdfDownloadButton 으로", () => {
-  it("반별 명단 · 출석 포스터", () => {
-    expect(code("src/components/admin/students/ClassRosterView.tsx")).toMatch(/<PdfDownloadButton href=\{pdfHref\} fileName=\{pdfName\}/);
-    expect(code("src/app/admin/attendance/poster/page.tsx")).toMatch(/<PdfDownloadButton href="\/admin\/attendance\/poster\/download" fileName=\{posterFileName\(createdAt\)\}/);
+describe("PDF · Word 를 받는 곳은 FileDownloadButton 으로", () => {
+  it("반별 명단(PDF · Word) · 출석 포스터", () => {
+    const roster = code("src/components/admin/students/ClassRosterView.tsx");
+    expect(roster).toMatch(/<FileDownloadButton href=\{pdfHref\} fileName=\{pdfName\}/);
+    expect(roster).toMatch(/<FileDownloadButton\s+href=\{docxHref\}\s+fileName=\{docxName\}\s+kind="docx"/);
+    expect(code("src/app/admin/attendance/poster/page.tsx")).toMatch(/<FileDownloadButton href="\/admin\/attendance\/poster\/download" fileName=\{posterFileName\(createdAt\)\}/);
+    // 옛 이름이 남지 않는다
+    expect(fs.existsSync(path.join(process.cwd(), "src/components/admin/PdfDownloadButton.tsx"))).toBe(false);
   });
 
-  it("PDF 라우트로 가는 맨 링크(a · Link)가 없다 — 아이폰에서 다시 '보기만 되고 저장이 안 되는' 버튼이 된다", () => {
+  it("파일 라우트로 가는 맨 링크(a · Link)가 없다 — 아이폰에서 다시 '보기만 되고 저장이 안 되는' 버튼이 된다", () => {
     const files: string[] = [];
     const walk = (dir: string) => {
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -173,7 +192,7 @@ describe("PDF 를 받는 곳은 PdfDownloadButton 으로", () => {
     for (const f of files) {
       const src = fs.readFileSync(f, "utf8");
       for (const tag of src.match(/<(?:a|Link)\b[^>]*>/g) ?? []) {
-        if (/roster-pdf|poster\/download/.test(tag)) bad.push(`${path.relative(process.cwd(), f)}: ${tag.replace(/\s+/g, " ")}`);
+        if (/roster-pdf|roster-docx|poster\/download/.test(tag)) bad.push(`${path.relative(process.cwd(), f)}: ${tag.replace(/\s+/g, " ")}`);
       }
     }
     expect(bad).toEqual([]);
