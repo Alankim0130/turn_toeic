@@ -19,7 +19,10 @@
  *    `월` · `화` 단과가 아닌데 그 강좌를 한 트랙만 등록(주3일 120분 — 월수금만 · 화목금만). 단과는 `월` · `화` 를 적지 않는다 —
  *    칸 머리의 `월 RC · 화 LC` 가 단과 과목으로 요일을 말해 준다. 주5일 · 종합은 표시가 없다
  *  - 이름 가나다순 (`localeCompare(…, "ko")`), 같은 이름은 계정 순
- *  - **강사 · 관리자 · 조교 계정은 넣지 않는다** — 학생 화면을 보려고 넣은 테스트 배정이다 (숙제 미제출 알림과 같은 규칙)
+ *  - **강사 · 관리자 계정은 넣지 않는다** — 학생 화면을 보려고 넣은 테스트 배정이다. **조교 계정은 넣고 표시 맨 앞에 `조교`** (`(조교)` · `(조교/불)`) —
+ *    2026-10-16 Alan "명단에서 강사랑 관리자는 제외하고 수업이 설정되어 있는 조교는 조교라고 표시도 부탁해" (`src/lib/roster-accounts.ts` —
+ *    숙제 미제출 · 출석 명단과 같은 규칙. 그전에는 조교도 뺐다). 조교도 가나다순 자리에 서고 사람 수에 센다 (학생명단 등록생 수와 같다).
+ *    범례에는 적지 않는다 — 줄인 글자가 아니라 낱말 그대로라 풀어 쓸 것이 없다
  *  - **종강한 배정은 뺀다** (`closesAt < today`) — 앞 절반이 끝난 2주완성 학생이 그 달 끝까지 칸에 남지 않게
  * 칸은 레벨 → 시작 시각 순, 레벨마다 묶는다. 학생이 없는 칸은 그리지 않고 `empty` 에 둔다 (인쇄할 종이를 아낀다).
  * 순수 함수 (`class-roster.test.ts`). 화면 · PDF(`class-roster-pdf.ts`)가 같은 결과를 그린다.
@@ -31,6 +34,7 @@
  * 주5일 학생은 두 칸에 다 서고(트랙마다 그 트랙으로 데려온 배정의 `불`), 속성반은 650 · 850 의 그 트랙 칸에, 2주완성은 850 의 그 트랙 칸에 선다.
  */
 import { SUBJECT_LABEL, isSubject, type Subject } from "./instructor-subject";
+import { ASSISTANT_MARK } from "./roster-accounts";
 import { parseTimeBlock } from "./time-blocks";
 import { isContainerProgram } from "./two-week";
 import { TRACK_LABEL } from "./utils";
@@ -68,7 +72,8 @@ export type RosterSection = {
 
 /** 직접 배정 하나 (`enrollments` — status active) */
 export type RosterEnrollment = { studentId: string; sectionId: number; mode: string | null };
-export type RosterPerson = { name: string; staff: boolean };
+/** `staff` = 강사 · 관리자 계정 (명단에서 뺀다 — DB `is_staff` 와 같은 집합) · `assistant` = 조교 계정 (넣고 `조교` 표시) */
+export type RosterPerson = { name: string; staff: boolean; assistant?: boolean };
 
 /** 칸을 무엇으로 나누나 — `time` 반별 명단(레벨의 수업 시간 한 칸 · 두 트랙을 합친다) · `track` 레벨별 명단(레벨의 트랙 한 칸 · 시간을 합친다) */
 export type RosterBy = "time" | "track";
@@ -181,7 +186,7 @@ export function buildClassRoster(input: {
     return (includes.get(id) ?? []).flatMap((c) => leavesOf(c, seen));
   };
 
-  // 학생 → 살아 있는 직접 배정 (강사 · 관리자 · 조교 계정과 종강한 배정은 뺀다)
+  // 학생 → 살아 있는 직접 배정 (강사 · 관리자 계정과 종강한 배정은 뺀다 — 조교는 넣는다)
   type Via = { section: RosterSection; mode: string | null };
   const directs = new Map<string, Via[]>();
   for (const e of input.enrollments) {
@@ -224,6 +229,8 @@ export function buildClassRoster(input: {
     // 그 강좌들의 직접 배정 전부 — 단과인지 · 한 트랙만 등록했는지를 본다 (이 칸으로 데려오지 않은 배정까지)
     const sameCourse = (directs.get(studentId) ?? []).filter((d) => courses.has(d.section.courseId));
     const marks: string[] = [];
+    // 조교 계정 — 맨 앞에 (2026-10-16)
+    if (input.people.get(studentId)?.assistant) marks.push(ASSISTANT_MARK);
     if (via.some((d) => d.mode === "live")) marks.push("불");
     if (via.some((d) => d.section.program === "sparta")) marks.push("프");
     if (via.some((d) => d.section.program === "twoweek")) marks.push("2주");

@@ -4,6 +4,7 @@ import { parseTimeBlock } from "@/lib/time-blocks";
 import { collapseWeek5, week5SectionIds } from "@/lib/week5";
 import { sectionChip, type DB, type TermLite } from "../../_lib/queries";
 import { getProfileNames } from "../../_lib/profile-names";
+import { hiddenFromRoster, isAssistantAccount } from "@/lib/roster-accounts";
 
 /**
  * 숙제 미제출 알림(`/admin/homework/missing`)이 읽는 것 — 그 기수의 반 · 회차 · 품는 관계 · 배정 · 낸 숙제 · 이름 · 보낸 시각,
@@ -36,19 +37,12 @@ export type MissingData = {
   includes: Map<number, number[]>;
   enrollments: MissingEnrollment[];
   submissions: MissingSubmission[];
-  people: Map<string, { name: string; staff: boolean }>;
+  people: Map<string, { name: string; staff: boolean; assistant: boolean }>;
   /** 수업일 → 숙제 기한 날짜 (같은 트랙 다음 수업일 · 모르면 null) */
   due: Map<string, string | null>;
   /** 숙제 미제출 알림을 끈 학생 ('알림 안 받기' — 그 밖은 모두 받는다) */
   optedOut: Set<string>;
 };
-
-/**
- * 강사 · 관리자 · 조교 계정 — 반에 배정돼 있어도 학생 화면을 보려는 테스트 배정이라 명단에 넣지 않는다
- * (2026-10-08 Alan "미제출 알림에 리스트 명단에 강사계정과 관리자 계정도 포함되어있어. 이건 빼줘" · 학생명단 `강사·조교` 탭과 같은 집합).
- * 진짜 등급으로 본다 — `profile_names` 가 주는 등급은 test_role 이 아니라 profiles.role 이다.
- */
-const STAFF_ROLES = new Set(["instructor", "admin", "assistant"]);
 
 /** KST 날짜 (배정한 날) */
 const kstDate = (iso: string) => new Date(iso).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
@@ -186,7 +180,14 @@ export async function loadMissingData(supabase: DB, term: TermLite, opts: { stud
     readDue(),
     readOptOuts(),
   ]);
-  const people = new Map(studentIds.map((id) => [id, { name: names.get(id)?.name ?? "", staff: STAFF_ROLES.has(names.get(id)?.role ?? "") }]));
+  // 강사 · 관리자 계정은 명단에서 빠지고 조교 계정은 `조교` 로 선다 (`roster-accounts.ts`, 2026-10-16) — 진짜 등급으로 본다
+  // (`profile_names` 가 주는 등급은 test_role 이 아니라 profiles.role 이다)
+  const people = new Map(
+    studentIds.map((id) => {
+      const role = names.get(id)?.role ?? null;
+      return [id, { name: names.get(id)?.name ?? "", staff: hiddenFromRoster(role), assistant: isAssistantAccount(role) }];
+    }),
+  );
   // 이름 · 등급을 못 읽으면(빈 Map) 강사 · 관리자 계정을 가려낼 수 없다 — 명단에 섞이고 알림이 갈 수 있으니 다 못 읽은 것으로 본다 (보내기도 멈춘다)
   const namesOk = studentIds.length === 0 || names.size > 0;
 

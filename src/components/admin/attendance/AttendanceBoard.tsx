@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AttendanceMark } from "@/components/ui/AttendanceMark";
+import { StatusBadge } from "@/components/admin/StatusBadge";
 import { dayMark, MARK_ORDER, MARK_STYLE, type BoardRow, type DayCounts, type MarkKind } from "@/lib/attendance-board";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +12,8 @@ const weekday = (d: string) => WEEKDAY[new Date(`${d}T00:00:00Z`).getUTCDay()];
  * 기수 출석 한눈에 보기 — 학생 × 수업일 격자 (2026-10-01 Alan — "강사들이 지각생들과 결석생들을 알아보고 관리" ·
  * "강사모드에서 학생들 출결상태를 편하게 볼 수 있으면"). 비대면 인증 현황의 "한눈에 보기"(CheckinRoster)와 같은 꼴이다.
  *
- * - 줄은 **결석이 많은 학생 → 지각 → 이름** 순이고 테스터는 맨 아래다 (`rankBoard`). 결석 = 선생님이 정한 것 + 끝났는데 안 찍은 것 —
+ * - 줄은 **결석이 많은 학생 → 지각 → 이름** 순이고 조교 계정은 `조교` 표를 달고 맨 아래다 (`rankBoard`) — 학생 수 · 출석률 · 결석 · 지각 · 날짜 머리글
+ *   숫자에 세지 않는다. 강사 · 관리자 계정은 DB 가 돌려주지 않는다 (2026-10-16 — 그전에는 셋 다 `테스터`). 결석 = 선생님이 정한 것 + 끝났는데 안 찍은 것 —
  *   **한 단어**다 (2026-10-10 Alan "결석이랑 미출석이랑 같은말이야" → "합쳐줘". 그전에는 `미출석` 도장이 따로 있었다 — 되살리지 말 것).
  * - 칸은 그 학생의 그 날 수업 하나 — 도장(`AttendanceMark`)이다. 그 날 수업이 없는 학생은 빈칸이다 (주3일 학생은 반대 트랙 날이 비어 있다).
  * - 날짜 머리글을 누르면 그 날 명단(날짜별)으로 간다 — 고치는 일은 거기서 한다. 머리글의 빨간 숫자는 그 날 결석 수.
@@ -52,13 +54,16 @@ export function AttendanceBoard({
     for (const d of r.days) {
       const k = dayMark(d);
       shown.add(k);
-      if (k === "absent") problems.set(d.d, (problems.get(d.d) ?? 0) + 1);
+      if (k === "absent" && !r.assistant) problems.set(d.d, (problems.get(d.d) ?? 0) + 1);
     }
   }
-  const students = rows.filter((r) => !r.tester).length;
-  const flagged = rows.filter((r) => !r.tester && r.counts.absent > 0).length;
-  const lateOnes = rows.filter((r) => !r.tester && r.counts.late > 0).length;
-  const total = rows.filter((r) => !r.tester).reduce((a, r) => ({ past: a.past + r.counts.past, present: a.present + r.counts.present }), { past: 0, present: 0 });
+  // 학생만 센다 — 조교 계정은 맨 아래에 서되 학생 수 · 출석률 · 결석 · 지각 · 날짜 머리글 숫자에 넣지 않는다 (2026-10-16)
+  const learners = rows.filter((r) => !r.assistant);
+  const students = learners.length;
+  const assistants = rows.length - students;
+  const flagged = learners.filter((r) => r.counts.absent > 0).length;
+  const lateOnes = learners.filter((r) => r.counts.late > 0).length;
+  const total = learners.reduce((a, r) => ({ past: a.past + r.counts.past, present: a.present + r.counts.present }), { past: 0, present: 0 });
   const rate = total.past > 0 ? Math.round((total.present / total.past) * 100) : null;
 
   return (
@@ -66,7 +71,7 @@ export function AttendanceBoard({
       <div className="border-b border-line bg-brand-50/60 px-4 py-3">
         <h2 id="board-title" className="font-black text-ink">{title}</h2>
         <p className="mt-0.5 text-xs text-slate">
-          학생 {students}명 × 수업일 {dates.length}일 · 끝난 수업 출석률 {rate === null ? "–" : `${rate}%`} · 결석이 있는 학생 {flagged}명 · 지각이 있는 학생 {lateOnes}명
+          학생 {students}명{assistants > 0 && ` (조교 ${assistants}명 따로)`} × 수업일 {dates.length}일 · 끝난 수업 출석률 {rate === null ? "–" : `${rate}%`} · 결석이 있는 학생 {flagged}명 · 지각이 있는 학생 {lateOnes}명
         </p>
         <p className="mt-0.5 text-xs text-slate">결석이 많은 학생이 위로 와요. 결석은 수업이 끝났는데 안 찍은 날과 선생님이 결석으로 정한 날이에요. 날짜를 누르면 그 날 명단으로 가서 출석 인정·결석을 정하거나 결석 알림을 보낼 수 있어요.</p>
         <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5 text-xs font-semibold text-slate" aria-label="도장 설명">
@@ -112,7 +117,7 @@ export function AttendanceBoard({
                       ) : (
                         <span className="whitespace-nowrap font-bold text-ink">{r.student_name || "-"}</span>
                       )}
-                      {r.tester && <span className="rounded-full bg-line px-1.5 py-0.5 text-[10px] font-bold text-slate">테스터</span>}
+                      {r.assistant && <StatusBadge status="assistant" className="!px-1.5 !py-0.5 !text-[10px]" />}
                     </span>
                     {(classes[r.student_id] ?? []).map((c, i) => (
                       <span key={i} className="block truncate text-[11px] font-semibold text-slate" title={c}>

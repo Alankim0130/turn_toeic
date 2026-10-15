@@ -17,6 +17,7 @@ import {
   dueLabel,
   HOMEWORK_DUE_LABEL,
   lectureNumbers,
+  countsAsStudent,
   missingStudentCount,
   monthDay,
   onlyAlerted,
@@ -123,7 +124,9 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
   // 명단은 알림을 받는 학생 — '알림 안 받기' 를 누른 학생만 빠진다 (2026-10-15 Alan). 체크박스를 켜면 끈 학생도 볼 수만 있다
   const board = showAll ? full : onlyAlerted(full);
   const optedOut = optedOutCount(full);
-  const alerted = new Set(full.flatMap((g) => g.rows.filter((r) => r.alerts).map((r) => r.id))).size;
+  // 조교 계정은 학생 수에 세지 않는다 — 줄은 서되 따로 적는다 (2026-10-16, `roster-accounts.ts`)
+  const alerted = new Set(full.flatMap((g) => g.rows.filter(countsAsStudent).map((r) => r.id))).size;
+  const assistants = new Set(board.flatMap((g) => g.rows.filter((r) => r.assistant).map((r) => r.id))).size;
 
   // 이 레벨에서 마지막으로 미제출 알림을 받은 때 — 그 뒤에 새로 기한이 지난 숙제가 없으면 '미제출 전체선택' 에서 뺀다 (같은 숙제로 거듭 가지 않게)
   const sentAt = new Map<string, string>();
@@ -209,6 +212,11 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
         <p className="text-sm font-bold text-ink-soft">
           {termLabel(term)} · {level ?? "-"} · 알림 받는 학생 <span className="text-ink tabular-nums">{alerted}</span>명 중 기한 지난 숙제를 안 낸 학생{" "}
           <span className="text-ink tabular-nums">{flagged}</span>명
+          {assistants > 0 && (
+            <>
+              {" "}· 조교 <span className="text-ink tabular-nums">{assistants}</span>명은 세지 않아요
+            </>
+          )}
         </p>
         {(optedOut > 0 || showAll) && (
           <Link href={allHref} className="flex items-center gap-2 text-sm font-bold text-ink-soft transition hover:text-brand-600">

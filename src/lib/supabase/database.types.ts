@@ -2668,7 +2668,7 @@ export type Database = {
       }
       attendance_roster: {
         Args: { p_date: string }
-        Returns: { check_in_at: string | null; check_out_at: string | null; course_name: string; decided_by_name: string | null; decided_note: string | null; late: boolean; section_id: number; status: string | null; student_id: string; student_name: string; target_score: number | null; tester: boolean; time_block: string | null; track: string }[]
+        Returns: { check_in_at: string | null; check_out_at: string | null; course_name: string; decided_by_name: string | null; decided_note: string | null; late: boolean; section_id: number; status: string | null; student_id: string; student_name: string; target_score: number | null; assistant: boolean; time_block: string | null; track: string }[]
       }
       my_attendance_summary: {
         Args: never
@@ -2676,7 +2676,7 @@ export type Database = {
       }
       attendance_term_board: {
         Args: { p_term_id: number }
-        Returns: { student_id: string; student_name: string; tester: boolean; section_ids: number[] | null; days: Json }[]
+        Returns: { student_id: string; student_name: string; assistant: boolean; section_ids: number[] | null; days: Json }[]
       }
       profile_names: {
         Args: { p_ids: string[] }

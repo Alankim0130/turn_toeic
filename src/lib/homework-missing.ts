@@ -141,6 +141,8 @@ export type MissingSlot = { date: string; subject: HomeworkSubject; due: string 
 export type MissingRow = {
   id: string;
   name: string;
+  /** 조교 계정 — 줄은 서고 이름 옆에 `조교` 표시, 그 카드 학생 줄 아래. 탭 숫자 · 저절로 고르기에는 넣지 않는다 (`countsAsStudent`, 2026-10-16) */
+  assistant: boolean;
   /** 숙제 미제출 알림을 받는가 — 숙제제출 화면에서 '알림 안 받기' 를 눌렀으면 거짓, 고를 수도 보낼 수도 없다 (2026-10-15 Alan) */
   alerts: boolean;
   /** 열마다 · 그 열의 과목마다 */
@@ -170,15 +172,20 @@ type GroupSortKey = (string | number)[];
  * 그 레벨에 숙제가 하나도 없는 학생 · 묶음은 빠진다 (속성반 학생은 650 탭과 850 탭에 다 선다).
  * 칸이 '안 냄' 이 되는 것은 **그 날 숙제의 기한(`due` — 같은 트랙 다음 수업일, 오후 5시)이 지났을 때**다 (2026-10-14 — 머리말).
  *
- * **강사 · 관리자 · 조교 계정(`staff`)은 반에 배정돼 있어도 넣지 않는다** (2026-10-08 Alan — "미제출 알림에 리스트 명단에 강사계정과 관리자 계정도
+ * **강사 · 관리자 계정(`staff`)은 반에 배정돼 있어도 넣지 않는다** (2026-10-08 Alan — "미제출 알림에 리스트 명단에 강사계정과 관리자 계정도
  * 포함되어있어. 이건 빼줘"). 학생 화면을 보려고 넣은 테스트 배정이다 — 줄 · 묶음 · 탭 숫자 · 전체선택 · 보내기 어디에도 없다
  * (처음엔 출석 한눈에 보기처럼 `테스터` 표를 달아 맨 아래에 뒀다). 그 계정만 배정된 반은 카드도 없다.
+ * **조교 계정은 넣는다** (`assistant` — 2026-10-16 Alan "명단에서 강사랑 관리자는 제외하고 수업이 설정되어 있는 조교는 조교라고 표시도 부탁해").
+ * 줄은 서고 이름 옆에 `조교` 가 붙되 **그 카드의 학생 줄 아래**에 두고, 탭 숫자 · 카드 머리 숫자 · '미제출 전체선택' · '이 날 안 낸 학생 고르기' 에는 넣지 않는다
+ * (`countsAsStudent`) — 학생 화면을 보려고 반에 배정한 조교에게 숙제 알림이 저절로 가지 않게. 손으로 골라 보낼 수는 있다.
+ * 출석 한눈에 보기 · 결석 알림과 같은 규칙이고, 2026-10-08 전 이 화면이 '테스터' 를 다루던 방식이다 (그때는 강사 · 관리자도 그렇게 섰다).
+ * 2026-10-08 ~ 10-15 에는 조교도 뺐다 (`src/lib/roster-accounts.ts`).
  *
  * **'알림 안 받기' 를 누른 학생도 줄은 만든다** (`alerts: false`) — 화면이 기본으로 빼고(`onlyAlerted`) 체크박스를 켜면 볼 수만 있게 그린다.
  * 탭 숫자 · 전체선택 · 보내기는 받는 학생만 센다.
  *
  * 묶음 순서는 `sortKeyOf`(반 id → 정렬 키)가 정한다 — 반 이름 · 시간 같은 것은 화면 쪽이 안다.
- * 줄 순서는 **알림 받는 학생 먼저 → 안 낸 숙제가 많은 학생 → 이름**.
+ * 줄 순서는 **알림 받는 학생 먼저 → 조교는 그 아래 → 안 낸 숙제가 많은 학생 → 이름**.
  */
 export function buildMissingBoard(input: {
   level: number;
@@ -190,8 +197,8 @@ export function buildMissingBoard(input: {
   includes: ReadonlyMap<number, readonly number[]>;
   enrollments: readonly MissingEnrollment[];
   submissions: readonly MissingSubmission[];
-  /** 이름과 강사 · 관리자 · 조교 계정인지 (`staff` 면 명단에 넣지 않는다) */
-  people: ReadonlyMap<string, { name: string; staff: boolean }>;
+  /** 이름과 강사 · 관리자 계정인지 (`staff` 면 명단에 넣지 않는다) · 조교 계정인지 (`assistant` 면 `조교` 표시) */
+  people: ReadonlyMap<string, { name: string; staff: boolean; assistant?: boolean }>;
   /** 숙제 미제출 알림을 끈 학생 ('알림 안 받기') — 그 밖은 모두 받는다 */
   optedOut: ReadonlySet<string>;
   sortKeyOf?: (sectionId: number) => GroupSortKey;
@@ -200,7 +207,7 @@ export function buildMissingBoard(input: {
   const now = input.now ?? Date.now();
   const dueOf = (date: string) => input.due.get(date) ?? null;
 
-  // 학생 → 직접 배정 (강사 · 관리자 · 조교 계정의 테스트 배정은 뺀다)
+  // 학생 → 직접 배정 (강사 · 관리자 계정의 테스트 배정은 뺀다 — 조교는 넣는다)
   const byStudent = new Map<string, MissingEnrollment[]>();
   for (const e of input.enrollments) {
     if (!sections.has(e.sectionId) || input.people.get(e.studentId)?.staff) continue;
@@ -268,6 +275,7 @@ export function buildMissingBoard(input: {
       return {
         id,
         name: person?.name ?? "",
+        assistant: person?.assistant ?? false,
         alerts: !input.optedOut.has(id),
         cells,
         past,
@@ -276,8 +284,11 @@ export function buildMissingBoard(input: {
         rate: past > 0 ? Math.round((doneCount / past) * 100) : null,
       };
     });
-    // 알림 받는 학생 먼저 → 안 낸 숙제가 많은 학생 → 이름 순
-    rows.sort((a, b) => Number(b.alerts) - Number(a.alerts) || b.missing.length - a.missing.length || a.name.localeCompare(b.name, "ko"));
+    // 알림 받는 학생 먼저 → 조교는 그 아래 → 안 낸 숙제가 많은 학생 → 이름 순
+    rows.sort(
+      (a, b) =>
+        Number(b.alerts) - Number(a.alerts) || Number(a.assistant) - Number(b.assistant) || b.missing.length - a.missing.length || a.name.localeCompare(b.name, "ko"),
+    );
     out.push({ key, sectionIds: g.sectionIds, columns, rows });
   }
 
@@ -306,10 +317,16 @@ export function onlyAlerted(groups: readonly MissingGroup[]): MissingGroup[] {
   return groups.map((g) => ({ ...g, rows: g.rows.filter((r) => r.alerts) })).filter((g) => g.rows.length > 0);
 }
 
-/** 레벨 탭의 숫자 — **알림을 받는 학생 중** 기한이 지난 숙제를 안 낸 학생 수 (한 사람은 한 번) */
+/**
+ * 세고 저절로 고르는 줄인가 — **알림을 받는 학생** ('알림 안 받기' 를 누른 학생 · 조교 계정 빼고). 탭 숫자 · 카드 머리 숫자 · 날짜 카드 숫자 ·
+ * '미제출 전체선택' · '이 날 안 낸 학생 고르기' 가 모두 이것으로 가른다. 조교 줄은 손으로는 고를 수 있다 (2026-10-16)
+ */
+export const countsAsStudent = (r: Pick<MissingRow, "alerts" | "assistant">): boolean => r.alerts && !r.assistant;
+
+/** 레벨 탭의 숫자 — **알림을 받는 학생 중** 기한이 지난 숙제를 안 낸 학생 수 (한 사람은 한 번, 조교 빼고) */
 export function missingStudentCount(groups: readonly MissingGroup[]): number {
   const ids = new Set<string>();
-  for (const g of groups) for (const r of g.rows) if (r.alerts && r.missing.length > 0) ids.add(r.id);
+  for (const g of groups) for (const r of g.rows) if (countsAsStudent(r) && r.missing.length > 0) ids.add(r.id);
   return ids.size;
 }
 
@@ -318,7 +335,7 @@ export function missingStudentCount(groups: readonly MissingGroup[]): number {
  * '알림 안 받는 학생도 보기' 를 켜면 끈 학생도 목록에 회색으로 서는데, 예전에는 그들까지 세어 두 보기의 숫자가 갈렸다
  */
 export function dayFlaggedCount(day: Pick<MissingDay, "missing">): number {
-  return day.missing.filter((m) => m.alerts).length;
+  return day.missing.filter(countsAsStudent).length;
 }
 
 /** '알림 안 받기' 를 누른 학생 수 (한 사람은 한 번) — 체크박스 이름에 적는다 */
@@ -353,14 +370,14 @@ export function missingStatus(rate: number | null): MissingStatus {
 export const MISSING_STATUS_LABEL: Record<MissingStatus, string> = { perfect: "개근", good: "양호", warn: "주의", risk: "위험", none: "시작 전" };
 
 /**
- * '미제출 전체선택' 이 고르는 학생 — **알림을 받고(끄지 않았고) · 마지막 알림 뒤에 새로 기한이 지난 숙제를 안 낸** 학생 (`newMissingOf`).
+ * '미제출 전체선택' 이 고르는 학생 — **알림을 받고(끄지 않았고) · 마지막 알림 뒤에 새로 기한이 지난 숙제를 안 낸** 학생 (`newMissingOf`). 조교 계정은 고르지 않는다 (`countsAsStudent`).
  * 2026-10-14 Alan: "목요일 오후 6시라면 화요일 숙제를 제출하는거고 마감이 되었지? 그럼 미제출 알림을 보낼려면 화요일반 미제출한사람에 대해서
  * 알림을 보내면 돼" — 수요일 밤에 월요일 숙제로 알림을 받은 월수금 학생은 목요일 저녁에 다시 골라지지 않는다 (손으로는 고를 수 있다).
  * 2026-10-08 ~ 10-14 에는 "오늘 이미 알림을 받은 학생" 만 뺐다 — 다음 날이면 같은 숙제로 또 골라졌다.
  */
 export function defaultPicks(groups: readonly MissingGroup[], lastSent: ReadonlyMap<string, number> = new Map()): string[] {
   const ids = new Set<string>();
-  for (const g of groups) for (const r of g.rows) if (r.alerts && newMissingOf(r, lastSent.get(r.id)).length > 0) ids.add(r.id);
+  for (const g of groups) for (const r of g.rows) if (countsAsStudent(r) && newMissingOf(r, lastSent.get(r.id)).length > 0) ids.add(r.id);
   return [...ids];
 }
 
@@ -394,7 +411,7 @@ export function lectureNumbers(sections: Iterable<Pick<MissingSection, "track" |
 }
 
 /** 날짜별 보기의 학생 한 명 — 그 날 다 내지 않은 학생과 안 낸 과목 */
-export type MissingDayStudent = Pick<MissingRow, "id" | "name" | "alerts"> & {
+export type MissingDayStudent = Pick<MissingRow, "id" | "name" | "assistant" | "alerts"> & {
   /** 이 학생이 선 카드(직접 배정된 반 묶음) — 화면이 반 이름을 붙인다 */
   groupKey: string;
   /** 그 날 안 낸 과목 (RC 먼저) */
@@ -412,10 +429,10 @@ export type MissingDay = {
   /** 그 날 숙제의 기한 날짜 (같은 트랙 다음 수업일 오후 5시) · 모르면 null */
   due: string | null;
   overdue: boolean;
-  /** 그 날 낼 숙제가 있는 학생 수 · 그중 다 낸 학생 수 */
+  /** 그 날 낼 숙제가 있는 학생 수 · 그중 다 낸 학생 수 — 조교 계정은 세지 않는다 (줄은 `missing` 에 선다, 2026-10-16) */
   expected: number;
   submitted: number;
-  /** 다 내지 않은 학생 — 기한이 지났으면 '안 냄', 아직이면 '기한 전'. 카드(반) 순서 → 알림 받는 학생 먼저 → 이름 (화면이 반마다 작은 머리글을 단다) */
+  /** 다 내지 않은 학생 — 기한이 지났으면 '안 냄', 아직이면 '기한 전'. 카드(반) 순서 → 알림 받는 학생 먼저 → 조교는 그 아래 → 이름 (화면이 반마다 작은 머리글을 단다) */
   missing: MissingDayStudent[];
 };
 
@@ -424,7 +441,8 @@ export type MissingDay = {
  * 이렇게 날짜별로 리스트가 나올수 있게도"). 격자(`buildMissingBoard`)를 수업일마다 뒤집은 것이다 — **칸을 그대로 읽으므로** 두 보기가 서로 다른 말을 하지 않는다
  * (기한 · 배정일 · 강사 계정 빼기 · 알림 안 받기가 다 같다).
  * 그 레벨의 카드를 다 합쳐 수업일마다 한 장: 낼 학생(그 날 칸이 '해당 없음' 이 아닌 학생) · 다 낸 학생 · 다 내지 않은 학생과 안 낸 과목.
- * `until`(오늘) 뒤의 수업일은 아직 수업 전이라 뺀다. 낼 학생이 없는 날도 뺀다. **날짜 순(1강부터)** — Alan 이 적은 순서다.
+ * 조교 계정은 다 내지 않았으면 줄은 서되(`assistant`) 낼 학생 · 다 낸 학생 수에는 세지 않는다 (2026-10-16 — `roster-accounts.ts`).
+ * `until`(오늘) 뒤의 수업일은 아직 수업 전이라 뺀다. 낼 사람이 없는 날도 뺀다. **날짜 순(1강부터)** — Alan 이 적은 순서다.
  */
 export function buildMissingDays(groups: readonly MissingGroup[], opts: { until?: string; lectures?: ReadonlyMap<string, number> } = {}): MissingDay[] {
   const days = new Map<string, MissingDay>();
@@ -459,24 +477,29 @@ export function buildMissingDays(groups: readonly MissingGroup[], opts: { until?
         // 들어오기 전 날짜라도 낸 칸('냄')이 있으면 낸 학생으로 센다 — 격자에 '냄' 으로 보이는 것과 같다
         if (cells.every((k) => k === "none") || seen.has(r.id)) continue;
         seen.add(r.id);
-        day.expected++;
+        if (!r.assistant) day.expected++;
         const open = c.subjects.filter((_, si) => cells[si] === "missing" || cells[si] === "upcoming");
         if (open.length === 0) {
-          day.submitted++;
+          if (!r.assistant) day.submitted++;
           continue;
         }
-        day.missing.push({ id: r.id, name: r.name, alerts: r.alerts, groupKey: g.key, subjects: open });
+        day.missing.push({ id: r.id, name: r.name, assistant: r.assistant, alerts: r.alerts, groupKey: g.key, subjects: open });
       }
     });
   });
   return [...days.values()]
-    .filter((d) => d.expected > 0)
+    // 낼 사람이 없는 날은 뺀다 — 조교만 있는 반의 날도 조교가 안 냈으면 선다
+    .filter((d) => d.expected > 0 || d.missing.length > 0)
     .sort((a, b) => a.date.localeCompare(b.date))
     .map((d) => ({
       ...d,
       subjects: HOMEWORK_SUBJECTS.filter((s) => d.subjects.includes(s)),
       missing: d.missing.sort(
-        (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0) || Number(b.alerts) - Number(a.alerts) || a.name.localeCompare(b.name, "ko"),
+        (a, b) =>
+          (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0) ||
+          Number(b.alerts) - Number(a.alerts) ||
+          Number(a.assistant) - Number(b.assistant) ||
+          a.name.localeCompare(b.name, "ko"),
       ),
     }));
 }

@@ -6,8 +6,10 @@ import { sendHomeworkMissingNotice } from "@/app/admin/homework/missing/actions"
 import { Alert } from "@/components/ui/Alert";
 import { Dialog } from "@/components/ui/Dialog";
 import { Icon } from "@/components/ui/Icon";
+import { StatusBadge } from "@/components/admin/StatusBadge";
 import { SUBJECT_LABEL, type HomeworkSubject } from "@/lib/homework";
 import {
+  countsAsStudent,
   dayFlaggedCount,
   dueLabel,
   HOMEWORK_MISSING_TITLE,
@@ -74,6 +76,14 @@ const MARK_CLASS: Record<MissingCell, string> = { done: "hw-mark-done", missing:
  * **요소 하나에 배경 그림으로 그린다** (globals.css `.hw-mark-*`, 2026-10-09 "숙제미제출 알림 페이지를 클릭하면 로딩시간이 오래걸려") —
  * 칸마다 인라인 SVG(요소 넷)였더니 한 레벨에 요소가 1만 6천 개가 넘어 휴대폰에서 그리는 데만 1초 넘게 걸렸다. 인라인 SVG 로 되돌리지 말 것.
  */
+/**
+ * 조교 계정 — 이름 옆에 `조교` (2026-10-16 Alan "명단에서 강사랑 관리자는 제외하고 수업이 설정되어 있는 조교는 조교라고 표시도",
+ * `roster-accounts.ts`). 학생명단 카드의 등급 배지와 같은 모양이다
+ */
+function AssistantChip() {
+  return <StatusBadge status="assistant" className="!px-1.5 !py-0.5 !text-[10px]" />;
+}
+
 function CellMark({ kind, label }: { kind: MissingCell; label?: string }) {
   const text = label ?? CELL_LABEL[kind];
   return <span role="img" aria-label={text} title={text} className={cn("hw-mark", MARK_CLASS[kind])} />;
@@ -84,7 +94,8 @@ function CellMark({ kind, label }: { kind: MissingCell; label?: string }) {
  * 구조는 첫토익 그대로 — 반마다 카드, 학생 줄 × 수업일 열(N회 · 날짜 · 트랙 · RC LC), 제출률, 위에 단계 점(개근 · 양호 · 주의 · 위험)과
  * **미제출 전체선택**, 고르면 아래에 **N명 선택 · 알림 보내기** 막대가 서고 팝업에서 제목을 고치고 학생마다 만들어진 글을 미리 본다. 색은 우리 핫핑크다.
  *
- * - 학생 줄은 **알림 받는 학생 → 안 낸 숙제가 많은 학생 → 이름** (`buildMissingBoard` — 강사 · 관리자 · 조교 계정은 줄이 없다). 고른 줄은 연분홍으로 칠할 뿐 자리를 옮기지 않는다
+ * - 학생 줄은 **알림 받는 학생 → 안 낸 숙제가 많은 학생 → 이름** (`buildMissingBoard` — 강사 · 관리자 계정은 줄이 없고, 조교 계정은 학생 줄 아래에
+ *   이름 옆 `조교` 를 달고 서며 숫자 · 저절로 고르기에 넣지 않는다 — 2026-10-16). 고른 줄은 연분홍으로 칠할 뿐 자리를 옮기지 않는다
  *   (첫토익은 고른 학생을 위로 올리는데, 누를 때마다 줄이 뛰어 다음 학생을 잘못 누르게 된다).
  * - 이름 칸만 왼쪽에 고정하고 날짜는 카드 안에서 가로로 민다. **제출률은 이름 아래에 둔다** — 첫토익처럼 줄 끝 칸에 두면 한 달 20일 × RC · LC 가
  *   화면을 넘어 휴대폰에서는 밀어야 보였다. 칸 안에 `sr-only` 를 두지 않는다 (가로 스크롤 상자를 빠져나가
@@ -237,7 +248,7 @@ export function MissingBoard({
             {/* 고를 학생이 없는 까닭이 둘이다 — 다 냈거나, 안 낸 숙제를 모두 이미 알렸다 (마지막 알림 뒤에 새로 기한이 지난 것이 없다) */}
             {picks.length > 0
               ? `미제출 전체선택 (${picks.length}명)`
-              : groups.some((g) => g.rows.some((r) => r.alerts && r.missing.length > 0))
+              : groups.some((g) => g.rows.some((r) => countsAsStudent(r) && r.missing.length > 0))
                 ? "안 낸 숙제는 모두 알렸어요"
                 : "안 낸 학생이 없어요"}
           </button>
@@ -391,12 +402,17 @@ const DayCard = memo(function DayCard({
 }) {
   const selected = useMemo(() => new Set(picked ? picked.split(",") : []), [picked]);
   // '이 날 안 낸 학생 고르기' — 알림을 받고 · 이 날 숙제를 아직 알리지 않은 학생 (미제출 전체선택과 같은 규칙. 이미 알린 학생은 손으로 고른다)
-  const pickable = day.overdue ? day.missing.filter((m) => m.alerts && !m.alerted).map((m) => m.id) : [];
-  const allAlerted = day.overdue && pickable.length === 0 && day.missing.some((m) => m.alerts);
+  // 조교 줄은 저절로 고르지 않는다 (`countsAsStudent`) — 손으로는 고른다
+  const pickable = day.overdue ? day.missing.filter((m) => countsAsStudent(m) && !m.alerted).map((m) => m.id) : [];
+  const allAlerted = day.overdue && pickable.length === 0 && day.missing.some(countsAsStudent);
   const allPicked = pickable.length > 0 && pickable.every((id) => selected.has(id));
   const twoSubjects = day.subjects.length > 1;
   // 머리의 '안 낸 학생 N명' 은 알림을 받는 학생만 — 학생별 카드 · 레벨 탭과 같은 수 (끈 학생은 '보기' 를 켜야 회색으로 선다)
   const flagged = dayFlaggedCount(day);
+  // 조교 줄은 학생 수에 세지 않고 따로 적는다 (2026-10-16 — 낸 학생 x/y명 도 학생만이다, `buildMissingDays`)
+  const missingAssistants = day.missing.filter((m) => m.assistant).length;
+  const missingStudents = day.missing.length - missingAssistants;
+  const whoMissing = [missingStudents > 0 && `학생 ${missingStudents}명`, missingAssistants > 0 && `조교 ${missingAssistants}명`].filter(Boolean).join(" · ");
 
   // 반마다 — 줄은 이미 반 순서로 서 있다
   const runs: { key: string; students: MissingDayView["missing"] }[] = [];
@@ -416,6 +432,7 @@ const DayCard = memo(function DayCard({
               const on = checkable && m.alerts && selected.has(m.id);
               const chips = (
                 <>
+                  {m.assistant && <AssistantChip />}
                   {twoSubjects && (
                     <span className="flex shrink-0 gap-1">
                       {m.subjects.map((s) => (
@@ -490,11 +507,14 @@ const DayCard = memo(function DayCard({
             <span className="rounded-full bg-surface px-2 py-0.5 text-slate ring-1 ring-line">기한 전</span>
           ) : flagged > 0 ? (
             <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700">안 낸 학생 {flagged}명</span>
-          ) : day.missing.length > 0 ? (
-            // 남은 것은 '알림 안 받는 학생도 보기' 로 선 학생뿐이다 — 회색으로 몇 명인지만
-            <span className="rounded-full bg-surface px-2 py-0.5 text-slate ring-1 ring-line">알림 안 받는 학생 {day.missing.length}명</span>
+          ) : missingStudents > 0 ? (
+            // 남은 학생은 '알림 안 받는 학생도 보기' 로 선 학생뿐이다 — 회색으로 몇 명인지만
+            <span className="rounded-full bg-surface px-2 py-0.5 text-slate ring-1 ring-line">알림 안 받는 학생 {missingStudents}명</span>
+          ) : day.expected === 0 ? (
+            // 조교만 있는 날 — 학생이 없다
+            <span className="rounded-full bg-surface px-2 py-0.5 text-slate ring-1 ring-line">안 낸 조교 {missingAssistants}명</span>
           ) : (
-            <span className="rounded-full bg-brand-500 px-2 py-0.5 text-white">모두 냈어요</span>
+            <span className="rounded-full bg-brand-500 px-2 py-0.5 text-white">{missingAssistants > 0 ? "학생은 모두 냈어요" : "모두 냈어요"}</span>
           )}
         </span>
       </header>
@@ -509,14 +529,18 @@ const DayCard = memo(function DayCard({
             ) : (
               "기한 — 다음 수업일이 아직 달력에 없어요"
             )}
-            <span className="mx-1.5 text-line" aria-hidden>
-              |
-            </span>
-            낸 학생{" "}
-            <b className="text-ink tabular-nums">
-              {day.submitted}/{day.expected}
-            </b>
-            명
+            {day.expected > 0 && (
+              <>
+                <span className="mx-1.5 text-line" aria-hidden>
+                  |
+                </span>
+                낸 학생{" "}
+                <b className="text-ink tabular-nums">
+                  {day.submitted}/{day.expected}
+                </b>
+                명
+              </>
+            )}
           </p>
           {pickable.length > 0 && (
             <button type="button" onClick={() => onPick(pickable, !allPicked)} className="btn-secondary !px-3 !py-1.5 text-xs">
@@ -533,7 +557,7 @@ const DayCard = memo(function DayCard({
             <details className="group mt-2">
               <summary className="cursor-pointer list-none text-xs font-bold text-slate transition hover:text-brand-600">
                 <span className="mr-1 inline-block transition group-open:rotate-90">▸</span>
-                아직 안 낸 학생 {day.missing.length}명 보기
+                아직 안 낸 {whoMissing} 보기
               </summary>
               {list(false)}
             </details>
@@ -558,7 +582,9 @@ const GroupCard = memo(function GroupCard({ group, picked, onToggle }: { group: 
   const selected = useMemo(() => new Set(picked ? picked.split(",") : []), [picked]);
   const tracks = new Set(group.columns.map((c) => c.track).filter(Boolean));
   const showTrack = tracks.size > 1;
-  const flagged = group.rows.filter((r) => r.alerts && r.missing.length > 0).length;
+  // 머리 숫자는 학생만 — 조교 줄은 학생 줄 아래에 서고 세지 않는다 (`countsAsStudent`, 2026-10-16)
+  const flagged = group.rows.filter((r) => countsAsStudent(r) && r.missing.length > 0).length;
+  const assistants = group.rows.filter((r) => r.assistant).length;
 
   return (
     <section className="hw-board-card card overflow-hidden">
@@ -577,7 +603,9 @@ const GroupCard = memo(function GroupCard({ group, picked, onToggle }: { group: 
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs font-bold">
           {flagged > 0 && <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700">안 낸 학생 {flagged}명</span>}
-          <span className="rounded-full bg-paper px-2 py-0.5 text-brand-700 ring-1 ring-brand-100">학생 {group.rows.length}명</span>
+          <span className="rounded-full bg-paper px-2 py-0.5 text-brand-700 ring-1 ring-brand-100">
+            학생 {group.rows.length - assistants}명{assistants > 0 && ` · 조교 ${assistants}명`}
+          </span>
         </span>
       </header>
       <div className="overflow-x-auto">
@@ -630,6 +658,7 @@ const GroupCard = memo(function GroupCard({ group, picked, onToggle }: { group: 
                         />
                         <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[status])} title={MISSING_STATUS_LABEL[status]} aria-hidden />
                         <span className="whitespace-nowrap font-bold text-ink">{r.name || "이름 없음"}</span>
+                        {r.assistant && <AssistantChip />}
                       </label>
                     ) : (
                       // '알림 안 받기' 를 누른 학생 — 볼 수만 있다 (체크박스 자리는 비워 이름 줄을 맞춘다)
@@ -637,6 +666,7 @@ const GroupCard = memo(function GroupCard({ group, picked, onToggle }: { group: 
                         <span className="size-4 shrink-0" aria-hidden />
                         <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[status])} title={MISSING_STATUS_LABEL[status]} aria-hidden />
                         <span className="whitespace-nowrap font-bold text-ink-soft">{r.name || "이름 없음"}</span>
+                        {r.assistant && <AssistantChip />}
                         <span className="whitespace-nowrap rounded-md bg-paper px-1.5 py-0.5 text-[10px] font-bold text-slate ring-1 ring-line">알림 안 받음</span>
                       </span>
                     )}

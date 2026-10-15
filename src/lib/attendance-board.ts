@@ -19,7 +19,11 @@
 /** DB `attendance_term_board.days` 의 한 칸 — `at` 은 찍은 시각 HH:MM */
 export type BoardDay = { d: string; s: number; done: boolean; st: string | null; late: boolean; at?: string | null };
 
-export type BoardRow = { student_id: string; student_name: string; tester: boolean; section_ids: number[] | null; days: BoardDay[] };
+/**
+ * `assistant` = 조교 계정 — 줄은 서고 `조교` 표를 달되 맨 아래, 학생 수 · 결석 수 · 알림 미리 고르기에는 넣지 않는다.
+ * 강사 · 관리자 계정은 DB 가 아예 돌려주지 않는다 (2026-10-16 — 그전에는 셋 다 `tester` 였다, `roster-accounts.ts`)
+ */
+export type BoardRow = { student_id: string; student_name: string; assistant: boolean; section_ids: number[] | null; days: BoardDay[] };
 
 /**
  * 한 칸의 표시.
@@ -73,14 +77,15 @@ export const attendancePct = (c: Pick<DayCounts, "past" | "present">) => (c.past
 
 /**
  * 강사 격자의 줄 순서: **결석이 많은 학생 → 지각이 많은 학생 → 이름** (2026-10-01 Alan —
- * "지각생들과 결석생들을 알아보고"). 테스터(강사·관리자 계정)는 맨 아래로 — 진짜 학생 사이에 섞이면 눈에 걸린다.
+ * "지각생들과 결석생들을 알아보고"). 조교 계정은 맨 아래로 — 학생 화면을 보려고 반에 배정한 조교는 찍지 않아 결석이 쌓이는데,
+ * 진짜 학생 사이(맨 위)에 서면 눈에 걸린다 (2026-10-16 — 그전에는 강사 · 관리자 · 조교 계정이 `테스터` 로 맨 아래였다).
  */
-export function rankBoard<T extends { student_name: string; tester: boolean; days: BoardDay[] }>(rows: readonly T[]): (T & { counts: DayCounts })[] {
+export function rankBoard<T extends { student_name: string; assistant: boolean; days: BoardDay[] }>(rows: readonly T[]): (T & { counts: DayCounts })[] {
   return rows
     .map((r) => ({ ...r, counts: countDays(r.days) }))
     .sort(
       (a, b) =>
-        Number(a.tester) - Number(b.tester) ||
+        Number(a.assistant) - Number(b.assistant) ||
         b.counts.absent - a.counts.absent ||
         b.counts.late - a.counts.late ||
         (a.student_name || "").localeCompare(b.student_name || "", "ko"),
@@ -126,28 +131,29 @@ export type RosterLike = {
   time_block: string | null;
   student_id: string;
   student_name: string;
-  tester: boolean;
+  /** 조교 계정 (강사 · 관리자 계정은 DB 가 돌려주지 않는다 — 2026-10-16) */
+  assistant: boolean;
   status: string | null;
   /** 선생님이 결석으로 정하며 적은 사유 — 있으면 결석 알림 줄에 같이 적는다 */
   decided_note?: string | null;
 };
 
 /** `note` = 선생님이 결석으로 정하며 적은 사유 (없으면 끝났는데 안 찍은 것) — 화면은 둘 다 "결석" 한 단어다 */
-export type Absentee = { student_id: string; student_name: string; tester: boolean; sectionIds: number[]; labels: string[]; note: string | null };
+export type Absentee = { student_id: string; student_name: string; assistant: boolean; sectionIds: number[]; labels: string[]; note: string | null };
 
 const TRACK_NAME: Record<string, string> = { mwf: "월수금", ttf: "화목금" };
 
 /**
  * 그 날 **결석** 학생 — 수업이 끝났는데 기록이 없거나 선생님이 결석으로 정한 학생 (한 단어, 2026-10-10 Alan).
  * 아직 안 끝난 수업은 넣지 않는다 (올 시간이 남았다). 지각생은 왔으므로 넣지 않는다.
- * 한 사람이 그 날 두 반을 빠졌으면 한 줄로 합친다 — 알림은 한 사람에 한 번이다.
+ * 한 사람이 그 날 두 반을 빠졌으면 한 줄로 합친다 — 알림은 한 사람에 한 번이다. 조교 계정은 맨 아래 (화면이 미리 고르지 않는다 — 2026-10-16).
  */
 export function absenteesOf(rows: readonly RosterLike[], date: string, now: { date: string; minutes: number }): Absentee[] {
   const by = new Map<string, Absentee>();
   for (const r of rows) {
     if (!(r.status === null || r.status === "absent")) continue;
     if (!classDone(date, r.time_block, now)) continue;
-    const a = by.get(r.student_id) ?? { student_id: r.student_id, student_name: r.student_name, tester: r.tester, sectionIds: [], labels: [], note: null };
+    const a = by.get(r.student_id) ?? { student_id: r.student_id, student_name: r.student_name, assistant: r.assistant, sectionIds: [], labels: [], note: null };
     if (!a.sectionIds.includes(r.section_id)) {
       a.sectionIds.push(r.section_id);
       a.labels.push([r.course_name, TRACK_NAME[r.track] ?? r.track, r.time_block].filter(Boolean).join(" "));
@@ -155,7 +161,7 @@ export function absenteesOf(rows: readonly RosterLike[], date: string, now: { da
     if (r.status === "absent" && r.decided_note?.trim() && !a.note) a.note = r.decided_note.trim();
     by.set(r.student_id, a);
   }
-  return [...by.values()].sort((x, y) => Number(x.tester) - Number(y.tester) || (x.student_name || "").localeCompare(y.student_name || "", "ko"));
+  return [...by.values()].sort((x, y) => Number(x.assistant) - Number(y.assistant) || (x.student_name || "").localeCompare(y.student_name || "", "ko"));
 }
 
 /** 결석 알림 기본 문구 — 강사가 보내기 전에 고친다. 알림함 제목 80자 · 본문 1,000자 안 */

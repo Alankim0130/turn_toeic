@@ -1,4 +1,5 @@
 import { buildClassRoster, type ClassRoster, type RosterBy, type RosterEnrollment, type RosterPerson, type RosterSection } from "@/lib/class-roster";
+import { hiddenFromRoster, isAssistantAccount } from "@/lib/roster-accounts";
 import type { DB, TermLite } from "../../_lib/queries";
 
 /**
@@ -9,8 +10,6 @@ import type { DB, TermLite } from "../../_lib/queries";
  */
 
 const PAGE = 1000;
-/** 강사 · 관리자 · 조교 계정 — 학생 화면을 보려고 넣은 테스트 배정이라 명단에 넣지 않는다 (숙제 미제출 알림 · 학생명단 강사·조교 탭과 같은 집합) */
-const STAFF_ROLES = new Set(["instructor", "admin", "assistant"]);
 
 const emptyRoster = (by: RosterBy): ClassRoster => ({ by, levels: [], empty: [], total: 0, unplaced: 0 });
 
@@ -62,9 +61,11 @@ export async function loadClassRoster(supabase: DB, term: TermLite, today: strin
   const people = new Map<string, RosterPerson>();
   const enrollments: RosterEnrollment[] = [];
   for (const r of enrollRows) {
-    // 합쳐진 옛 계정은 빼고 (배정은 남길 계정으로 옮겨졌다)
+    // 합쳐진 옛 계정은 빼고 (배정은 남길 계정으로 옮겨졌다).
+    // 강사 · 관리자 계정은 명단에서 빠지고 조교 계정은 `(조교)` 로 선다 — 진짜 등급으로 본다 (`roster-accounts.ts`, 2026-10-16)
     if (r.section_id == null || r.student?.merged_into) continue;
-    people.set(r.student_id, { name: r.student?.name ?? "", staff: STAFF_ROLES.has(r.student?.role ?? "") });
+    const role = r.student?.role ?? null;
+    people.set(r.student_id, { name: r.student?.name ?? "", staff: hiddenFromRoster(role), assistant: isAssistantAccount(role) });
     enrollments.push({ studentId: r.student_id, sectionId: r.section_id, mode: r.mode });
   }
   return { roster: buildClassRoster({ sections, includes, enrollments, people, today, by }), ok };

@@ -5,6 +5,7 @@ import { Alert } from "@/components/ui/Alert";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { FilterTabs } from "@/components/admin/FilterTabs";
+import { StatusBadge } from "@/components/admin/StatusBadge";
 import { AttendanceBoard } from "@/components/admin/attendance/AttendanceBoard";
 import { AbsenceNotice } from "@/components/admin/attendance/AbsenceNotice";
 import { isStaff, requireCrew } from "@/lib/auth";
@@ -31,7 +32,8 @@ type Row = {
   time_block: string | null;
   student_id: string;
   student_name: string;
-  tester: boolean;
+  /** 조교 계정 — `조교` 표, 반마다 학생 아래 · 숫자에 세지 않는다. 강사 · 관리자 계정은 DB 가 돌려주지 않는다 (2026-10-16) */
+  assistant: boolean;
   status: string | null;
   check_in_at: string | null;
   check_out_at: string | null;
@@ -201,7 +203,10 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
     s.rows.push(r);
     sections.set(r.section_id, s);
   }
-  const count = (list: Row[], st: string | null) => list.filter((r) => (r.status ?? null) === st).length;
+  // 반마다 학생 먼저, 조교 계정은 그 아래 (이름 순은 DB 가 맞춰 준다 — 안정 정렬이라 그대로 남는다)
+  for (const s of sections.values()) s.rows.sort((a, b) => Number(a.assistant) - Number(b.assistant));
+  // 반 머리의 숫자는 학생만 — 조교 계정은 따로 적는다
+  const count = (list: Row[], st: string | null) => list.filter((r) => !r.assistant && (r.status ?? null) === st).length;
   const now = kstNow();
 
   // 결석 — 수업이 끝난 반만. 알림을 이미 보냈으면 그 시각을 붙인다
@@ -212,7 +217,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   }
   const absentees = viewingPast
     ? []
-    : absenteesOf(rows, date, now).map((a) => ({ id: a.student_id, name: a.student_name, tester: a.tester, labels: a.labels, note: a.note, sentAt: sentAt.get(a.student_id) ?? null }));
+    : absenteesOf(rows, date, now).map((a) => ({ id: a.student_id, name: a.student_name, assistant: a.assistant, labels: a.labels, note: a.note, sentAt: sentAt.get(a.student_id) ?? null }));
 
   return (
     <>
@@ -266,6 +271,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
             const done = classDone(date, head.time_block, now);
             const absent = count(list, "absent") + (done ? count(list, null) : 0);
             const pending = done ? 0 : count(list, null);
+            const helpers = list.filter((r) => r.assistant).length;
             return (
             <section key={sectionId} id={`s${sectionId}`} aria-labelledby={`t${sectionId}`} className="card scroll-mt-24 p-5">
               <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
@@ -274,7 +280,8 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
                 </h2>
                 <p className="text-xs text-slate">
                   출석 {count(list, "present") + count(list, "manual")} · 결석 {absent}
-                  {pending > 0 && ` · 예정 ${pending}`} / {list.length}명
+                  {pending > 0 && ` · 예정 ${pending}`} / {list.length - helpers}명
+                  {helpers > 0 && ` · 조교 ${helpers}명`}
                 </p>
               </div>
               <ul className="divide-y divide-line">
@@ -289,7 +296,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
                           ) : (
                             <span className="font-bold text-ink">{r.student_name}</span>
                           )}
-                          {r.tester && <span className="rounded-full bg-line px-1.5 py-0.5 text-[10px] font-bold text-slate">테스터</span>}
+                          {r.assistant && <StatusBadge status="assistant" className="!px-1.5 !py-0.5 !text-[10px]" />}
                           <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold", st.className)}>{st.label}</span>
                           {r.late && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-800">지각</span>}
                         </p>

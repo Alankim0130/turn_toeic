@@ -59,22 +59,22 @@ describe("countDays — DB my_attendance_summary 와 같은 셈", () => {
   });
 });
 
-describe("rankBoard — 결석 → 지각 → 이름, 테스터는 맨 아래", () => {
+describe("rankBoard — 결석 → 지각 → 이름, 조교 계정은 맨 아래 (2026-10-16 — 강사 · 관리자 계정은 DB 가 돌려주지 않는다)", () => {
   it("관리할 학생이 위로 온다", () => {
     const rows = [
-      { student_id: "a", student_name: "가나다", tester: false, section_ids: [1], days: [day("2026-10-06", "present")] },
-      { student_id: "b", student_name: "라마바", tester: false, section_ids: [1], days: [day("2026-10-06", "present", { late: true })] },
-      { student_id: "c", student_name: "사아자", tester: false, section_ids: [1], days: [day("2026-10-06", null), day("2026-10-07", "absent")] },
-      { student_id: "d", student_name: "차카타", tester: false, section_ids: [1], days: [day("2026-10-06", null)] },
-      { student_id: "t", student_name: "가가가", tester: true, section_ids: [1], days: [day("2026-10-06", null), day("2026-10-07", null)] },
-      { student_id: "e", student_name: "파하", tester: false, section_ids: [1], days: [day("2026-10-06", "manual")] },
+      { student_id: "a", student_name: "가나다", assistant: false, section_ids: [1], days: [day("2026-10-06", "present")] },
+      { student_id: "b", student_name: "라마바", assistant: false, section_ids: [1], days: [day("2026-10-06", "present", { late: true })] },
+      { student_id: "c", student_name: "사아자", assistant: false, section_ids: [1], days: [day("2026-10-06", null), day("2026-10-07", "absent")] },
+      { student_id: "d", student_name: "차카타", assistant: false, section_ids: [1], days: [day("2026-10-06", null)] },
+      { student_id: "t", student_name: "가가가", assistant: true, section_ids: [1], days: [day("2026-10-06", null), day("2026-10-07", null)] },
+      { student_id: "e", student_name: "파하", assistant: false, section_ids: [1], days: [day("2026-10-06", "manual")] },
     ];
     expect(rankBoard(rows).map((r) => r.student_id)).toEqual(["c", "d", "b", "a", "e", "t"]);
   });
   it("앞날 수업은 결석으로 세지 않는다", () => {
     const rows = [
-      { student_id: "a", student_name: "가", tester: false, section_ids: [1], days: [day("2026-10-20", null, { done: false })] },
-      { student_id: "b", student_name: "나", tester: false, section_ids: [1], days: [day("2026-10-06", null)] },
+      { student_id: "a", student_name: "가", assistant: false, section_ids: [1], days: [day("2026-10-20", null, { done: false })] },
+      { student_id: "b", student_name: "나", assistant: false, section_ids: [1], days: [day("2026-10-06", null)] },
     ];
     expect(rankBoard(rows)[0].student_id).toBe("b");
     expect(rankBoard(rows)[1].counts.absent).toBe(0);
@@ -114,14 +114,14 @@ describe("classDone — 수업이 끝났나 · DB 와 같은 규칙 (2026-10-10 
 });
 
 describe("absenteesOf — 결석 알림 받을 사람", () => {
-  const row = (student_id: string, section_id: number, status: string | null, time_block = "10:00~12:10", tester = false, decided_note: string | null = null): RosterLike => ({
+  const row = (student_id: string, section_id: number, status: string | null, time_block = "10:00~12:10", assistant = false, decided_note: string | null = null): RosterLike => ({
     section_id,
     course_name: "650+ 왕기초반",
     track: section_id % 2 ? "mwf" : "ttf",
     time_block,
     student_id,
     student_name: `학생${student_id}`,
-    tester,
+    assistant,
     status,
     decided_note,
   });
@@ -144,9 +144,12 @@ describe("absenteesOf — 결석 알림 받을 사람", () => {
     expect(list[0].sectionIds).toEqual([1, 3]);
     expect(list[0].labels).toEqual(["650+ 왕기초반 월수금 10:00~12:10", "650+ 왕기초반 월수금 12:30~13:40"]);
   });
-  it("테스터는 맨 아래", () => {
+  it("조교 계정은 맨 아래 — `assistant` 를 달고 온다 (화면이 결석 수 · 미리 고르기에서 뺀다)", () => {
     const list = absenteesOf([row("t", 1, null, "10:00~12:10", true), row("b", 1, null)], "2026-10-06", after);
-    expect(list.map((a) => a.student_id)).toEqual(["b", "t"]);
+    expect(list.map((a) => [a.student_id, a.assistant])).toEqual([
+      ["b", false],
+      ["t", true],
+    ]);
   });
 });
 

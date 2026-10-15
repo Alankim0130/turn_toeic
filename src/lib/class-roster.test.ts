@@ -151,9 +151,34 @@ describe("반별 명단 — 한 칸이 한 레벨의 수업 시간 한 칸 · LC
     expect(view(both)).toEqual({ "650B 10:00~11:00": ["마루(월)"], "650A 11:10~12:10": ["마루(월)"] });
   });
 
-  it("강사 · 관리자 · 조교 계정은 넣지 않는다 — 학생 화면을 보려고 넣은 테스트 배정이다", () => {
+  it("강사 · 관리자 계정은 넣지 않는다 — 학생 화면을 보려고 넣은 테스트 배정이다", () => {
     const all = build().levels.flatMap((l) => l.columns.flatMap((c) => c.students.map((s) => s.id)));
     expect(all).not.toContain("uTeacher");
+  });
+
+  it("조교 계정은 넣고 표시 맨 앞에 (조교) — 가나다순 자리에 서고 사람 수에 센다 (2026-10-16 Alan)", () => {
+    const people = new Map<string, RosterPerson>([...PEOPLE, ["uHelper", { name: "보람", staff: false, assistant: true }], ["uHelperLive", { name: "아름", staff: false, assistant: true }]]);
+    const r = build("2026-10-14", {
+      people,
+      enrollments: [
+        ...ENROLL,
+        // 조교 · 120분 월수금 현장 — 단과가 아니고 한 트랙
+        { studentId: "uHelper", sectionId: 3, mode: "onsite" },
+        // 조교 · 60분 주3일 RC 단과 불라방
+        { studentId: "uHelperLive", sectionId: 1, mode: "live" },
+      ],
+    });
+    expect(view(r)["650B 10:00~11:00"]).toEqual(["가온(불/월)", "나리(불/프)", "다온", "라온", "마루(RC)", "보람(조교/월)", "아름(조교/불/RC)", "하늘(RC)"]);
+    expect(view(r)["650A 11:10~12:10"]).toEqual(["가온(불/월)", "나리(불/프)", "다온", "보람(조교/월)"]);
+    // 강사 계정은 그대로 빠진다
+    expect(r.levels.flatMap((l) => l.columns.flatMap((c) => c.students.map((s) => s.id)))).not.toContain("uTeacher");
+    expect(r.levels[0].count).toBe(10);
+    expect(r.total).toBe(11);
+    // 레벨별 명단도 같다 — (월) 은 적지 않는다
+    const t = build("2026-10-14", { by: "track", people, enrollments: [...ENROLL, { studentId: "uHelper", sectionId: 3, mode: "onsite" }] });
+    expect(view(t)["650 월수금"]).toContain("보람(조교)");
+    // 범례에는 없다 — 줄인 글자가 아니라 낱말 그대로다
+    expect(rosterMarks("time").map((m) => m.mark)).not.toContain("조교");
   });
 
   it("이름은 가나다순 — 같은 칸에 들어온 순서와 상관없다", () => {
@@ -269,7 +294,7 @@ describe("레벨별 명단 — 한 칸이 한 레벨의 한 트랙 · 시간을 
     expect(view(r)).toEqual({ "650 월수금": ["다온", "마루(RC)"], "650 화목금": ["마루(RC)"] });
   });
 
-  it("강사 · 관리자 · 조교 계정 · 종강한 배정은 빠진다 (반별 명단과 같은 규칙)", () => {
+  it("강사 · 관리자 계정 · 종강한 배정은 빠진다 (반별 명단과 같은 규칙)", () => {
     const all = byTrack().levels.flatMap((l) => l.columns.flatMap((c) => c.students.map((s) => s.id)));
     expect(all).not.toContain("uTeacher");
     const after = view(byTrack("2026-10-18"));

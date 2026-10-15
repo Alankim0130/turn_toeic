@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildMissingBoard,
   buildMissingDays,
+  countsAsStudent,
   dayFlaggedCount,
   defaultPicks,
   dueAt,
@@ -138,21 +139,21 @@ describe("낼 숙제 칸 — 반이 정한다 (날짜 · 레벨 · 과목)", () 
 describe("격자 — 반마다 한 카드, 수업일 열 × RC · LC", () => {
   // 10/12(월) 오후 6시 — 월수금 10/7(기한 10/9) · 10/9(기한 10/12 5시)는 기한이 지났고, 화목금 10/6(기한 10/8)만 지났다 (10/8 은 10/13 5시까지)
   const now = at("2026-10-12T18:00");
-  const people = new Map([
+  const people = new Map<string, { name: string; staff: boolean; assistant?: boolean }>([
     ["kim", { name: "김가나", staff: false }],
     ["lee", { name: "이다라", staff: false }],
     ["park", { name: "박마바", staff: false }],
     ["late", { name: "최늦게", staff: false }],
-    // 강사 · 관리자 · 조교 계정 — 학생 화면을 보려고 반에 넣어 둔 테스트 배정
+    // 강사 · 관리자 계정 — 학생 화면을 보려고 반에 넣어 둔 테스트 배정 (조교 계정은 아래 "조교 계정은 넣는다" 에서 따로 본다)
     ["ssam", { name: "알런", staff: true }],
-    ["jogyo", { name: "조교", staff: true }],
+    ["kang", { name: "이강사", staff: true }],
   ]);
   const enrollments: MissingEnrollment[] = [
     { studentId: "kim", sectionId: 10, from: "2026-10-01" },
     { studentId: "lee", sectionId: 10, from: "2026-10-01" },
     { studentId: "late", sectionId: 10, from: "2026-10-08" },
     { studentId: "ssam", sectionId: 10, from: "2026-10-01" },
-    { studentId: "jogyo", sectionId: 2, from: "2026-10-01" }, // 이 반에는 조교 계정만 있다
+    { studentId: "kang", sectionId: 2, from: "2026-10-01" }, // 이 반에는 강사 계정만 있다
     { studentId: "park", sectionId: 1, from: "2026-10-01" },
     { studentId: "park", sectionId: 3, from: "2026-10-01" },
   ];
@@ -232,16 +233,88 @@ describe("격자 — 반마다 한 카드, 수업일 열 × RC · LC", () => {
     expect(board[1].rows.map((r) => r.id)).toEqual(["late", "kim", "lee"]);
   });
 
-  it("강사 · 관리자 · 조교 계정은 반에 배정돼 있어도 명단에 없다 — 그 계정만 있는 반은 카드도 없다 (2026-10-08 Alan \"이건 빼줘\")", () => {
+  it("강사 · 관리자 계정은 반에 배정돼 있어도 명단에 없다 — 그 계정만 있는 반은 카드도 없다 (2026-10-08 Alan \"이건 빼줘\")", () => {
     const ids = board.flatMap((g) => g.rows.map((r) => r.id));
     expect(ids).not.toContain("ssam");
-    expect(ids).not.toContain("jogyo");
+    expect(ids).not.toContain("kang");
     expect(board.map((g) => g.key)).not.toContain("2");
     // 보내기도 같은 격자로 다시 세므로 고른 목록에 끼어 와도 받지 않는다 (actions.ts 의 rowOf)
     expect(rowOf(board, "ssam")).toBeNull();
-    expect(rowOf(board, "jogyo")).toBeNull();
+    expect(rowOf(board, "kang")).toBeNull();
     // 학생과 같은 반이어도 학생 수에 세지 않는다
     expect(board[1].rows).toHaveLength(3);
+    expect(board.flatMap((g) => g.rows).every((r) => !r.assistant)).toBe(true);
+  });
+
+  it("조교 계정은 넣는다 — `assistant` 표시를 달고 학생 줄 아래에 서며, 탭 숫자 · 전체선택 · 날짜 카드 숫자에는 넣지 않는다 (2026-10-16 Alan)", () => {
+    const withHelper = buildMissingBoard({
+      level: 650,
+      now,
+      due: DUE,
+      sections: SECTIONS,
+      includes: INCLUDES,
+      enrollments: [...enrollments, { studentId: "help", sectionId: 10, from: "2026-10-01" }, { studentId: "solo", sectionId: 2, from: "2026-10-01" }],
+      submissions,
+      people: new Map([...people, ["help", { name: "도우미", staff: false, assistant: true }], ["solo", { name: "나홀로", staff: false, assistant: true }]]),
+      optedOut,
+      sortKeyOf: (id) => [id],
+    });
+    // 조교만 있는 반도 카드가 선다 (강사 계정만 있는 반과 다르다)
+    expect(withHelper.map((g) => g.key)).toEqual(["1,3", "2", "10"]);
+    const help = rowOf(withHelper, "help")!;
+    expect(help).toMatchObject({ name: "도우미", assistant: true, alerts: true });
+    // 하나도 안 냈지만(안 낸 숙제가 가장 많다) 학생 줄 아래
+    expect(help.missing.length).toBeGreaterThan(rowOf(withHelper, "late")!.missing.length);
+    expect(withHelper[2].rows.map((r) => r.id)).toEqual(["late", "kim", "lee", "help"]);
+    // 숫자 · 저절로 고르기는 학생만 — 손으로 고르면 보내기는 받는다 (actions.ts 는 rowOf · alerts 로 본다)
+    expect(missingStudentCount(withHelper)).toBe(3);
+    expect(defaultPicks(withHelper).sort()).toEqual(["kim", "late", "park"]);
+    expect(countsAsStudent(help)).toBe(false);
+    expect(countsAsStudent(rowOf(withHelper, "kim")!)).toBe(true);
+    // 날짜별 보기도 같은 표시를 달고 그 카드 학생 아래에 서며, 카드 숫자에 세지 않는다
+    const oct7 = buildMissingDays(withHelper, { until: "2026-10-12" }).find((d) => d.date === "2026-10-07")!;
+    expect(oct7.missing.filter((m) => m.assistant).map((m) => m.id).sort()).toEqual(["help", "solo"]);
+    const inTen = oct7.missing.filter((m) => m.groupKey === "10").map((m) => m.id);
+    expect(inTen[inTen.length - 1]).toBe("help");
+    expect(dayFlaggedCount(oct7)).toBe(oct7.missing.filter((m) => !m.assistant).length);
+    // '낸 학생 x/y명' 도 학생만 — 조교 줄을 더해도 그 날 숫자는 그대로다
+    const base7 = buildMissingDays(board, { until: "2026-10-12" }).find((d) => d.date === "2026-10-07")!;
+    expect({ expected: oct7.expected, submitted: oct7.submitted }).toEqual({ expected: base7.expected, submitted: base7.submitted });
+    // 조교만 있는 반이라도 조교가 안 냈으면 그 날 카드는 선다 (학생 수는 0)
+    const onlyHelper = buildMissingBoard({
+      level: 650,
+      now,
+      due: DUE,
+      sections: SECTIONS,
+      includes: INCLUDES,
+      enrollments: [{ studentId: "solo", sectionId: 2, from: "2026-10-01" }],
+      submissions: [{ userId: "solo", date: "2026-10-09", level: 650, subject: "lc" }],
+      people: new Map([["solo", { name: "나홀로", staff: false, assistant: true }]]),
+      optedOut,
+      sortKeyOf: (id) => [id],
+    });
+    const soloDays = buildMissingDays(onlyHelper, { until: "2026-10-12" });
+    // 10/9 는 냈다 — 낼 사람이 없는 날이라 빠진다
+    expect(soloDays.map((d) => [d.date, d.expected, d.submitted, d.missing.map((m) => m.id).join()])).toEqual([
+      ["2026-10-07", 0, 0, "solo"],
+      ["2026-10-12", 0, 0, "solo"],
+    ]);
+    // 학생 줄에는 표시가 없다
+    expect(rowOf(withHelper, "kim")!.assistant).toBe(false);
+    // 조교가 '알림 안 받기' 를 눌렀으면 끈 학생처럼 맨 아래 회색 줄이다 (끈 줄끼리도 학생 먼저)
+    const off = buildMissingBoard({
+      level: 650,
+      now,
+      due: DUE,
+      sections: SECTIONS,
+      includes: INCLUDES,
+      enrollments: [...enrollments, { studentId: "help", sectionId: 10, from: "2026-10-01" }],
+      submissions,
+      people: new Map([...people, ["help", { name: "도우미", staff: false, assistant: true }]]),
+      optedOut: new Set(["help", "kim"]),
+      sortKeyOf: (id) => [id],
+    });
+    expect(off[1].rows.map((r) => r.id)).toEqual(["late", "lee", "kim", "help"]);
   });
 
   it("주5일 60분 학생 — 월수금 날은 RC 칸만, 화목금 날은 LC 칸만 · 기한도 트랙마다 따로", () => {
@@ -254,7 +327,7 @@ describe("격자 — 반마다 한 카드, 수업일 열 × RC · LC", () => {
   });
 
   it("탭 숫자 · 전체선택 — 기한 지난 숙제를 안 낸 학생, 마지막 알림 뒤에 새로 기한이 지난 것이 없는 학생은 빼고", () => {
-    expect(missingStudentCount(board)).toBe(3); // late · kim · park (lee 는 다 냄, 강사 · 조교 계정은 명단에 없다)
+    expect(missingStudentCount(board)).toBe(3); // late · kim · park (lee 는 다 냄, 강사 · 관리자 계정은 명단에 없다)
     expect(defaultPicks(board).sort()).toEqual(["kim", "late", "park"]);
     // 김가나는 10/12 6시 반에 알림을 받았다 — 안 낸 10/9 LC 의 기한(10/12 5시)이 그보다 앞이라 이미 알린 숙제다
     expect(defaultPicks(board, new Map([["kim", at("2026-10-12T18:30")]])).sort()).toEqual(["late", "park"]);
@@ -465,7 +538,7 @@ describe("날짜별 보기 — 'N강 · 10월 6일' 마다 안 낸 학생 (2026-
   });
 
   // 격자 시험과 같은 학생들 — 10/12(월) 오후 6시
-  const people = new Map([
+  const people = new Map<string, { name: string; staff: boolean; assistant?: boolean }>([
     ["kim", { name: "김가나", staff: false }],
     ["lee", { name: "이다라", staff: false }],
     ["late", { name: "최늦게", staff: false }],

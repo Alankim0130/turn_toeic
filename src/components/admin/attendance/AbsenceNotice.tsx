@@ -6,16 +6,23 @@ import Link from "next/link";
 import { sendAbsenceNotice } from "@/app/admin/attendance/actions";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
+import { StatusBadge } from "@/components/admin/StatusBadge";
 import { cn } from "@/lib/utils";
 
-/** `note` = 선생님이 결석으로 정하며 적은 사유 (없으면 끝났는데 안 찍은 학생) — 둘 다 "결석" 한 단어다 */
-export type AbsenteeView = { id: string; name: string; tester: boolean; labels: string[]; note: string | null; sentAt: string | null };
+/**
+ * `note` = 선생님이 결석으로 정하며 적은 사유 (없으면 끝났는데 안 찍은 학생) — 둘 다 "결석" 한 단어다.
+ * `assistant` = 조교 계정 — 맨 아래에 `조교` 표를 달고, 결석 수 · 미리 고르기에는 넣지 않는다 (손으로는 고른다, 2026-10-16)
+ */
+export type AbsenteeView = { id: string; name: string; assistant: boolean; labels: string[]; note: string | null; sentAt: string | null };
 
 /**
  * 그 날 결석 학생과 **한 번에 알림 보내기** (2026-10-01 Alan — "결석한 학생들에게는 전체 알림 메시지를 보낼 수 있도록").
  * 결석 = 수업이 끝났는데 안 찍은 학생 + 선생님이 결석으로 정한 학생 — **한 단어**로 적고(2026-10-10 Alan "합쳐줘") 선생님이 적은 사유만 줄에 붙인다.
  * 비대면 인증의 "미인증 N명에게 알림 보내기"(CheckinRoster)와 같은 길이다 — 학생 알림함(`student_messages`, kind `attendance`)으로만 간다.
  * 문자·카톡·푸시는 가지 않는다. 이미 보낸 학생은 `알림 보냄` 이 붙고 처음에는 체크가 빠져 있다 (같은 알림을 두 번 보내지 않게).
+ * **조교 계정**은 맨 아래에 `조교` 표를 달고 서지만 머리의 결석 수와 처음 체크에서 빠진다 — 학생 화면을 보려고 반에 배정한 조교는 찍지 않아
+ * 날마다 결석으로 서기 때문이다 (2026-10-16 Alan "명단에서 강사랑 관리자는 제외하고 수업이 설정되어 있는 조교는 조교라고 표시도", `roster-accounts.ts`).
+ * 강사 · 관리자 계정은 DB(`attendance_roster`)가 아예 돌려주지 않는다.
  * 보내는 것은 **강사·관리자만**이다 (`canSend`) — 알림함 쓰기 정책이 스태프만 열려 있다. 조교는 목록만 본다.
  * 받는 사람은 서버가 다시 고른다 (`sendAbsenceNotice` — 그 날 수업이 끝났고 결석인 학생만).
  */
@@ -42,7 +49,10 @@ export function AbsenceNotice({
   const [msg, setMsg] = useState<{ kind: "success" | "warning"; text: string } | null>(null);
 
   if (absentees.length === 0) return null;
-  const unsent = absentees.filter((a) => !a.sentAt);
+  // 미리 고르는 것은 아직 안 보낸 학생 — 조교 계정은 빼고 (손으로는 고른다)
+  const unsent = absentees.filter((a) => !a.sentAt && !a.assistant);
+  const students = absentees.filter((a) => !a.assistant).length;
+  const assistants = absentees.length - students;
 
   const start = () => {
     setPicked(new Set(unsent.map((a) => a.id)));
@@ -66,14 +76,16 @@ export function AbsenceNotice({
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-red-50/70 px-5 py-3">
         <div className="min-w-0">
           <h2 id="absent-title" className="font-black text-ink">
-            {dateLabel} 결석 <span className="text-red-600 tabular-nums">{absentees.length}명</span>
+            {dateLabel} 결석 <span className="text-red-600 tabular-nums">{students}명</span>
+            {assistants > 0 && <span className="ml-1.5 text-sm font-bold text-slate">· 조교 {assistants}명</span>}
           </h2>
           <p className="mt-0.5 text-xs text-slate">수업이 끝났는데 출석 기록이 없거나 선생님이 결석으로 정한 학생이에요. 지각생은 왔으니 넣지 않아요.</p>
         </div>
         {canSend && !compose && (
           <button type="button" onClick={start} className="btn-primary !px-4 !py-2 text-sm">
             <Icon name="bell" size={18} />
-            {unsent.length > 0 ? `${unsent.length}명에게 알림 보내기` : "다시 보내기"}
+            {/* 결석한 학생이 없고 조교 계정만 있으면 고를 사람이 없다 — 손으로 고른다 */}
+            {unsent.length > 0 ? `${unsent.length}명에게 알림 보내기` : students > 0 ? "다시 보내기" : "골라서 보내기"}
           </button>
         )}
       </div>
@@ -108,7 +120,7 @@ export function AbsenceNotice({
                 ) : (
                   <span className="font-bold text-ink">{a.name || "-"}</span>
                 )}
-                {a.tester && <span className="rounded-full bg-line px-1.5 py-0.5 text-[10px] font-bold text-slate">테스터</span>}
+                {a.assistant && <StatusBadge status="assistant" className="!px-1.5 !py-0.5 !text-[10px]" />}
                 {a.sentAt && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-bold text-brand-700">알림 보냄 {a.sentAt}</span>}
               </p>
               <p className="mt-0.5 text-xs text-slate">
