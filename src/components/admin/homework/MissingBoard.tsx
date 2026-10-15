@@ -15,6 +15,8 @@ import {
   MISSING_TITLE_MAX,
   missingStatus,
   type MissingCell,
+  type MissingDay,
+  type MissingDayStudent,
   type MissingRow,
   type MissingStatus,
 } from "@/lib/homework-missing";
@@ -40,6 +42,19 @@ export type MissingRowView = MissingRow & {
   sent: string | null;
 };
 export type MissingGroupView = { key: string; classes: string[]; columns: MissingColumnView[]; rows: MissingRowView[] };
+/** 날짜별 보기의 하루 (`buildMissingDays`) — 'N강 · 10월 6일 (화)' */
+export type MissingDayView = Omit<MissingDay, "missing"> & {
+  /** "10월 6일 (화)" */
+  label: string;
+  /** "10/8(목) 오후 5시" — 기한을 모르면 null */
+  dueText: string | null;
+  isToday: boolean;
+  /**
+   * `sent` — 이 레벨에서 마지막으로 미제출 알림을 받은 때 ("오늘 14:20" · "10/8").
+   * `alerted` — 그 알림이 이 날 숙제의 기한 뒤라 **이 날 숙제도 이미 알렸다** (`newMissingOf` 와 같은 규칙) — '이 날 안 낸 학생 고르기' 가 건너뛴다
+   */
+  missing: (MissingDayStudent & { sent: string | null; alerted: boolean })[];
+};
 
 /** 제출률 단계의 색 — 구조는 첫토익, 색은 우리 핫핑크 */
 const STATUS_DOT: Record<MissingStatus, string> = { perfect: "bg-brand-500", good: "bg-brand-300", warn: "bg-amber-400", risk: "bg-red-500", none: "bg-line" };
@@ -77,8 +92,25 @@ function CellMark({ kind, label }: { kind: MissingCell; label?: string }) {
  * - **숙제제출 화면에서 '알림 안 받기' 를 누른 학생**(`alerts` 거짓 — 2026-10-15 Alan, 10-14 하루는 거꾸로 신청한 학생만 받았다)은 기본으로 줄이 없고,
  *   `알림 안 받는 학생도 보기` 를 켜면 회색 줄로 선다 — 체크박스가 없고 `알림 안 받음` 표를 단다 (고를 수도 보낼 수도 없다).
  * - '안 냄' 은 **제출 기한(같은 트랙 다음 수업일 오후 5시)이 지난** 숙제다 — 머리글의 회차 · 날짜는 기한이 지난 열만 진하게, 기한은 머리글 `title` 에 적는다.
+ * - **날짜별 보기**(`view="dates"`, 2026-10-15 Alan — "1강(10월 6일) 숙제 미제출자 리스트/ 2강(10월 8일) 숙제 미제출자 리스트") — 월수금 · 화목금을 나란히
+ *   (휴대폰은 위아래) 두고 트랙마다 1강부터 수업 하나에 카드 한 장(`DayCard`): 그 날 안 낸 학생을 반마다 모아 적는다. 기한이 지난 수업만 고를 수 있고
+ *   (`이 날 안 낸 학생 고르기`), 기한 전인 수업은 아직 안 낸 학생을 접어 둔다. 고른 학생 · 보내기 막대 · 팝업은 학생별과 함께 쓴다.
  */
-export function MissingBoard({ termId, level, groups, picks }: { termId: number; level: number; groups: MissingGroupView[]; picks: string[] }) {
+export function MissingBoard({
+  termId,
+  level,
+  view = "students",
+  groups,
+  days = [],
+  picks,
+}: {
+  termId: number;
+  level: number;
+  view?: "students" | "dates";
+  groups: MissingGroupView[];
+  days?: MissingDayView[];
+  picks: string[];
+}) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [compose, setCompose] = useState(false);
@@ -97,7 +129,7 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
     if (!busy) setCompose(false);
   }, [busy]);
 
-  // 고정해 둔다 — 카드(GroupCard)는 고른 학생이 바뀐 카드만 다시 그린다 (memo)
+  // 고정해 둔다 — 카드(GroupCard · DayCard)는 고른 학생이 바뀐 카드만 다시 그린다 (memo)
   const toggle = useCallback(
     (id: string, on: boolean) =>
       setSelected((prev) => {
@@ -108,6 +140,27 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
       }),
     [],
   );
+  // 날짜별 — 그 날 안 낸 학생을 한 번에 고르거나 푼다
+  const pickMany = useCallback(
+    (ids: readonly string[], on: boolean) =>
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) {
+          if (on) next.add(id);
+          else next.delete(id);
+        }
+        return next;
+      }),
+    [],
+  );
+  // 날짜별 — 반 묶음 이름 (학생 줄 위 작은 머리글) · 트랙마다 나눈 수업일 (월수금 먼저)
+  const classOf = useMemo(() => new Map(groups.map((g) => [g.key, g.classes.join(" / ")])), [groups]);
+  const dayColumns = useMemo(() => {
+    const by = new Map<string, MissingDayView[]>();
+    for (const d of days) by.set(d.track ?? "", [...(by.get(d.track ?? "") ?? []), d]);
+    const rank = (t: string) => (t === "mwf" ? 0 : t === "ttf" ? 1 : 2);
+    return [...by.entries()].sort(([a], [b]) => rank(a) - rank(b));
+  }, [days]);
 
   async function send() {
     if (busy || toSend.length === 0) return;
@@ -137,26 +190,30 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
         </div>
       )}
 
-      {/* 범례 + 미제출 전체선택 (첫토익과 같은 자리) */}
+      {/* 범례 + 미제출 전체선택 (첫토익과 같은 자리) — 날짜별에서는 범례 대신 고르는 규칙 한 줄 */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-        <ul className="flex flex-wrap gap-x-3 gap-y-1.5 text-xs font-semibold text-slate" aria-label="제출률 단계">
-          {(["perfect", "good", "warn", "risk"] as const).map((s) => (
-            <li key={s} className="flex items-center gap-1">
-              <span className={cn("size-2 rounded-full", STATUS_DOT[s])} aria-hidden />
-              {MISSING_STATUS_LABEL[s]}
-              <span className="text-mist">{s === "perfect" ? "100%" : s === "good" ? "70%~" : s === "warn" ? "40%~" : "~39%"}</span>
+        {view === "dates" ? (
+          <p className="text-xs font-semibold text-slate">기한이 지난 수업의 안 낸 학생만 고를 수 있어요. 알림에는 그 학생이 안 낸 숙제가 모두 적혀요.</p>
+        ) : (
+          <ul className="flex flex-wrap gap-x-3 gap-y-1.5 text-xs font-semibold text-slate" aria-label="제출률 단계">
+            {(["perfect", "good", "warn", "risk"] as const).map((s) => (
+              <li key={s} className="flex items-center gap-1">
+                <span className={cn("size-2 rounded-full", STATUS_DOT[s])} aria-hidden />
+                {MISSING_STATUS_LABEL[s]}
+                <span className="text-mist">{s === "perfect" ? "100%" : s === "good" ? "70%~" : s === "warn" ? "40%~" : "~39%"}</span>
+              </li>
+            ))}
+            <li className="flex items-center gap-1 sm:ml-2">
+              <CellMark kind="done" /> 냄
             </li>
-          ))}
-          <li className="flex items-center gap-1 sm:ml-2">
-            <CellMark kind="done" /> 냄
-          </li>
-          <li className="flex items-center gap-1">
-            <CellMark kind="missing" /> 안 냄 (기한 지남)
-          </li>
-          <li className="flex items-center gap-1">
-            <CellMark kind="upcoming" /> 아직 (기한 전)
-          </li>
-        </ul>
+            <li className="flex items-center gap-1">
+              <CellMark kind="missing" /> 안 냄 (기한 지남)
+            </li>
+            <li className="flex items-center gap-1">
+              <CellMark kind="upcoming" /> 아직 (기한 전)
+            </li>
+          </ul>
+        )}
         <div className="flex items-center gap-2">
           {selected.size > 0 && (
             <button type="button" onClick={() => setSelected(new Set())} className="btn-ghost !px-3 !py-2 text-sm">
@@ -186,11 +243,33 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
         </div>
       </div>
 
-      <div className="space-y-5">
-        {groups.map((g) => (
-          <GroupCard key={g.key} group={g} picked={pickedIn(g, selected)} onToggle={toggle} />
-        ))}
-      </div>
+      {view === "dates" ? (
+        days.length === 0 ? (
+          <p className="rounded-xl2 border border-dashed border-line px-4 py-10 text-center text-sm text-slate">
+            아직 지난 수업이 없어요. 수업이 끝나면 여기에 수업마다 숙제를 안 낸 학생이 보여요.
+          </p>
+        ) : (
+          <div className={cn("grid items-start gap-6", dayColumns.length > 1 && "lg:grid-cols-2")}>
+            {dayColumns.map(([track, list]) => (
+              <section key={track || "etc"} aria-label={`${TRACK_LABEL[track] ?? "수업"} 수업`} className="min-w-0 space-y-3">
+                <h2 className="flex items-center gap-2 text-base font-black text-ink">
+                  <span className={cn("h-4 w-1 rounded-full", track === "mwf" ? "bg-brand-500" : "bg-ink")} aria-hidden />
+                  {TRACK_LABEL[track] ?? "수업"}
+                </h2>
+                {list.map((d) => (
+                  <DayCard key={d.date} day={d} classOf={classOf} picked={pickedInDay(d, selected)} onToggle={toggle} onPick={pickMany} />
+                ))}
+              </section>
+            ))}
+          </div>
+        )
+      ) : (
+        <div className="space-y-5">
+          {groups.map((g) => (
+            <GroupCard key={g.key} group={g} picked={pickedIn(g, selected)} onToggle={toggle} />
+          ))}
+        </div>
+      )}
 
       {/* 고르면 아래에 선다 — 휴대폰은 하단 메뉴 위 (반 편성 달력의 저장 막대와 같은 자리) */}
       {selected.size > 0 && (
@@ -280,6 +359,183 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
     </div>
   );
 }
+
+/** 날짜 카드에서 고른 학생 id — 고를 수 있는 날(기한이 지난 날)의 받는 학생만 (`pickedIn` 과 같은 까닭으로 글자 하나) */
+const pickedInDay = (day: MissingDayView, selected: ReadonlySet<string>) =>
+  day.overdue
+    ? day.missing
+        .filter((m) => m.alerts && selected.has(m.id))
+        .map((m) => m.id)
+        .join(",")
+    : "";
+
+/**
+ * 날짜별 보기의 수업 하나 — 'N강 · 10월 6일 (화)' (2026-10-15 Alan). 머리에 N강 · 날짜 · 그 날 과목 · 상태(안 낸 학생 N명 · 모두 냈어요 · 기한 전),
+ * 그 아래 기한과 낸 학생 수, 그리고 안 낸 학생을 **반마다** 작은 머리글 아래에 적는다 (줄 순서는 `buildMissingDays` — 반 순서 → 받는 학생 → 이름).
+ * 과목이 둘인 날(120분 · 속성반 · 주5일 120분)만 학생마다 안 낸 과목을 적는다. 기한 전인 날은 접어 두고 고를 수 없다.
+ * GroupCard 처럼 memo — 고른 학생이 바뀐 카드만 다시 그린다.
+ */
+const DayCard = memo(function DayCard({
+  day,
+  classOf,
+  picked,
+  onToggle,
+  onPick,
+}: {
+  day: MissingDayView;
+  classOf: ReadonlyMap<string, string>;
+  picked: string;
+  onToggle: (id: string, on: boolean) => void;
+  onPick: (ids: readonly string[], on: boolean) => void;
+}) {
+  const selected = useMemo(() => new Set(picked ? picked.split(",") : []), [picked]);
+  // '이 날 안 낸 학생 고르기' — 알림을 받고 · 이 날 숙제를 아직 알리지 않은 학생 (미제출 전체선택과 같은 규칙. 이미 알린 학생은 손으로 고른다)
+  const pickable = day.overdue ? day.missing.filter((m) => m.alerts && !m.alerted).map((m) => m.id) : [];
+  const allAlerted = day.overdue && pickable.length === 0 && day.missing.some((m) => m.alerts);
+  const allPicked = pickable.length > 0 && pickable.every((id) => selected.has(id));
+  const twoSubjects = day.subjects.length > 1;
+
+  // 반마다 — 줄은 이미 반 순서로 서 있다
+  const runs: { key: string; students: MissingDayView["missing"] }[] = [];
+  for (const m of day.missing) {
+    const last = runs[runs.length - 1];
+    if (last && last.key === m.groupKey) last.students.push(m);
+    else runs.push({ key: m.groupKey, students: [m] });
+  }
+
+  const list = (checkable: boolean) => (
+    <div className="mt-2 space-y-2.5">
+      {runs.map((run) => (
+        <div key={run.key}>
+          <p className="break-keep px-1 text-[11px] font-bold text-mist">{classOf.get(run.key) ?? ""}</p>
+          <ul className="mt-0.5">
+            {run.students.map((m) => {
+              const on = checkable && m.alerts && selected.has(m.id);
+              const chips = (
+                <>
+                  {twoSubjects && (
+                    <span className="flex shrink-0 gap-1">
+                      {m.subjects.map((s) => (
+                        <span
+                          key={s}
+                          className={cn("rounded px-1.5 py-0.5 text-[10px] font-black", checkable ? "bg-red-50 text-red-700 ring-1 ring-red-100" : "bg-surface text-slate ring-1 ring-line")}
+                        >
+                          {SUBJECT_LABEL[s]}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                  {!m.alerts && (
+                    <span className="shrink-0 whitespace-nowrap rounded-md bg-paper px-1.5 py-0.5 text-[10px] font-bold text-slate ring-1 ring-line">알림 안 받음</span>
+                  )}
+                </>
+              );
+              return (
+                <li key={m.id} className={cn("flex min-h-9 items-center gap-2 rounded-lg px-1 py-1", on && "bg-brand-50")}>
+                  {checkable && m.alerts ? (
+                    <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={(e) => onToggle(m.id, e.target.checked)}
+                        aria-label={`${m.name || "이름 없음"} 고르기`}
+                        className="size-4 shrink-0 accent-brand-500"
+                      />
+                      <span className="truncate font-bold text-ink">{m.name || "이름 없음"}</span>
+                      {chips}
+                    </label>
+                  ) : (
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      {/* 체크박스 자리는 비워 이름 줄을 맞춘다 (고를 수 있는 날 안에서만) */}
+                      {checkable && <span className="size-4 shrink-0" aria-hidden />}
+                      <span className={cn("truncate font-bold", m.alerts ? "text-ink" : "text-ink-soft")}>{m.name || "이름 없음"}</span>
+                      {chips}
+                    </span>
+                  )}
+                  {m.sent && (
+                    <span
+                      title={m.alerted ? "이 날 숙제가 적힌 알림을 보냈어요" : "이 날 숙제의 기한 전에 보낸 알림이에요"}
+                      className={cn("shrink-0 whitespace-nowrap text-[11px] font-semibold", m.alerted ? "text-brand-600" : "text-mist")}
+                    >
+                      알림 {m.sent}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <article className={cn("hw-board-card card overflow-hidden", day.isToday && "ring-2 ring-brand-200")}>
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-line bg-brand-50/60 px-4 py-2.5">
+        {day.lecture != null && <span className="shrink-0 rounded-md bg-brand-500 px-1.5 py-0.5 text-xs font-black text-white tabular-nums">{day.lecture}강</span>}
+        <h3 className="whitespace-nowrap font-black text-ink">{day.label}</h3>
+        {day.isToday && <span className="text-xs font-bold text-brand-600">오늘</span>}
+        <span className="flex gap-1">
+          {day.subjects.map((s) => (
+            <span key={s} className="rounded bg-paper px-1.5 py-0.5 text-[10px] font-black text-slate ring-1 ring-line">
+              {SUBJECT_LABEL[s]}
+            </span>
+          ))}
+        </span>
+        <span className="ml-auto shrink-0 text-xs font-bold">
+          {!day.overdue ? (
+            <span className="rounded-full bg-surface px-2 py-0.5 text-slate ring-1 ring-line">기한 전</span>
+          ) : day.missing.length > 0 ? (
+            <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700">안 낸 학생 {day.missing.length}명</span>
+          ) : (
+            <span className="rounded-full bg-brand-500 px-2 py-0.5 text-white">모두 냈어요</span>
+          )}
+        </span>
+      </header>
+      <div className="px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <p className="text-xs text-slate">
+            {day.dueText ? (
+              <>
+                기한 {day.dueText}
+                {day.overdue && <span className="font-bold text-ink"> · 지났어요</span>}
+              </>
+            ) : (
+              "기한 — 다음 수업일이 아직 달력에 없어요"
+            )}
+            <span className="mx-1.5 text-line" aria-hidden>
+              |
+            </span>
+            낸 학생{" "}
+            <b className="text-ink tabular-nums">
+              {day.submitted}/{day.expected}
+            </b>
+            명
+          </p>
+          {pickable.length > 0 && (
+            <button type="button" onClick={() => onPick(pickable, !allPicked)} className="btn-secondary !px-3 !py-1.5 text-xs">
+              {allPicked ? "이 날 고른 것 풀기" : `이 날 안 낸 학생 고르기 (${pickable.length}명)`}
+            </button>
+          )}
+          {allAlerted && <span className="text-xs font-semibold text-mist">이 날 숙제는 모두 알렸어요</span>}
+        </div>
+        {day.missing.length > 0 &&
+          (day.overdue ? (
+            list(true)
+          ) : (
+            // 기한 전 — 아직 안 낸 학생은 접어 둔다 (오늘 · 어제 수업은 거의 모두가 아직이다)
+            <details className="group mt-2">
+              <summary className="cursor-pointer list-none text-xs font-bold text-slate transition hover:text-brand-600">
+                <span className="mr-1 inline-block transition group-open:rotate-90">▸</span>
+                아직 안 낸 학생 {day.missing.length}명 보기
+              </summary>
+              {list(false)}
+            </details>
+          ))}
+      </div>
+    </article>
+  );
+});
 
 /** 이 카드에서 고른 학생 id — 글자 하나로 넘겨(쉼표로 이음, uuid 에는 쉼표가 없다) 고른 학생이 바뀐 카드만 다시 그린다 */
 const pickedIn = (group: MissingGroupView, selected: ReadonlySet<string>) =>

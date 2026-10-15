@@ -1,18 +1,22 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { todayKST } from "@/lib/utils";
+import { formatDate, todayKST } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { TermChips } from "@/components/admin/TermChips";
-import { MissingBoard, type MissingGroupView } from "@/components/admin/homework/MissingBoard";
+import { MissingBoard, type MissingDayView, type MissingGroupView } from "@/components/admin/homework/MissingBoard";
 import {
   buildMissingBoard,
+  buildMissingDays,
   defaultPicks,
+  dueAt,
+  dueLabel,
   HOMEWORK_DUE_LABEL,
+  lectureNumbers,
   missingStudentCount,
   monthDay,
   onlyAlerted,
@@ -47,13 +51,19 @@ const TERM_CHIPS = 6;
  * 2026-10-15 Alan ("숙제 미제출알림 신청하는거 반대로 부탁해! 알림 안받기를 신청하는걸로 하자") — **명단은 모든 학생이고, 숙제제출 화면에서 '알림 안 받기' 를 누른 학생만 빠진다**
  * (10-14 하루는 거꾸로 '신청하기' 를 누른 학생만이었다). 끈 학생은 `알림 안 받는 학생도 보기`(`?all=1` — 숙제점검의 `점검완료 포함` 과 같은 자리 · 같은 모양)로
  * 볼 수만 있다 (고를 수 없다).
+ *
+ * 2026-10-15 Alan ("숙제 미제출자에서 이렇게 사람별로 나오는것도 있는데 1강(10월 6일) 숙제 미제출자 리스트/ 2강(10월 8일) 숙제 미제출자 리스트
+ * 이렇게 날짜별로 리스트가 나올수 있게도") — **보기가 둘이다** (`?view=` — 첫째 줄 `학생별 · 날짜별`, 레벨은 둘째 줄 outline).
+ * 날짜별은 같은 격자를 수업일마다 뒤집은 것이고(`buildMissingDays`) 월수금 · 화목금을 나란히 두고 'N강 · 10월 6일 (화)' 마다 안 낸 학생을 적는다.
+ * 고른 학생 · 보내기는 두 보기가 함께 쓴다 (보기를 바꿔도 고른 것이 남는다).
  */
-export default async function HomeworkMissingPage({ searchParams }: { searchParams: Promise<{ term?: string; level?: string; all?: string }> }) {
+export default async function HomeworkMissingPage({ searchParams }: { searchParams: Promise<{ term?: string; level?: string; all?: string; view?: string }> }) {
   await requireCrew();
   const sp = await searchParams;
   const supabase = await createClient();
   const today = todayKST();
   const showAll = sp.all === "1";
+  const view = sp.view === "dates" ? "dates" : "students";
 
   const [{ data: termRows }, { data: levelRows }] = await Promise.all([
     supabase.from("terms").select(TERM_COLUMNS).order("year", { ascending: false }).order("month", { ascending: false }).limit(24),
@@ -115,30 +125,68 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
   const sentTime = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false });
   const sentLabel = (iso: string) => (sentDay(iso) === today ? `오늘 ${sentTime(iso)}` : shortDay(sentDay(iso)));
 
+  const sentOf = (id: string) => (sentAt.has(id) ? sentLabel(sentAt.get(id)!) : null);
   const groups: MissingGroupView[] = board.map((g) => ({
     key: g.key,
     classes: groupClasses(data.meta, g.sectionIds),
-    columns: g.columns.map((c) => ({
-      ...c,
-      md: monthDay(c.date),
-      weekday: weekdayOf(c.date),
-      isToday: c.date === today,
-    })),
-    rows: g.rows.map((r) => ({ ...r, sent: sentAt.has(r.id) ? sentLabel(sentAt.get(r.id)!) : null })),
+    // 날짜별 보기는 격자를 그리지 않는다 — 칸(학생 × 수업일)은 싣지 않는다 (고르기 · 미리보기는 줄의 이름 · 안 낸 숙제만 쓴다)
+    columns:
+      view === "dates"
+        ? []
+        : g.columns.map((c) => ({
+            ...c,
+            md: monthDay(c.date),
+            weekday: weekdayOf(c.date),
+            isToday: c.date === today,
+          })),
+    rows: g.rows.map((r) => ({ ...r, cells: view === "dates" ? [] : r.cells, sent: sentOf(r.id) })),
   }));
+  // 날짜별 — 'N강' 은 그 기수 반 전부로 센다 (알림을 끈 학생을 빼고 보여 줘도 번호가 흔들리지 않게). 오늘 뒤의 수업은 아직 없다
+  const days: MissingDayView[] =
+    view === "dates"
+      ? buildMissingDays(board, { until: today, lectures: lectureNumbers(data.sections.values()) }).map((d) => ({
+          ...d,
+          label: formatDate(d.date),
+          dueText: d.due ? dueLabel(d.due) : null,
+          isToday: d.date === today,
+          // 마지막 알림이 이 날 숙제의 기한 뒤면 이 날 숙제도 그 알림에 적혔다 — '이 날 안 낸 학생 고르기' 가 건너뛴다 (newMissingOf 의 반대)
+          missing: d.missing.map((m) => {
+            const last = lastSent.get(m.id);
+            return { ...m, sent: sentOf(m.id), alerted: d.due != null && last != null && last >= dueAt(d.due) };
+          }),
+        }))
+      : [];
   const flagged = missingStudentCount(full);
-  const allHref = `/admin/homework/missing?term=${termKey}${level != null ? `&level=${level}` : ""}${showAll ? "" : "&all=1"}`;
+  const viewKeep = view === "dates" ? "dates" : undefined;
+  const allHref = `/admin/homework/missing?term=${termKey}${level != null ? `&level=${level}` : ""}${viewKeep ? `&view=${viewKeep}` : ""}${showAll ? "" : "&all=1"}`;
 
   return (
     <>
       {header}
 
-      <TermChips basePath="/admin/homework/missing" terms={chips} current={termKey} keep={{ level: level != null ? String(level) : undefined }} />
+      <TermChips
+        basePath="/admin/homework/missing"
+        terms={chips}
+        current={termKey}
+        keep={{ level: level != null ? String(level) : undefined, view: viewKeep, all: showAll ? "1" : undefined }}
+      />
+      {/* 보기 둘 — 첫째 줄 (출석 · 비대면 인증과 같은 자리). 레벨은 둘째 줄 outline (한 화면에 줄이 둘이면 둘째 줄은 테두리만) */}
+      <FilterTabs
+        basePath="/admin/homework/missing"
+        paramKey="view"
+        current={view}
+        keep={{ term: termKey, level: level != null ? String(level) : undefined, all: showAll ? "1" : undefined }}
+        tabs={[
+          { value: "students", label: "학생별" },
+          { value: "dates", label: "날짜별" },
+        ]}
+      />
       <FilterTabs
         basePath="/admin/homework/missing"
         paramKey="level"
         current={level != null ? String(level) : ""}
-        keep={{ term: termKey }}
+        keep={{ term: termKey, view: viewKeep, all: showAll ? "1" : undefined }}
+        variant="outline"
         tabs={levels.map((l) => ({ value: String(l), label: `${l}`, count: missingStudentCount(boards.get(l) ?? []) }))}
       />
 
@@ -175,6 +223,7 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
         숙제 기한은 같은 트랙의 다음 수업일 {HOMEWORK_DUE_LABEL}예요 (월수금 월요일 숙제는 수요일 5시, 금요일 숙제는 다음 주 첫 수업일 5시 · 화목금도 같고, 주5일은 두 트랙을
         따로 봐요). 그 시간이 지나도 안 냈으면 &lsquo;안 냄&rsquo; 이에요. 숙제제출 화면에서 &lsquo;알림 안 받기&rsquo; 를 누른 학생은 명단에서 빠지고 알림도 가지 않아요.
         미제출 전체선택은 마지막 알림 뒤에 새로 기한이 지난 숙제가 있는 학생을 골라요.
+        {view === "dates" && " 날짜별에서는 수업마다 안 낸 학생을 보여 줘요 — N강은 그 트랙(월수금 · 화목금)의 N번째 수업이에요."}
       </p>
 
       {full.length === 0 ? (
@@ -190,7 +239,8 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
           description={`숙제제출 화면에서 '알림 안 받기' 를 누른 학생은 명단에서 빠져요. ${optedOut}명은 위의 '알림 안 받는 학생도 보기' 로 볼 수 있어요.`}
         />
       ) : (
-        <MissingBoard termId={term.id} level={level!} groups={groups} picks={defaultPicks(full, lastSent)} />
+        // 기수 · 레벨이 바뀌면 고른 것을 비운다 (보기를 바꾸는 것은 그대로 둔다 — 날짜별에서 고르고 학생별에서 확인할 수 있게)
+        <MissingBoard key={`${term.id}-${level}`} termId={term.id} level={level!} view={view} groups={groups} days={days} picks={defaultPicks(full, lastSent)} />
       )}
     </>
   );
