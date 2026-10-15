@@ -3,7 +3,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
-import { PdfDownloadButton } from "@/components/admin/PdfDownloadButton";
+import { FileDownloadButton } from "@/components/admin/FileDownloadButton";
 import { isStaff, requireCrew } from "@/lib/auth";
 import { issuedLabel, posterFileName } from "@/lib/attendance-poster";
 import { createClient } from "@/lib/supabase/server";
@@ -66,10 +66,10 @@ export default async function AttendancePosterPage({ searchParams }: { searchPar
           </p>
           {/* 아이폰 · 아이패드는 attachment 를 무시하고 화면에 띄우기만 해서 저장 창(파일에 저장 · 프린트)을 연다 (2026-10-14) */}
           <div className="mt-4">
-            <PdfDownloadButton href="/admin/attendance/poster/download" fileName={posterFileName(createdAt)} className="btn-primary">
+            <FileDownloadButton href="/admin/attendance/poster/download" fileName={posterFileName(createdAt)} className="btn-primary">
               <Icon name="download" size={18} />
               포스터 PDF 받기
-            </PdfDownloadButton>
+            </FileDownloadButton>
           </div>
           <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-slate">
             <li>인쇄 설정: 용지 A4 · 방향 가로 · 배율 &ldquo;실제 크기&rdquo;(100%)</li>

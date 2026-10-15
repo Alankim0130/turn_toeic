@@ -362,14 +362,20 @@ const ROSTER_FILE: Record<RosterBy, { ko: string; en: string }> = {
 };
 const monthTag = (term: { year: number; month: number }) => `${term.year}-${String(term.month).padStart(2, "0")}`;
 
-/** PDF 파일 이름 — `역전토익_반별명단_2026-10.pdf` (LC · RC 를 합친 한 장 — 2026-10-14 저녁) · 레벨별 명단은 `역전토익_레벨별명단_2026-10.pdf` */
-export function rosterFileName(term: { year: number; month: number }, by: RosterBy = "time"): string {
-  return `역전토익_${ROSTER_FILE[by].ko}_${monthTag(term)}.pdf`;
+/** 받는 파일 형식 — PDF(인쇄용) · Word(고쳐 쓰는 용, 2026-10-15) */
+export type RosterFormat = "pdf" | "docx";
+
+/**
+ * 파일 이름 — `역전토익_반별명단_2026-10.pdf` (LC · RC 를 합친 한 장 — 2026-10-14 저녁) · 레벨별 명단은 `역전토익_레벨별명단_2026-10.pdf`.
+ * Word 는 확장자만 다르다 (`…_2026-10.docx`)
+ */
+export function rosterFileName(term: { year: number; month: number }, by: RosterBy = "time", format: RosterFormat = "pdf"): string {
+  return `역전토익_${ROSTER_FILE[by].ko}_${monthTag(term)}.${format}`;
 }
 
 /** 내려받기 머리 — 한글 이름(filename*)과 영문 이름(옛 브라우저) */
-export function rosterDisposition(term: { year: number; month: number }, by: RosterBy = "time"): string {
-  const name = rosterFileName(term, by);
-  const ascii = `winnertoeic-${ROSTER_FILE[by].en}_${monthTag(term)}.pdf`;
+export function rosterDisposition(term: { year: number; month: number }, by: RosterBy = "time", format: RosterFormat = "pdf"): string {
+  const name = rosterFileName(term, by, format);
+  const ascii = `winnertoeic-${ROSTER_FILE[by].en}_${monthTag(term)}.${format}`;
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }

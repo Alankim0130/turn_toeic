@@ -240,7 +240,7 @@ export default async function StudentsPage({
       <PageHeader
         icon="students"
         title="학생명단"
-        description="등록생은 개강일~종강일 사이, 예비등록생은 개강 전 등록 완료, 졸업생은 종강일 경과 기준입니다. 레벨별 · 가나다순이고, PC 에서는 반별 명단(PDF 로 받아 인쇄)이 먼저 보여요. 이름이나 카드를 누르면 등급·반 배정을 바꿉니다."
+        description="등록생은 개강일~종강일 사이, 예비등록생은 개강 전 등록 완료, 졸업생은 종강일 경과 기준입니다. 레벨별 · 가나다순이고, PC 에서는 반별 명단(PDF · Word 로 받아 인쇄)이 먼저 보여요. 이름이나 카드를 누르면 등급·반 배정을 바꿉니다."
       >
         <form method="get" className="flex gap-2">
           <input type="hidden" name="tab" value={tab} />
@@ -297,6 +297,8 @@ export default async function StudentsPage({
                   }))}
                   pdfHref={`/admin/students/roster-pdf?term=${termParam(rosterTerm.year, rosterTerm.month)}${rosterBy === "track" ? "&view=levels" : ""}`}
                   pdfName={rosterFileName(rosterTerm, rosterBy)}
+                  docxHref={`/admin/students/roster-docx?term=${termParam(rosterTerm.year, rosterTerm.month)}${rosterBy === "track" ? "&view=levels" : ""}`}
+                  docxName={rosterFileName(rosterTerm, rosterBy, "docx")}
                 />
               ) : (
                 <p className="card px-4 py-6 text-center text-sm text-slate">

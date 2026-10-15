@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { Alert } from "@/components/ui/Alert";
-import { PdfDownloadButton } from "@/components/admin/PdfDownloadButton";
+import { FileDownloadButton } from "@/components/admin/FileDownloadButton";
 import { columnDetail, columnHeading, marksText, rosterMarks, toneOf, type ClassRoster, type RosterLevel, type RosterStudent } from "@/lib/class-roster";
 import { cn } from "@/lib/utils";
 
@@ -9,7 +9,8 @@ import { cn } from "@/lib/utils";
  * 학생명단의 **반별 명단** (2026-10-14 Alan — 종이 명단 사진을 보내며 "Pc모드에서는 지금 올린 이미지처럼 한페이지에서 구분이 가능하면 좋겠어").
  * 칸 하나 = 한 레벨의 수업 시간 한 칸(`650B 10:00~11:00` — 월수금 · 화목금을 합친다, 둘째 줄 `월 RC · 화 LC`), 레벨마다 종이와 같은 색,
  * 아래로 이름 가나다순 · 이름 뒤 `(불/RC)`. LC · RC 를 나누지 않는다 (같은 날 저녁 Alan "lc, rc구분하지말고 합쳐서"). 계산은 `src/lib/class-roster.ts`,
- * 인쇄용은 같은 결과를 그린 PDF(`/admin/students/roster-pdf`)다.
+ * 인쇄용은 같은 결과를 그린 PDF(`/admin/students/roster-pdf`)이고, 같은 쪽을 고쳐 쓸 수 있는 Word 표로 받는 길도 있다
+ * (`/admin/students/roster-docx`, 2026-10-15 Alan "학생명단 워드로도 다운받을 수 있게").
  * - PC 는 레벨 묶음을 옆으로 늘어놓고 자리가 모자라면 레벨째 다음 줄로 내린다 (레벨 안의 칸은 갈라지지 않는다).
  *   휴대폰은 레벨마다 한 덩어리에 칸 두 줄(넓으면 셋)이다 — 휴대폰 기본은 카드라 `반별 명단` 을 눌렀을 때만 보인다.
  * - 이름은 검은 글자 (디자인 원칙 — 명단의 사람 이름) · 누르면 학생 관리.
@@ -26,6 +27,8 @@ export function ClassRosterView({
   terms,
   pdfHref,
   pdfName,
+  docxHref,
+  docxName,
 }: {
   roster: ClassRoster;
   ok: boolean;
@@ -38,6 +41,9 @@ export function ClassRosterView({
   pdfHref: string;
   /** 저장 이름 — `역전토익_반별명단_2026-10.pdf` (응답 머리에서 못 읽을 때) */
   pdfName: string;
+  /** Word 로 받기 — 같은 쪽 · 같은 칸을 고쳐 쓸 수 있는 표로 (`역전토익_반별명단_2026-10.docx`) */
+  docxHref: string;
+  docxName: string;
 }) {
   const byTrack = roster.by === "track";
   return (
@@ -51,11 +57,25 @@ export function ClassRosterView({
             {[period, `학생 ${roster.total}명`, byTrack ? "레벨마다 월수금 · 화목금 · 이름 가나다순" : "반마다 이름 가나다순"].filter(Boolean).join(" · ")}
           </p>
         </div>
-        {/* 라우트가 attachment 로 내려 준다 — Link 로 두면 화면에 미리 받아 둔다(PDF 를 만든다). A4 세로 · 레벨마다 새 쪽 (2026-10-14 Alan).
-            아이폰 · 아이패드는 attachment 를 무시하고 화면에 띄우기만 해서 저장 창(파일에 저장 · 프린트)을 연다 — PdfDownloadButton */}
-        <PdfDownloadButton href={pdfHref} fileName={pdfName} align="end" className="btn-primary !px-4 !py-2 text-sm" title="A4 세로 · 레벨마다 새 쪽에서 시작해요">
-          PDF 받기
-        </PdfDownloadButton>
+        {/* 라우트가 attachment 로 내려 준다 — Link 로 두면 화면에 미리 받아 둔다(파일을 만든다). A4 세로 · 레벨마다 새 쪽 (2026-10-14 Alan).
+            아이폰 · 아이패드는 attachment 를 무시하고 화면에 띄우기만 해서 저장 창(파일에 저장 · 프린트)을 연다 — FileDownloadButton.
+            Word 는 같은 쪽을 고쳐 쓸 수 있는 표로 준다 (2026-10-15 Alan "워드로도") */}
+        {/* 투명 테두리는 높이 맞춤 — btn-secondary 의 1px 테두리만큼 Word 받기가 2px 높았다 */}
+        <div className="flex flex-wrap items-start justify-end gap-2">
+          <FileDownloadButton href={pdfHref} fileName={pdfName} align="end" className="btn-primary border border-transparent !px-4 !py-2 text-sm" title="A4 세로 · 레벨마다 새 쪽에서 시작해요">
+            PDF 받기
+          </FileDownloadButton>
+          <FileDownloadButton
+            href={docxHref}
+            fileName={docxName}
+            kind="docx"
+            align="end"
+            className="btn-secondary !px-4 !py-2 text-sm"
+            title="PDF 와 같은 쪽을 Word 표로 — 이름을 고쳐 쓰고 인쇄할 수 있어요"
+          >
+            Word 받기
+          </FileDownloadButton>
+        </div>
       </div>
 
       {terms.length > 1 && (
