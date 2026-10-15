@@ -8,13 +8,13 @@ import { signedAvatarUrls } from "@/lib/avatar-url";
 import { STUDY_KIND_LABEL, STUDY_KINDS, termParam } from "@/lib/study";
 import { week5SectionIds, groupWeek5 } from "@/lib/week5";
 import { SINGLE_SUBJECT_LABEL, singleSubjectOf } from "@/lib/section-type";
-import { groupByLevel, rosterFileName, rosterPeriod, rosterTerms } from "@/lib/class-roster";
+import { groupByLevel, ROSTER_NAME, rosterFileName, rosterPeriod, rosterTerms, type RosterBy } from "@/lib/class-roster";
 import { pickCurrentTerm } from "@/lib/term-window";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { StudentCard, type StudentCardMeta } from "@/components/admin/students/StudentCard";
-import { ClassRosterView, RosterViewSwitch } from "@/components/admin/students/ClassRosterView";
+import { ClassRosterView, RosterViewSwitch, type RosterView } from "@/components/admin/students/ClassRosterView";
 import { getRosterSets, sectionChip, TERM_COLUMNS } from "../_lib/queries";
 import { loadClassRoster } from "./_lib/class-roster";
 import { ROLE_LABEL, requireStaff } from "@/lib/auth";
@@ -48,8 +48,10 @@ export default async function StudentsPage({
   const tab = tabParam === "testers" ? "staff" : TABS.some((t) => t.value === tabParam) ? (tabParam as string) : "active";
   const q = (qParam ?? "").trim();
   // 반별 명단 (2026-10-14 Alan — 종이 명단처럼 "레벨별로 가나다순 … Pc모드에서는 지금 올린 이미지처럼 한페이지에서"):
-  // 등록생 · 예비등록생 탭에서, 이름을 찾는 중이 아닐 때. 보기를 고르지 않으면 PC 는 반별 명단 · 휴대폰은 카드 (둘 다 그리고 화면 폭으로 숨긴다)
-  const view = viewParam === "classes" || viewParam === "cards" ? viewParam : null;
+  // 등록생 · 예비등록생 탭에서, 이름을 찾는 중이 아닐 때. 보기를 고르지 않으면 PC 는 반별 명단 · 휴대폰은 카드 (둘 다 그리고 화면 폭으로 숨긴다).
+  // 레벨별 명단(같은 날 밤 Alan "시간대는 없애고 같은 레벨별로 … 월수금/ 화목금만 분리")은 골랐을 때만 — 반별 명단 자리에 대신 선다
+  const view: RosterView | null = viewParam === "classes" || viewParam === "levels" || viewParam === "cards" ? viewParam : null;
+  const rosterBy: RosterBy = view === "levels" ? "track" : "time";
   const classTab = (tab === "active" || tab === "preliminary") && !q;
 
   const supabase = await createClient();
@@ -65,7 +67,7 @@ export default async function StudentsPage({
     (tab === "preliminary" ? rosterOptions.find((t) => today < (t.enrollment_opens_at ?? "")) : undefined) ??
     pickCurrentTerm(rosterOptions, today);
   // 명단과 따로 도는 조회 — 카드 쪽 조회를 기다리지 않게 먼저 띄운다
-  const classRosterP = classTab && rosterTerm ? loadClassRoster(supabase, rosterTerm, today) : Promise.resolve(null);
+  const classRosterP = classTab && rosterTerm ? loadClassRoster(supabase, rosterTerm, today, rosterBy) : Promise.resolve(null);
 
   // 대상 프로필
   // 합쳐진 옛 계정(merged_into)은 명단에서 뺀다 — 로그인도 못 하고 기록은 남은 계정에 있다 (2026-10-02)
@@ -272,17 +274,20 @@ export default async function StudentsPage({
             <p className="text-sm font-black text-slate">
               {rows.length}명{rows.length === 300 && <span className="ml-1 font-semibold text-mist">(300명까지 보여요 — 이름으로 찾아보세요)</span>}
             </p>
-            {classTab && <RosterViewSwitch view={view} href={{ classes: href({ view: "classes" }), cards: href({ view: "cards" }) }} />}
+            {classTab && (
+              <RosterViewSwitch view={view} href={{ classes: href({ view: "classes" }), levels: href({ view: "levels" }), cards: href({ view: "cards" }) }} />
+            )}
           </div>
 
-          {/* 반별 명단 — 종이 명단처럼 칸 = 수업 한 반 (2026-10-14 Alan). 고르지 않으면 PC 에서만 보인다 */}
+          {/* 반별 명단 — 종이 명단처럼 칸 = 수업 한 반 (2026-10-14 Alan). 고르지 않으면 PC 에서만 보인다.
+              레벨별 명단(칸 = 레벨 × 월수금 · 화목금)을 고르면 이 자리에 그것이 선다 */}
           {classTab && (
-            <div className={cn("mb-6", view === "classes" ? "" : view === "cards" ? "hidden" : "hidden lg:block")}>
+            <div className={cn("mb-6", view === "classes" || view === "levels" ? "" : view === "cards" ? "hidden" : "hidden lg:block")}>
               {rosterTerm && classRoster ? (
                 <ClassRosterView
                   roster={classRoster.roster}
                   ok={classRoster.ok}
-                  heading={`${rosterTerm.month}월 반별 명단`}
+                  heading={`${rosterTerm.month}월 ${ROSTER_NAME[rosterBy]}`}
                   period={rosterPeriod(rosterTerm)}
                   terms={rosterOptions.map((t) => ({
                     key: termParam(t.year, t.month),
@@ -290,17 +295,19 @@ export default async function StudentsPage({
                     href: href({ term: termParam(t.year, t.month) }),
                     active: t.id === rosterTerm.id,
                   }))}
-                  pdfHref={`/admin/students/roster-pdf?term=${termParam(rosterTerm.year, rosterTerm.month)}`}
-                  pdfName={rosterFileName(rosterTerm)}
+                  pdfHref={`/admin/students/roster-pdf?term=${termParam(rosterTerm.year, rosterTerm.month)}${rosterBy === "track" ? "&view=levels" : ""}`}
+                  pdfName={rosterFileName(rosterTerm, rosterBy)}
                 />
               ) : (
-                <p className="card px-4 py-6 text-center text-sm text-slate">지금 수업 중이거나 곧 시작하는 달이 없어요. 반 편성에서 다음 달을 열면 여기에 반별 명단이 생겨요.</p>
+                <p className="card px-4 py-6 text-center text-sm text-slate">
+                  지금 수업 중이거나 곧 시작하는 달이 없어요. 반 편성에서 다음 달을 열면 여기에 {ROSTER_NAME[rosterBy]}이 생겨요.
+                </p>
               )}
             </div>
           )}
 
           {/* 카드 — 등록생 · 예비등록생은 레벨별 · 가나다순 (2026-10-14 Alan "레벨별로 가나다순으로"). 표가 아니라 카드다 — 휴대폰에서 옆으로 밀지 않고 한 화면에 다 보이게 (2026-09-18 Alan) */}
-          <div className={cn(classTab && (view === "classes" ? "hidden" : view === "cards" ? "" : "lg:hidden"))}>
+          <div className={cn(classTab && (view === "classes" || view === "levels" ? "hidden" : view === "cards" ? "" : "lg:hidden"))}>
             {cardGroups.map((g) => (
               <section key={g.key} aria-label={g.label} className={cn(grouped && "mb-6")}>
                 {grouped && (

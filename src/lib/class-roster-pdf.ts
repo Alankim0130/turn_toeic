@@ -17,10 +17,14 @@
  * - 이름이 칸 폭보다 길면 그 이름 하나만 글자를 줄인다 (`shrunk` — 옆 칸을 덮지 않게. 한국 이름은 여섯 칸 레벨에서도 다 10pt 로 들어간다 — 테스트가 지어낸 긴 이름으로 본다).
  * - 글꼴은 `assets/roster-fonts/roster-bold.ttf`(한글 11,172자 · 글리프 길이 짝수 — 까닭은 `scripts/roster-font.mjs`). 그리기만 하고 읽기는 라우트가 한다.
  * - 좌표는 mm, 위에서 아래로 잰다 (출석 포스터 PDF 와 같은 방식).
+ * - **레벨별 명단**(`roster.by === "track"`, 2026-10-14 밤 Alan "시간대는 없애고 같은 레벨별로 … 월수금/ 화목금만 분리")도 같은 틀이다 —
+ *   레벨마다 새 쪽 · 이름 10pt · 줄 높이 고정은 그대로고, 칸이 `650 월수금` · `650 화목금` 둘(각 반 폭)이라 **칸 안에 이름을 두 단으로** 적는다
+ *   (`SUB_COLUMNS` — 신문처럼 위에서 아래로 채우고 옆 단으로, 칸마다 두 단 길이를 고르게). 한 칸이 한 쪽에 82명까지 들고 넘치면 위처럼 고르게 나눠 다음 쪽에 잇는다.
+ *   범례에 `(월)` · `(화)` 가 없고(칸이 트랙이다) 바닥은 `학생이 없는 요일`.
  */
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, PrintScaling, rgb, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
-import { columnDetail, columnHeading, marksText, ROSTER_MARKS, toneOf, type ClassRoster, type RosterColumn, type RosterLevel } from "./class-roster";
+import { columnDetail, columnHeading, marksText, rosterMarks, toneOf, type ClassRoster, type RosterBy, type RosterColumn, type RosterLevel } from "./class-roster";
 
 /** 쪽 하나에 무엇을 그렸나 — 테스트가 쪽마다 레벨이 하나인지 · 빈 반을 어느 쪽에 적었는지 본다 */
 export type RosterPdfPage = { level: string | null; columns: string[]; part: number; footer: string };
@@ -56,6 +60,8 @@ export const ROW_H = 5.6;
 export const ROWS_AVAIL = PAGE_H - GRID_TOP - HEAD_H - BOTTOM - FOOT_H;
 /** 한 쪽에 들어가는 이름 줄 수 — 이보다 많은 칸은 다음 쪽에 이어 적는다 */
 export const ROWS_PER_PAGE = Math.floor((ROWS_AVAIL + 1e-6) / ROW_H);
+/** 한 칸 안에 이름을 몇 단으로 적나 — 레벨별 명단은 칸이 반 폭(95mm)이라 두 단 (한 쪽에 한 칸 82명), 반별 명단은 한 단 */
+export const SUB_COLUMNS: Record<RosterBy, number> = { time: 1, track: 2 };
 const PAD = 1.6;
 
 /** Pretendard 세로 치수 (unitsPerEm 2048 · ascent 1950 · descent -494) — 포스터 PDF 와 같다 */
@@ -141,12 +147,29 @@ export function rowLayout(maxRows: number, cap = ROWS_PER_PAGE): { perPage: numb
   return { perPage: Math.max(1, Math.ceil(maxRows / pages)), pages };
 }
 
+/**
+ * 칸 안의 이름 자리 — k 번째 이름이 몇 번째 단 · 몇 번째 줄인가. 신문처럼 위에서 아래로 채우고 옆 단으로 가고, 단 길이를 고르게 한다
+ * (5명 · 두 단 → 3 + 2). 한 단이면 그냥 아래로 (반별 명단).
+ */
+export function nameSlots(n: number, subs: number): { sub: number; row: number }[] {
+  const rows = Math.ceil(n / Math.max(1, subs));
+  return Array.from({ length: n }, (_, k) => ({ sub: Math.floor(k / rows), row: k % rows }));
+}
+
 /** 이 쪽에 그릴 칸 — `from` 번째 이름부터 적는 쪽이면 그보다 이름이 많은 칸만 (i = 첫 쪽에서의 자리) */
 const shownColumns = (block: RosterBlock, from: number) =>
   block.columns.map((col, i) => ({ col, i })).filter(({ col }) => col.students.length > from);
 
-/** 바닥에 적는 학생이 없는 시간 — "학생이 없는 시간 2개: 650B 18:30~19:30 (월 RC · 화 LC 인강), …" */
-const emptyNote = (cols: readonly RosterColumn[]) => `학생이 없는 시간 ${cols.length}개: ${cols.map((c) => `${columnHeading(c)} (${columnDetail(c)})`).join(", ")}`;
+/**
+ * 바닥에 적는 학생이 없는 칸 — "학생이 없는 시간 2개: 650B 18:30~19:30 (월 RC · 화 LC 인강), …" · 레벨별 명단은 "학생이 없는 요일 1개: 750 월수금"
+ */
+const emptyNote = (by: RosterBy, cols: readonly RosterColumn[]) =>
+  `학생이 없는 ${by === "track" ? "요일" : "시간"} ${cols.length}개: ${cols
+    .map((c) => {
+      const detail = columnDetail(c);
+      return detail ? `${columnHeading(c)} (${detail})` : columnHeading(c);
+    })
+    .join(", ")}`;
 
 export async function buildClassRosterPdf({
   roster,
@@ -169,15 +192,17 @@ export async function buildClassRosterPdf({
   // subset 을 켠다 — 쓴 글자만 넣어 파일이 작다 (글꼴은 글리프 길이를 짝수로 맞춘 파일이라 잘라 넣어도 모양이 밀리지 않는다)
   const pdfFont = await doc.embedFont(font, { subset: true });
   const heading = title;
-  const legend = ROSTER_MARKS.map((m) => `(${m.mark}) ${m.label}`).join("   ");
+  const legend = rosterMarks(roster.by).map((m) => `(${m.mark}) ${m.label}`).join("   ");
+  const subs = SUB_COLUMNS[roster.by];
 
+  // from · to = 이 쪽에 적는 이름의 자리 (칸마다 같은 자리 — 이름이 그보다 적은 칸은 있는 만큼)
   type Sheet = { block: RosterBlock | null; from: number; to: number; part: number; levelStart: boolean; levelEnd: boolean };
   const sheets: Sheet[] = [];
   for (const block of splitPages(roster.levels)) {
-    const maxRows = Math.max(0, ...block.columns.map((c) => c.students.length));
-    const { perPage, pages } = rowLayout(maxRows);
+    const maxNames = Math.max(0, ...block.columns.map((c) => c.students.length));
+    const { perPage, pages } = rowLayout(maxNames, ROWS_PER_PAGE * subs);
     for (let p = 0; p < pages; p++) {
-      sheets.push({ block, from: p * perPage, to: Math.min(maxRows, (p + 1) * perPage), part: p, levelStart: false, levelEnd: false });
+      sheets.push({ block, from: p * perPage, to: Math.min(maxNames, (p + 1) * perPage), part: p, levelStart: false, levelEnd: false });
     }
   }
   // 레벨의 첫 쪽 · 마지막 쪽 — 칸이 많아 나뉜 레벨도 한 레벨로 본다
@@ -225,7 +250,7 @@ export async function buildClassRosterPdf({
       // ─ 칸 ─ 바탕은 이 쪽에 이름이 있는 줄까지만
       const tone = toneOf(block.level.tone);
       const colW = columnWidth(block.columns.length);
-      const bodyH = (sheet.to - sheet.from) * ROW_H;
+      const bodyH = Math.ceil((sheet.to - sheet.from) / subs) * ROW_H;
       // 이어지는 쪽에는 이름이 남은 칸만 — 앞 쪽에서 다 적은 칸을 빈 칸으로 세우면 '이어서' 인데 이름이 없어 빠진 것처럼 보인다.
       // 칸 자리는 첫 쪽과 같다 (쪽을 위아래로 이어 놓으면 칸이 맞는다)
       shownColumns(block, sheet.from).forEach(({ col, i }) => {
@@ -247,15 +272,24 @@ export async function buildClassRosterPdf({
           x: cx + PAD,
           maxW: inner - PAD * 2,
         });
-        col.students.slice(sheet.from, sheet.to).forEach((st, r) => {
-          const top = GRID_TOP + HEAD_H + r * ROW_H;
-          if (r > 0) cv.rect(cx, top - 0.1, inner, 0.2, C.white);
+        // 이 쪽의 이름 — 칸 안에 `subs` 단으로 (위에서 아래로 채우고 옆 단으로 · 칸마다 단 길이를 고르게). 반별 명단은 한 단이다
+        const names = col.students.slice(sheet.from, sheet.to);
+        const slots = nameSlots(names.length, subs);
+        const rows = Math.ceil(names.length / subs);
+        const subW = inner / subs;
+        // 단 사이 흰 세로줄 (두 단일 때 — 둘째 단에 이름이 있으면)
+        for (let j = 1; j < subs && j * rows < names.length; j++) cv.rect(cx + j * subW - 0.15, GRID_TOP + HEAD_H, 0.3, rows * ROW_H, C.white);
+        names.forEach((st, k) => {
+          const { sub, row } = slots[k];
+          const top = GRID_TOP + HEAD_H + row * ROW_H;
+          // 줄 사이 흰 가로줄 — 칸 폭 전체, 첫 단의 이름을 적을 때 한 번
+          if (row > 0 && sub === 0) cv.rect(cx, top - 0.1, inner, 0.2, C.white);
           cv.line(
             [
               { t: st.name || "이름 없음", size: NAME_PT, color: C.ink },
               { t: marksText(st.marks), size: NAME_PT * 0.8, color: C.mark },
             ],
-            { top, lh: ROW_H, x: cx + PAD, maxW: inner - PAD * 2 },
+            { top, lh: ROW_H, x: cx + sub * subW + PAD, maxW: subW - PAD * 2 },
           );
         });
       });
@@ -266,7 +300,7 @@ export async function buildClassRosterPdf({
       ...(block && sheet.levelEnd ? roster.empty.filter((c) => c.level === block.level.level) : []),
       ...(index === sheets.length - 1 ? orphans : []),
     ];
-    const footer = empties.length > 0 ? emptyNote(empties) : "역전토익 학생명단 · 반별";
+    const footer = empties.length > 0 ? emptyNote(roster.by, empties) : `역전토익 학생명단 · ${roster.by === "track" ? "레벨별" : "반별"}`;
     const footTop = PAGE_H - BOTTOM - FOOT_H + 1;
     cv.line([{ t: footer, size: 7, color: C.mute }], { top: footTop, lh: 4, x: MX, maxW: USABLE * 0.84 });
     cv.line([{ t: `${index + 1} / ${sheets.length}`, size: 7, color: C.mute }], { top: footTop, lh: 4, x: PAGE_W - MX, right: true });

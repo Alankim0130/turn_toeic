@@ -7,6 +7,7 @@ import {
   marksText,
   rosterDisposition,
   rosterFileName,
+  rosterMarks,
   rosterTerms,
   type RosterEnrollment,
   type RosterPerson,
@@ -214,6 +215,96 @@ describe("반별 명단 — 한 칸이 한 레벨의 수업 시간 한 칸 · LC
   });
 });
 
+describe("레벨별 명단 — 한 칸이 한 레벨의 한 트랙 · 시간을 합친다 (2026-10-14 밤 Alan \"시간대는 없애고 … 월수금/ 화목금만 분리\")", () => {
+  const byTrack = (today = "2026-10-14", over: Partial<Parameters<typeof buildClassRoster>[0]> = {}) => build(today, { by: "track", ...over });
+
+  it("레벨마다 월수금 · 화목금 두 칸 — 오전 · 저녁 · 60분 · 120분을 다 합치고, 주5일은 두 칸에, 속성반은 650 · 850 의 그 트랙 칸에 선다", () => {
+    expect(view(byTrack())).toEqual({
+      // 120분 주3일(가온)은 월수금만 — (월) 은 적지 않는다 (칸이 이미 월수금이다). 저녁 60분(사랑)도 같은 칸
+      "650 월수금": ["가온(불)", "나리(불/프)", "다온", "라온", "마루(RC)", "사랑(LC)", "하늘(RC)"],
+      // 저녁 화목금 인강(자람)도 화목금 칸
+      "650 화목금": ["나리(불/프)", "다온", "라온", "자람(LC)"],
+      "750 화목금": ["하늘(불/LC)"],
+      "850 월수금": ["나리(불/프)", "바다(2주)"],
+      "850 화목금": ["나리(불/프)", "바다(2주)"],
+    });
+  });
+
+  it("칸 이름은 레벨 + 트랙이고 시간 · 둘째 줄이 없다 — 칸 순서는 레벨 → 월수금 · 화목금", () => {
+    const r = byTrack();
+    expect(r.by).toBe("track");
+    expect(r.levels.map((l) => [l.label, l.count, l.columns.map((c) => [c.title, c.track, c.time, columnDetail(c)])])).toEqual([
+      ["650", 8, [["650 월수금", "mwf", null, ""], ["650 화목금", "ttf", null, ""]]],
+      ["750", 1, [["750 화목금", "ttf", null, ""]]],
+      ["850", 2, [["850 월수금", "mwf", null, ""], ["850 화목금", "ttf", null, ""]]],
+    ]);
+    // 칸에 든 반 — 그 레벨 그 트랙의 시간 단위 반 전부 (묶음 · 속성반 · 2주완성 반은 칸이 아니다)
+    expect(r.levels[0].columns.map((c) => c.sectionIds)).toEqual([[1, 5, 9], [2, 6, 8]]);
+    expect(r.total).toBe(9);
+    expect(r.unplaced).toBe(0);
+    // 학생이 없는 칸 — 750 월수금
+    expect(r.empty.map((c) => [columnHeading(c), c.sectionIds])).toEqual([["750 월수금", [11]]]);
+  });
+
+  it("불라방은 그 트랙으로 데려온 배정으로 — 월수금 현장 + 화목금 불라방이면 화목금 칸에만 (불)", () => {
+    const mixed: RosterEnrollment[] = [
+      { studentId: "u120x5", sectionId: 3, mode: "onsite" },
+      { studentId: "u120x5", sectionId: 4, mode: "live" },
+    ];
+    expect(view(byTrack("2026-10-14", { enrollments: mixed }))).toEqual({ "650 월수금": ["다온"], "650 화목금": ["다온(불)"] });
+    // 반별 명단은 같은 시간 칸에 두 트랙이 합쳐져 (불) 이 붙는다 — 그대로다
+    expect(view(build("2026-10-14", { enrollments: mixed }))["650B 10:00~11:00"]).toEqual(["다온(불)"]);
+  });
+
+  it("단과는 그대로 (LC) · (RC) — 단과 두 장이면 두 트랙 칸 다, 한 사람은 한 칸에 한 번", () => {
+    const r = byTrack("2026-10-14", {
+      enrollments: [
+        { studentId: "uRcOnly", sectionId: 1, mode: "onsite" },
+        { studentId: "uRcOnly", sectionId: 6, mode: "onsite" },
+        // 120분 묶음 + 그 안의 60분을 함께 배정해도 한 번
+        { studentId: "u120x5", sectionId: 3, mode: "onsite" },
+        { studentId: "u120x5", sectionId: 5, mode: "onsite" },
+      ],
+    });
+    expect(view(r)).toEqual({ "650 월수금": ["다온", "마루(RC)"], "650 화목금": ["마루(RC)"] });
+  });
+
+  it("강사 · 관리자 · 조교 계정 · 종강한 배정은 빠진다 (반별 명단과 같은 규칙)", () => {
+    const all = byTrack().levels.flatMap((l) => l.columns.flatMap((c) => c.students.map((s) => s.id)));
+    expect(all).not.toContain("uTeacher");
+    const after = view(byTrack("2026-10-18"));
+    expect(after["850 월수금"]).toEqual(["나리(불/프)"]);
+    expect(after["850 화목금"]).toEqual(["나리(불/프)"]);
+  });
+
+  it("범례 — 레벨별 명단은 (월) · (화) 를 쓰지 않는다, 반별 명단은 그대로", () => {
+    expect(rosterMarks("track").map((m) => m.mark)).toEqual(["불", "프", "2주", "LC", "RC"]);
+    expect(rosterMarks("time").map((m) => m.mark)).toEqual(["불", "프", "2주", "LC", "RC", "월", "화"]);
+    expect(build().by).toBe("time");
+  });
+
+  it("방학달 통짜 반 · 시간이 빈 반도 그 레벨 그 트랙 칸에 — 반별 명단과 달리 반 하나가 칸 하나가 아니다", () => {
+    const vac: RosterSection[] = [
+      sec(71, { track: "mwf", timeBlock: "10:00~12:10", bookSet: "A" }),
+      sec(72, { track: "ttf", timeBlock: "10:00~12:10", bookSet: "A" }),
+      sec(73, { track: "mwf", timeBlock: null }),
+    ];
+    const r = buildClassRoster({
+      sections: vac,
+      includes: new Map(),
+      enrollments: [
+        { studentId: "u120x5", sectionId: 71, mode: "onsite" },
+        { studentId: "u60x5", sectionId: 73, mode: "onsite" },
+      ],
+      people: PEOPLE,
+      today: "2026-10-14",
+      by: "track",
+    });
+    expect(r.levels[0].columns.map((c) => [c.title, c.sectionIds, c.students.map((s) => s.name + marksText(s.marks))])).toEqual([["650 월수금", [71, 73], ["다온", "라온"]]]);
+    expect(r.empty.map((c) => c.title)).toEqual(["650 화목금"]);
+  });
+});
+
 describe("명단을 고를 기수 · 받는 파일 이름", () => {
   it("아직 종강하지 않은 기수만 개강일 순 — 날짜를 안 정한 기수는 빼고", () => {
     const terms = [
@@ -230,6 +321,14 @@ describe("명단을 고를 기수 · 받는 파일 이름", () => {
     expect(rosterFileName({ year: 2026, month: 10 })).toBe("역전토익_반별명단_2026-10.pdf");
     expect(rosterDisposition({ year: 2026, month: 10 })).toBe(
       `attachment; filename="winnertoeic-class-roster_2026-10.pdf"; filename*=UTF-8''${encodeURIComponent("역전토익_반별명단_2026-10.pdf")}`,
+    );
+  });
+
+  it("레벨별 명단은 이름이 다르다 — 두 파일을 받아도 섞이지 않게", () => {
+    expect(rosterFileName({ year: 2026, month: 11 }, "track")).toBe("역전토익_레벨별명단_2026-11.pdf");
+    expect(rosterFileName({ year: 2026, month: 11 }, "time")).toBe("역전토익_반별명단_2026-11.pdf");
+    expect(rosterDisposition({ year: 2026, month: 11 }, "track")).toBe(
+      `attachment; filename="winnertoeic-level-roster_2026-11.pdf"; filename*=UTF-8''${encodeURIComponent("역전토익_레벨별명단_2026-11.pdf")}`,
     );
   });
 });

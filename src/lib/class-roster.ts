@@ -23,6 +23,12 @@
  *  - **종강한 배정은 뺀다** (`closesAt < today`) — 앞 절반이 끝난 2주완성 학생이 그 달 끝까지 칸에 남지 않게
  * 칸은 레벨 → 시작 시각 순, 레벨마다 묶는다. 학생이 없는 칸은 그리지 않고 `empty` 에 둔다 (인쇄할 종이를 아낀다).
  * 순수 함수 (`class-roster.test.ts`). 화면 · PDF(`class-roster-pdf.ts`)가 같은 결과를 그린다.
+ *
+ * **레벨별 명단** (`by: "track"`, 2026-10-14 밤 Alan — "지금은 설정한건 그대로 놔두고, 하나만 더 추가해줘. 시간대는 없애고 같은 레벨별로 보이도록
+ * 정리한게 하나 더 있으면 좋겠어. 단, 월수금/ 화목금만 분리해주면 돼"). 반별 명단(`by: "time"`)은 그대로 두고 칸 나누는 법만 다르다 —
+ * **한 칸 = 한 레벨의 한 트랙** (`650 월수금` · `650 화목금`), 그 레벨 그 트랙의 시간 단위 반을 시간 상관없이 다 합친다 (오전 · 저녁도 한 칸).
+ * 누가 서는지 · 표시 · 가나다순은 반별 명단과 같은 규칙이고, 표시에서 `월` · `화` 만 뺀다 — 칸이 이미 트랙이다.
+ * 주5일 학생은 두 칸에 다 서고(트랙마다 그 트랙으로 데려온 배정의 `불`), 속성반은 650 · 850 의 그 트랙 칸에, 2주완성은 850 의 그 트랙 칸에 선다.
  */
 import { SUBJECT_LABEL, isSubject, type Subject } from "./instructor-subject";
 import { parseTimeBlock } from "./time-blocks";
@@ -64,24 +70,33 @@ export type RosterSection = {
 export type RosterEnrollment = { studentId: string; sectionId: number; mode: string | null };
 export type RosterPerson = { name: string; staff: boolean };
 
+/** 칸을 무엇으로 나누나 — `time` 반별 명단(레벨의 수업 시간 한 칸 · 두 트랙을 합친다) · `track` 레벨별 명단(레벨의 트랙 한 칸 · 시간을 합친다) */
+export type RosterBy = "time" | "track";
+/** 화면 · PDF 제목에 붙는 이름 */
+export const ROSTER_NAME: Record<RosterBy, string> = { time: "반별 명단", track: "레벨별 명단" };
+
 export type RosterStudent = { id: string; name: string; marks: string[] };
 /** 칸 안의 트랙 하나 — 월수금 먼저 */
 export type RosterTrack = { track: string; subject: string | null; recorded: boolean };
 export type RosterColumn = {
-  /** 강좌 · 시간 (시간이 없는 반은 반 하나) */
+  /** 강좌 · 시간 (시간이 없는 반은 반 하나) — 레벨별 명단은 레벨 · 트랙 */
   key: string;
   sectionIds: number[];
   level: number | null;
-  /** "650B" — 레벨 + 과정 글자 */
+  /** "650B" — 레벨 + 과정 글자. 레벨별 명단은 "650 월수금" */
   title: string;
-  /** "10:00~11:00" */
+  /** "10:00~11:00" — 레벨별 명단은 null */
   time: string | null;
+  /** 레벨별 명단의 칸이면 그 트랙 (mwf · ttf) — 반별 명단은 null */
+  track: string | null;
+  /** 칸 머리 둘째 줄(`columnDetail`)의 재료 — 레벨별 명단은 비운다 (칸이 트랙 하나고 시간을 합쳐 과목을 한 줄로 못 적는다) */
   tracks: RosterTrack[];
   students: RosterStudent[];
 };
 /** `tone` = 레벨 색 순서 — 그 기수의 시간 단위 반 레벨을 작은 것부터 센 자리 (650 살구 · 750 노랑 · 850 하늘 — `ROSTER_TONES`) */
 export type RosterLevel = { key: string; level: number | null; label: string; tone: number; columns: RosterColumn[]; count: number };
 export type ClassRoster = {
+  by: RosterBy;
   levels: RosterLevel[];
   /** 학생이 없는 칸 — 그리지 않는다 */
   empty: RosterColumn[];
@@ -104,6 +119,9 @@ export const ROSTER_TONES = [
   { head: "#D9D9D9", body: "#F2F2F2", ink: "#333333" },
 ] as const;
 export const toneOf = (tone: number) => ROSTER_TONES[((tone % ROSTER_TONES.length) + ROSTER_TONES.length) % ROSTER_TONES.length];
+
+/** 그 명단의 범례 — 레벨별 명단은 칸이 트랙이라 `월` · `화` 를 쓰지 않는다 */
+export const rosterMarks = (by: RosterBy) => (by === "track" ? ROSTER_MARKS.filter((m) => m.mark !== "월" && m.mark !== "화") : [...ROSTER_MARKS]);
 
 /** "(불/RC)" — 표시가 없으면 빈 글자 */
 export const marksText = (marks: readonly string[]): string => (marks.length > 0 ? `(${marks.join("/")})` : "");
@@ -130,6 +148,9 @@ export function columnDetail(c: Pick<RosterColumn, "tracks">): string {
 
 const levelKey = (level: number | null, courseName: string | null) => (level != null ? `L${level}` : `C${courseName ?? ""}`);
 
+const TRACK_ORDER: Record<string, number> = { mwf: 0, ttf: 1 };
+const trackRank = (t: string) => TRACK_ORDER[t] ?? 2;
+
 export function buildClassRoster(input: {
   sections: readonly RosterSection[];
   /** 부모 반 → 품은 반 (`term_section_includes`) */
@@ -137,13 +158,18 @@ export function buildClassRoster(input: {
   enrollments: readonly RosterEnrollment[];
   people: ReadonlyMap<string, RosterPerson>;
   today: string;
+  /** 칸 나누는 법 — 기본은 반별 명단 */
+  by?: RosterBy;
 }): ClassRoster {
   const { includes, today } = input;
+  const by: RosterBy = input.by ?? "time";
   const byId = new Map(input.sections.map((s) => [s.id, s]));
   // 시간 단위 반 = 그릇 과정(속성반 · 2주완성)이 아니고 품은 반이 없는 반 (묶음 반은 품은 반이 있다). 방학달 통짜 반도 여기다
   const isLeaf = (s: RosterSection) => !isContainerProgram(s.program) && (includes.get(s.id)?.length ?? 0) === 0;
-  // 칸 = 강좌 × 시간 (두 트랙을 합친다). 시간이 없는 반은 합칠 근거가 없어 반 하나가 한 칸이다
-  const columnKey = (s: RosterSection) => (s.timeBlock ? `${s.courseId ?? s.courseName ?? ""}|${s.timeBlock}` : `s${s.id}`);
+  // 칸 = 강좌 × 시간 (두 트랙을 합친다). 시간이 없는 반은 합칠 근거가 없어 반 하나가 한 칸이다.
+  // 레벨별 명단은 레벨 × 트랙 (시간을 합친다 — 시간이 없는 반도 그 레벨 그 트랙 칸에)
+  const columnKey = (s: RosterSection) =>
+    by === "track" ? `${levelKey(s.level, s.courseName)}|${s.track}` : s.timeBlock ? `${s.courseId ?? s.courseName ?? ""}|${s.timeBlock}` : `s${s.id}`;
 
   /** 직접 배정된 반이 데려가는 시간 단위 반 — 품은 반이 다시 품으면 따라간다(지금 DB 는 한 단계뿐이다) */
   const leavesOf = (id: number, seen = new Set<number>()): RosterSection[] => {
@@ -204,7 +230,8 @@ export function buildClassRoster(input: {
     const single = via.every((d) => !isContainerProgram(d.section.program)) ? singleSubject(sameCourse) : null;
     if (single) {
       marks.push(SUBJECT_LABEL[single]);
-    } else {
+    } else if (by === "time") {
+      // 한 트랙만 등록 — 레벨별 명단은 칸이 이미 트랙이라 적지 않는다
       const tracks = new Set(sameCourse.map((d) => d.section.track));
       if (tracks.size === 1) {
         const [t] = tracks;
@@ -228,15 +255,21 @@ export function buildClassRoster(input: {
     groups.set(key, [...(groups.get(key) ?? []), s]);
   }
   const span = (s: RosterSection) => parseTimeBlock(s.timeBlock);
+  const byLevel = (a: RosterSection, b: RosterSection) => (a.level ?? Number.MAX_SAFE_INTEGER) - (b.level ?? Number.MAX_SAFE_INTEGER);
   const ordered = [...groups.entries()]
     .map(([key, list]) => ({ key, list: [...list].sort((a, b) => Number(a.track !== "mwf") - Number(b.track !== "mwf") || a.id - b.id) }))
-    .sort(
-      (a, b) =>
-        (a.list[0].level ?? Number.MAX_SAFE_INTEGER) - (b.list[0].level ?? Number.MAX_SAFE_INTEGER) ||
-        (a.list[0].courseName ?? "").localeCompare(b.list[0].courseName ?? "", "ko") ||
-        (span(a.list[0])?.start ?? 9999) - (span(b.list[0])?.start ?? 9999) ||
-        (span(a.list[0])?.end ?? 9999) - (span(b.list[0])?.end ?? 9999) ||
-        a.list[0].id - b.list[0].id,
+    .sort((a, b) =>
+      by === "track"
+        ? // 레벨 → 월수금 · 화목금 (레벨이 없는 강좌끼리는 강좌 이름)
+          byLevel(a.list[0], b.list[0]) ||
+          (a.list[0].level == null ? (a.list[0].courseName ?? "").localeCompare(b.list[0].courseName ?? "", "ko") : 0) ||
+          trackRank(a.list[0].track) - trackRank(b.list[0].track) ||
+          a.list[0].id - b.list[0].id
+        : byLevel(a.list[0], b.list[0]) ||
+          (a.list[0].courseName ?? "").localeCompare(b.list[0].courseName ?? "", "ko") ||
+          (span(a.list[0])?.start ?? 9999) - (span(b.list[0])?.start ?? 9999) ||
+          (span(a.list[0])?.end ?? 9999) - (span(b.list[0])?.end ?? 9999) ||
+          a.list[0].id - b.list[0].id,
     );
 
   const levels: RosterLevel[] = [];
@@ -248,15 +281,28 @@ export function buildClassRoster(input: {
     const students: RosterStudent[] = [...(cells.get(key) ?? new Map<string, Via[]>()).entries()]
       .map(([id, via]) => ({ id, name: input.people.get(id)?.name ?? "", marks: marksOf(id, via) }))
       .sort((a, b) => a.name.localeCompare(b.name, "ko") || a.id.localeCompare(b.id));
-    const column: RosterColumn = {
-      key,
-      sectionIds: list.map((s) => s.id),
-      level: first.level,
-      title: `${first.level ?? first.courseName ?? "반"}${sets.join("/")}`,
-      time: first.timeBlock,
-      tracks: list.map((s) => ({ track: s.track, subject: s.subject, recorded: s.recorded })),
-      students,
-    };
+    const column: RosterColumn =
+      by === "track"
+        ? {
+            key,
+            sectionIds: list.map((s) => s.id),
+            level: first.level,
+            title: `${first.level ?? first.courseName ?? "반"} ${TRACK_LABEL[first.track] ?? first.track}`,
+            time: null,
+            track: first.track,
+            tracks: [],
+            students,
+          }
+        : {
+            key,
+            sectionIds: list.map((s) => s.id),
+            level: first.level,
+            title: `${first.level ?? first.courseName ?? "반"}${sets.join("/")}`,
+            time: first.timeBlock,
+            track: null,
+            tracks: list.map((s) => ({ track: s.track, subject: s.subject, recorded: s.recorded })),
+            students,
+          };
     if (students.length === 0) {
       empty.push(column);
       continue;
@@ -272,7 +318,7 @@ export function buildClassRoster(input: {
   }
   for (const g of levels) g.count = new Set(g.columns.flatMap((c) => c.students.map((s) => s.id))).size;
 
-  return { levels, empty, total: everyone.size, unplaced: [...directs.keys()].filter((id) => !everyone.has(id)).length };
+  return { by, levels, empty, total: everyone.size, unplaced: [...directs.keys()].filter((id) => !everyone.has(id)).length };
 }
 
 /**
@@ -310,14 +356,20 @@ export function rosterPeriod(term: { enrollment_opens_at?: string | null; closes
 /** 출력 시각 (한국 시간) — "2026-10-14 21:05" */
 export const printedAtKST = (now = new Date()): string => now.toLocaleString("sv-SE", { timeZone: "Asia/Seoul" }).slice(0, 16);
 
-/** PDF 파일 이름 — `역전토익_반별명단_2026-10.pdf` (LC · RC 를 합친 한 장 — 2026-10-14 저녁) */
-export function rosterFileName(term: { year: number; month: number }): string {
-  return `역전토익_반별명단_${term.year}-${String(term.month).padStart(2, "0")}.pdf`;
+const ROSTER_FILE: Record<RosterBy, { ko: string; en: string }> = {
+  time: { ko: "반별명단", en: "class-roster" },
+  track: { ko: "레벨별명단", en: "level-roster" },
+};
+const monthTag = (term: { year: number; month: number }) => `${term.year}-${String(term.month).padStart(2, "0")}`;
+
+/** PDF 파일 이름 — `역전토익_반별명단_2026-10.pdf` (LC · RC 를 합친 한 장 — 2026-10-14 저녁) · 레벨별 명단은 `역전토익_레벨별명단_2026-10.pdf` */
+export function rosterFileName(term: { year: number; month: number }, by: RosterBy = "time"): string {
+  return `역전토익_${ROSTER_FILE[by].ko}_${monthTag(term)}.pdf`;
 }
 
 /** 내려받기 머리 — 한글 이름(filename*)과 영문 이름(옛 브라우저) */
-export function rosterDisposition(term: { year: number; month: number }): string {
-  const name = rosterFileName(term);
-  const ascii = name.replace("역전토익_반별명단", "winnertoeic-class-roster").replace(/[^\x20-\x7e]/g, "");
+export function rosterDisposition(term: { year: number; month: number }, by: RosterBy = "time"): string {
+  const name = rosterFileName(term, by);
+  const ascii = `winnertoeic-${ROSTER_FILE[by].en}_${monthTag(term)}.pdf`;
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }

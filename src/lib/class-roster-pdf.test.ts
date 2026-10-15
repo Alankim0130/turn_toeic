@@ -4,7 +4,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { decodePDFRawStream, PDFArray, PDFDocument, PDFRawStream, PDFRef } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import { buildClassRoster, type RosterEnrollment, type RosterLevel, type RosterPerson, type RosterSection } from "./class-roster";
-import { buildClassRosterPdf, columnWidth, NAME_PT, ROW_H, ROWS_AVAIL, ROWS_PER_PAGE, rowLayout, splitPages } from "./class-roster-pdf";
+import { buildClassRosterPdf, columnWidth, NAME_PT, nameSlots, ROW_H, ROWS_AVAIL, ROWS_PER_PAGE, rowLayout, splitPages, SUB_COLUMNS } from "./class-roster-pdf";
 
 const FONT_PATH = path.join(process.cwd(), "assets/roster-fonts/roster-bold.ttf");
 const font = new Uint8Array(readFileSync(FONT_PATH));
@@ -100,7 +100,7 @@ const level = (label: string, n: number, tone: number): RosterLevel => ({
   label,
   tone,
   count: n,
-  columns: Array.from({ length: n }, (_, i) => ({ key: `${label}-${i}`, sectionIds: [tone * 100 + i], level: Number(label), title: label, time: null, tracks: [], students: [] })),
+  columns: Array.from({ length: n }, (_, i) => ({ key: `${label}-${i}`, sectionIds: [tone * 100 + i], level: Number(label), title: label, time: null, track: null, tracks: [], students: [] })),
 });
 
 describe("반별 명단 PDF", () => {
@@ -204,5 +204,81 @@ describe("반별 명단 PDF", () => {
     const pdf = await build([]);
     expect(pdf.pages).toBe(1);
     expect(pdf.drawn).toContain("이 명단에 선 학생이 없어요");
+  });
+});
+
+/**
+ * 레벨별 명단 — 레벨마다 [월수금 학생 수, 화목금 학생 수]. 레벨마다 두 시간(10:00 · 11:10) × 두 트랙 반을 열고 학생은 두 시간에 번갈아 넣는다
+ * (레벨별 명단은 시간을 합치므로 칸에는 섞여 선다). 이름은 지어낸 것이다
+ */
+function trackRosterOf(perLevel: [number, number][]) {
+  const sections: RosterSection[] = [];
+  const enrollments: RosterEnrollment[] = [];
+  const people = new Map<string, RosterPerson>();
+  perLevel.forEach(([mwf, ttf], li) => {
+    const lv = 650 + 100 * li;
+    const ids = { mwf: [lv * 10 + 1, lv * 10 + 2], ttf: [lv * 10 + 3, lv * 10 + 4] };
+    for (const track of ["mwf", "ttf"] as const) {
+      ids[track].forEach((id, t) => sections.push(sec(id, { track, timeBlock: t ? "11:10~12:10" : "10:00~11:00", level: lv, courseId: lv })));
+      const n = track === "mwf" ? mwf : ttf;
+      for (let k = 0; k < n; k++) {
+        const id = `${lv}-${track}-${k}`;
+        people.set(id, { name: `${NAMES[k % NAMES.length]}${k >= NAMES.length ? k : ""}`, staff: false });
+        enrollments.push({ studentId: id, sectionId: ids[track][k % 2], mode: k % 4 === 0 ? "live" : "onsite" });
+      }
+    }
+  });
+  return buildClassRoster({ sections, includes: new Map(), enrollments, people, today: "2026-10-14", by: "track" });
+}
+const buildTrack = (perLevel: [number, number][]) =>
+  buildClassRosterPdf({ roster: trackRosterOf(perLevel), title: "2026년 10월 레벨별 명단", period: "10/6 개강 ~ 11/3 종강", printedAt: "2026-10-14 21:05", font });
+
+describe("레벨별 명단 PDF (2026-10-14 밤 Alan \"시간대는 없애고 … 월수금/ 화목금만 분리\")", () => {
+  it("레벨마다 새 쪽 · 칸은 월수금 · 화목금 둘 · 시간이 없다 · 범례에 (월) (화) 가 없다 · 이름은 늘 10pt", async () => {
+    const pdf = await buildTrack([
+      [12, 9],
+      [4, 0],
+      [6, 3],
+    ]);
+    expect(pdf.layout.map((p) => p.level)).toEqual(["650", "750", "850"]);
+    expect(pdf.layout.map((p) => p.columns)).toEqual([["650 월수금", "650 화목금"], ["750 월수금"], ["850 월수금", "850 화목금"]]);
+    expect(pdf.layout[0].footer).toBe("역전토익 학생명단 · 레벨별");
+    // 학생이 없는 트랙은 그 레벨 쪽 바닥에 — "요일"
+    expect(pdf.layout[1].footer).toBe("학생이 없는 요일 1개: 750 화목금");
+    const text = pdf.drawn.join("\n");
+    expect(text).toContain("2026년 10월 레벨별 명단");
+    expect(text).toContain("(불) 불라방");
+    expect(text).not.toContain("월수금만");
+    expect(text).not.toContain("10:00");
+    expect(text).toContain("12명"); // 칸 머리 둘째 줄 — 사람 수뿐
+    expect(await fontSizes(pdf.bytes)).toEqual([7, 7.5, 8, 9.5, 10, 14, 18]);
+    expect(pdf.shrunk).toEqual([]);
+    // 이름은 한 번씩 다 적힌다
+    expect(pdf.drawn.filter((t) => /^[가-힣]+\d*$/.test(t))).toHaveLength(12 + 9 + 4 + 6 + 3);
+  });
+
+  it("칸 안에 이름을 두 단으로 — 위에서 아래로 채우고 옆 단으로, 단 길이를 고르게 (한 쪽에 한 칸 82명)", async () => {
+    expect(SUB_COLUMNS).toEqual({ time: 1, track: 2 });
+    const at = (n: number, subs: number) => nameSlots(n, subs).map((p) => `${p.sub}:${p.row}`);
+    expect(at(5, 2)).toEqual(["0:0", "0:1", "0:2", "1:0", "1:1"]);
+    expect(at(4, 2)).toEqual(["0:0", "0:1", "1:0", "1:1"]);
+    expect(at(3, 1)).toEqual(["0:0", "0:1", "0:2"]); // 반별 명단 — 한 단
+    expect(at(1, 2)).toEqual(["0:0"]);
+    // 82명이면 41줄 — 한 쪽 이름 칸에 든다
+    expect(Math.max(...nameSlots(82, 2).map((p) => p.row)) + 1).toBe(ROWS_PER_PAGE);
+    expect(Math.ceil((ROWS_PER_PAGE * 2) / 2) * ROW_H).toBeLessThanOrEqual(ROWS_AVAIL);
+    expect(rowLayout(82, ROWS_PER_PAGE * 2)).toEqual({ perPage: 82, pages: 1 });
+    expect(rowLayout(83, ROWS_PER_PAGE * 2)).toEqual({ perPage: 42, pages: 2 }); // 42 + 41
+    expect(rowLayout(165, ROWS_PER_PAGE * 2)).toEqual({ perPage: 55, pages: 3 });
+
+    const one = await buildTrack([[82, 10]]);
+    expect(one.pages).toBe(1);
+    const two = await buildTrack([[83, 10]]);
+    expect(two.layout.map((p) => `${p.level}:${p.part}`)).toEqual(["650:0", "650:1"]);
+    // 둘째 쪽에는 이름이 남은 월수금 칸만
+    expect(two.layout.map((p) => p.columns)).toEqual([["650 월수금", "650 화목금"], ["650 월수금"]]);
+    expect(two.drawn.join("\n")).toContain("83명 · 이어서");
+    expect(two.drawn.filter((t) => /^[가-힣]+\d*$/.test(t))).toHaveLength(93);
+    expect(await fontSizes(two.bytes)).toEqual([7, 7.5, 8, 9.5, 10, 14, 18]);
   });
 });
