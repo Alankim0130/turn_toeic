@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { pushToUser } from "@/lib/push";
-import { deleteSubscription, saveSubscription, type SubscriptionInput } from "@/lib/push-subscription";
+import { deleteSubscription, ownsSubscription, saveSubscription, type SubscriptionInput } from "@/lib/push-subscription";
 
 /**
  * 학생 휴대폰 알림 켜기 · 끄기 · 테스트 (2026-10-15 Alan — 숙제 미제출 · 불라방 시작을 푸시로).
@@ -36,6 +36,12 @@ export async function deleteStudentPushSubscription(endpoint: string): Promise<S
   await deleteSubscription(userId, endpoint);
   revalidatePath("/my/notifications");
   return { ok: true };
+}
+
+/** 브라우저가 기억하는 이 기기의 구독이 지금 계정의 것인가 (같은 휴대폰을 다른 계정이 켰으면 아니다 — push-subscription.ts) */
+export async function ownsStudentPushDevice(endpoint: string): Promise<boolean> {
+  if (!(await sessionUserId())) return false;
+  return ownsSubscription(endpoint);
 }
 
 export async function sendStudentTestPush(): Promise<StudentPushResult> {

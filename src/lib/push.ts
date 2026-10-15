@@ -30,6 +30,11 @@ export type PushResult = { sent: number; failed: number; removed: number };
 
 const EMPTY: PushResult = { sent: 0, failed: 0, removed: 0 };
 
+/** 알림 키(VAPID)가 다 있나 — 없으면 보내지 못하므로 학생 알림 대기열을 가져가지 않는다 (가져가면 표시만 되고 사라진다) */
+export function pushConfigured() {
+  return Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT);
+}
+
 function configure() {
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   const privateKey = process.env.VAPID_PRIVATE_KEY;

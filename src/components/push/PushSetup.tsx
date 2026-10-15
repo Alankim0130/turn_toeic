@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { startInstall } from "@/components/pwa/install-store";
-import { deletePushSubscription, savePushSubscription, sendTestPush } from "@/app/admin/notifications/actions";
-import { deleteStudentPushSubscription, saveStudentPushSubscription, sendStudentTestPush } from "@/app/my/notifications/push-actions";
+import { deletePushSubscription, ownsPushDevice, savePushSubscription, sendTestPush } from "@/app/admin/notifications/actions";
+import { deleteStudentPushSubscription, ownsStudentPushDevice, saveStudentPushSubscription, sendStudentTestPush } from "@/app/my/notifications/push-actions";
 import { detectPush, disablePush, enablePush, type PushState } from "./push-client";
 
 /**
@@ -16,8 +16,8 @@ import { detectPush, disablePush, enablePush, type PushState } from "./push-clie
  * 저장은 audience 마다 다른 서버 액션이다 (각자 로그인한 사람의 기기만 저장한다).
  */
 const ACTIONS = {
-  staff: { save: savePushSubscription, remove: deletePushSubscription, test: sendTestPush },
-  student: { save: saveStudentPushSubscription, remove: deleteStudentPushSubscription, test: sendStudentTestPush },
+  staff: { save: savePushSubscription, remove: deletePushSubscription, test: sendTestPush, owns: ownsPushDevice },
+  student: { save: saveStudentPushSubscription, remove: deleteStudentPushSubscription, test: sendStudentTestPush, owns: ownsStudentPushDevice },
 } as const;
 
 const TEXT = {
@@ -35,13 +35,13 @@ export function PushSetup({ publicKey, audience = "staff" }: { publicKey: string
 
   useEffect(() => {
     let cancelled = false;
-    detectPush()
+    detectPush(actions.owns)
       .then((s) => !cancelled && setState(s))
       .catch(() => !cancelled && setState("unsupported"));
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [actions.owns]);
 
   async function enable() {
     if (!publicKey) {

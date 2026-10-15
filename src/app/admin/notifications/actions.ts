@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { pushToUser } from "@/lib/push";
-import { deleteSubscription, saveSubscription, type SubscriptionInput } from "@/lib/push-subscription";
+import { deleteSubscription, ownsSubscription, saveSubscription, type SubscriptionInput } from "@/lib/push-subscription";
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
 export type { SubscriptionInput };
@@ -23,6 +23,12 @@ export async function deletePushSubscription(endpoint: string): Promise<ActionRe
   await deleteSubscription(user.id, endpoint);
   revalidatePath("/admin/notifications");
   return { ok: true };
+}
+
+/** 브라우저가 기억하는 이 기기의 구독이 내 계정의 것인가 — 같은 휴대폰에서 다른 계정(학생 시험 계정 등)으로 켰으면 아니다 */
+export async function ownsPushDevice(endpoint: string): Promise<boolean> {
+  await requireStaff();
+  return ownsSubscription(endpoint);
 }
 
 export async function removeDevice(formData: FormData) {

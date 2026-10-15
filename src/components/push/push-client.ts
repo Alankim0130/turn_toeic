@@ -6,6 +6,8 @@
 export type PushState = "loading" | "unsupported" | "ios-install" | "denied" | "off" | "on";
 export type SaveSubscription = (input: { endpoint: string; p256dh: string; auth: string; userAgent?: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
 export type DeleteSubscription = (endpoint: string) => Promise<unknown>;
+/** 이 기기의 구독이 지금 로그인한 계정의 것으로 저장돼 있나 (서버 액션) */
+export type OwnsSubscription = (endpoint: string) => Promise<boolean>;
 
 function base64UrlToUint8Array(base64Url: string) {
   const padding = "=".repeat((4 - (base64Url.length % 4)) % 4);
@@ -24,14 +26,23 @@ export function isStandalone() {
   return window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
 }
 
-/** 아이폰은 홈 화면에 추가한 앱에서만 푸시가 된다(iOS 16.4+) — 사파리 · 크롬 창 안이면 그 안내부터 */
-export async function detectPush(): Promise<PushState> {
+/**
+ * 아이폰은 홈 화면에 추가한 앱에서만 푸시가 된다(iOS 16.4+) — 사파리 · 크롬 창 안이면 그 안내부터.
+ * 브라우저가 구독을 기억해도 **서버에 지금 계정의 것으로 저장돼 있어야** 켜진 것이다 (`owns`) — 같은 휴대폰을 다른 계정이 켰으면
+ * 알림은 그 계정으로 가므로 '꺼짐' 으로 보여 주고, 켜기를 누르면 지금 계정으로 옮긴다. 묻다 실패하면 브라우저만 믿는다.
+ */
+export async function detectPush(owns?: OwnsSubscription): Promise<PushState> {
   const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
   if (!supported) return isIOS() && !isStandalone() ? "ios-install" : "unsupported";
   if (Notification.permission === "denied") return "denied";
   const reg = await navigator.serviceWorker.getRegistration("/");
   const sub = await reg?.pushManager.getSubscription();
-  return sub ? "on" : "off";
+  if (!sub) return "off";
+  if (owns) {
+    const mine = await owns(sub.endpoint).catch(() => true);
+    if (!mine) return "off";
+  }
+  return "on";
 }
 
 /**

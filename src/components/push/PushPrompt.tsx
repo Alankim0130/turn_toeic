@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
 import { installCardDismissed } from "@/components/pwa/InstallApp";
 import { getInstallEnv, getInstallPlan, getInstallState, getServerInstallState, subscribeInstall } from "@/components/pwa/install-store";
-import { saveStudentPushSubscription } from "@/app/my/notifications/push-actions";
+import { ownsStudentPushDevice, saveStudentPushSubscription } from "@/app/my/notifications/push-actions";
 import { cn } from "@/lib/utils";
 import { detectPush, enablePush, type PushState } from "./push-client";
 
@@ -41,7 +41,7 @@ export function PushPrompt({ publicKey, className }: { publicKey: string | null;
 
   useEffect(() => {
     let cancelled = false;
-    detectPush()
+    detectPush(ownsStudentPushDevice)
       .then((s) => !cancelled && setState(s))
       .catch(() => !cancelled && setState("unsupported"));
     return () => {

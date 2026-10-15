@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { authorizedAppCall } from "@/lib/cron-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { pushStudentMessages } from "@/lib/push";
+import { pushConfigured, pushStudentMessages } from "@/lib/push";
 
 /**
  * 학생 휴대폰 푸시 (2026-10-15 Alan — "숙제 미제출이랑 불라방 시작 알림 푸시로 만들어줘").
@@ -21,6 +21,8 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   if (!(await authorizedAppCall(req))) return NextResponse.json({ ok: false }, { status: 401 });
+  // 알림 키가 없으면 가져가지 않는다 — 가져가면 '보냄' 으로 표시만 되고 사라진다 (키를 넣으면 15분 안의 줄은 다시 부르기가 보낸다)
+  if (!pushConfigured()) return NextResponse.json({ ok: false, error: "vapid" }, { status: 503 });
 
   const { data, error } = await createAdminClient().rpc("claim_student_pushes");
   if (error) {
