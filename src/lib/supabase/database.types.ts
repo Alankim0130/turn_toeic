@@ -1302,6 +1302,7 @@ export type Database = {
           id: number
           lecture_id: number
           review_url: string | null
+          sns_follow: string | null
           user_id: string
         }
         Insert: {
@@ -1309,6 +1310,7 @@ export type Database = {
           id?: number
           lecture_id: number
           review_url?: string | null
+          sns_follow?: string | null
           user_id: string
         }
         Update: {
@@ -1316,6 +1318,7 @@ export type Database = {
           id?: number
           lecture_id?: number
           review_url?: string | null
+          sns_follow?: string | null
           user_id?: string
         }
         Relationships: [
@@ -1797,7 +1800,9 @@ export type Database = {
           id: number
           kinds: string[]
           lecturer_id: number
+          notice: string | null
           signup: boolean
+          signup_condition: string
           signup_opens_at: string | null
           term_id: number
         }
@@ -1810,7 +1815,9 @@ export type Database = {
           id?: number
           kinds?: string[]
           lecturer_id: number
+          notice?: string | null
           signup?: boolean
+          signup_condition?: string
           signup_opens_at?: string | null
           term_id: number
         }
@@ -1823,7 +1830,9 @@ export type Database = {
           id?: number
           kinds?: string[]
           lecturer_id?: number
+          notice?: string | null
           signup?: boolean
+          signup_condition?: string
           signup_opens_at?: string | null
           term_id?: number
         }

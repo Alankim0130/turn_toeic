@@ -68,7 +68,7 @@ const RPC_ERROR: Record<string, string> = {
   closes_before_opens: "종강일은 개강일과 같거나 그 뒤여야 해요.",
   class_date_out_of_range: "수업일·특강은 그 달과 앞뒤 한 달 안에서만 고를 수 있어요.",
   class_date_out_of_month: "수업일·특강은 그 달과 앞뒤 한 달 안에서만 고를 수 있어요.",
-  invalid_lectures: "특강마다 종류를 하나 이상 고르거나 내용(1~100자)을 적어 주세요.",
+  invalid_lectures: "특강마다 종류를 고르거나 내용(1~100자)을 적어 주세요.",
   lecture_capacity_below_applied: "이미 신청한 인원보다 정원을 적게 줄일 수 없어요.",
 };
 
@@ -134,7 +134,7 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
     date: String(l?.date ?? ""),
     lecturer_id: Number(l?.lecturerId),
     content: String(l?.content ?? "").trim(),
-    // 정해진 종류(RC특강·LC특강·1차/2차 모의고사)만, 정해진 순서로, 중복 없이
+    // 정해진 종류(여덟 가지 — RC · LC특강 현강 · 녹화영상, 1 · 2차 모의고사 현강 · 시험지 수령)만, 정해진 순서로, 중복 없이
     kinds: sortLectureKinds((Array.isArray(l?.kinds) ? l.kinds : []).map(String).filter(isLectureKind)),
   }));
   const badLecture = lectures.find(
@@ -147,12 +147,17 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
       // 종류를 고르거나 내용을 적거나, 둘 중 하나는 있어야 한다
       (l.kinds.length === 0 && l.content.length === 0),
   );
+  // 특강 하나 = 종류 하나 (2026-10-15 Alan — "구분해서 받아야해") — 달력 화면이 종류마다 특강을 따로 만든다. DB 도 막는다
+  const multi = lectures.find((l) => l.kinds.length > 1);
+  if (multi) {
+    return { ok: false, error: `${isYmd(multi.date) ? labelKo(multi.date) : "한"} 특강에 종류가 여러 개예요. 특강 하나에는 종류를 하나만 — 종류마다 특강을 따로 만들어 주세요.` };
+  }
   if (badLecture) {
     if (isYmd(badLecture.date) && !inWindow(badLecture.date)) return { ok: false, error: RPC_ERROR.class_date_out_of_range };
     return {
       ok: false,
       error: isYmd(badLecture.date)
-        ? `${labelKo(badLecture.date)} 특강은 종류를 하나 이상 고르거나 내용(1~100자)을 적어 주세요.`
+        ? `${labelKo(badLecture.date)} 특강은 종류를 고르거나 내용(1~100자)을 적어 주세요.`
         : RPC_ERROR.invalid_lectures,
     };
   }

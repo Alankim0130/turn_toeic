@@ -189,33 +189,44 @@ export type MySession = Awaited<ReturnType<typeof getMySessions>>[number];
  */
 export async function getMyLectures(opts: { upcoming?: boolean } = {}) {
   const supabase = await createClient();
-  const [{ data }, orders] = await Promise.all([
-    supabase
+  // 신청 조건(signup_condition) · 안내(notice)는 마이그레이션 20261015130000 에서 생겼다 — 배포와 마이그레이션 사이에 못 읽으면 두 칸 없이 읽는다
+  // (그대로 비우면 특강이 하나도 없는 것처럼 보인다). 조건은 그때 조건 없음으로 보이고 DB 트리거가 막는다
+  const cols = "id, term_id, date, content, kinds, signup, capacity, signup_opens_at, applied_count, lecturer:lecturers(name), term:terms(year, month, enrollment_opens_at)";
+  const read = async () => {
+    const full = await supabase
       .from("special_lectures")
-      .select("id, term_id, date, content, kinds, signup, capacity, signup_opens_at, applied_count, lecturer:lecturers(name), term:terms(year, month, enrollment_opens_at)")
+      .select(`${cols}, signup_condition, notice`)
       .order("date", { ascending: true })
-      .order("id", { ascending: true }),
-    getMyOrders(),
-  ]);
+      .order("id", { ascending: true });
+    if (!full.error) return full.data ?? [];
+    const { data } = await supabase.from("special_lectures").select(cols).order("date", { ascending: true }).order("id", { ascending: true });
+    return (data ?? []).map((l) => ({ ...l, signup_condition: "none", notice: null as string | null }));
+  };
+  const [data, orders] = await Promise.all([read(), getMyOrders()]);
   const { signupTerms, opensOn } = await getMyStudyEligibility(orders);
   const terms = opts.upcoming ? new Set([...signupTerms, ...opensOn.keys()]) : signupTerms;
-  return (data ?? []).filter((l) => terms.has(l.term_id));
+  return data.filter((l) => terms.has(l.term_id));
 }
 export type MyLecture = Awaited<ReturnType<typeof getMyLectures>>[number];
 
+/** 내가 신청한 특강 한 건 — 신청 조건으로 올린 것 (후기 링크 · 인스타그램 팔로우). 조건이 없던 특강은 둘 다 null */
+export type MyLectureSignup = { reviewUrl: string | null; snsFollow: string | null };
+
 /**
- * 내가 신청한 특강 — 특강 id → 올린 YBM 수강후기 링크 (3주차 모의고사 특강만, 그 밖은 null — 2026-10-08).
- * 후기 링크 칸은 마이그레이션 20261008100000 에서 생겼다 — 배포와 마이그레이션 사이에 그 칸을 못 읽으면 신청만 읽는다
+ * 내가 신청한 특강 — 특강 id → 올린 YBM 수강후기 링크(review 조건, 2026-10-08) · 인스타그램 새로 · 기존 팔로우(sns 조건, 2026-10-15).
+ * 두 칸은 마이그레이션 20261008100000 · 20261015130000 에서 생겼다 — 배포와 마이그레이션 사이에 못 읽으면 한 칸씩 덜 읽는다
  * (그대로 비우면 신청한 특강이 전부 "신청 전" 으로 보인다).
  */
 export async function getMyLectureSignups() {
   const user = await getSessionUser();
-  if (!user) return new Map<number, string | null>();
+  if (!user) return new Map<number, MyLectureSignup>();
   const supabase = await createClient();
-  const full = await supabase.from("lecture_signups").select("lecture_id, review_url").eq("user_id", user.id);
-  if (!full.error) return new Map<number, string | null>((full.data ?? []).map((r) => [r.lecture_id, r.review_url]));
+  const full = await supabase.from("lecture_signups").select("lecture_id, review_url, sns_follow").eq("user_id", user.id);
+  if (!full.error) return new Map<number, MyLectureSignup>((full.data ?? []).map((r) => [r.lecture_id, { reviewUrl: r.review_url, snsFollow: r.sns_follow }]));
+  const mid = await supabase.from("lecture_signups").select("lecture_id, review_url").eq("user_id", user.id);
+  if (!mid.error) return new Map<number, MyLectureSignup>((mid.data ?? []).map((r) => [r.lecture_id, { reviewUrl: r.review_url, snsFollow: null }]));
   const { data } = await supabase.from("lecture_signups").select("lecture_id").eq("user_id", user.id);
-  return new Map<number, string | null>((data ?? []).map((r) => [r.lecture_id, null]));
+  return new Map<number, MyLectureSignup>((data ?? []).map((r) => [r.lecture_id, { reviewUrl: null, snsFollow: null }]));
 }
 
 /** 내가 신청한 특강 id 집합 */

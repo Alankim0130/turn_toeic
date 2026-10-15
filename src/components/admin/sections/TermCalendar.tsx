@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { saveTermSchedule, type TermPart } from "@/app/admin/sections/actions";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
-import { cn, LECTURE_KINDS, lectureKindShort, lectureKindTiny, sortLectureKinds, type LectureKind } from "@/lib/utils";
+import { brushLectures } from "@/lib/lecture";
+import { cn, LECTURE_BASES, lectureDayTags, lectureKindsOf, sortLectureKinds, type LectureKind } from "@/lib/utils";
 import { HOLIDAY_YEAR_RANGE, hasHolidayData, holidayNamesBetween } from "@/lib/holidays";
 import { WEEKDAY_KO, coveringGrid, labelKo, shiftMonth, termKey, weekdayOf } from "./dates";
 import { downloadCalendarImage } from "./calendarImage";
@@ -52,7 +53,7 @@ const MODES: { value: Mode; label: string; hint: string; on: string; off: string
   {
     value: "lecture",
     label: "특강",
-    hint: "강사와 내용을 정한 뒤 날짜를 누르세요. 수업일과 같은 날도, 하루에 여러 개도 됩니다. 같은 특강을 다시 누르면 빠져요. 앞뒤 달 날짜도 찍을 수 있어요.",
+    hint: "강사 · 종류 · 내용을 정한 뒤 날짜를 누르세요. 종류를 여러 개 고르면 종류마다 특강이 하나씩 생겨요 (현강 · 녹화영상 · 시험지 수령은 따로 신청받아요). 같은 날짜를 다시 누르면 빠져요. 수업일과 같은 날도 되고, 앞뒤 달 날짜도 찍을 수 있어요.",
     on: "border-violet-600 bg-violet-600 text-white",
     off: "border-violet-200 bg-paper text-violet-700 hover:border-violet-400",
   },
@@ -242,27 +243,35 @@ export function TermCalendar({
     settle(moved, spillNote(date, inMonth));
   };
 
+  /**
+   * 특강 하나 = 종류 하나 (2026-10-15 Alan — "구분해서 받아야해"). 붓에 고른 종류마다 특강을 하나씩 만들고(`brushLectures`),
+   * 고른 종류가 그 날 · 그 강사 · 그 내용으로 이미 다 있으면 모두 뺀다.
+   */
   const toggleLecture = (date: string, inMonth: boolean) => {
     if (brush.lecturerId === null) {
       warn("특강 강사 명단이 비어 있어요. 관리자에게 강사 등록을 요청해 주세요.");
       return;
     }
     const content = brush.content.trim();
-    const kinds = sortLectureKinds(brush.kinds);
-    if (kinds.length === 0 && content === "") {
+    if (brush.kinds.length === 0 && content === "") {
       warn("특강 종류를 하나 이상 고르거나 내용을 적은 뒤 날짜를 눌러 주세요.");
       return;
     }
-    const same = (l: Lecture) =>
-      l.date === date && l.lecturerId === brush.lecturerId && l.content.trim() === content && sortLectureKinds(l.kinds).join("+") === kinds.join("+");
-    const hit = lectures.find(same);
-    if (hit) {
-      setLectures(lectures.filter((l) => l.key !== hit.key));
+    const lecturerId = brush.lecturerId;
+    const res = brushLectures(lectures, { date, lecturerId, content, kinds: brush.kinds }, (kinds) => ({
+      key: crypto.randomUUID(),
+      id: null,
+      date,
+      lecturerId,
+      content,
+      kinds,
+    }));
+    setLectures(res.lectures);
+    if (res.removed > 0) {
       setNotice(null);
       return;
     }
-    setLectures([...lectures, { key: crypto.randomUUID(), id: null, date, lecturerId: brush.lecturerId, content, kinds }]);
-    settle(spillNote(date, inMonth));
+    settle(res.added > 1 ? `${labelKo(date)}에 특강 ${res.added}개를 만들었어요 — 종류마다 따로 신청받아요.` : "", spillNote(date, inMonth));
   };
 
   const onDay = (date: string, inMonth: boolean) => {
@@ -304,7 +313,7 @@ export function TermCalendar({
     if (parts.includes("lectures")) {
       const empty = sortedLectures.find((l) => l.kinds.length === 0 && !l.content.trim());
       if (empty) {
-        fail(`${labelKo(empty.date)} 특강은 종류를 하나 이상 고르거나 내용을 적어 주세요.`);
+        fail(`${labelKo(empty.date)} 특강은 종류를 고르거나 내용을 적어 주세요.`);
         return;
       }
     }
@@ -455,23 +464,18 @@ export function TermCalendar({
           </div>
           <div>
             <span className="label">
-              종류 <span className="font-semibold text-slate">(여러 개 고를 수 있어요)</span>
+              종류 <span className="font-semibold text-slate">(여러 개 고르면 종류마다 특강이 하나씩 생겨요)</span>
             </span>
-            <div role="group" aria-label="특강 종류" className="flex flex-wrap gap-2">
-              {LECTURE_KINDS.map((k) => (
-                <KindChip
-                  key={k.value}
-                  label={k.label}
-                  on={brush.kinds.includes(k.value)}
-                  onClick={() =>
-                    setBrush({
-                      ...brush,
-                      kinds: brush.kinds.includes(k.value) ? brush.kinds.filter((x) => x !== k.value) : sortLectureKinds([...brush.kinds, k.value]) as LectureKind[],
-                    })
-                  }
-                />
-              ))}
-            </div>
+            <KindPicker
+              label="특강 종류"
+              isOn={(k) => brush.kinds.includes(k as LectureKind)}
+              onPick={(k) =>
+                setBrush({
+                  ...brush,
+                  kinds: (brush.kinds.includes(k as LectureKind) ? brush.kinds.filter((x) => x !== k) : sortLectureKinds([...brush.kinds, k])) as LectureKind[],
+                })
+              }
+            />
           </div>
         </div>
       )}
@@ -495,9 +499,8 @@ export function TermCalendar({
               const red = wd === 0 || !!names;
               const track: Track | null = mwf.has(c.date) ? "mwf" : ttf.has(c.date) ? "ttf" : null;
               const dayLectures = lecturesByDate.get(c.date) ?? [];
-              // 달력에는 종류를 짧게 (RC · LC · 1차 모의고사 · 2차 모의고사). 종류가 없으면 "특강"
-              const dayKinds = [...new Set(dayLectures.flatMap((l) => (l.kinds.length > 0 ? sortLectureKinds(l.kinds) : ["특강"])))];
-              const dayTags = dayKinds.map(lectureKindShort);
+              // 달력에는 무슨 특강인가로 묶어 짧게 (`RC 현강·녹화` · 좁으면 `RC`). 종류가 없으면 "특강" — lectureDayTags
+              const dayTags = lectureDayTags(dayLectures.map((l) => l.kinds));
               const isOpens = opens === c.date;
               const isCloses = closes === c.date;
               const hasReplay = locked.has(`mwf|${c.date}`) || locked.has(`ttf|${c.date}`);
@@ -510,7 +513,7 @@ export function TermCalendar({
                 isOpens && "개강일",
                 isCloses && "종강일",
                 track && `${TRACK_LABEL[track]} 수업일`,
-                dayTags.length > 0 && `특강 ${dayTags.join(", ")}`,
+                dayTags.length > 0 && `특강 ${dayTags.map((t) => t.label).join(", ")}`,
                 taken && `${taken.month}월 기수가 쓰는 날짜`,
                 hasReplay && "다시보기 있음",
               ]
@@ -566,13 +569,13 @@ export function TermCalendar({
                         {taken.month}월<span className="hidden sm:inline"> 기수</span>
                       </Tag>
                     )}
-                    {dayKinds.slice(0, 2).map((k) => (
-                      <Tag key={k} className="bg-violet-100 text-violet-800">
-                        <span className="sm:hidden">{lectureKindTiny(k)}</span>
-                        <span className="hidden sm:inline">{lectureKindShort(k)}</span>
+                    {dayTags.slice(0, 2).map((t) => (
+                      <Tag key={t.key} className="bg-violet-100 text-violet-800">
+                        <span className="sm:hidden">{t.tiny}</span>
+                        <span className="hidden sm:inline">{t.short}</span>
                       </Tag>
                     ))}
-                    {dayKinds.length > 2 && <span className="text-center text-[10px] font-bold text-violet-700">+{dayKinds.length - 2}</span>}
+                    {dayTags.length > 2 && <span className="text-center text-[10px] font-bold text-violet-700">+{dayTags.length - 2}</span>}
                   </span>
                 </button>
               );
@@ -632,7 +635,7 @@ export function TermCalendar({
       {lectures.length > 0 && (
         <section aria-labelledby="lecture-list-title" className="rounded-xl2 border border-violet-200">
           <h3 id="lecture-list-title" className="border-b border-violet-100 bg-violet-50/60 px-4 py-2.5 text-sm font-black text-ink">
-            특강 {lectures.length}개 <span className="font-semibold text-slate">— 강사·종류·내용은 여기서 바로 고칠 수 있어요</span>
+            특강 {lectures.length}개 <span className="font-semibold text-slate">— 강사·종류·내용은 여기서 바로 고칠 수 있어요. 신청 조건 · 안내는 특강 신청 화면에서 정해요</span>
           </h3>
           <ul className="divide-y divide-line">
             {sortedLectures.map((l) => {
@@ -668,22 +671,13 @@ export function TermCalendar({
                       </button>
                     )}
                   </div>
-                  <div role="group" aria-label={`${labelKo(l.date)} 특강 종류`} className="flex flex-wrap gap-1.5">
-                    {LECTURE_KINDS.map((k) => (
-                      <KindChip
-                        key={k.value}
-                        small
-                        label={k.label}
-                        on={l.kinds.includes(k.value)}
-                        onClick={() =>
-                          !readOnly &&
-                          updateLecture(l.key, {
-                            kinds: l.kinds.includes(k.value) ? l.kinds.filter((x) => x !== k.value) : sortLectureKinds([...l.kinds, k.value]),
-                          })
-                        }
-                      />
-                    ))}
-                  </div>
+                  {/* 특강 하나에 종류 하나 — 다른 종류를 누르면 바뀌고, 고른 것을 다시 누르면 비운다(내용만 있는 특강) */}
+                  <KindPicker
+                    small
+                    label={`${labelKo(l.date)} 특강 종류`}
+                    isOn={(k) => l.kinds.includes(k)}
+                    onPick={(k) => !readOnly && updateLecture(l.key, { kinds: l.kinds.includes(k) ? [] : [k] })}
+                  />
                   <input
                     aria-label={`${labelKo(l.date)} 특강 내용`}
                     value={l.content}
@@ -693,7 +687,7 @@ export function TermCalendar({
                     placeholder="내용 (선택) — 종류만 골라도 됩니다"
                     className={cn("input w-full !py-2 text-sm", blank && "border-amber-300")}
                   />
-                  {blank && <p className="text-xs font-bold text-amber-600">종류를 하나 이상 고르거나 내용을 적어 주세요.</p>}
+                  {blank && <p className="text-xs font-bold text-amber-600">종류를 고르거나 내용을 적어 주세요.</p>}
                 </li>
               );
             })}
@@ -786,11 +780,12 @@ export function TermCalendar({
   );
 }
 
-function KindChip({ label, on, onClick, small = false }: { label: string; on: boolean; onClick: () => void; small?: boolean }) {
+function KindChip({ label, ariaLabel, on, onClick, small = false }: { label: string; ariaLabel?: string; on: boolean; onClick: () => void; small?: boolean }) {
   return (
     <button
       type="button"
       aria-pressed={on}
+      aria-label={ariaLabel}
       onClick={onClick}
       className={cn(
         "rounded-full border font-bold transition",
@@ -800,6 +795,26 @@ function KindChip({ label, on, onClick, small = false }: { label: string; on: bo
     >
       {label}
     </button>
+  );
+}
+
+/**
+ * 특강 종류 고르기 — 무슨 특강인가(RC특강 · LC특강 · 1차 · 2차 모의고사)마다 한 줄에 두 칸(현강신청 · 녹화영상 / 시험지 수령 신청) (2026-10-15 Alan 이 적은 여덟 가지 그대로).
+ * 붓은 여러 개(종류마다 특강이 하나씩), 특강 목록의 한 줄은 하나만 — 누르는 쪽이 정한다.
+ */
+function KindPicker({ label, isOn, onPick, small = false }: { label: string; isOn: (kind: string) => boolean; onPick: (kind: string) => void; small?: boolean }) {
+  return (
+    <div role="group" aria-label={label} className="grid gap-1.5 lg:grid-cols-2">
+      {LECTURE_BASES.map((b) => (
+        <div key={b.value} className="flex min-w-0 flex-wrap items-center gap-1.5">
+          {/* 휴대폰은 이름이 제 줄, 두 칸이 그 아래 나란히 — 이름 옆에 두면 둘째 칸만 다음 줄로 떨어진다 */}
+          <span className={cn("shrink-0 font-black text-violet-800", small ? "w-full text-xs sm:w-20" : "w-full text-sm sm:w-24")}>{b.label}</span>
+          {lectureKindsOf(b.value).map((k) => (
+            <KindChip key={k.value} small={small} label={k.wayLabel} ariaLabel={k.label} on={isOn(k.value)} onClick={() => onPick(k.value)} />
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }
 

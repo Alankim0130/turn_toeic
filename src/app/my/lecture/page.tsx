@@ -11,16 +11,20 @@ import {
   LECTURE_STATE_CLASS,
   LECTURE_STATE_LABEL,
   lectureCameo,
+  lectureCondition,
   lectureOpensAt,
   lectureState,
   lectureSubjectBlock,
   lectureSubjectNote,
   lectureTitle,
-  needsReviewLink,
   seatsLeft,
   signupDday,
+  snsFollowShort,
+  sortLectures,
   YBM_REVIEW_LINK_HINT,
 } from "@/lib/lecture";
+import { site } from "@/lib/site";
+import { MaterialNote } from "@/components/class-materials/MaterialNote";
 import { InstructorCameo } from "@/components/ui/InstructorCameo";
 import { LectureCancelButton, LectureSignupButton, SignupOpensIn } from "@/components/my/LectureSignup";
 import { BreakableUrl, YBM_REVIEW_GUIDE_ID, YbmReviewGuide } from "@/components/my/YbmReviewGuide";
@@ -37,12 +41,10 @@ export default async function MyLecturePage() {
   // 단과 학생은 제 과목 특강만 (2026-10-12 Alan — "RC 단과반은 LC특강신청이 안되고, LC단과는 RC특강신청이 안되도록"). 막는 것은 DB 트리거이고 여기서는 버튼을 그리지 않는다
   const blockedFor = (l: (typeof lectures)[number]) => (mySignups.has(l.id) ? [] : lectureSubjectBlock(l.kinds, subjectsByTerm.get(l.term_id) ?? new Set<string>()));
 
-  // 신청을 받는 특강만. 지난 특강은 내가 신청한 것만 남겨 기록을 보여 준다
-  const open = lectures
-    .filter((l) => l.signup && (today <= l.date || mySignups.has(l.id)))
-    .sort((a, b) => a.date.localeCompare(b.date));
-  // 3주차 모의고사 특강은 YBM 수강후기 링크를 올려야 신청된다 (2026-10-08 Alan) — 아직 할 일이 남은 특강이 있을 때만 쓰는 법을 보여 준다
-  const reviewFor = (l: (typeof open)[number]) => needsReviewLink(l, l.term?.enrollment_opens_at);
+  // 신청을 받는 특강만. 지난 특강은 내가 신청한 것만 남겨 기록을 보여 준다. 같은 날은 RC 현강 · 녹화영상 · … 순으로 (sortLectures)
+  const open = sortLectures(lectures.filter((l) => l.signup && (today <= l.date || mySignups.has(l.id))));
+  // 신청 조건은 강사가 특강마다 고른다 (2026-10-15 — review · sns · none). 후기 조건이 남은 특강이 있을 때만 후기 쓰는 법을 보여 준다
+  const reviewFor = (l: (typeof open)[number]) => lectureCondition(l.signup_condition) === "review";
   const showGuide = open.some((l) => reviewFor(l) && !mySignups.has(l.id) && lectureState(l, today) !== "closed" && blockedFor(l).length === 0);
 
   return (
@@ -65,8 +67,8 @@ export default async function MyLecturePage() {
           {open.map((l, i) => {
             const state = lectureState(l, today);
             const applied = mySignups.has(l.id);
-            const review = reviewFor(l);
-            const reviewUrl = mySignups.get(l.id) ?? null;
+            const condition = lectureCondition(l.signup_condition);
+            const mine = mySignups.get(l.id);
             const left = seatsLeft(l);
             const pct = l.capacity ? Math.min(100, Math.round((l.applied_count / l.capacity) * 100)) : 0;
             // 강사 캐리커처 + 한마디, 잠긴 특강의 D-day (2026-10-02 Alan)
@@ -94,6 +96,9 @@ export default async function MyLecturePage() {
                       {applied ? "신청 완료" : blocked.length > 0 ? "내 과목 아님" : LECTURE_STATE_LABEL[state]}
                     </span>
                   </div>
+
+                  {/* 강사님 안내 — 수업자료실 안내와 같은 서식 글 (2026-10-15). 길면 앞 네 줄만 보이고 펼친다 */}
+                  {l.notice && <MaterialNote note={l.notice} className="bg-violet-50/70" />}
 
                   {/* 신청 현황 왼쪽, 오른쪽에 강사 캐리커처 + 말풍선 — 손짓이 왼쪽을 향하므로 콘텐츠 오른쪽에 둔다 */}
                   <div className="flex items-end gap-3">
@@ -134,7 +139,10 @@ export default async function MyLecturePage() {
                         <SignupOpensIn opensAt={lectureOpensAt(l)} label={formatKstDateTime(lectureOpensAt(l))} dday={ddayLabel(dday)} />
                       )}
 
-                      {review && (applied || state !== "closed") && <ReviewLinkNote applied={applied} reviewUrl={reviewUrl} notOpen={state === "not_open"} />}
+                      {condition === "review" && (applied || state !== "closed") && (
+                        <ReviewLinkNote applied={applied} reviewUrl={mine?.reviewUrl ?? null} notOpen={state === "not_open"} />
+                      )}
+                      {condition === "sns" && (applied || state !== "closed") && <SnsFollowNote applied={applied} follow={mine?.snsFollow ?? null} notOpen={state === "not_open"} />}
                     </>
                   )}
 
@@ -146,7 +154,7 @@ export default async function MyLecturePage() {
                         <p className="text-xs text-slate">신청이 마감돼 직접 취소할 수 없어요. 강사에게 말씀해 주세요.</p>
                       )
                     ) : state === "open" || state === "full" ? (
-                      <LectureSignupButton lectureId={l.id} full={state === "full"} needsReview={review} />
+                      <LectureSignupButton lectureId={l.id} full={state === "full"} condition={condition} />
                     ) : (
                       <p className="text-xs font-semibold text-slate">{state === "closed" ? "신청이 마감됐어요" : "아직 신청 전이에요"}</p>
                     )}
@@ -166,7 +174,7 @@ export default async function MyLecturePage() {
 }
 
 /**
- * 3주차 모의고사 특강 카드의 후기 링크 안내 (2026-10-08 Alan) — 신청 전에는 "후기를 써야 신청돼요" + 쓰는 법으로 가는 길,
+ * 후기 조건(review) 특강 카드의 후기 링크 안내 (2026-10-08 Alan — 그때는 3주차 모의고사, 2026-10-15 부터 강사가 특강마다 고른다) — 신청 전에는 "후기를 써야 신청돼요" + 쓰는 법으로 가는 길,
  * 신청한 뒤에는 내가 올린 링크. 링크 칸 자체는 `LectureSignupButton` 이 그린다 (신청 받는 중일 때만).
  */
 function ReviewLinkNote({ applied, reviewUrl, notOpen }: { applied: boolean; reviewUrl: string | null; notOpen: boolean }) {
@@ -198,6 +206,44 @@ function ReviewLinkNote({ applied, reviewUrl, notOpen }: { applied: boolean; rev
           후기 쓰는 법 보기
         </a>
       </p>
+    </div>
+  );
+}
+
+/**
+ * 유튜브 구독 · 인스타그램 팔로우 조건 특강 카드의 안내 (2026-10-15 Alan 이 보낸 그림 — "댓글달기전 1) 역전토익 유튜브 구독을 눌러주세요
+ * 2) 역전토익 인스타그램을 팔로우 해주세요 (기존 팔로우는 "기존"으로 표기 해주세요)"). 신청 전에는 두 곳으로 가는 버튼, 신청한 뒤에는 내가 고른 것.
+ * 체크 칸 자체는 `LectureSignupButton` 이 그린다 (신청 받는 중일 때만). 주소는 `site.social` 한곳.
+ */
+function SnsFollowNote({ applied, follow, notOpen }: { applied: boolean; follow: string | null; notOpen: boolean }) {
+  if (applied) {
+    return (
+      <div className="rounded-xl bg-brand-50 px-3 py-2.5 text-xs">
+        <p className="font-bold text-slate">신청 조건</p>
+        <p className="mt-0.5 font-semibold text-ink">
+          유튜브 구독 · 인스타그램 {snsFollowShort(follow) ?? "팔로우"}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl border border-brand-200 bg-brand-50 px-3 py-2.5 text-xs">
+      <p className="font-black text-brand-700">역전토익 유튜브 구독 · 인스타그램 팔로우를 하고 신청해요</p>
+      <p className="mt-0.5 text-slate">
+        이미 팔로우하고 있었다면 신청할 때 &lsquo;기존&rsquo; 으로 골라 주세요.{notOpen ? " 신청이 열리기 전에 미리 해 두세요." : ""}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {site.social.youtube && (
+          <a href={site.social.youtube} target="_blank" rel="noopener noreferrer" className="btn-secondary !px-3 !py-1.5 text-xs">
+            역전토익 유튜브
+          </a>
+        )}
+        {site.social.instagram && (
+          <a href={site.social.instagram} target="_blank" rel="noopener noreferrer" className="btn-secondary !px-3 !py-1.5 text-xs">
+            역전토익 인스타그램
+          </a>
+        )}
+      </div>
     </div>
   );
 }

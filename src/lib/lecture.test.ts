@@ -2,27 +2,48 @@ import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CLASS_MATERIAL_LINK_URL_MAX } from "./class-materials";
 import {
+  brushLectures,
   ddayLabel,
+  isSnsFollow,
   isYbmReviewUrl,
   kstDateOf,
   lectureCameo,
+  lectureCondition,
+  LECTURE_CONDITIONS,
   LECTURE_SUBJECT_ERROR,
   lectureOpensAt,
   lectureState,
   lectureSubjectBlock,
   lectureSubjectNote,
-  lectureWeek,
-  needsReviewLink,
+  lectureTitle,
   parseReviewLink,
-  REVIEW_LECTURE_KINDS,
   reviewLinkError,
   reviewLinkKey,
-  REVIEW_LECTURE_WEEK,
   sectionSubjects,
   shiftDate,
   signupDday,
+  SNS_FOLLOWS,
+  snsFollowError,
+  sortLectures,
   YBM_REVIEW_LINK_RE,
 } from "./lecture";
+import { LECTURE_KIND_VALUES, LECTURE_KINDS, lectureDayTags, lectureKindSubject } from "./utils";
+
+/** 마이그레이션을 파일 순서대로 — 그 이름의 마지막 정의 본문을 꺼낸다 */
+const SQLS = readdirSync("supabase/migrations")
+  .filter((f) => f.endsWith(".sql"))
+  .sort()
+  .map((f) => readFileSync(`supabase/migrations/${f}`, "utf8"));
+const lastFn = (name: string) => {
+  const file = SQLS.filter((t) => t.includes(`function ${name}(`)).at(-1) ?? "";
+  const start = file.indexOf(`function ${name}(`);
+  return start < 0 ? "" : file.slice(start, file.indexOf("$$;", start));
+};
+const lastCheck = (name: string) => {
+  const file = SQLS.filter((t) => t.includes(`add constraint ${name}`)).at(-1) ?? "";
+  const start = file.lastIndexOf(`add constraint ${name}`);
+  return start < 0 ? "" : file.slice(start, file.indexOf(";", start));
+};
 
 const base = { id: 1, date: "2026-10-17", signup: true, capacity: 140, signup_opens_at: null, applied_count: 0 };
 const at = (kst: string) => new Date(`${kst}+09:00`).getTime();
@@ -69,13 +90,17 @@ describe("signupDday — 잠긴 특강의 D-day", () => {
 });
 
 describe("lectureCameo — 강사와 종류에 맞는 캐리커처", () => {
-  it("이혜영 LC특강은 헤드폰 노트 컷, 모의고사만이면 윙크 가리키기", () => {
-    expect(lectureCameo("이혜영", ["lc", "mock2"])?.pose).toBe("notebook");
+  it("이혜영 LC특강(현강 · 녹화영상)은 헤드폰 노트 컷, 모의고사(현강 · 시험지)면 윙크 가리키기", () => {
+    expect(lectureCameo("이혜영", ["lc"])?.pose).toBe("notebook");
+    expect(lectureCameo("이혜영", ["lc_video"])?.pose).toBe("notebook");
     expect(lectureCameo("이혜영", ["mock1"])?.pose).toBe("point");
+    expect(lectureCameo("이혜영", ["mock1_paper"])?.pose).toBe("point");
   });
-  it("이영수 RC특강은 태블릿 컷, 모의고사만이면 엄지척", () => {
-    expect(lectureCameo("이영수", ["rc", "mock1"])?.pose).toBe("tablet");
+  it("이영수 RC특강(현강 · 녹화영상)은 태블릿 컷, 모의고사면 엄지척", () => {
+    expect(lectureCameo("이영수", ["rc"])?.pose).toBe("tablet");
+    expect(lectureCameo("이영수", ["rc_video"])?.pose).toBe("tablet");
     expect(lectureCameo("이영수", ["mock2"])?.pose).toBe("thumbsup");
+    expect(lectureCameo("이영수", ["mock2_paper"])?.pose).toBe("thumbsup");
   });
   it("강사가 없거나 두 분이 아니면 그리지 않는다", () => {
     expect(lectureCameo(null, ["rc"])).toBeNull();
@@ -95,56 +120,159 @@ describe("lectureCameo — 강사와 종류에 맞는 캐리커처", () => {
   });
 });
 
-describe("needsReviewLink — 3주차 모의고사 특강은 YBM 수강후기 링크를 올려야 신청된다 (2026-10-08 Alan)", () => {
-  it("개강일이 든 주(월요일 시작)가 1주차 — 지금까지 달마다 2차 모의고사 날이 3주차다", () => {
-    // 10월 10/6(화) 개강 — 10/17 1차 모의고사 · 10/24 RC특강 + 2차 모의고사 · 10/30 LC특강
-    expect(needsReviewLink({ date: "2026-10-17", kinds: ["mock1"] }, "2026-10-06")).toBe(false);
-    expect(needsReviewLink({ date: "2026-10-24", kinds: ["rc", "mock2"] }, "2026-10-06")).toBe(true);
-    expect(needsReviewLink({ date: "2026-10-30", kinds: ["lc"] }, "2026-10-06")).toBe(false);
-    // 9월 9/3(목) 개강 — 9/12 RC특강 + 1차 · 9/19 LC특강 + 2차
-    expect(needsReviewLink({ date: "2026-09-12", kinds: ["rc", "mock1"] }, "2026-09-03")).toBe(false);
-    expect(needsReviewLink({ date: "2026-09-19", kinds: ["lc", "mock2"] }, "2026-09-03")).toBe(true);
-    // 7월 7/3(금) 개강 — 7/11 1차 · 7/18 RC특강 + 2차 · 7/25 LC특강
-    expect(needsReviewLink({ date: "2026-07-11", kinds: ["mock1"] }, "2026-07-03")).toBe(false);
-    expect(needsReviewLink({ date: "2026-07-18", kinds: ["rc", "mock2"] }, "2026-07-03")).toBe(true);
-    expect(needsReviewLink({ date: "2026-07-25", kinds: ["lc"] }, "2026-07-03")).toBe(false);
-    // 8월 8/4(화) 개강 — 8/8 1차(개강 주) · 8/22 RC특강 + 2차 · 8/29 LC특강
-    expect(needsReviewLink({ date: "2026-08-08", kinds: ["mock1"] }, "2026-08-04")).toBe(false);
-    expect(needsReviewLink({ date: "2026-08-22", kinds: ["rc", "mock2"] }, "2026-08-04")).toBe(true);
-    expect(needsReviewLink({ date: "2026-08-29", kinds: ["lc"] }, "2026-08-04")).toBe(false);
+/**
+ * 특강 종류 여덟 · 특강 하나에 하나 (2026-10-15 Alan — "1. RC특강 (현강신청)/ RC 특강(녹화영상신청) 2. LC특강 (현강신청)/ LC 특강(녹화영상신청)
+ * 3. 1차 모의고사 (현강신청)/ 1차 모의고사 (시험지 수령 신청) 4. 2차 모의고사 (현강신청)/ 2차 모의고사 (시험지 수령 신청) 이렇게 총 8개로").
+ */
+describe("특강 종류 여덟 — Alan 이 적은 이름 · DB check · 순서 · 과목", () => {
+  it("이름은 Alan 이 적은 그대로, 지금 값 rc · lc · mock1 · mock2 가 현강신청이다", () => {
+    expect(LECTURE_KINDS.map((k) => k.label)).toEqual([
+      "RC특강 (현강신청)",
+      "RC특강 (녹화영상신청)",
+      "LC특강 (현강신청)",
+      "LC특강 (녹화영상신청)",
+      "1차 모의고사 (현강신청)",
+      "1차 모의고사 (시험지 수령 신청)",
+      "2차 모의고사 (현강신청)",
+      "2차 모의고사 (시험지 수령 신청)",
+    ]);
+    for (const v of ["rc", "lc", "mock1", "mock2"]) expect(LECTURE_KINDS.find((k) => k.value === v)?.way, v).toBe("onsite");
   });
-  it("주는 월요일에 바뀐다 — 일요일은 앞 주, 월요일은 다음 주", () => {
-    expect(lectureWeek("2026-10-06", "2026-10-06")).toBe(1);
-    expect(lectureWeek("2026-10-18", "2026-10-06")).toBe(2);
-    expect(lectureWeek("2026-10-19", "2026-10-06")).toBe(3);
-    expect(lectureWeek("2026-10-25", "2026-10-06")).toBe(3);
-    expect(lectureWeek("2026-10-26", "2026-10-06")).toBe(4);
-    expect(lectureWeek("2026-10-04", "2026-10-06")).toBe(0);
-    expect(lectureWeek("2026-11-02", "2026-10-06")).toBe(5);
+  it("DB check(special_lectures_kinds_check — 마지막 정의)와 같은 값 · 특강 하나에 하나 · private.lecture_kinds 와 같은 순서", () => {
+    const check = lastCheck("special_lectures_kinds_check");
+    expect(check).toContain("cardinality(kinds) <= 1");
+    const values = check.match(/array\[([^\]]+)\]::text\[\]/)?.[1].split(",").map((k) => k.trim().replace(/'/g, ""));
+    expect(values).toEqual(LECTURE_KIND_VALUES);
+    const order = lastFn("private.lecture_kinds").match(/array_position\(array\[([^\]]+)\]/)?.[1].split(",").map((k) => k.trim().replace(/'/g, ""));
+    expect(order).toEqual(LECTURE_KIND_VALUES);
+    // 반 편성 달력 저장도 같은 값 · 하나만
+    const save = lastFn("public.save_term_schedule");
+    expect(save).toContain("coalesce(jsonb_array_length(e -> 'kinds'), 0) > 1");
+    expect(save).toContain(`k not in (${LECTURE_KIND_VALUES.map((k) => `'${k}'`).join(", ")})`);
   });
-  it("모의고사가 없거나 개강일을 모르면 아니다", () => {
-    expect(needsReviewLink({ date: "2026-10-21", kinds: ["lc"] }, "2026-10-06")).toBe(false);
-    expect(needsReviewLink({ date: "2026-10-24", kinds: [] }, "2026-10-06")).toBe(false);
-    expect(needsReviewLink({ date: "2026-10-24", kinds: null }, "2026-10-06")).toBe(false);
-    expect(needsReviewLink({ date: "2026-10-24", kinds: ["mock2"] }, null)).toBe(false);
+  it("과목 — 녹화영상도 그 과목이다 (DB private.lecture_kind_subject 와 같다)", () => {
+    expect(LECTURE_KIND_VALUES.map(lectureKindSubject)).toEqual(["rc", "rc", "lc", "lc", null, null, null, null]);
+    const fn = lastFn("private.lecture_kind_subject");
+    expect(fn).toContain("when p_kind in ('rc', 'rc_video') then 'rc'");
+    expect(fn).toContain("when p_kind in ('lc', 'lc_video') then 'lc'");
+    // 단과 검사 트리거가 그 함수로 과목을 읽는다
+    expect(lastFn("private.lecture_signups_eligible_subject")).toContain("private.lecture_kind_subject(k)");
   });
-  it("DB(private.lecture_needs_review — 마지막 정의)와 같은 규칙: 주차 · 종류, 링크 칸 길이는 수업자료실 링크와 같다", () => {
-    const dir = "supabase/migrations";
-    const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
-    const sqls = files.map((f) => readFileSync(`${dir}/${f}`, "utf8"));
-    const last = sqls.filter((t) => t.includes("function private.lecture_needs_review(")).at(-1) ?? "";
-    const start = last.indexOf("function private.lecture_needs_review(");
-    const fn = last.slice(start, last.indexOf("$$;", start));
-    expect(fn).toMatch(new RegExp(`\\/ 7 \\+ 1 = ${REVIEW_LECTURE_WEEK}\\b`));
-    expect(fn).toContain("isodow");
-    const kinds = fn.match(/array\[([^\]]+)\]::text\[\]/)?.[1].split(",").map((k) => k.trim().replace(/'/g, ""));
-    expect(kinds).toEqual([...REVIEW_LECTURE_KINDS]);
-    const check = sqls.filter((t) => t.includes("lecture_signups_review_url_check")).at(-1) ?? "";
-    expect(check).toMatch(new RegExp(`char_length\\(review_url\\) <= ${CLASS_MATERIAL_LINK_URL_MAX}\\b`));
-    // 넣을 때 트리거가 막는다 — 오류 이름은 서버 액션이 학생 말로 바꾼다
-    expect(sqls.join("\n")).toMatch(/before insert on public\.lecture_signups[\s\S]*?lecture_signups_review_check/);
-    expect(readFileSync("src/app/my/class/actions.ts", "utf8")).toContain("reviewLinkError(error.message)");
+  it("제목은 그 이름 그대로 — 내용이 있으면 덧붙인다", () => {
+    expect(lectureTitle({ kinds: ["rc_video"], content: null })).toBe("RC특강 (녹화영상신청)");
+    expect(lectureTitle({ kinds: ["mock2_paper"], content: "16:00" })).toBe("2차 모의고사 (시험지 수령 신청) — 16:00");
+    expect(lectureTitle({ kinds: [], content: "설명회" })).toBe("설명회");
+  });
+  it("같은 날 특강은 RC 현강 · 녹화 · LC … · 2차 시험지 순, 종류 없는 특강은 맨 뒤", () => {
+    const list = [
+      { id: 5, date: "2026-10-24", kinds: ["mock2_paper"] },
+      { id: 9, date: "2026-10-24", kinds: [] },
+      { id: 3, date: "2026-10-24", kinds: ["rc_video"] },
+      { id: 4, date: "2026-10-17", kinds: ["mock1"] },
+      { id: 7, date: "2026-10-24", kinds: ["rc"] },
+      { id: 2, date: "2026-10-24", kinds: ["mock2"] },
+    ];
+    expect(sortLectures(list).map((l) => l.id)).toEqual([4, 7, 3, 2, 5, 9]);
+  });
+});
+
+describe("반 편성 달력 — 고른 종류마다 특강 하나 (brushLectures) · 칸 표시 (lectureDayTags)", () => {
+  type L = { key: string; date: string; lecturerId: number; content: string; kinds: string[] };
+  let n = 0;
+  const make = (date: string) => (kinds: string[]): L => ({ key: `k${++n}`, date, lecturerId: 2, content: "", kinds });
+  const brush = (date: string, kinds: string[]) => ({ date, lecturerId: 2, content: "", kinds });
+
+  it("종류를 여럿 고르고 날짜를 누르면 종류마다 하나씩 생기고, 다시 누르면 모두 빠진다", () => {
+    const first = brushLectures([], brush("2026-10-24", ["mock2", "rc", "rc_video"]), make("2026-10-24"));
+    expect(first.added).toBe(3);
+    expect(first.lectures.map((l) => l.kinds)).toEqual([["rc"], ["rc_video"], ["mock2"]]);
+    const again = brushLectures(first.lectures, brush("2026-10-24", ["rc", "rc_video", "mock2"]), make("2026-10-24"));
+    expect(again.removed).toBe(3);
+    expect(again.lectures).toEqual([]);
+  });
+  it("일부만 있으면 없는 것만 더한다 · 다른 날 · 다른 강사 · 다른 내용은 다른 특강", () => {
+    const base = brushLectures([], brush("2026-10-24", ["rc"]), make("2026-10-24")).lectures;
+    const more = brushLectures(base, brush("2026-10-24", ["rc", "rc_video"]), make("2026-10-24"));
+    expect(more.added).toBe(1);
+    expect(more.lectures.map((l) => l.kinds)).toEqual([["rc"], ["rc_video"]]);
+    expect(brushLectures(base, brush("2026-10-31", ["rc"]), make("2026-10-31")).added).toBe(1);
+    expect(brushLectures(base, { ...brush("2026-10-24", ["rc"]), lecturerId: 1 }, make("2026-10-24")).added).toBe(1);
+    expect(brushLectures(base, { ...brush("2026-10-24", ["rc"]), content: "파트5" }, make("2026-10-24")).added).toBe(1);
+  });
+  it("종류를 안 골랐으면 내용만 있는 특강 하나 (예전처럼 다시 누르면 빠진다)", () => {
+    const one = brushLectures([], { date: "2026-10-31", lecturerId: 1, content: "설명회", kinds: [] }, (kinds) => ({ key: "x", date: "2026-10-31", lecturerId: 1, content: "설명회", kinds }));
+    expect(one.lectures.map((l) => l.kinds)).toEqual([[]]);
+    expect(brushLectures(one.lectures, { date: "2026-10-31", lecturerId: 1, content: "설명회", kinds: [] }, () => one.lectures[0]).lectures).toEqual([]);
+  });
+  it("달력 칸은 무슨 특강인가로 묶는다 — `RC 현강·녹화` · 좁으면 `RC` · 종류가 없으면 `특강`", () => {
+    const tags = lectureDayTags([["mock2_paper"], ["rc_video"], ["rc"], ["mock2"], []]);
+    expect(tags.map((t) => t.short)).toEqual(["RC 현강·녹화", "2차 현강·시험지", "특강"]);
+    expect(tags.map((t) => t.tiny)).toEqual(["RC", "2차", "특강"]);
+    expect(tags[0].label).toBe("RC특강 (현강신청), RC특강 (녹화영상신청)");
+    expect(lectureDayTags([["lc_video"]]).map((t) => t.short)).toEqual(["LC 녹화"]);
+    expect(lectureDayTags([])).toEqual([]);
+  });
+});
+
+/**
+ * 신청 조건 — 강사가 특강마다 고른다 (2026-10-15 Alan — "1. 수업후기작성 2. 이미지참고 3. 조건없음").
+ * 이미지참고 = Alan 이 보낸 그림의 유튜브 구독 · 인스타그램 팔로우(새로 · 기존).
+ */
+describe("신청 조건 — review · sns · none (DB check · 신청 트리거 · 서버 액션)", () => {
+  it("값 셋 · 모르는 값은 조건 없음 · 팔로우는 새로 · 기존", () => {
+    expect(LECTURE_CONDITIONS.map((c) => c.value)).toEqual(["review", "sns", "none"]);
+    expect(LECTURE_CONDITIONS.map((c) => c.label)).toEqual(["YBM 수강후기 작성", "유튜브 구독 · 인스타그램 팔로우", "조건 없음"]);
+    expect(lectureCondition("sns")).toBe("sns");
+    expect(lectureCondition("x")).toBe("none");
+    expect(lectureCondition(null)).toBe("none");
+    expect(SNS_FOLLOWS.map((f) => f.value)).toEqual(["new", "existing"]);
+    expect(isSnsFollow("existing")).toBe(true);
+    expect(isSnsFollow("old")).toBe(false);
+  });
+  it("DB check 와 같은 값 — 조건(special_lectures_signup_condition_check) · 팔로우(lecture_signups_sns_follow_check) · 안내 5만 자", () => {
+    const vals = (sql: string) => [...(sql.match(/in \(([^)]+)\)/)?.[1] ?? "").matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort();
+    expect(vals(lastCheck("special_lectures_signup_condition_check"))).toEqual(LECTURE_CONDITIONS.map((c) => c.value).sort());
+    expect(vals(lastCheck("lecture_signups_sns_follow_check"))).toEqual(SNS_FOLLOWS.map((f) => f.value).sort());
+    expect(lastCheck("special_lectures_notice_check")).toContain("char_length(notice) <= 50000");
+    // 후기 링크 칸 길이는 수업자료실 링크와 같다 (2026-10-08 그대로)
+    expect(lastCheck("lecture_signups_review_url_check")).toMatch(new RegExp(`char_length\\(review_url\\) <= ${CLASS_MATERIAL_LINK_URL_MAX}\\b`));
+  });
+  it("신청을 넣을 때 트리거가 조건 칸으로 본다 — 후기 링크 · 팔로우가 없으면 막고, 조건이 아닌 칸은 비운다", () => {
+    const fn = lastFn("private.lecture_signups_review_check");
+    expect(fn).toContain("select l.signup_condition into v_condition");
+    expect(fn).toContain("'sns_follow_required'");
+    expect(fn).toContain("'review_link_required'");
+    expect(fn).toContain("new.review_url := null");
+    expect(fn).toContain("new.sns_follow := null");
+    // 날짜로 정하던 3주차 규칙(2026-10-08)은 지웠다 — 이제 조건 칸이 정한다
+    expect(fn).not.toContain("lecture_needs_review");
+    expect(SQLS.join("\n")).toContain("drop function if exists private.lecture_needs_review(bigint)");
+    expect(SQLS.join("\n")).toMatch(/before insert on public\.lecture_signups[\s\S]*?lecture_signups_review_check/);
+    // 학생이 조건 칸을 넣는다 (칸 단위 grant)
+    expect(SQLS.join("\n")).toContain("grant insert (sns_follow) on public.lecture_signups to authenticated");
+    expect(SQLS.join("\n")).toContain("grant update (signup_condition, notice) on public.special_lectures to authenticated");
+  });
+  it("서버 액션이 조건을 보고 칸을 보내고, DB 오류를 학생 말로 바꾼다", () => {
+    const action = readFileSync("src/app/my/class/actions.ts", "utf8");
+    expect(action).toContain('select("signup_condition")');
+    expect(action).toContain("reviewLinkError(error.message) ?? snsFollowError(error.message)");
+    expect(action).toContain('formData.get("youtube") !== "on"');
     expect(reviewLinkError("review_link_required")).toContain("링크를 올려야");
+    expect(snsFollowError("sns_follow_required")).toContain("인스타그램");
+    expect(snsFollowError("lecture_full")).toBeNull();
+  });
+  it("있던 특강 — 여러 종류는 종류마다 나누고(신청자도 옮겨 적는다), 조건은 2026-10-08 규칙(모의고사 현강 · 3주차 = 후기)대로", () => {
+    const mig = SQLS.find((t) => t.includes("특강 나누기:")) ?? "";
+    expect(mig).not.toBe("");
+    // 옮겨 적는 동안만 검사 트리거를 끄고 다시 켠다 — 켜는 줄이 끄는 줄 뒤에 있어야 한다
+    for (const t of ["lecture_signups_eligible_subject", "lecture_signups_review_check"]) {
+      const off = mig.indexOf(`disable trigger ${t};`);
+      const on = mig.indexOf(`enable trigger ${t};`);
+      expect(off, t).toBeGreaterThan(0);
+      expect(on, t).toBeGreaterThan(off);
+    }
+    expect(mig).toContain("insert into public.lecture_signups (lecture_id, user_id, created_at, review_url)");
+    expect(mig).toMatch(/set signup_condition = 'review'[\s\S]*?l\.kinds && array\['mock1', 'mock2'\]::text\[\][\s\S]*?\/ 7 \+ 1 = 3/);
   });
 });
 
@@ -339,10 +467,15 @@ describe("단과 학생은 제 과목 특강만 — sectionSubjects · lectureSu
     expect(lectureSubjectBlock(["rc"], mine(lcUnit))).toEqual(["rc"]);
     expect(lectureSubjectBlock(["rc", "mock2"], mine(lcUnit))).toEqual(["rc"]); // RC특강 + 2차 모의고사도 LC 단과에게는 막힌다
     expect(lectureSubjectBlock(["rc", "mock2"], mine(rcUnit))).toEqual([]);
+    // 녹화영상 신청도 그 과목이다 (2026-10-15)
+    expect(lectureSubjectBlock(["lc_video"], mine(rcUnit))).toEqual(["lc"]);
+    expect(lectureSubjectBlock(["rc_video"], mine(lcUnit))).toEqual(["rc"]);
+    expect(lectureSubjectBlock(["rc_video"], mine(rcUnit))).toEqual([]);
   });
 
   it("모의고사만인 특강은 누구나 · 종합(두 과목) · 속성반 · 2주완성 · 묶음 · 단과 둘을 함께 듣는 학생은 막히지 않는다", () => {
     expect(lectureSubjectBlock(["mock1"], mine(rcUnit))).toEqual([]);
+    expect(lectureSubjectBlock(["mock2_paper"], mine(lcUnit))).toEqual([]);
     expect(lectureSubjectBlock([], mine(lcUnit))).toEqual([]);
     expect(lectureSubjectBlock(null, mine(lcUnit))).toEqual([]);
     for (const s of [bundle, sparta, twoweek]) {
@@ -359,6 +492,7 @@ describe("단과 학생은 제 과목 특강만 — sectionSubjects · lectureSu
   it("문구 — 'RC 단과 수강생은 LC특강을 신청할 수 없어요'", () => {
     expect(lectureSubjectNote(["lc"], mine(rcUnit))).toBe("RC 단과 수강생은 LC특강을 신청할 수 없어요.");
     expect(lectureSubjectNote(["rc"], mine(lcUnit))).toBe("LC 단과 수강생은 RC특강을 신청할 수 없어요.");
+    expect(lectureSubjectNote(lectureSubjectBlock(["lc_video"], mine(rcUnit)), mine(rcUnit))).toBe("RC 단과 수강생은 LC특강을 신청할 수 없어요.");
     expect(LECTURE_SUBJECT_ERROR).toContain("RC 단과는 RC 특강");
   });
 

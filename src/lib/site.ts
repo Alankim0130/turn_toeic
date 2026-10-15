@@ -156,7 +156,11 @@ export const site = {
   social: {
     instagram: "https://www.instagram.com/ybm_winnertoeic/",
     instagramHandle: "@ybm_winnertoeic",
-    youtube: "",
+    /**
+     * 역전토익 유튜브 채널 (2026-10-15 Alan 이 보낸 특강 신청 조건 그림 — "역전토익 유튜브 구독을 눌러주세요"). 특강 신청 조건
+     * `유튜브 구독 · 인스타그램 팔로우`(sns) 카드의 버튼이 연다. 랜딩 · 푸터에는 그리지 않는다 (그 두 곳은 인스타그램만 — 요청받지 않았다).
+     */
+    youtube: "https://www.youtube.com/channel/UC6MZFfeK_sNa5QsDs6HIaBQ",
   },
 } as const;
 

@@ -46,7 +46,7 @@ const STEPS: { title: string; body: ReactNode }[] = [
 /**
  * YBM 수강후기 쓰는 법 (2026-10-08 Alan — "후기작성방법도 알려주면 좋을 것 같아. Ybm홈페이지 링크를 주고, 거기에서 마이페이지에서 작성하면 돼.
  * 후기작성하기가 안뜬다면 ybm홈페이지 회원가입을 안한거라서 1층 데스크에 내려가서 연동해달라고 얘기를 하면 돼").
- * 특강 신청(`/my/lecture`)에 후기 링크를 올려야 하는 특강(3주차 모의고사 — `needsReviewLink`)이 있을 때만 선다. 특강 카드의 `후기 쓰는 법` 이 여기로 온다.
+ * 특강 신청(`/my/lecture`)에 후기 링크를 올려야 하는 특강(신청 조건 review — 2026-10-15 부터 강사가 특강마다 고른다)이 있을 때만 선다. 특강 카드의 `후기 쓰는 법` 이 여기로 온다.
  * 마이페이지 그림은 등업신청의 수강증 찾는 법(`ReceiptGuide`)과 같은 것이다 (Alan 이 준 YBM 홈페이지 첫 화면 — 아래 메뉴의 마이페이지).
  * YBM 화면 안의 후기 쓰기 · 링크 복사 단계는 이 작업 환경에서 YBM 홈페이지가 막혀 직접 보지 못하고 Alan 의 말대로 적었다 — 실제와 다르면 STEPS 만 고친다.
  * 링크의 꼴(`YBM_REVIEW_LINK_HINT`)은 Alan 이 보내 준 7월 학생들의 링크 화면에서 왔다 (2026-10-08).
@@ -62,7 +62,7 @@ export function YbmReviewGuide() {
           <h2 id="ybm-review-guide-title" className="text-lg font-black text-ink">
             YBM 수강후기 쓰는 법
           </h2>
-          <p className="mt-0.5 text-sm text-slate">3주차 모의고사 특강은 YBM 홈페이지에 수강후기를 쓰고, 그 후기 링크를 올려야 신청돼요.</p>
+          <p className="mt-0.5 text-sm text-slate">신청 조건이 &lsquo;YBM 수강후기 작성&rsquo; 인 특강은 YBM 홈페이지에 수강후기를 쓰고, 그 후기 링크를 올려야 신청돼요.</p>
         </div>
       </div>
 

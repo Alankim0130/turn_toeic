@@ -15,12 +15,15 @@ import {
   isYbmReviewUrl,
   LECTURE_STATE_CLASS,
   LECTURE_STATE_LABEL,
+  lectureCondition,
+  lectureConditionLabel,
   lectureOpensAt,
   lectureState,
   lectureTitle,
-  needsReviewLink,
   reviewLinkKey,
   seatsLeft,
+  snsFollowShort,
+  sortLectures,
 } from "@/lib/lecture";
 import { termParam } from "@/lib/study";
 import { pickTerm, type TermLite } from "../_lib/queries";
@@ -63,7 +66,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
   if (!term) {
     return (
       <>
-        <PageHeader icon="bolt" title="특강 신청" description="특강마다 신청을 받을지, 정원과 신청 시작을 정하고 신청자를 확인해요." />
+        <PageHeader icon="bolt" title="특강 신청" description="특강마다 신청을 받을지, 정원 · 신청 시작 · 신청 조건 · 안내를 정하고 신청자를 확인해요." />
         {migrationNotice}
         <EmptyState
           icon="calendar"
@@ -75,14 +78,9 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
     );
   }
 
-  const { data: lectures } = await supabase
-    .from("special_lectures")
-    .select("id, date, content, kinds, signup, capacity, signup_opens_at, applied_count, lecturer:lecturers(name)")
-    .eq("term_id", term.id)
-    .order("date")
-    .order("id");
+  const lectures = sortLectures(await getLectures(supabase, term.id));
 
-  const ids = (lectures ?? []).map((l) => l.id);
+  const ids = lectures.map((l) => l.id);
   const signups = ids.length ? await getSignups(supabase, ids) : [];
 
   const byLecture = new Map<number, typeof signups>();
@@ -96,7 +94,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
       <PageHeader
         icon="bolt"
         title="특강 신청"
-        description="특강 날짜·강사·종류는 반 편성 달력에서 정하고, 여기서는 신청만 다뤄요."
+        description="특강 날짜·강사·종류는 반 편성 달력에서 정하고, 여기서는 신청 · 신청 조건 · 안내를 다뤄요."
       >
         <Link href={`/admin/sections?term=${termKey}`} className="btn-secondary">
           <Icon name="calendar" size={18} />
@@ -109,17 +107,20 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
       <TermChips basePath="/admin/lectures" terms={terms} current={termKey} />
 
       <p className="mb-4 text-sm text-slate">
-        {term.year}년 {term.month}월 특강 <b className="text-ink">{lectures?.length ?? 0}개</b> · 신청 <b className="text-brand-600">{total}건</b>
+        {term.year}년 {term.month}월 특강 <b className="text-ink">{lectures.length}개</b> · 신청 <b className="text-brand-600">{total}건</b>
       </p>
 
       <div className="space-y-4">
-        {(lectures ?? []).map((l) => {
+        {lectures.map((l) => {
           const state = lectureState(l, today);
           const rows = byLecture.get(l.id) ?? [];
           const left = seatsLeft(l);
-          // 3주차 모의고사 — YBM 수강후기 링크를 올려야 신청된다 (2026-10-08 Alan). 같은 후기(키 — `reviewLinkKey`)를 낸 학생을 짚는다.
-          // 같은 날 저녁부터 DB 가 다른 학생의 링크를 막으므로(20261008130000) 그 전에 들어온 신청에만 붙을 수 있다
-          const review = needsReviewLink(l, term.enrollment_opens_at);
+          // 신청 조건 — 강사가 특강마다 고른다 (2026-10-15). 후기 조건이면 같은 후기(키 — `reviewLinkKey`)를 낸 학생을 짚는다 —
+          // 2026-10-08 저녁부터 DB 가 다른 학생의 링크를 막으므로(20261008130000) 그 전에 들어온 신청에만 붙을 수 있다
+          const condition = lectureCondition(l.signup_condition);
+          const review = condition === "review";
+          const sns = condition === "sns";
+          const follows = { new: rows.filter((r) => r.sns_follow === "new").length, existing: rows.filter((r) => r.sns_follow === "existing").length };
           const linkCount = new Map<string, number>();
           for (const r of rows) {
             const key = reviewLinkKey(r.review_url);
@@ -136,7 +137,14 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
                   </p>
                 </div>
                 <span className="flex flex-wrap items-center gap-2">
-                  {review && <span className="rounded-full bg-brand-500 px-2.5 py-1 text-xs font-bold text-white">YBM 후기 링크로 신청 · 3주차 모의고사</span>}
+                  {condition !== "none" && (
+                    <span className="rounded-full bg-brand-500 px-2.5 py-1 text-xs font-bold text-white">신청 조건 · {lectureConditionLabel(condition)}</span>
+                  )}
+                  {sns && rows.length > 0 && (
+                    <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-bold text-brand-700">
+                      인스타 새로 팔로우 {follows.new} · 기존 {follows.existing}
+                    </span>
+                  )}
                   {l.signup && (
                     <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold", LECTURE_STATE_CLASS[state])}>
                       {LECTURE_STATE_LABEL[state]}
@@ -157,6 +165,8 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
                   capacity={l.capacity}
                   signupOpensAt={toKstLocal(l.signup_opens_at)}
                   appliedCount={l.applied_count}
+                  condition={l.signup_condition}
+                  notice={l.notice}
                 />
               </div>
 
@@ -174,6 +184,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
                         <CancelLectureSignupButton id={s.id} name={s.student?.name ?? "수강생"} />
                       </span>
                       {review && <ReviewLinkLine url={s.review_url} shared={(linkCount.get(reviewLinkKey(s.review_url) ?? "") ?? 0) > 1} />}
+                      {sns && <SnsFollowLine follow={s.sns_follow} />}
                     </li>
                   ))}
                 </ol>
@@ -193,12 +204,31 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
 async function getSignups(supabase: Awaited<ReturnType<typeof createClient>>, ids: number[]) {
   const full = await supabase
     .from("lecture_signups")
-    .select("id, lecture_id, created_at, review_url, student:profiles(name, phone)")
+    .select("id, lecture_id, created_at, review_url, sns_follow, student:profiles(name, phone)")
     .in("lecture_id", ids)
     .order("created_at");
   if (!full.error) return full.data ?? [];
+  // 인스타그램 팔로우 칸(sns_follow)은 마이그레이션 20261015130000 에서 생겼다 — 못 읽으면 그 칸 없이
+  const mid = await supabase
+    .from("lecture_signups")
+    .select("id, lecture_id, created_at, review_url, student:profiles(name, phone)")
+    .in("lecture_id", ids)
+    .order("created_at");
+  if (!mid.error) return (mid.data ?? []).map((r) => ({ ...r, sns_follow: null as string | null }));
   const { data } = await supabase.from("lecture_signups").select("id, lecture_id, created_at, student:profiles(name, phone)").in("lecture_id", ids).order("created_at");
-  return (data ?? []).map((r) => ({ ...r, review_url: null as string | null }));
+  return (data ?? []).map((r) => ({ ...r, review_url: null as string | null, sns_follow: null as string | null }));
+}
+
+/**
+ * 그 달 특강 — 신청 조건(signup_condition) · 안내(notice)와 함께 (2026-10-15). 그 두 칸은 마이그레이션 20261015130000 에서 생겼다 —
+ * 배포와 마이그레이션 사이에 못 읽으면 두 칸 없이 읽는다 (그대로 비우면 특강이 하나도 없는 것처럼 보인다).
+ */
+async function getLectures(supabase: Awaited<ReturnType<typeof createClient>>, termId: number) {
+  const cols = "id, date, content, kinds, signup, capacity, signup_opens_at, applied_count, lecturer:lecturers(name)";
+  const full = await supabase.from("special_lectures").select(`${cols}, signup_condition, notice`).eq("term_id", termId).order("date").order("id");
+  if (!full.error) return full.data ?? [];
+  const { data } = await supabase.from("special_lectures").select(cols).eq("term_id", termId).order("date").order("id");
+  return (data ?? []).map((l) => ({ ...l, signup_condition: "none", notice: null as string | null }));
 }
 
 /**
@@ -217,6 +247,19 @@ function ReviewLinkLine({ url, shared }: { url: string | null; shared: boolean }
       </a>
       {!isYbmReviewUrl(url) && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800">YBM 후기 링크 아님</span>}
       {shared && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800">다른 학생과 같은 링크</span>}
+    </p>
+  );
+}
+
+/** 유튜브 구독 · 인스타그램 팔로우 조건 특강의 신청자 줄 — 학생이 고른 새로 · 기존 (그림의 "기존 팔로우는 기존으로 표기"). 조건이 생기기 전 신청은 비어 있다 */
+function SnsFollowLine({ follow }: { follow: string | null }) {
+  const label = snsFollowShort(follow);
+  if (!label) return <p className="basis-full pl-9 text-xs font-semibold text-amber-700">구독 · 팔로우 확인 없음 (조건을 정하기 전 신청)</p>;
+  return (
+    <p className="basis-full pl-9 text-xs">
+      <span className={follow === "new" ? "rounded-full bg-brand-500 px-2 py-0.5 font-bold text-white" : "rounded-full bg-line px-2 py-0.5 font-bold text-slate"}>
+        유튜브 구독 · 인스타 {label}
+      </span>
     </p>
   );
 }
