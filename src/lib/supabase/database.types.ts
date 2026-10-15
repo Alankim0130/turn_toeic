@@ -1068,29 +1068,6 @@ export type Database = {
           },
         ]
       }
-      homework_missing_optins: {
-        Row: {
-          created_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "homework_missing_optins_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: true
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       homework_missing_optouts: {
         Row: {
           created_at: string

@@ -2530,8 +2530,8 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
         계정 합치기(`private.merge_accounts`)가 안 받기도 옮긴다(`moved.homework_alerts_off` — 어느 쪽 계정에서든 껐으면 남길 계정도 받지 않는다), 계정을 지우면 함께 지워진다.
       - **DB 도 막는다** — BEFORE INSERT 트리거 `student_messages_homework_missing_optout` 이 안 받기를 누른 학생에게 가는 `homework_missing` 줄은 **조용히 넣지 않는다**(`return null` — 오류가 아니라 그 줄만 빠진다).
         화면을 거치지 않고 API · 서비스 롤로 넣어도 같다. 다른 종류의 알림은 그대로 간다. 예전 트리거 `…_optin` 과 그 함수는 같은 마이그레이션이 지웠다 — 남아 있으면 신청 안 한 학생(= 거의 전부)이 다시 막힌다.
-      - **배포 틈**: 20261015100000 은 예전 신청 표(`homework_missing_optins`)를 **지우지 않는다** — 배포하는 몇 분 동안 옛 앱이 그 표를 읽고 쓴다(지우면 그동안 선생님 화면이 "숙제 기록을 다 읽지 못했어요" 로 멈춘다).
-        그 마이그레이션부터는 아무것도 그 표를 보지 않는다(그 줄이 있든 없든 받는다). 새 앱이 뜬 것을 확인한 뒤 다음 마이그레이션이 지운다.
+      - **두 번에 나눠 배포했다**: 20261015100000 은 예전 신청 표(`homework_missing_optins`)를 **지우지 않았다** — 배포하는 몇 분 동안 옛 앱이 그 표를 읽고 썼다(지우면 그동안 선생님 화면이 "숙제 기록을 다 읽지 못했어요" 로 멈춘다).
+        그 마이그레이션부터는 아무것도 그 표를 보지 않았고(그 줄이 있든 없든 받는다), 새 앱이 뜬 것을 확인한 뒤 **20261015110000 이 지웠다** (`roles.test.ts` 가 지운 것이 마지막인지 본다).
       - 관리자: 기본은 **알림을 받는 학생(끈 학생만 빼고 모두)** 이 줄 · 카드 · 탭 숫자에 선다(`onlyAlerted` · `missingStudentCount`). 숙제점검의 `점검완료 포함` 자리에 체크박스 **`알림 안 받는 학생도 보기 (N명)`**(`?all=1`) —
         켜면 끈 학생도 맨 아래에 회색 줄 · `알림 안 받음` 칩으로 서고 고를 수 없다(체크 칸이 없다). 그 레벨 학생이 모두 껐으면 "이 레벨 학생이 모두 알림을 껐어요" 를 띄운다.
         규칙 모듈의 입력은 `optedOut`(끈 학생 집합)이고 줄의 `alerts` 는 "받는가" 다 (`optedOutCount` — 체크박스 숫자).
@@ -3861,7 +3861,7 @@ create table attendance_events (           -- 쌓기만: enter · exit · manual
 -- homework_missing_optouts(user_id pk → profiles cascade, created_at) — 숙제 미제출 알림 안 받기 (20261015100000). 행이 있으면 안 받기 — 없으면 받는다. 조회 본인 · crew,
 --   넣기 · 지우기는 본인만 (insert 는 user_id 칸만 grant). 트리거 student_messages_homework_missing_optout(BEFORE INSERT, 이름 순으로 _sender 보다 먼저) 이
 --   안 받기를 누른 학생에게 가는 homework_missing 줄은 넣지 않는다 (return null). private.merge_accounts 가 옮긴다 (moved.homework_alerts_off)
--- homework_missing_optins — 2026-10-14 하루 쓴 신청 표 (행이 있으면 받기). 20261015100000 부터 아무것도 보지 않고, 새 앱 배포를 확인한 뒤 다음 마이그레이션이 지운다
+-- (homework_missing_optins — 2026-10-14 하루 쓴 신청 표 (행이 있으면 받기). 20261015110000 이 지웠다)
 -- public.homework_due_dates(날짜[]) → (class_date, due_date) — 숙제 제출 기한 = 같은 트랙(term_class_dates)의 다음 수업일, 기수를 넘어간다 · 없으면 null.
 --   authenticated 실행 (학생 숙제 달력 · 관리자 미제출 알림). 시각(오후 5시)은 앱 HOMEWORK_DUE_TIME
 -- private.attendance_poster(한 줄: token 20자 · created_at · created_by) — 출석 QR 포스터 토큰 (20260921150500). 앱에서 못 읽는다

@@ -692,6 +692,14 @@ describe("숙제 미제출 알림 안 받기 · 제출 기한 (마이그레이�
     expect(all).toContain("grant insert (user_id) on public.homework_missing_optouts to authenticated");
   });
 
+  it("하루 동안 있던 신청 표는 새 앱이 뜬 뒤 지웠다 — 만든 뒤에 지운 것이 마지막이다", () => {
+    let alive = false;
+    for (const f of files) {
+      for (const m of sqlOf(f).matchAll(/(create table|drop table if exists) public\.homework_missing_optins\b/g)) alive = m[1] === "create table";
+    }
+    expect(alive, "homework_missing_optins 가 아직 살아 있다").toBe(false);
+  });
+
   it("끈 학생에게만 미제출 알림이 들어가지 않는다 — BEFORE INSERT 트리거가 그 줄만 건너뛴다 (보내는 사람이 누구든) · 예전 신청 트리거는 없다", () => {
     expect(triggerAlive("student_messages_homework_missing_optout"), "student_messages_homework_missing_optout 트리거(before insert)가 없다").toBe(true);
     // 하루 동안 있던 신청 트리거 — 남아 있으면 '신청' 안 한 학생(= 거의 전부)이 계속 막힌다
