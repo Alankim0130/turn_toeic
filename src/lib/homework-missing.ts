@@ -362,6 +362,117 @@ export function rowOf(groups: readonly MissingGroup[], studentId: string): Missi
   return null;
 }
 
+/**
+ * **N강 — 그 트랙의 N번째 수업일** (2026-10-15 Alan — "1강(10월 6일) 숙제 미제출자 리스트/ 2강(10월 8일) 숙제 미제출자 리스트").
+ * 그 기수 반들의 회차 날짜(개강일 ~ 종강일)를 트랙마다 모아 날짜 순으로 센다 — 반 편성 달력에서 한 날짜는 한 트랙이고 같은 트랙의 반은 수업일이 같아서
+ * 반의 회차 번호(`session_dates.seq`)와 같은 수다 (2주완성 반은 앞 절반뿐이라 앞쪽 번호가 같다). 10월이면 화목금 10/6 이 1강 · 10/8 이 2강, 월수금 10/7 이 1강.
+ * **레벨로 거르지 않고 그 기수 반 전부로 센다** — 알림을 끈 학생을 빼고 보여 줘도 번호가 흔들리지 않게.
+ * 격자의 'N회'(카드 안 열 순서 — 주5일 카드는 두 트랙을 이어 센다)와는 다른 수다.
+ */
+export function lectureNumbers(sections: Iterable<Pick<MissingSection, "track" | "dates" | "opens" | "closes">>): Map<string, number> {
+  const byTrack = new Map<string, Set<string>>();
+  for (const s of sections) {
+    const set = byTrack.get(s.track) ?? new Set<string>();
+    for (const d of s.dates) if (d >= s.opens && d <= s.closes) set.add(d);
+    byTrack.set(s.track, set);
+  }
+  const out = new Map<string, number>();
+  for (const dates of byTrack.values()) {
+    [...dates].sort().forEach((d, i) => {
+      if (!out.has(d)) out.set(d, i + 1);
+    });
+  }
+  return out;
+}
+
+/** 날짜별 보기의 학생 한 명 — 그 날 다 내지 않은 학생과 안 낸 과목 */
+export type MissingDayStudent = Pick<MissingRow, "id" | "name" | "alerts"> & {
+  /** 이 학생이 선 카드(직접 배정된 반 묶음) — 화면이 반 이름을 붙인다 */
+  groupKey: string;
+  /** 그 날 안 낸 과목 (RC 먼저) */
+  subjects: HomeworkSubject[];
+};
+
+/** 날짜별 보기의 하루 — 'N강 · 10월 6일 (화)' */
+export type MissingDay = {
+  date: string;
+  track: string | null;
+  /** N강 (`lectureNumbers`) — 모르면 null */
+  lecture: number | null;
+  /** 그 날 숙제 과목 — 그 날 수업이 있는 반들을 합친 것 (RC 먼저) */
+  subjects: HomeworkSubject[];
+  /** 그 날 숙제의 기한 날짜 (같은 트랙 다음 수업일 오후 5시) · 모르면 null */
+  due: string | null;
+  overdue: boolean;
+  /** 그 날 낼 숙제가 있는 학생 수 · 그중 다 낸 학생 수 */
+  expected: number;
+  submitted: number;
+  /** 다 내지 않은 학생 — 기한이 지났으면 '안 냄', 아직이면 '기한 전'. 카드(반) 순서 → 알림 받는 학생 먼저 → 이름 (화면이 반마다 작은 머리글을 단다) */
+  missing: MissingDayStudent[];
+};
+
+/**
+ * **날짜별 보기** (2026-10-15 Alan — "숙제 미제출자에서 이렇게 사람별로 나오는것도 있는데 1강(10월 6일) 숙제 미제출자 리스트/ 2강(10월 8일) 숙제 미제출자 리스트
+ * 이렇게 날짜별로 리스트가 나올수 있게도"). 격자(`buildMissingBoard`)를 수업일마다 뒤집은 것이다 — **칸을 그대로 읽으므로** 두 보기가 서로 다른 말을 하지 않는다
+ * (기한 · 배정일 · 강사 계정 빼기 · 알림 안 받기가 다 같다).
+ * 그 레벨의 카드를 다 합쳐 수업일마다 한 장: 낼 학생(그 날 칸이 '해당 없음' 이 아닌 학생) · 다 낸 학생 · 다 내지 않은 학생과 안 낸 과목.
+ * `until`(오늘) 뒤의 수업일은 아직 수업 전이라 뺀다. 낼 학생이 없는 날도 뺀다. **날짜 순(1강부터)** — Alan 이 적은 순서다.
+ */
+export function buildMissingDays(groups: readonly MissingGroup[], opts: { until?: string; lectures?: ReadonlyMap<string, number> } = {}): MissingDay[] {
+  const days = new Map<string, MissingDay>();
+  // 날짜마다 이미 센 학생 · 학생이 선 카드 순서
+  const seenOn = new Map<string, Set<string>>();
+  const order = new Map<string, number>();
+  groups.forEach((g, gi) => {
+    for (const r of g.rows) if (!order.has(r.id)) order.set(r.id, gi);
+    g.columns.forEach((c, ci) => {
+      if (opts.until && c.date > opts.until) return;
+      let day = days.get(c.date);
+      if (!day) {
+        day = {
+          date: c.date,
+          track: c.track,
+          lecture: opts.lectures?.get(c.date) ?? null,
+          subjects: [],
+          due: c.due,
+          overdue: c.overdue,
+          expected: 0,
+          submitted: 0,
+          missing: [],
+        };
+        days.set(c.date, day);
+        seenOn.set(c.date, new Set());
+      }
+      const seen = seenOn.get(c.date)!;
+      for (const s of c.subjects) if (!day.subjects.includes(s)) day.subjects.push(s);
+      for (const r of g.rows) {
+        const cells = r.cells[ci] ?? [];
+        // 그 날 낼 숙제가 없는 학생 (반에 들어오기 전 · 그 시간 수업이 아님) — 한 학생은 한 카드에만 서지만 혹시 겹쳐도 한 번.
+        // 들어오기 전 날짜라도 낸 칸('냄')이 있으면 낸 학생으로 센다 — 격자에 '냄' 으로 보이는 것과 같다
+        if (cells.every((k) => k === "none") || seen.has(r.id)) continue;
+        seen.add(r.id);
+        day.expected++;
+        const open = c.subjects.filter((_, si) => cells[si] === "missing" || cells[si] === "upcoming");
+        if (open.length === 0) {
+          day.submitted++;
+          continue;
+        }
+        day.missing.push({ id: r.id, name: r.name, alerts: r.alerts, groupKey: g.key, subjects: open });
+      }
+    });
+  });
+  return [...days.values()]
+    .filter((d) => d.expected > 0)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((d) => ({
+      ...d,
+      subjects: HOMEWORK_SUBJECTS.filter((s) => d.subjects.includes(s)),
+      missing: d.missing.sort(
+        (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0) || Number(b.alerts) - Number(a.alerts) || a.name.localeCompare(b.name, "ko"),
+      ),
+    }));
+}
+
 const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
 /** "목" — 날짜(YYYY-MM-DD)의 요일. 형식이 다르면 빈 글자 */
 export function weekdayOf(date: string): string {

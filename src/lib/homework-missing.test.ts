@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildMissingBoard,
+  buildMissingDays,
   defaultPicks,
   dueAt,
   dueLabel,
@@ -9,6 +10,7 @@ import {
   HOMEWORK_MISSING_TITLE,
   homeworkMissingMessage,
   isOverdue,
+  lectureNumbers,
   MISSING_TITLE_MAX,
   missingRelated,
   missingStatus,
@@ -440,6 +442,161 @@ describe("알림 안 받기 — 끈 학생만 명단 · 전체선택 · 보내�
     expect(rowOf(board, "no")!.missing.length).toBeGreaterThan(0);
     expect(missingStudentCount(board)).toBe(1);
     expect(defaultPicks(board)).toEqual(["yes"]);
+  });
+});
+
+describe("날짜별 보기 — 'N강 · 10월 6일' 마다 안 낸 학생 (2026-10-15 Alan \"1강(10월 6일) 숙제 미제출자 리스트/ 2강(10월 8일) …\")", () => {
+  it("N강 = 그 트랙의 N번째 수업일 — 화목금 10/6 이 1강 · 10/8 이 2강, 월수금 10/7 이 1강", () => {
+    const n = lectureNumbers(SECTIONS.values());
+    expect(TTF.map((d) => n.get(d))).toEqual([1, 2, 3, 4]);
+    expect(MWF.map((d) => n.get(d))).toEqual([1, 2, 3, 4]);
+    expect(n.get("2026-10-06")).toBe(1);
+    expect(n.get("2026-10-08")).toBe(2);
+  });
+
+  it("N강은 반의 회차 번호와 같다 — 2주완성(앞 절반)은 번호를 바꾸지 않고, 개강일 전 · 종강일 뒤 날짜는 세지 않는다", () => {
+    expect(lectureNumbers([TWOWEEK850_MWF]).get("2026-10-09")).toBe(2);
+    const odd = { ...sec(30, "mwf", 650, "rc"), dates: ["2026-10-02", ...MWF, "2026-11-02"] };
+    const n = lectureNumbers([odd]);
+    expect(n.get("2026-10-07")).toBe(1);
+    expect(n.has("2026-10-02")).toBe(false);
+    expect(n.has("2026-11-02")).toBe(false);
+  });
+
+  // 격자 시험과 같은 학생들 — 10/12(월) 오후 6시
+  const people = new Map([
+    ["kim", { name: "김가나", staff: false }],
+    ["lee", { name: "이다라", staff: false }],
+    ["late", { name: "최늦게", staff: false }],
+    ["park", { name: "박마바", staff: false }],
+    ["off", { name: "가끔", staff: false }],
+  ]);
+  const enrollments: MissingEnrollment[] = [
+    { studentId: "kim", sectionId: 10, from: "2026-10-01" },
+    { studentId: "lee", sectionId: 10, from: "2026-10-01" },
+    { studentId: "late", sectionId: 10, from: "2026-10-08" },
+    { studentId: "off", sectionId: 10, from: "2026-10-01" },
+    { studentId: "park", sectionId: 1, from: "2026-10-01" },
+    { studentId: "park", sectionId: 3, from: "2026-10-01" },
+  ];
+  const submissions: MissingSubmission[] = [
+    { userId: "kim", date: "2026-10-07", level: 650, subject: "rc" },
+    { userId: "kim", date: "2026-10-07", level: 650, subject: "lc" },
+    { userId: "kim", date: "2026-10-09", level: 650, subject: "rc" },
+    ...["2026-10-07", "2026-10-09"].flatMap((date) => (["rc", "lc"] as const).map((subject) => ({ userId: "lee", date, level: 650, subject }))),
+    { userId: "lee", date: "2026-10-12", level: 650, subject: "rc" },
+    { userId: "late", date: "2026-10-07", level: 650, subject: "rc" }, // 들어오기 전 날짜에 낸 것
+    { userId: "off", date: "2026-10-07", level: 650, subject: "rc" },
+  ];
+  const full = buildMissingBoard({
+    level: 650,
+    now: at("2026-10-12T18:00"),
+    due: DUE,
+    sections: SECTIONS,
+    includes: INCLUDES,
+    enrollments,
+    submissions,
+    people,
+    optedOut: new Set(["off"]),
+    sortKeyOf: (id) => [id],
+  });
+  const lectures = lectureNumbers(SECTIONS.values());
+  const days = buildMissingDays(full, { until: "2026-10-12", lectures });
+  const day = (date: string) => days.find((d) => d.date === date)!;
+  const who = (date: string) => day(date).missing.map((m) => `${m.id}:${m.subjects.join("")}`);
+
+  it("수업일마다 한 장 — 날짜 순(1강부터), 오늘 뒤의 수업은 아직 없다", () => {
+    expect(days.map((d) => [d.date, d.track, d.lecture])).toEqual([
+      ["2026-10-06", "ttf", 1],
+      ["2026-10-07", "mwf", 1],
+      ["2026-10-08", "ttf", 2],
+      ["2026-10-09", "mwf", 2],
+      ["2026-10-12", "mwf", 3],
+    ]);
+    // until 이 없으면 앞으로 올 수업일까지
+    expect(buildMissingDays(full).map((d) => d.date)).toEqual([...TTF, ...MWF].sort());
+  });
+
+  it("그 날 숙제 과목 · 기한 — 카드(반)마다 다른 과목을 합친다", () => {
+    expect(day("2026-10-06")).toMatchObject({ subjects: ["lc"], due: "2026-10-08", overdue: true });
+    expect(day("2026-10-07")).toMatchObject({ subjects: ["rc", "lc"], due: "2026-10-09", overdue: true });
+    expect(day("2026-10-08")).toMatchObject({ subjects: ["lc"], due: "2026-10-13", overdue: false });
+  });
+
+  it("안 낸 학생과 안 낸 과목 — 격자의 칸을 그대로 읽는다", () => {
+    expect(who("2026-10-06")).toEqual(["park:lc"]); // 화목금 날은 주5일 60분 학생만 숙제가 있다
+    expect(who("2026-10-07")).toEqual(["park:rc", "off:lc"]);
+    expect(who("2026-10-09")).toEqual(["park:rc", "kim:lc", "late:rclc", "off:rclc"]);
+    expect(day("2026-10-09").missing.find((m) => m.id === "kim")).toMatchObject({ name: "김가나", alerts: true, groupKey: "10" });
+  });
+
+  it("낼 학생 · 낸 학생 — 들어오기 전 날짜는 낼 숙제가 없지만, 그래도 냈으면 낸 학생으로 센다 (격자에 '냄' 으로 보이는 것과 같다)", () => {
+    expect(day("2026-10-07")).toMatchObject({ expected: 5, submitted: 3 }); // kim · lee · late(들어오기 전에 냄) / park · off 안 냄
+    expect(day("2026-10-09")).toMatchObject({ expected: 5, submitted: 1 });
+    expect(day("2026-10-06")).toMatchObject({ expected: 1, submitted: 0 });
+  });
+
+  it("줄 순서 — 카드(반) 순서 → 알림 받는 학생 먼저 → 이름. '알림 안 받기' 를 누른 학생은 그 반의 뒤에", () => {
+    expect(day("2026-10-09").missing.map((m) => [m.id, m.groupKey, m.alerts])).toEqual([
+      ["park", "1,3", true],
+      ["kim", "10", true],
+      ["late", "10", true],
+      ["off", "10", false],
+    ]);
+    // 앞 카드의 끈 학생은 뒤 카드의 받는 학생보다 앞이다 — 반마다 머리글을 달기 때문에 반이 갈라지지 않게
+    const offFirst = buildMissingBoard({
+      level: 650,
+      now: at("2026-10-12T18:00"),
+      due: DUE,
+      sections: SECTIONS,
+      includes: INCLUDES,
+      enrollments,
+      submissions,
+      people,
+      optedOut: new Set(["park"]),
+      sortKeyOf: (id) => [id],
+    });
+    expect(buildMissingDays(offFirst).find((d) => d.date === "2026-10-09")!.missing.map((m) => [m.id, m.alerts])).toEqual([
+      ["park", false],
+      ["off", true], // 가끔 · 김가나 · 최늦게 — 이름 순
+      ["kim", true],
+      ["late", true],
+    ]);
+  });
+
+  it("기한 전인 날은 아직 안 낸 학생이 그대로 선다 — 화면이 '기한 전' 으로 접어 둔다", () => {
+    expect(day("2026-10-12")).toMatchObject({ overdue: false, expected: 5, submitted: 0 });
+    expect(who("2026-10-12")).toEqual(["park:rc", "kim:rclc", "lee:lc", "late:rclc", "off:rclc"]);
+  });
+
+  it("화면에 그린 격자(받는 학생만)로 만들면 끈 학생은 날짜별에도 없다 — 두 보기가 같은 학생을 센다", () => {
+    const shown = buildMissingDays(onlyAlerted(full), { until: "2026-10-12", lectures });
+    expect(shown.flatMap((d) => d.missing.map((m) => m.id))).not.toContain("off");
+    expect(shown.find((d) => d.date === "2026-10-07")).toMatchObject({ expected: 4, submitted: 3 });
+  });
+
+  it("기한이 지난 날의 안 낸 칸을 다 모으면 학생별 미제출 목록과 똑같다", () => {
+    const fromDays = days
+      .filter((d) => d.overdue)
+      .flatMap((d) => d.missing.flatMap((m) => m.subjects.map((s) => `${m.id} ${d.date} ${s}`)))
+      .sort();
+    const fromRows = full.flatMap((g) => g.rows.flatMap((r) => r.missing.map((s) => `${r.id} ${s.date} ${s.subject}`))).sort();
+    expect(fromDays).toEqual(fromRows);
+  });
+
+  it("낼 학생이 없는 날은 없다 — 그 반에 들어오기 전 날짜뿐인 학생", () => {
+    const early = buildMissingBoard({
+      level: 650,
+      now: at("2026-10-12T18:00"),
+      due: DUE,
+      sections: SECTIONS,
+      includes: INCLUDES,
+      enrollments: [{ studentId: "kim", sectionId: 1, from: "2026-10-12" }],
+      submissions: [],
+      people,
+      optedOut: new Set(),
+    });
+    expect(buildMissingDays(early).map((d) => d.date)).toEqual(["2026-10-12", "2026-10-14"]);
   });
 });
 
