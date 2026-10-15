@@ -131,25 +131,27 @@ export async function deleteHomeworkSubmission(id: number): Promise<HomeworkResu
 }
 
 /**
- * **숙제 미제출 알림 신청 · 취소** (2026-10-14 Alan — "숙제검사알림을 받고 싶은 사람은 숙제제출하는 곳 페이지에서 신청하기 버튼을 누르면 좋겠어.
- * 그럼 안 누른사람에게는 알림보내기 명단에서 빠지고 누른사람은 추가되어서 진행되면 좋겠어").
- * 본인 세션으로 넣고 지운다 — 정책이 본인 줄만 받는다. 신청하지 않은 학생에게는 DB 트리거가 미제출 알림을 넣지 않는다.
- * 숙제 점검완료 알림(선생님 코멘트)은 신청과 상관없이 그대로 간다 — 내가 낸 숙제의 결과라서다.
+ * **숙제 미제출 알림 받기 · 안 받기** — `on` 은 "받는다" (2026-10-15 Alan — "숙제 미제출알림 신청하는거 반대로 부탁해! 알림 안받기를 신청하는걸로 하자").
+ * 기본은 모두 받는다. '알림 안 받기' 를 누르면 `homework_missing_optouts` 에 내 줄을 넣고, '다시 받기' 면 지운다 — 본인 세션으로, 정책이 본인 줄만 받는다.
+ * 끈 학생에게는 DB 트리거가 미제출 알림을 넣지 않는다. 숙제 점검완료 알림(선생님 코멘트)은 끄든 말든 그대로 간다 — 내가 낸 숙제의 결과라서다.
+ * (2026-10-14 하루는 거꾸로 '신청하기' 를 누른 학생만 받았다 — `homework_missing_optins`)
  */
 export async function setHomeworkMissingAlert(on: boolean): Promise<HomeworkResult> {
+  // 서버 액션은 아무 값으로나 불릴 수 있다 — 잘못 온 값을 '안 받기' 로 읽지 않는다
+  if (typeof on !== "boolean") return { ok: false, error: "잘못된 요청이에요." };
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "로그인이 필요해요." };
 
-  if (on === true) {
-    const { error } = await supabase.from("homework_missing_optins").insert({ user_id: user.id });
-    // 이미 신청돼 있으면(다른 기기에서 먼저 눌렀다) 그대로 신청된 것이다
-    if (error && error.code !== "23505") return { ok: false, error: "신청하지 못했어요. 잠시 후 다시 시도해 주세요." };
+  if (on) {
+    const { error } = await supabase.from("homework_missing_optouts").delete().eq("user_id", user.id);
+    if (error) return { ok: false, error: "바꾸지 못했어요. 잠시 후 다시 시도해 주세요." };
   } else {
-    const { error } = await supabase.from("homework_missing_optins").delete().eq("user_id", user.id);
-    if (error) return { ok: false, error: "취소하지 못했어요. 잠시 후 다시 시도해 주세요." };
+    const { error } = await supabase.from("homework_missing_optouts").insert({ user_id: user.id });
+    // 이미 꺼져 있으면(다른 기기에서 먼저 눌렀다) 그대로 꺼진 것이다
+    if (error && error.code !== "23505") return { ok: false, error: "바꾸지 못했어요. 잠시 후 다시 시도해 주세요." };
   }
 
   revalidatePath("/my/homework", "layout");

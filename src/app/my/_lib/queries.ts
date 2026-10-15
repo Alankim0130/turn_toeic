@@ -529,15 +529,18 @@ export async function getMyHomework(filter?: { level?: number; subject?: string 
 export type MyHomework = Awaited<ReturnType<typeof getMyHomework>>[number];
 
 /**
- * 숙제 미제출 알림을 신청했는가 (2026-10-14 Alan — "숙제검사알림을 받고 싶은 사람은 숙제제출하는 곳 페이지에서 신청하기 버튼을 누르면 좋겠어").
- * **`user_id` 로 좁힌다** — 정책 `homework_missing_optins: 본인·스태프·조교 조회` 는 강사 · 관리자 · 조교에게 모든 학생의 신청을 연다 (머리말).
+ * 숙제 미제출 알림을 받는가 — **기본은 받는다**, 숙제제출 화면에서 '알림 안 받기' 를 누른 학생만 거짓 (2026-10-15 Alan —
+ * "숙제 미제출알림 신청하는거 반대로 부탁해! 알림 안받기를 신청하는걸로 하자").
+ * **`user_id` 로 좁힌다** — 정책 `homework_missing_optouts: 본인·스태프·조교 조회` 는 강사 · 관리자 · 조교에게 모든 학생의 안 받기를 연다 (머리말).
+ * 읽지 못하면 받는 것으로 본다 — 기본값이고, 끄는 버튼을 눌러 보면 그때 오류를 말한다.
  */
 export async function getMyHomeworkAlert(): Promise<boolean> {
   const user = await getSessionUser();
-  if (!user) return false;
+  if (!user) return true;
   const supabase = await createClient();
-  const { data } = await supabase.from("homework_missing_optins").select("user_id").eq("user_id", user.id).maybeSingle();
-  return !!data;
+  const { data, error } = await supabase.from("homework_missing_optouts").select("user_id").eq("user_id", user.id).maybeSingle();
+  if (error) return true;
+  return !data;
 }
 
 /**

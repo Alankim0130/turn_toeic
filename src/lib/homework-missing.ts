@@ -21,9 +21,10 @@ import { HOMEWORK_SUBJECTS, type HomeworkSubject, homeworkLabel, isSubject } fro
  *    기수를 넘어서도 본다 (그 달 마지막 수업의 숙제 = 다음 달 첫 같은 트랙 수업일). DB `public.homework_due_dates` 가 날짜를 주고 시각은 여기서 붙인다.
  *    다음 수업일이 아직 달력에 없으면(다음 달 편성 전) 기한을 모르는 것이라 미제출로 세지 않는다 — 틀린 알림을 보내느니 기다린다.
  *    (2026-10-08 ~ 10-14 에는 "어제까지 지난 수업" 이었다 — 월요일 숙제가 화요일 0시에 벌써 '안 냄' 이 됐다)
- *  - **알림은 신청한 학생에게만** (같은 날 Alan — "숙제검사알림을 받고 싶은 사람은 숙제제출하는 곳 페이지에서 신청하기 버튼을 누르면 좋겠어.
- *    그럼 안 누른사람에게는 알림보내기 명단에서 빠지고 누른사람은 추가되어서 진행되면 좋겠어"). 줄마다 `alerts`(신청했나)를 달고,
- *    화면은 신청한 학생만 그린다 (`onlyAlerted` — 신청 안 한 학생은 체크박스로 볼 수만 있다). 전체선택 · 보내기는 신청한 학생만.
+ *  - **알림은 기본으로 모두 받고, '알림 안 받기' 를 누른 학생만 빠진다** (2026-10-15 Alan — "숙제 미제출알림 신청하는거 반대로 부탁해!
+ *    알림 안받기를 신청하는걸로 하자". 2026-10-14 하루는 거꾸로 숙제제출 화면에서 '신청하기' 를 누른 학생만 받았다).
+ *    줄마다 `alerts`(받는가 — 안 받기를 누르지 않았나)를 달고, 화면은 받는 학생만 그린다 (`onlyAlerted` — 끈 학생은 체크박스로 볼 수만 있다).
+ *    전체선택 · 보내기는 받는 학생만.
  *
  * 화면(`/admin/homework/missing`)과 서버 액션이 이 파일 하나로 계산한다 — 보내기 전에 서버가 다시 세서 알림 글을 만든다.
  */
@@ -140,7 +141,7 @@ export type MissingSlot = { date: string; subject: HomeworkSubject; due: string 
 export type MissingRow = {
   id: string;
   name: string;
-  /** 숙제 미제출 알림을 신청했나 — 아니면 고를 수도 보낼 수도 없다 (2026-10-14 Alan) */
+  /** 숙제 미제출 알림을 받는가 — 숙제제출 화면에서 '알림 안 받기' 를 눌렀으면 거짓, 고를 수도 보낼 수도 없다 (2026-10-15 Alan) */
   alerts: boolean;
   /** 열마다 · 그 열의 과목마다 */
   cells: MissingCell[][];
@@ -173,11 +174,11 @@ type GroupSortKey = (string | number)[];
  * 포함되어있어. 이건 빼줘"). 학생 화면을 보려고 넣은 테스트 배정이다 — 줄 · 묶음 · 탭 숫자 · 전체선택 · 보내기 어디에도 없다
  * (처음엔 출석 한눈에 보기처럼 `테스터` 표를 달아 맨 아래에 뒀다). 그 계정만 배정된 반은 카드도 없다.
  *
- * **알림을 신청하지 않은 학생도 줄은 만든다** (`alerts: false`) — 화면이 기본으로 빼고(`onlyAlerted`) 체크박스를 켜면 볼 수만 있게 그린다.
- * 탭 숫자 · 전체선택 · 보내기는 신청한 학생만 센다.
+ * **'알림 안 받기' 를 누른 학생도 줄은 만든다** (`alerts: false`) — 화면이 기본으로 빼고(`onlyAlerted`) 체크박스를 켜면 볼 수만 있게 그린다.
+ * 탭 숫자 · 전체선택 · 보내기는 받는 학생만 센다.
  *
  * 묶음 순서는 `sortKeyOf`(반 id → 정렬 키)가 정한다 — 반 이름 · 시간 같은 것은 화면 쪽이 안다.
- * 줄 순서는 **알림 신청한 학생 먼저 → 안 낸 숙제가 많은 학생 → 이름**.
+ * 줄 순서는 **알림 받는 학생 먼저 → 안 낸 숙제가 많은 학생 → 이름**.
  */
 export function buildMissingBoard(input: {
   level: number;
@@ -191,8 +192,8 @@ export function buildMissingBoard(input: {
   submissions: readonly MissingSubmission[];
   /** 이름과 강사 · 관리자 · 조교 계정인지 (`staff` 면 명단에 넣지 않는다) */
   people: ReadonlyMap<string, { name: string; staff: boolean }>;
-  /** 숙제 미제출 알림을 신청한 학생 */
-  alerts: ReadonlySet<string>;
+  /** 숙제 미제출 알림을 끈 학생 ('알림 안 받기') — 그 밖은 모두 받는다 */
+  optedOut: ReadonlySet<string>;
   sortKeyOf?: (sectionId: number) => GroupSortKey;
 }): MissingGroup[] {
   const { level, sections, includes } = input;
@@ -267,7 +268,7 @@ export function buildMissingBoard(input: {
       return {
         id,
         name: person?.name ?? "",
-        alerts: input.alerts.has(id),
+        alerts: !input.optedOut.has(id),
         cells,
         past,
         done: doneCount,
@@ -275,7 +276,7 @@ export function buildMissingBoard(input: {
         rate: past > 0 ? Math.round((doneCount / past) * 100) : null,
       };
     });
-    // 알림 신청한 학생 먼저 → 안 낸 숙제가 많은 학생 → 이름 순
+    // 알림 받는 학생 먼저 → 안 낸 숙제가 많은 학생 → 이름 순
     rows.sort((a, b) => Number(b.alerts) - Number(a.alerts) || b.missing.length - a.missing.length || a.name.localeCompare(b.name, "ko"));
     out.push({ key, sectionIds: g.sectionIds, columns, rows });
   }
@@ -300,20 +301,20 @@ function compareKeys(a: GroupSortKey, b: GroupSortKey): number {
   return 0;
 }
 
-/** 화면에 그릴 묶음 — 알림을 신청한 학생만 (아무도 없는 묶음은 뺀다). 체크박스로 신청 안 한 학생도 볼 때는 이것을 거치지 않는다 */
+/** 화면에 그릴 묶음 — 알림을 받는 학생만 (끈 학생만 있는 묶음은 뺀다). 체크박스로 끈 학생도 볼 때는 이것을 거치지 않는다 */
 export function onlyAlerted(groups: readonly MissingGroup[]): MissingGroup[] {
   return groups.map((g) => ({ ...g, rows: g.rows.filter((r) => r.alerts) })).filter((g) => g.rows.length > 0);
 }
 
-/** 레벨 탭의 숫자 — **알림을 신청한 학생 중** 기한이 지난 숙제를 안 낸 학생 수 (한 사람은 한 번) */
+/** 레벨 탭의 숫자 — **알림을 받는 학생 중** 기한이 지난 숙제를 안 낸 학생 수 (한 사람은 한 번) */
 export function missingStudentCount(groups: readonly MissingGroup[]): number {
   const ids = new Set<string>();
   for (const g of groups) for (const r of g.rows) if (r.alerts && r.missing.length > 0) ids.add(r.id);
   return ids.size;
 }
 
-/** 알림을 신청하지 않은 학생 수 (한 사람은 한 번) — 체크박스 이름에 적는다 */
-export function unalertedCount(groups: readonly MissingGroup[]): number {
+/** '알림 안 받기' 를 누른 학생 수 (한 사람은 한 번) — 체크박스 이름에 적는다 */
+export function optedOutCount(groups: readonly MissingGroup[]): number {
   const ids = new Set<string>();
   for (const g of groups) for (const r of g.rows) if (!r.alerts) ids.add(r.id);
   return ids.size;
@@ -344,7 +345,7 @@ export function missingStatus(rate: number | null): MissingStatus {
 export const MISSING_STATUS_LABEL: Record<MissingStatus, string> = { perfect: "개근", good: "양호", warn: "주의", risk: "위험", none: "시작 전" };
 
 /**
- * '미제출 전체선택' 이 고르는 학생 — **알림을 신청했고 · 마지막 알림 뒤에 새로 기한이 지난 숙제를 안 낸** 학생 (`newMissingOf`).
+ * '미제출 전체선택' 이 고르는 학생 — **알림을 받고(끄지 않았고) · 마지막 알림 뒤에 새로 기한이 지난 숙제를 안 낸** 학생 (`newMissingOf`).
  * 2026-10-14 Alan: "목요일 오후 6시라면 화요일 숙제를 제출하는거고 마감이 되었지? 그럼 미제출 알림을 보낼려면 화요일반 미제출한사람에 대해서
  * 알림을 보내면 돼" — 수요일 밤에 월요일 숙제로 알림을 받은 월수금 학생은 목요일 저녁에 다시 골라지지 않는다 (손으로는 고를 수 있다).
  * 2026-10-08 ~ 10-14 에는 "오늘 이미 알림을 받은 학생" 만 뺐다 — 다음 날이면 같은 숙제로 또 골라졌다.

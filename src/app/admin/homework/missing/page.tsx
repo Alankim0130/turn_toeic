@@ -16,8 +16,8 @@ import {
   missingStudentCount,
   monthDay,
   onlyAlerted,
+  optedOutCount,
   shortDay,
-  unalertedCount,
   weekdayOf,
   type MissingGroup,
 } from "@/lib/homework-missing";
@@ -43,9 +43,10 @@ const TERM_CHIPS = 6;
  * 열은 강사가 반 편성 달력에 정한 그 달 수업일(반의 회차)이고 칸은 그 날 RC · LC 숙제를 냈는지다. 세는 규칙은 `src/lib/homework-missing.ts`.
  * `전체` 레벨 칸은 두지 않는다 (숙제점검과 같다 — 2026-09-22 Alan "'전체' '모든레벨' 이 버튼은 없애줘").
  *
- * 2026-10-14 Alan — **'안 냄' 은 제출 기한(같은 트랙 다음 수업일 오후 5시)이 지난 숙제**이고, **명단은 숙제제출 화면에서 알림을 신청한 학생만**이다.
- * 신청하지 않은 학생은 `알림 신청 안 한 학생도 보기`(`?all=1` — 숙제점검의 `점검완료 포함` 과 같은 자리 · 같은 모양)로 볼 수만 있다 (고를 수 없다).
- * 미제출 전체선택은 마지막 알림 뒤에 새로 기한이 지난 숙제가 있는 학생을 고른다 (`defaultPicks`).
+ * 2026-10-14 Alan — **'안 냄' 은 제출 기한(같은 트랙 다음 수업일 오후 5시)이 지난 숙제**다. 미제출 전체선택은 마지막 알림 뒤에 새로 기한이 지난 숙제가 있는 학생을 고른다 (`defaultPicks`).
+ * 2026-10-15 Alan ("숙제 미제출알림 신청하는거 반대로 부탁해! 알림 안받기를 신청하는걸로 하자") — **명단은 모든 학생이고, 숙제제출 화면에서 '알림 안 받기' 를 누른 학생만 빠진다**
+ * (10-14 하루는 거꾸로 '신청하기' 를 누른 학생만이었다). 끈 학생은 `알림 안 받는 학생도 보기`(`?all=1` — 숙제점검의 `점검완료 포함` 과 같은 자리 · 같은 모양)로
+ * 볼 수만 있다 (고를 수 없다).
  */
 export default async function HomeworkMissingPage({ searchParams }: { searchParams: Promise<{ term?: string; level?: string; all?: string }> }) {
   await requireCrew();
@@ -101,9 +102,9 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
   const boards = new Map<number, MissingGroup[]>(levels.map((l) => [l, buildMissingBoard({ level: l, ...data, sortKeyOf })]));
   const level = levels.includes(Number(sp.level)) ? Number(sp.level) : (levels[0] ?? null);
   const full = level != null ? (boards.get(level) ?? []) : [];
-  // 명단은 알림을 신청한 학생만 (2026-10-14 Alan "안 누른사람에게는 알림보내기 명단에서 빠지고") — 체크박스를 켜면 신청 안 한 학생도 볼 수만 있다
+  // 명단은 알림을 받는 학생 — '알림 안 받기' 를 누른 학생만 빠진다 (2026-10-15 Alan). 체크박스를 켜면 끈 학생도 볼 수만 있다
   const board = showAll ? full : onlyAlerted(full);
-  const unalerted = unalertedCount(full);
+  const optedOut = optedOutCount(full);
   const alerted = new Set(full.flatMap((g) => g.rows.filter((r) => r.alerts).map((r) => r.id))).size;
 
   // 이 레벨에서 마지막으로 미제출 알림을 받은 때 — 그 뒤에 새로 기한이 지난 숙제가 없으면 '미제출 전체선택' 에서 뺀다 (같은 숙제로 거듭 가지 않게)
@@ -147,13 +148,13 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
         </Alert>
       )}
 
-      {/* 몇 명을 보고 있는지 + 알림을 신청하지 않은 학생도 볼지 (숙제점검의 '점검완료 포함' 과 같은 자리 · 같은 모양) */}
+      {/* 몇 명을 보고 있는지 + 알림을 끈 학생도 볼지 (숙제점검의 '점검완료 포함' 과 같은 자리 · 같은 모양) */}
       <div className="mb-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <p className="text-sm font-bold text-ink-soft">
-          {termLabel(term)} · {level ?? "-"} · 알림 신청 <span className="text-ink tabular-nums">{alerted}</span>명 중 기한 지난 숙제를 안 낸 학생{" "}
+          {termLabel(term)} · {level ?? "-"} · 알림 받는 학생 <span className="text-ink tabular-nums">{alerted}</span>명 중 기한 지난 숙제를 안 낸 학생{" "}
           <span className="text-ink tabular-nums">{flagged}</span>명
         </p>
-        {(unalerted > 0 || showAll) && (
+        {(optedOut > 0 || showAll) && (
           <Link href={allHref} className="flex items-center gap-2 text-sm font-bold text-ink-soft transition hover:text-brand-600">
             <span
               aria-hidden
@@ -165,15 +166,15 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
                 </svg>
               )}
             </span>
-            알림 신청 안 한 학생도 보기 <span className="tabular-nums text-mist">({unalerted}명)</span>
+            알림 안 받는 학생도 보기 <span className="tabular-nums text-mist">({optedOut}명)</span>
             <span className="sr-only">{showAll ? " — 지금 켜짐, 누르면 끕니다" : " — 지금 꺼짐, 누르면 켭니다"}</span>
           </Link>
         )}
       </div>
       <p className="mb-4 text-xs text-mist">
         숙제 기한은 같은 트랙의 다음 수업일 {HOMEWORK_DUE_LABEL}예요 (월수금 월요일 숙제는 수요일 5시, 금요일 숙제는 다음 주 첫 수업일 5시 · 화목금도 같고, 주5일은 두 트랙을
-        따로 봐요). 그 시간이 지나도 안 냈으면 &lsquo;안 냄&rsquo; 이에요. 명단에는 숙제제출 화면에서 &lsquo;숙제 미제출 알림&rsquo; 을 신청한 학생만 나오고, 미제출 전체선택은 마지막
-        알림 뒤에 새로 기한이 지난 숙제가 있는 학생을 골라요.
+        따로 봐요). 그 시간이 지나도 안 냈으면 &lsquo;안 냄&rsquo; 이에요. 숙제제출 화면에서 &lsquo;알림 안 받기&rsquo; 를 누른 학생은 명단에서 빠지고 알림도 가지 않아요.
+        미제출 전체선택은 마지막 알림 뒤에 새로 기한이 지난 숙제가 있는 학생을 골라요.
       </p>
 
       {full.length === 0 ? (
@@ -185,8 +186,8 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
       ) : groups.length === 0 ? (
         <EmptyState
           icon="bell"
-          title="아직 알림을 신청한 학생이 없어요"
-          description={`학생이 숙제제출 화면에서 '숙제 미제출 알림' 을 신청하면 여기에 나와요. 신청하지 않은 학생 ${unalerted}명은 위의 '알림 신청 안 한 학생도 보기' 로 볼 수 있어요.`}
+          title="이 레벨 학생이 모두 알림을 껐어요"
+          description={`숙제제출 화면에서 '알림 안 받기' 를 누른 학생은 명단에서 빠져요. ${optedOut}명은 위의 '알림 안 받는 학생도 보기' 로 볼 수 있어요.`}
         />
       ) : (
         <MissingBoard termId={term.id} level={level!} groups={groups} picks={defaultPicks(full, lastSent)} />

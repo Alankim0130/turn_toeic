@@ -68,14 +68,14 @@ function CellMark({ kind, label }: { kind: MissingCell; label?: string }) {
  * 구조는 첫토익 그대로 — 반마다 카드, 학생 줄 × 수업일 열(N회 · 날짜 · 트랙 · RC LC), 제출률, 위에 단계 점(개근 · 양호 · 주의 · 위험)과
  * **미제출 전체선택**, 고르면 아래에 **N명 선택 · 알림 보내기** 막대가 서고 팝업에서 제목을 고치고 학생마다 만들어진 글을 미리 본다. 색은 우리 핫핑크다.
  *
- * - 학생 줄은 **알림 신청한 학생 → 안 낸 숙제가 많은 학생 → 이름** (`buildMissingBoard` — 강사 · 관리자 · 조교 계정은 줄이 없다). 고른 줄은 연분홍으로 칠할 뿐 자리를 옮기지 않는다
+ * - 학생 줄은 **알림 받는 학생 → 안 낸 숙제가 많은 학생 → 이름** (`buildMissingBoard` — 강사 · 관리자 · 조교 계정은 줄이 없다). 고른 줄은 연분홍으로 칠할 뿐 자리를 옮기지 않는다
  *   (첫토익은 고른 학생을 위로 올리는데, 누를 때마다 줄이 뛰어 다음 학생을 잘못 누르게 된다).
  * - 이름 칸만 왼쪽에 고정하고 날짜는 카드 안에서 가로로 민다. **제출률은 이름 아래에 둔다** — 첫토익처럼 줄 끝 칸에 두면 한 달 20일 × RC · LC 가
  *   화면을 넘어 휴대폰에서는 밀어야 보였다. 칸 안에 `sr-only` 를 두지 않는다 (가로 스크롤 상자를 빠져나가
  *   화면 전체가 옆으로 밀린다 — 출석 · 비대면 인증 격자와 같은 함정) — 설명은 `aria-label` · `title`.
  * - 보내기는 서버가 **지금 다시 세어** 학생마다 글을 만든다 — 여기 미리보기와 같은 함수(`homeworkMissingMessage`)다.
- * - **알림을 신청하지 않은 학생**(`alerts` 거짓 — 2026-10-14 Alan)은 기본으로 줄이 없고, `알림 신청 안 한 학생도 보기` 를 켜면
- *   회색 줄로 선다 — 체크박스가 없고 `알림 미신청` 표를 단다 (고를 수도 보낼 수도 없다).
+ * - **숙제제출 화면에서 '알림 안 받기' 를 누른 학생**(`alerts` 거짓 — 2026-10-15 Alan, 10-14 하루는 거꾸로 신청한 학생만 받았다)은 기본으로 줄이 없고,
+ *   `알림 안 받는 학생도 보기` 를 켜면 회색 줄로 선다 — 체크박스가 없고 `알림 안 받음` 표를 단다 (고를 수도 보낼 수도 없다).
  * - '안 냄' 은 **제출 기한(같은 트랙 다음 수업일 오후 5시)이 지난** 숙제다 — 머리글의 회차 · 날짜는 기한이 지난 열만 진하게, 기한은 머리글 `title` 에 적는다.
  */
 export function MissingBoard({ termId, level, groups, picks }: { termId: number; level: number; groups: MissingGroupView[]; picks: string[] }) {
@@ -122,7 +122,7 @@ export function MissingBoard({ termId, level, groups, picks }: { termId: number;
       text:
         `${res.sent}명에게 숙제 알림을 보냈어요. 학생 알림함(마이페이지 → 알림)에서 볼 수 있어요.` +
         (res.skipped > 0 ? ` 그 사이 숙제를 다 낸 ${res.skipped}명은 뺐어요.` : "") +
-        (res.unsubscribed > 0 ? ` 그 사이 알림 신청을 취소한 ${res.unsubscribed}명은 뺐어요.` : ""),
+        (res.unsubscribed > 0 ? ` 그 사이 '알림 안 받기' 를 누른 ${res.unsubscribed}명은 뺐어요.` : ""),
     });
     setCompose(false);
     setSelected(new Set());
@@ -370,12 +370,12 @@ const GroupCard = memo(function GroupCard({ group, picked, onToggle }: { group: 
                         <span className="whitespace-nowrap font-bold text-ink">{r.name || "이름 없음"}</span>
                       </label>
                     ) : (
-                      // 알림을 신청하지 않은 학생 — 볼 수만 있다 (체크박스 자리는 비워 이름 줄을 맞춘다)
+                      // '알림 안 받기' 를 누른 학생 — 볼 수만 있다 (체크박스 자리는 비워 이름 줄을 맞춘다)
                       <span className="flex items-center gap-2">
                         <span className="size-4 shrink-0" aria-hidden />
                         <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[status])} title={MISSING_STATUS_LABEL[status]} aria-hidden />
                         <span className="whitespace-nowrap font-bold text-ink-soft">{r.name || "이름 없음"}</span>
-                        <span className="whitespace-nowrap rounded-md bg-paper px-1.5 py-0.5 text-[10px] font-bold text-slate ring-1 ring-line">알림 미신청</span>
+                        <span className="whitespace-nowrap rounded-md bg-paper px-1.5 py-0.5 text-[10px] font-bold text-slate ring-1 ring-line">알림 안 받음</span>
                       </span>
                     )}
                     {/* 제출률은 이름 아래 — 날짜가 많아 가로로 밀어도 늘 보이게 (첫토익은 줄 끝 칸이라 휴대폰에서는 밀어야 보였다) */}

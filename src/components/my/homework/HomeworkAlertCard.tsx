@@ -7,11 +7,11 @@ import { Icon } from "@/components/ui/Icon";
 import { HOMEWORK_DUE_LABEL } from "@/lib/homework-missing";
 
 /**
- * **숙제 미제출 알림 신청** (2026-10-14 Alan — "숙제검사알림을 받고 싶은 사람은 숙제제출하는 곳 페이지에서 신청하기 버튼을 누르면 좋겠어.
- * 그럼 안 누른사람에게는 알림보내기 명단에서 빠지고 누른사람은 추가되어서 진행되면 좋겠어").
- * 신청한 학생만 선생님의 미제출 알림 명단에 나오고 알림을 받는다 — 숙제 점검완료 알림(선생님 코멘트)은 신청과 상관없이 간다.
+ * **숙제 미제출 알림 — 기본으로 받고, 원하면 '알림 안 받기'** (2026-10-15 Alan — "숙제 미제출알림 신청하는거 반대로 부탁해!
+ * 알림 안받기를 신청하는걸로 하자"). 2026-10-14 하루는 거꾸로였다 — '신청하기' 를 누른 학생만 받았다.
+ * 끈 학생은 선생님의 미제출 알림 명단에서 빠지고 알림을 받지 않는다 — 숙제 점검완료 알림(선생님 코멘트)은 끄든 말든 그대로 간다.
  * 이름은 `숙제 미제출 알림` 이다 — "숙제 검사" 라고 적으면 점검완료 알림과 헷갈린다.
- * 신청 전에는 설명이 있는 카드, 신청한 뒤에는 **한 줄**로 줄인다 — 매번 여는 화면이라 달력을 아래로 밀지 않게.
+ * 받는 중이든 끈 뒤든 **한 줄**이다 — 매번 여는 화면이라 달력을 아래로 밀지 않게. '알림 안 받기' 는 작은 글자 버튼이다 (권하는 일이 아니다).
  */
 export function HomeworkAlertCard({ on }: { on: boolean }) {
   const router = useRouter();
@@ -43,10 +43,10 @@ export function HomeworkAlertCard({ on }: { on: boolean }) {
           <p id="homework-alert-title" className="text-sm font-black text-ink">
             숙제 미제출 알림을 받고 있어요
           </p>
-          <p className="text-xs text-slate">다음 수업일 {HOMEWORK_DUE_LABEL}까지 안 낸 숙제가 있으면 알림함으로 알려 드려요</p>
+          <p className="text-xs text-slate">다음 수업일 {HOMEWORK_DUE_LABEL}까지 안 낸 숙제가 있으면 선생님이 알림함으로 알려 드려요</p>
         </div>
         <button type="button" onClick={toggle} disabled={pending} className="ml-auto shrink-0 text-xs font-bold text-slate underline decoration-line underline-offset-2 transition hover:text-brand-600">
-          {pending ? "취소하는 중…" : "신청 취소"}
+          {pending ? "바꾸는 중…" : "알림 안 받기"}
         </button>
         {errorLine}
       </section>
@@ -54,21 +54,16 @@ export function HomeworkAlertCard({ on }: { on: boolean }) {
   }
 
   return (
-    <section aria-labelledby="homework-alert-title" className="card flex flex-wrap items-center gap-x-3 gap-y-2.5 p-4">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-50" aria-hidden>
-        <Icon name="bell" size={24} />
-      </span>
-      <div className="min-w-0 flex-1 basis-56">
-        <p id="homework-alert-title" className="font-black text-ink">
-          숙제 미제출 알림
+    <section aria-labelledby="homework-alert-title" className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-xl2 border border-line bg-surface px-3.5 py-2.5">
+      <Icon name="bell" size={20} className="opacity-50 grayscale" />
+      <div className="min-w-0 flex-1 basis-48">
+        <p id="homework-alert-title" className="text-sm font-black text-ink-soft">
+          숙제 미제출 알림을 받지 않아요
         </p>
-        <p className="mt-0.5 text-sm text-slate">
-          숙제는 <b className="font-bold text-ink">다음 수업일 {HOMEWORK_DUE_LABEL}</b>까지 내요. 그때까지 안 낸 숙제가 있으면 선생님이 알림함으로 알려 드려요. 받고 싶으면
-          신청해 주세요.
-        </p>
+        <p className="text-xs text-slate">기한이 지난 숙제가 있어도 알림이 가지 않아요. 숙제는 다음 수업일 {HOMEWORK_DUE_LABEL}까지 내요.</p>
       </div>
-      <button type="button" onClick={toggle} disabled={pending} className="btn-primary ml-auto shrink-0 !px-5 !py-2.5">
-        {pending ? "신청하는 중…" : "신청하기"}
+      <button type="button" onClick={toggle} disabled={pending} className="btn-secondary ml-auto shrink-0 !px-3.5 !py-1.5 text-xs">
+        {pending ? "바꾸는 중…" : "다시 받기"}
       </button>
       {errorLine}
     </section>

@@ -7,7 +7,7 @@ import { getProfileNames } from "../../_lib/profile-names";
 
 /**
  * 숙제 미제출 알림(`/admin/homework/missing`)이 읽는 것 — 그 기수의 반 · 회차 · 품는 관계 · 배정 · 낸 숙제 · 이름 · 보낸 시각,
- * 그리고 (2026-10-14) 수업일마다 숙제 기한 날짜(`homework_due_dates` — 같은 트랙 다음 수업일) · 알림 신청한 학생(`homework_missing_optins`).
+ * 그리고 (2026-10-14) 수업일마다 숙제 기한 날짜(`homework_due_dates` — 같은 트랙 다음 수업일) · (2026-10-15) 알림을 끈 학생(`homework_missing_optouts` — '알림 안 받기').
  * 계산은 `src/lib/homework-missing.ts` 한곳이고 화면과 서버 액션이 같은 데이터로 센다.
  *
  * **조교에게도 열린 화면이다** (숙제점검 아래) — 이름은 이름 · 등급만 주는 `getProfileNames` 로 읽는다 (조교는 profiles 를 못 읽는다, 등급 체계 9-2).
@@ -39,8 +39,8 @@ export type MissingData = {
   people: Map<string, { name: string; staff: boolean }>;
   /** 수업일 → 숙제 기한 날짜 (같은 트랙 다음 수업일 · 모르면 null) */
   due: Map<string, string | null>;
-  /** 숙제 미제출 알림을 신청한 학생 */
-  alerts: Set<string>;
+  /** 숙제 미제출 알림을 끈 학생 ('알림 안 받기' — 그 밖은 모두 받는다) */
+  optedOut: Set<string>;
 };
 
 /**
@@ -79,7 +79,7 @@ export async function loadMissingData(supabase: DB, term: TermLite, opts: { stud
     .eq("term_id", term.id)
     .order("id");
   const sectionIds = (sectionRows ?? []).map((s) => s.id);
-  const empty = { sections: new Map(), meta: new Map(), includes: new Map(), enrollments: [], submissions: [], people: new Map(), due: new Map(), alerts: new Set<string>() };
+  const empty = { sections: new Map(), meta: new Map(), includes: new Map(), enrollments: [], submissions: [], people: new Map(), due: new Map(), optedOut: new Set<string>() };
   if (sectionError) return { ...empty, ok: false };
   if (sectionIds.length === 0) return { ...empty, ok: true };
 
@@ -166,25 +166,25 @@ export async function loadMissingData(supabase: DB, term: TermLite, opts: { stud
     const { data, error } = await supabase.rpc("homework_due_dates", { p_dates: unique });
     return { due: new Map((data ?? []).map((r) => [r.class_date, r.due_date])), ok: !error };
   };
-  // 알림 신청 — 한 사람에 한 줄이라 표가 작다. 통째로 읽고 여기서 거른다 (보내기 직전에도 다시 읽는다 — 그 사이 취소한 학생은 빠진다)
-  const readAlerts = async (): Promise<{ alerts: Set<string>; ok: boolean }> => {
-    if (studentIds.length === 0) return { alerts: new Set(), ok: true };
+  // 알림 안 받기 — 한 사람에 한 줄이라 표가 작다. 통째로 읽고 여기서 거른다 (보내기 직전에도 다시 읽는다 — 그 사이 끈 학생은 빠진다)
+  const readOptOuts = async (): Promise<{ optedOut: Set<string>; ok: boolean }> => {
+    if (studentIds.length === 0) return { optedOut: new Set(), ok: true };
     const res = await readAll<{ user_id: string }>((from, to, count) =>
       supabase
-        .from("homework_missing_optins")
+        .from("homework_missing_optouts")
         .select("user_id", count ? { count: "exact" } : undefined)
         .order("user_id")
         .range(from, to),
     );
-    return { alerts: new Set(res.rows.map((r) => r.user_id)), ok: res.ok };
+    return { optedOut: new Set(res.rows.map((r) => r.user_id)), ok: res.ok };
   };
 
-  // 낸 숙제 · 이름 · 등급 · 기한 · 신청은 서로 기다릴 까닭이 없다 — 함께 묻는다 (2026-10-09 "숙제미제출 알림 페이지를 클릭하면 로딩시간이 오래걸려")
-  const [{ submissions, ok: subsOk }, names, { due, ok: dueOk }, { alerts, ok: alertsOk }] = await Promise.all([
+  // 낸 숙제 · 이름 · 등급 · 기한 · 안 받기는 서로 기다릴 까닭이 없다 — 함께 묻는다 (2026-10-09 "숙제미제출 알림 페이지를 클릭하면 로딩시간이 오래걸려")
+  const [{ submissions, ok: subsOk }, names, { due, ok: dueOk }, { optedOut, ok: optOutOk }] = await Promise.all([
     readSubmissions(),
     getProfileNames(supabase, studentIds),
     readDue(),
-    readAlerts(),
+    readOptOuts(),
   ]);
   const people = new Map(studentIds.map((id) => [id, { name: names.get(id)?.name ?? "", staff: STAFF_ROLES.has(names.get(id)?.role ?? "") }]));
   // 이름 · 등급을 못 읽으면(빈 Map) 강사 · 관리자 계정을 가려낼 수 없다 — 명단에 섞이고 알림이 갈 수 있으니 다 못 읽은 것으로 본다 (보내기도 멈춘다)
@@ -198,9 +198,9 @@ export async function loadMissingData(supabase: DB, term: TermLite, opts: { stud
     submissions,
     people,
     due,
-    alerts,
-    // 기한을 못 읽으면 '안 냄' 을 셀 수 없고, 신청을 못 읽으면 누구에게 보낼지 모른다 — 다 못 읽은 것으로 본다
-    ok: dates.ok && enrollRows.ok && !includeRows.error && subsOk && namesOk && dueOk && alertsOk,
+    optedOut,
+    // 기한을 못 읽으면 '안 냄' 을 셀 수 없고, 안 받기를 못 읽으면 끈 학생에게 보내게 된다 — 다 못 읽은 것으로 본다
+    ok: dates.ok && enrollRows.ok && !includeRows.error && subsOk && namesOk && dueOk && optOutOk,
   };
 }
 

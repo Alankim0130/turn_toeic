@@ -109,7 +109,7 @@ export default async function HomeworkPage() {
 
   return (
     <div className="space-y-8">
-      {/* 숙제 미제출 알림 신청 (2026-10-14 Alan) — 신청한 학생만 선생님의 미제출 알림 명단에 나온다 */}
+      {/* 숙제 미제출 알림 (2026-10-15 Alan) — 기본으로 받고, '알림 안 받기' 를 누른 학생만 선생님의 미제출 알림 명단에서 빠진다 */}
       <HomeworkAlertCard on={alertOn} />
 
       <HomeworkCalendar

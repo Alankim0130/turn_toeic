@@ -15,9 +15,9 @@ import {
   missingStudentCount,
   newMissingOf,
   onlyAlerted,
+  optedOutCount,
   rowOf,
   shortDay,
-  unalertedCount,
   type MissingEnrollment,
   type MissingSection,
   type MissingSubmission,
@@ -169,8 +169,8 @@ describe("격자 — 반마다 한 카드, 수업일 열 × RC · LC", () => {
     // 다른 레벨로 낸 것은 이 레벨 격자에 안 보인다
     { userId: "kim", date: "2026-10-09", level: 750, subject: "lc" },
   ];
-  // 알림 신청 — 학생 넷 모두 (신청하지 않은 학생은 아래 "알림 신청" 에서 따로 본다)
-  const alerts = new Set(["kim", "lee", "park", "late"]);
+  // 알림을 끈 학생 — 없다 (모두 받는다. 끈 학생은 아래 "알림 안 받기" 에서 따로 본다)
+  const optedOut = new Set<string>();
   const board = buildMissingBoard({
     level: 650,
     now,
@@ -180,7 +180,7 @@ describe("격자 — 반마다 한 카드, 수업일 열 × RC · LC", () => {
     enrollments,
     submissions,
     people,
-    alerts,
+    optedOut,
     // 반 정렬 키 — 시간 단위 반 → 묶음 순으로 보이게 (화면은 과정 · 레벨 · 시간 · 트랙으로 준다)
     sortKeyOf: (id) => [id],
   });
@@ -267,7 +267,7 @@ describe("격자 — 반마다 한 카드, 수업일 열 × RC · LC", () => {
       { studentId: "kim", sectionId: 10, from: "2026-10-01" },
     ];
     const ids = (level: number) =>
-      buildMissingBoard({ level, now, due: DUE, sections: SECTIONS, includes: INCLUDES, enrollments: e, submissions: [], people, alerts }).flatMap((g) =>
+      buildMissingBoard({ level, now, due: DUE, sections: SECTIONS, includes: INCLUDES, enrollments: e, submissions: [], people, optedOut }).flatMap((g) =>
         g.rows.map((r) => r.id),
       );
     expect(ids(650).sort()).toEqual(["kim", "sp"]);
@@ -285,7 +285,7 @@ describe("격자 — 반마다 한 카드, 수업일 열 × RC · LC", () => {
       enrollments: [{ studentId: "kim", sectionId: 1, from: "2026-10-01" }],
       submissions: [],
       people,
-      alerts,
+      optedOut,
     });
     expect(early[0].rows[0]).toMatchObject({ past: 0, rate: null, missing: [] });
     expect(early[0].rows[0].cells[0]).toEqual(["upcoming"]);
@@ -310,9 +310,9 @@ describe("제출 기한 — 같은 트랙의 다음 수업일 오후 5시 (2026-
     ...["mwf", "w5"].flatMap((u) => ["2026-10-07", "2026-10-09"].map((date) => ({ userId: u, date, level: 650, subject: "rc" }))),
     ...["ttf", "w5"].flatMap((u) => ["2026-10-06", "2026-10-08"].map((date) => ({ userId: u, date, level: 650, subject: "lc" }))),
   ];
-  const alerts = new Set(["mwf", "ttf", "w5"]);
+  const optedOut = new Set<string>(); // 모두 받는다
   const boardAt = (kst: string) =>
-    buildMissingBoard({ level: 650, now: at(kst), due: DUE, sections: SECTIONS, includes: INCLUDES, enrollments, submissions, people, alerts });
+    buildMissingBoard({ level: 650, now: at(kst), due: DUE, sections: SECTIONS, includes: INCLUDES, enrollments, submissions, people, optedOut });
   const missingOf = (kst: string, id: string) => (rowOf(boardAt(kst), id)?.missing ?? []).map((m) => `${m.date} ${m.subject}`);
 
   it("기한 시각 — 그 날 오후 5시(KST), 5시를 넘기면 지난 것 · 기한을 모르면 지나지 않은 것", () => {
@@ -355,7 +355,7 @@ describe("제출 기한 — 같은 트랙의 다음 수업일 오후 5시 (2026-
         enrollments: [{ studentId: "mwf", sectionId: 1, from: "2026-10-01" }],
         submissions: submissions.filter((x) => x.userId === "mwf"),
         people,
-        alerts,
+        optedOut,
       })[0].rows[0];
     // 10/14(수)가 이 달력의 마지막 월수금 수업일이다
     expect(late(DUE, "2026-12-31T23:00").missing.map((m) => m.date)).toEqual(["2026-10-12"]);
@@ -385,47 +385,58 @@ describe("제출 기한 — 같은 트랙의 다음 수업일 오후 5시 (2026-
   });
 });
 
-describe("알림 신청 — 신청한 학생만 명단 · 전체선택 · 보내기 (2026-10-14 Alan)", () => {
+describe("알림 안 받기 — 끈 학생만 명단 · 전체선택 · 보내기에서 빠진다 (2026-10-15 Alan, 10-14 하루는 거꾸로 신청한 학생만)", () => {
   const people = new Map([
-    ["yes", { name: "가신청", staff: false }],
-    ["no", { name: "나안함", staff: false }],
-    ["no2", { name: "다안함", staff: false }],
+    ["yes", { name: "가받음", staff: false }],
+    ["no", { name: "나안받", staff: false }],
+    ["no2", { name: "다안받", staff: false }],
   ]);
   const enrollments: MissingEnrollment[] = [
     { studentId: "yes", sectionId: 10, from: "2026-10-01" },
     { studentId: "no", sectionId: 10, from: "2026-10-01" },
-    { studentId: "no2", sectionId: 1, from: "2026-10-01" }, // 이 반에는 신청 안 한 학생뿐이다
+    { studentId: "no2", sectionId: 1, from: "2026-10-01" }, // 이 반에는 알림을 끈 학생뿐이다
   ];
-  const board = buildMissingBoard({
-    level: 650,
-    now: at("2026-10-12T18:00"),
-    due: DUE,
-    sections: SECTIONS,
-    includes: INCLUDES,
-    enrollments,
-    submissions: [],
-    people,
-    alerts: new Set(["yes"]),
-    sortKeyOf: (id) => [id],
+  const boardWith = (optedOut: ReadonlySet<string>) =>
+    buildMissingBoard({
+      level: 650,
+      now: at("2026-10-12T18:00"),
+      due: DUE,
+      sections: SECTIONS,
+      includes: INCLUDES,
+      enrollments,
+      submissions: [],
+      people,
+      optedOut,
+      sortKeyOf: (id) => [id],
+    });
+  const board = boardWith(new Set(["no", "no2"]));
+
+  it("아무도 끄지 않았으면 모두 받는다 — 기본값이다 (10-14 하루는 거꾸로 아무도 안 받았다)", () => {
+    const all = boardWith(new Set());
+    expect(all.flatMap((g) => g.rows.map((r) => r.alerts))).toEqual([true, true, true]);
+    expect(onlyAlerted(all).flatMap((g) => g.rows.map((r) => r.id)).sort()).toEqual(["no", "no2", "yes"]);
+    expect(optedOutCount(all)).toBe(0);
+    expect(missingStudentCount(all)).toBe(3);
+    expect(defaultPicks(all).sort()).toEqual(["no", "no2", "yes"]);
   });
 
-  it("줄은 다 만들고 신청 여부를 단다 — 신청한 학생이 먼저 선다", () => {
+  it("줄은 다 만들고 받는지를 단다 — 받는 학생이 먼저 선다", () => {
     const g = board.find((x) => x.key === "10")!;
     expect(g.rows.map((r) => [r.id, r.alerts])).toEqual([
       ["yes", true],
       ["no", false],
     ]);
-    expect(unalertedCount(board)).toBe(2);
+    expect(optedOutCount(board)).toBe(2);
   });
 
-  it("화면은 신청한 학생만 — 신청한 학생이 없는 반은 카드도 없다", () => {
+  it("화면은 받는 학생만 — 끈 학생뿐인 반은 카드도 없다", () => {
     const shown = onlyAlerted(board);
     expect(shown.map((g) => g.key)).toEqual(["10"]);
     expect(shown[0].rows.map((r) => r.id)).toEqual(["yes"]);
-    expect(unalertedCount(shown)).toBe(0);
+    expect(optedOutCount(shown)).toBe(0);
   });
 
-  it("탭 숫자 · 전체선택은 신청한 학생만 센다 — 안 낸 숙제가 있어도 신청 안 한 학생은 고르지 않는다", () => {
+  it("탭 숫자 · 전체선택은 받는 학생만 센다 — 안 낸 숙제가 있어도 끈 학생은 고르지 않는다", () => {
     expect(rowOf(board, "no")!.missing.length).toBeGreaterThan(0);
     expect(missingStudentCount(board)).toBe(1);
     expect(defaultPicks(board)).toEqual(["yes"]);

@@ -18,8 +18,8 @@ export type MissingNoticeResult = { ok: true; sent: number; skipped: number; uns
  * 화면이 보낸 것은 **받을 학생 · 레벨 · 제목**뿐이다 — 글은 서버가 **지금 다시 세어** 학생마다 만든다 (`homeworkMissingMessage`).
  * 세는 기준은 **제출 기한**(같은 트랙 다음 수업일 오후 5시 — 2026-10-14 Alan)이 지난 숙제다.
  * 화면을 열어 둔 사이 학생이 숙제를 냈으면 그 날짜는 빠지고, 다 냈으면 그 학생에게는 보내지 않는다 (`skipped`).
- * **알림을 신청하지 않은 학생에게는 보내지 않는다** (같은 날 Alan — "안 누른사람에게는 알림보내기 명단에서 빠지고") — 그 사이 신청을 취소했으면 빠진다
- * (`unsubscribed`). DB 트리거도 신청하지 않은 학생의 줄은 넣지 않는다 (두 겹).
+ * **숙제제출 화면에서 '알림 안 받기' 를 누른 학생에게는 보내지 않는다** (2026-10-15 Alan — "알림 안받기를 신청하는걸로 하자") — 화면을 연 사이 눌렀으면 빠진다
+ * (`unsubscribed`). DB 트리거도 끈 학생의 줄은 넣지 않는다 (두 겹). 그 밖의 학생은 모두 받는다.
  * 학생 알림함(`student_messages`, kind `homework_missing`)으로만 간다 — 문자 · 카톡 · 푸시는 없다.
  *
  * **강사가 아닌 사람(조교 · 관리자)이 보내도 학생에게는 안 낸 과목의 선생님 이름으로 간다** — DB 트리거(`private.student_messages_homework_missing_sender`)가 바꾼다
@@ -54,7 +54,7 @@ export async function sendHomeworkMissingNotice(input: { termId: number; level: 
       ok: false,
       error:
         found.length > 0 && unsubscribed === found.length
-          ? "고른 학생은 숙제 미제출 알림을 신청하지 않았어요. 새로고침해 주세요."
+          ? "고른 학생은 숙제 미제출 알림을 받지 않기로 했어요. 새로고침해 주세요."
           : "고른 학생은 지금 기한이 지난 숙제가 없어요. 새로고침해 주세요.",
     };
   }
