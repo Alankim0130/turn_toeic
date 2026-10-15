@@ -40,7 +40,7 @@ export type DeviceInfo = { userAgent: string; platform?: string; maxTouchPoints?
 
 /**
  * 공유 시트로 받는 기기 — 아이폰 · 아이팟 · 아이패드. 아이패드OS 사파리는 맥(`MacIntel`)인 척하므로 터치로 가른다
- * (`PushSetup` 의 `isIOS` 와 같은 규칙). 아이폰의 크롬 · 네이버 앱 · 카카오톡도 엔진이 사파리라 같은 길이다.
+ * (`push-client.ts` 의 `isIOS` 와 같은 규칙). 아이폰의 크롬 · 네이버 앱 · 카카오톡도 엔진이 사파리라 같은 길이다.
  * 맥 · 안드로이드 · 윈도는 아니다 — 거기서는 링크가 그대로 받는다.
  */
 export function prefersShareSheet(d: DeviceInfo): boolean {

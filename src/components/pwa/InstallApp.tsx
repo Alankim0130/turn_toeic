@@ -17,6 +17,9 @@ function readDismissed() {
   }
 }
 
+/** 이 기기에서 설치 카드를 "다음에 할게요" 로 닫았나 — 휴대폰 알림 켜기 카드(`PushPrompt`)가 설치 카드와 겹쳐 서지 않게 본다 */
+export const installCardDismissed = readDismissed;
+
 /**
  * "앱 설치" 진입점. 누르면 startInstall() 이 기기에 맞는 가장 짧은 길로 데려간다
  * (원터치 설치 창 / 외부 브라우저로 이동 / 버튼 위치를 가리키는 안내 시트).
@@ -63,7 +66,9 @@ export function InstallApp({ variant, className, onStart }: { variant: "menu" | 
         <Image src="/pwa/icon-192.png" alt="" width={56} height={56} className="h-14 w-14 shrink-0 rounded-2xl shadow-pink" />
         <div className="min-w-0 flex-1">
           <h2 id="install-title" className="text-base font-black text-ink">역전토익을 앱처럼 쓰세요</h2>
-          <p className="mt-0.5 text-sm text-slate">홈 화면에 추가하면 주소창 없이 불라방·다시보기를 바로 열 수 있어요.</p>
+          <p className="mt-0.5 text-sm text-slate">
+            홈 화면에 추가하면 주소창 없이 불라방·다시보기를 바로 열고, 불라방 시작·숙제 미제출 알림도 휴대폰으로 받아요.
+          </p>
         </div>
       </div>
 

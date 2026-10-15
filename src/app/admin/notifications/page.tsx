@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Icon } from "@/components/ui/Icon";
-import { PushSetup } from "@/components/admin/notifications/PushSetup";
+import { PushSetup } from "@/components/push/PushSetup";
 import { SettingsForm } from "@/components/admin/notifications/SettingsForm";
 import { requireStaff } from "@/lib/auth";
 import { NOTIFICATION_KINDS } from "@/lib/push";

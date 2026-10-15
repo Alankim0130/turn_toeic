@@ -45,6 +45,7 @@ export type Database = {
           created_at: string
           id: number
           kind: string
+          pushed_at: string | null
           read_at: string | null
           related: Json | null
           sender_id: string | null
@@ -57,6 +58,7 @@ export type Database = {
           created_at?: string
           id?: never
           kind?: string
+          pushed_at?: string | null
           read_at?: string | null
           related?: Json | null
           sender_id?: string | null
@@ -69,6 +71,7 @@ export type Database = {
           created_at?: string
           id?: never
           kind?: string
+          pushed_at?: string | null
           read_at?: string | null
           related?: Json | null
           sender_id?: string | null
@@ -2620,6 +2623,10 @@ export type Database = {
       cancel_textbook_order: {
         Args: { p_id: number }
         Returns: boolean
+      }
+      claim_student_pushes: {
+        Args: { p_limit?: number }
+        Returns: { body: string; id: number; kind: string; related: Json | null; title: string; user_id: string }[]
       }
       live_detect_candidates: {
         Args: never

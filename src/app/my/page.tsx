@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
 import { InstallApp } from "@/components/pwa/InstallApp";
+import { PushPrompt } from "@/components/push/PushPrompt";
 import { MonthSchedule } from "@/components/my/MonthSchedule";
 import { AttendanceRate } from "@/components/my/AttendanceRate";
 import { ProfilePhoto } from "@/components/layout/ProfilePhoto";
@@ -283,6 +284,8 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
 
       {/* 휴대폰에서 아직 홈 화면 앱으로 설치하지 않았을 때만 보인다 */}
       <InstallApp variant="card" />
+      {/* 휴대폰 알림 켜기 (2026-10-15 — 불라방 시작 · 숙제 미제출). 등록이 있는 학생에게만, 설치 카드가 떠 있으면 숨는다 */}
+      {!empty && <PushPrompt publicKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? null} />}
 
       {empty ? (
         <EmptyState

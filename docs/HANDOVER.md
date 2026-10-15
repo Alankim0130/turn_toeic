@@ -143,7 +143,7 @@
   2. Authentication → Sign In / Providers — Email(확인 메일 켬), Google(클라이언트 ID), Kakao(REST API 키). 비밀번호 8자 이상 · 유출 비밀번호 차단.
   3. SMTP 는 아직 안 붙여 두었다 (운영 ‘아직 안 끝난 일’ 1번).
 - [ ] **3-5 DB 안의 자동 작업이 살아 있는지 본다** (넘길 것은 없다)
-  1. Integrations → Cron → Jobs 에 6개: `daily-status-transition` · `promote-live-replays` · `notify-live-class-start` · `naver-booking-sync` · `live-detect` · `cron-history-cleanup` (하는 일은 부록 표).
+  1. Integrations → Cron → Jobs 에 7개: `daily-status-transition` · `promote-live-replays` · `notify-live-class-start` · `naver-booking-sync` · `live-detect` · `student-push-retry` · `cron-history-cleanup` (하는 일은 부록 표).
   2. Integrations → Vault 에 `app_cron_secret` 하나 — DB가 우리 사이트를 부를 때 붙이는 비밀이고, DB 안에서 만든 값이라 건네줄 것이 없다.
   3. SQL Editor 에서 `select value from private.app_config where key = 'site_url';` → `https://winnertoeic.com` 이면 된다. 도메인을 바꿀 때만 고친다.
   4. Storage 에 비공개 저장소 9곳: `receipts` · `homework` · `lc-audio` · `lc-textbooks` · `study-materials` · `study-checkins` · `avatars` · `class-materials` · `class-notices`.
@@ -360,7 +360,7 @@ Vercel 에는 배포 · 환경변수 13개 · 자동 작업 3개 · 도메인 `w
 | `YOUTUBE_CLIENT_SECRET` | 같은 화면 → 유튜브용 클라이언트 → 새 시크릿 추가 | Vercel → Redeploy → 그 뒤 옛 시크릿 삭제 | 같은 클라이언트면 강사님 채널 연결은 그대로다 |
 | 카카오 Client Secret | 카카오 디벨로퍼스 → 앱 → 보안 → 재발급 | Supabase → Sign In / Providers → Kakao 에 바로 | 넣기 전까지 카카오 로그인이 끊긴다 — 연달아 한다 |
 | Supabase 서비스 키 `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API Keys → 새 secret 키 | Vercel → Redeploy → 사이트 확인 뒤 옛 키 삭제 | ‘JWT secret’ 을 돌리는 방식은 학생 전원이 로그아웃된다. 옛(Legacy) 키를 끄려면 `NEXT_PUBLIC_SUPABASE_ANON_KEY` 도 새 publishable 키로 먼저 바꿔야 한다 — 자신 없으면 개발자에게 |
-| VAPID 키 3개 | **바꾸지 않는다** | — | 바꾸면 강사님 기기의 알림이 전부 끊겨 기기마다 다시 켜야 한다 |
+| VAPID 키 3개 | **바꾸지 않는다** | — | 바꾸면 강사님 · 학생 기기의 알림이 전부 끊겨 기기마다 다시 켜야 한다 |
 
 - [ ] **10-4 알런이 떠난 뒤 지킬 것**
   1. 개인 계정(구글 · Vercel · Supabase · GitHub · 카카오 · 네이버)을 **최소 6개월 지우지 않는다.** 빠뜨린 조각이 매달려 있으면 계정과 함께 사라진다.
@@ -445,14 +445,14 @@ Vercel 에는 배포 · 환경변수 13개 · 자동 작업 3개 · 도메인 `w
 | `NEXT_PUBLIC_SITE_URL` | `https://winnertoeic.com` | 검색 등록 · 가입 메일의 주소가 어긋날 수 있다 |
 | `GOOGLE_SITE_VERIFICATION` | 서치 콘솔 메타 확인 (DNS 로 해서 비어 있어도 된다) | 영향 없음 |
 | `NAVER_SITE_VERIFICATION` | 네이버 소유확인 값 | 네이버 소유확인이 풀린다 |
-| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` · `VAPID_PRIVATE_KEY` · `VAPID_SUBJECT` | 관리자 웹 푸시 | 강사 · 관리자 알림이 안 온다 |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` · `VAPID_PRIVATE_KEY` · `VAPID_SUBJECT` | 웹 푸시 (관리자 알림 · 학생 불라방 시작 · 숙제 미제출 알림) | 강사 · 관리자 · 학생 휴대폰 알림이 안 온다 |
 | `CRON_SECRET` | Vercel 자동 작업 인증 | 하루 요약 · 수강증 삭제 · YBM 통계가 거절된다 |
 | `NAVER_WEBHOOK_SECRET` | 예전 네이버 알림 연결 (지금 안 씀) | 영향 없음 |
 | `YOUTUBE_CLIENT_ID` · `YOUTUBE_CLIENT_SECRET` | 유튜브 자동 연결 | 불라방 자동 연결 · 다시보기 자동 등록이 멈춘다 |
 
 개발용 세 개(`SUPABASE_PROJECT_REF` · `SUPABASE_DB_PASSWORD` · `SUPABASE_ACCESS_TOKEN`)는 Vercel 에 없어도 된다. 그 밖의 비밀은 Supabase 설정(구글 · 카카오 로그인 키)과 DB 안(`app_cron_secret`)에 있다.
 
-### 저절로 도는 작업 9개
+### 저절로 도는 작업 10개
 
 | 이름 | 어디 | 언제 (한국 시간) | 하는 일 |
 | --- | --- | --- | --- |
@@ -461,6 +461,7 @@ Vercel 에는 배포 · 환경변수 13개 · 자동 작업 3개 · 도메인 `w
 | `notify-live-class-start` | Supabase | 5분마다 | 미리 넣어 둔 불라방 링크를 수업 시각에 학생 알림함으로 알린다 |
 | `naver-booking-sync` | Supabase → 사이트 | 10분마다 | 네이버 예약 칸을 확인하고 강사에게 알린다 |
 | `live-detect` | Supabase → 사이트 | 30초마다 (수업 앞뒤에만 실제로 부른다) | 강사님 유튜브 송출을 찾아 불라방 링크에 넣는다 |
+| `student-push-retry` | Supabase → 사이트 | 1분마다 (못 보낸 알림이 있을 때만 실제로 부른다) | 학생 휴대폰 알림(불라방 시작 · 숙제 미제출)을 놓쳤으면 다시 보낸다 — 평소에는 알림이 생기는 순간 바로 나간다 |
 | `cron-history-cleanup` | Supabase | 매일 03:40 | 자동 작업 기록을 7일치만 남긴다 |
 | `daily-digest` | Vercel | 매일 21:00 | 관리자 하루 요약 알림 (개강 7일 전부터 비대면 스터디를 안 열었으면 그 알림이 제목) |
 | `purge-receipts` | Vercel | 매일 03:20 | 판정 뒤 2개월 지난 수강증 원본을 지운다 |
@@ -487,7 +488,7 @@ Vercel 에는 배포 · 환경변수 13개 · 자동 작업 3개 · 도메인 `w
 
 1. Vercel — 새 도메인을 프로젝트에 붙이고, `NEXT_PUBLIC_SITE_URL` 을 바꾼 뒤 **다시 배포**한다 (robots.txt · sitemap.xml 은 배포 때 주소가 박힌다).
 2. Supabase → Authentication → URL Configuration — Site URL 을 바꾸고 Redirect URLs 에 `https://새주소/**` 를 더한다. 빠뜨리면 새 주소로 온 사람만 카카오 · 구글 로그인이 깨진다.
-3. Supabase SQL Editor — `update private.app_config set value = 'https://새주소' where key = 'site_url';` (끝에 `/` 없이). 안 바꾸면 네이버 예약 확인 · 유튜브 감지가 멈춘다.
+3. Supabase SQL Editor — `update private.app_config set value = 'https://새주소' where key = 'site_url';` (끝에 `/` 없이). 안 바꾸면 네이버 예약 확인 · 유튜브 감지 · 학생 휴대폰 알림이 멈춘다.
 4. 구글 클라우드 — 유튜브용 클라이언트의 리디렉션 URI 에 `https://새주소/api/youtube/callback` 을 더하고, 동의 화면의 홈페이지 · 개인정보처리방침 주소 · 승인된 도메인을 바꾼다.
 5. 서치 콘솔 · 네이버 서치어드바이저에 새 주소를 등록하고 사이트맵을 다시 낸다. 옛 도메인은 한동안 새 주소로 넘기고 갱신해 둔다.
 

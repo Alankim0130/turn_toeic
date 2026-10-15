@@ -20,7 +20,8 @@ export type MissingNoticeResult = { ok: true; sent: number; skipped: number; uns
  * 화면을 열어 둔 사이 학생이 숙제를 냈으면 그 날짜는 빠지고, 다 냈으면 그 학생에게는 보내지 않는다 (`skipped`).
  * **숙제제출 화면에서 '알림 안 받기' 를 누른 학생에게는 보내지 않는다** (2026-10-15 Alan — "알림 안받기를 신청하는걸로 하자") — 화면을 연 사이 눌렀으면 빠진다
  * (`unsubscribed`). DB 트리거도 끈 학생의 줄은 넣지 않는다 (두 겹). 그 밖의 학생은 모두 받는다.
- * 학생 알림함(`student_messages`, kind `homework_missing`)으로만 간다 — 문자 · 카톡 · 푸시는 없다.
+ * 학생 알림함(`student_messages`, kind `homework_missing`)으로 간다 — 문자 · 카톡은 없고, **'알림 받기' 를 켠 학생 휴대폰으로도 간다**
+ * (2026-10-15 — 넣는 순간 DB 트리거가 `/api/cron/student-push` 를 부른다, `student-push.ts`).
  *
  * **강사가 아닌 사람(조교 · 관리자)이 보내도 학생에게는 안 낸 과목의 선생님 이름으로 간다** — DB 트리거(`private.student_messages_homework_missing_sender`)가 바꾼다
  * (2026-10-08 저녁부터 관리자도 — 20261008160000). 여기서는 보내는 사람의 이름을 그대로 넣는다 (강사는 그 이름이 남는다). 조교 정책은 그 기수 반에 배정된 학생만 받는다.

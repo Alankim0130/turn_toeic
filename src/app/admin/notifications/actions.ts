@@ -4,38 +4,23 @@ import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { pushToUser } from "@/lib/push";
+import { deleteSubscription, saveSubscription, type SubscriptionInput } from "@/lib/push-subscription";
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
-export type SubscriptionInput = { endpoint: string; p256dh: string; auth: string; userAgent?: string };
+export type { SubscriptionInput };
 
-/** 이 기기의 푸시 구독 저장. 같은 기기(endpoint)를 다른 계정이 쓰던 경우 지금 계정으로 옮긴다 */
+/** 이 기기의 푸시 구독 저장. 같은 기기(endpoint)를 다른 계정이 쓰던 경우 지금 계정으로 옮긴다 (학생 알림과 같은 저장 — push-subscription.ts) */
 export async function savePushSubscription(input: SubscriptionInput): Promise<ActionResult> {
   const { user } = await requireStaff();
-  let endpoint: URL;
-  try {
-    endpoint = new URL(String(input?.endpoint ?? ""));
-  } catch {
-    return { ok: false, error: "구독 정보가 올바르지 않아요. 다시 시도해 주세요." };
-  }
-  if (endpoint.protocol !== "https:") return { ok: false, error: "안전하지 않은 구독 주소예요." };
-  const p256dh = String(input?.p256dh ?? "");
-  const auth = String(input?.auth ?? "");
-  if (!p256dh || !auth || p256dh.length > 200 || auth.length > 100) return { ok: false, error: "구독 키가 올바르지 않아요." };
-
-  const { error } = await createAdminClient()
-    .from("push_subscriptions")
-    .upsert(
-      { user_id: user.id, endpoint: endpoint.href, p256dh, auth, user_agent: String(input?.userAgent ?? "").slice(0, 300) || null },
-      { onConflict: "endpoint" },
-    );
-  if (error) return { ok: false, error: "저장하지 못했어요. 잠시 후 다시 시도해 주세요." };
+  const result = await saveSubscription(user.id, input);
+  if (!result.ok) return result;
   revalidatePath("/admin/notifications");
   return { ok: true };
 }
 
 export async function deletePushSubscription(endpoint: string): Promise<ActionResult> {
   const { user } = await requireStaff();
-  await createAdminClient().from("push_subscriptions").delete().eq("endpoint", String(endpoint ?? "")).eq("user_id", user.id);
+  await deleteSubscription(user.id, endpoint);
   revalidatePath("/admin/notifications");
   return { ok: true };
 }

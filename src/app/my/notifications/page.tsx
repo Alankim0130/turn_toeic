@@ -2,18 +2,21 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Icon } from "@/components/ui/Icon";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Reveal } from "@/components/ui/Reveal";
 import { cn, formatDate } from "@/lib/utils";
 import { getMyMessages } from "../_lib/queries";
 import { MarkRead } from "./MarkRead";
+import { PushSetup } from "@/components/push/PushSetup";
 
 export const metadata: Metadata = { title: "알림", robots: { index: false } };
 
 /**
  * 학생 알림함 (2026-09-18 Alan — "학생 계정에서 선생님에게 알림을 받을 수 있는 공간").
  * `student_messages` 가 쌓인다 — 스태프가 보낸 것과 **수업 시작 알림**(2026-09-19, 크론이 보낸다) 둘 다.
- * 문자·카톡·푸시가 아니라 **앱 안에서만** 보인다. 열면 안 읽은 것이 읽음으로 바뀐다.
+ * 문자·카톡이 아니라 **앱 안에서** 보인다 — 그중 **불라방 시작 · 숙제 미제출**은 '알림 받기' 를 켠 휴대폰으로도 간다 (2026-10-15 Alan, 맨 위 카드).
+ * 열면 안 읽은 것이 읽음으로 바뀐다.
  * 보낸 이름이 비어 있으면 자동 알림이라 시각만 적는다. 종류마다 할 일로 가는 버튼이 다르다.
  */
 export default async function NotificationsPage() {
@@ -25,6 +28,19 @@ export default async function NotificationsPage() {
     <div className="space-y-6">
       <MarkRead unread={unread} />
       <PageHeader icon="bell" title="알림" description="선생님이 보낸 알림 · 숙제 안내 · 문의 답변 · 수업 시작 알림 · 교재비 안내가 여기에 쌓여요." />
+
+      {/* 휴대폰 푸시 (2026-10-15) — 이 두 가지만 휴대폰으로도 간다. 나머지는 여기 알림함에서 본다 */}
+      <section aria-labelledby="push-title" className="card p-5">
+        <h2 id="push-title" className="flex items-center gap-2 text-base font-black text-ink">
+          <Icon name="bell" size={24} />
+          휴대폰으로 알림 받기
+        </h2>
+        <p className="mt-1 mb-4 text-sm text-slate">
+          <b className="text-ink">불라방이 시작될 때</b>(불라방 수강생 · 내 수업 시간마다)와 <b className="text-ink">숙제 미제출 안내</b>를 이 휴대폰으로 바로 보내 드려요. 다른
+          알림은 여기 알림함에서 봐요.
+        </p>
+        <PushSetup publicKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? null} audience="student" />
+      </section>
 
       {messages.length === 0 ? (
         <EmptyState icon="bell" title="아직 알림이 없어요" description="선생님이 보낸 안내나 불라방 수업 시작 알림이 오면 여기에서 볼 수 있어요." />
