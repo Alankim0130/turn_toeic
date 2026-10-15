@@ -187,6 +187,35 @@ export function brushLectures<T extends { date: string; lecturerId: number; cont
   return { lectures: [...lectures, ...missing.map((kinds) => make(kinds))], added: missing.length, removed: 0 };
 }
 
+/** 특강을 가리는 값 — 날 · 강사 · 종류 · 내용 (id 는 DB 의 것, 화면에서 막 만든 특강은 null) */
+export type LectureIdentity = { id: number | null; date: string; lecturerId: number; content: string; kinds: readonly string[] };
+const lectureIdentity = (l: LectureIdentity) => `${l.date}|${l.lecturerId}|${sortLectureKinds([...l.kinds]).join("+")}|${l.content.trim()}`;
+
+/**
+ * id 가 빠진 특강에 **같은 특강의 저장된 id** 를 되살린다 (2026-10-16 점검).
+ * 반 편성 달력에서 특강을 눌러 뺐다가 다시 누르면 화면은 그대로인데 id 없는 새 특강이 되고, 막 만든 특강도 저장한 뒤 화면의 id 가 비어 있었다.
+ * 그대로 저장하면 DB(`save_term_schedule`)가 원래 특강을 지우고 새로 만들어 신청 받기 · 정원 · 신청 조건 · 안내가 처음으로 돌아간다
+ * (신청자가 있으면 "신청자가 있는 특강은 뺄 수 없어요" 로 막힌다). 그래서 날 · 강사 · 종류 · 내용이 같고 목록에서 아직 안 쓰는 저장된 특강의 id 를 준다 —
+ * 저장된 특강 하나는 한 번만. 바뀐 것이 없으면 받은 목록을 그대로 돌려준다. 서버 액션(`saveTermSchedule`)과 달력 화면이 함께 쓴다.
+ */
+export function restoreLectureIds<T extends LectureIdentity>(list: T[], saved: readonly LectureIdentity[]): T[] {
+  if (!list.some((l) => l.id === null)) return list;
+  const used = new Set(list.flatMap((l) => (l.id === null ? [] : [l.id])));
+  const spare = saved.filter((s): s is LectureIdentity & { id: number } => s.id !== null && !used.has(s.id));
+  if (spare.length === 0) return list;
+  let changed = false;
+  const out = list.map((l) => {
+    if (l.id !== null) return l;
+    const key = lectureIdentity(l);
+    const i = spare.findIndex((s) => lectureIdentity(s) === key);
+    if (i < 0) return l;
+    const [match] = spare.splice(i, 1);
+    changed = true;
+    return { ...l, id: match.id };
+  });
+  return changed ? out : list;
+}
+
 /**
  * **YBM 수강후기 링크의 꼴** (2026-10-08 Alan 이 7월 3주차 모의고사 특강 때 학생들이 올린 링크 화면을 보내 줬다 — 일곱 개가 전부
  * `https://www.ybmedu.com/mypage/lessonView/<토큰>`). ybmedu.com(www. · m. 같은 앞자리 포함)의 경로 끝이 `lessonView/<토큰>` 이고

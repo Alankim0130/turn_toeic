@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CLASS_MATERIAL_LINK_URL_MAX } from "./class-materials";
 import {
   brushLectures,
+  restoreLectureIds,
   ddayLabel,
   isSnsFollow,
   isYbmReviewUrl,
@@ -173,6 +174,56 @@ describe("특강 종류 여덟 — Alan 이 적은 이름 · DB check · 순서 
       { id: 2, date: "2026-10-24", kinds: ["mock2"] },
     ];
     expect(sortLectures(list).map((l) => l.id)).toEqual([4, 7, 3, 2, 5, 9]);
+  });
+});
+
+describe("특강 id 되살리기 — 같은 특강을 지우고 새로 만들어 신청 설정이 사라지지 않게 (restoreLectureIds, 2026-10-16 점검)", () => {
+  const saved = [
+    { id: 101, date: "2026-10-17", lecturerId: 1, content: "", kinds: ["mock1"] },
+    { id: 102, date: "2026-10-24", lecturerId: 2, content: "", kinds: ["mock2"] },
+    { id: 103, date: "2026-10-24", lecturerId: 2, content: "", kinds: ["rc"] },
+  ];
+
+  it("달력에서 뺐다가 다시 누른 특강(id 없음)은 원래 id 를 되찾는다 — 예전에는 저장하면 원래 특강을 지우고 새로 만들었다", () => {
+    const list = [
+      { key: "a", ...saved[0] },
+      { key: "new", id: null, date: "2026-10-24", lecturerId: 2, content: "", kinds: ["mock2"] },
+      { key: "c", ...saved[2] },
+    ];
+    expect(restoreLectureIds(list, saved).map((l) => [l.key, l.id])).toEqual([
+      ["a", 101],
+      ["new", 102],
+      ["c", 103],
+    ]);
+  });
+
+  it("날 · 강사 · 종류 · 내용이 하나라도 다르면 새 특강이다 · 목록이 이미 쓰는 id 는 다시 주지 않는다 · 하나는 한 번만", () => {
+    const list = [
+      { id: null, date: "2026-10-24", lecturerId: 1, content: "", kinds: ["mock2"] }, // 강사가 다르다
+      { id: null, date: "2026-10-24", lecturerId: 2, content: "보충", kinds: ["mock2"] }, // 내용이 다르다
+      { id: null, date: "2026-10-24", lecturerId: 2, content: "", kinds: ["mock2_paper"] }, // 종류가 다르다
+      { id: 103, date: "2026-10-24", lecturerId: 2, content: "", kinds: ["rc"] },
+      { id: null, date: "2026-10-24", lecturerId: 2, content: "", kinds: ["rc"] }, // 103 은 목록이 이미 쓴다
+      { id: null, date: "2026-10-17", lecturerId: 1, content: " ", kinds: ["mock1"] }, // 앞뒤 빈칸은 같은 내용
+      { id: null, date: "2026-10-17", lecturerId: 1, content: "", kinds: ["mock1"] }, // 101 은 바로 앞이 가져갔다
+    ];
+    expect(restoreLectureIds(list, saved).map((l) => l.id)).toEqual([null, null, null, 103, null, 101, null]);
+  });
+
+  it("바꿀 것이 없으면 받은 목록을 그대로 돌려준다 (화면이 다시 그리지 않게)", () => {
+    const list = saved.map((l) => ({ ...l }));
+    expect(restoreLectureIds(list, saved)).toBe(list);
+    const fresh = [{ id: null, date: "2026-10-30", lecturerId: 1, content: "", kinds: ["lc"] }];
+    expect(restoreLectureIds(fresh, saved)).toBe(fresh);
+  });
+
+  it("서버 액션이 DB 로 보내기 전에, 달력 화면이 다시 누를 때와 저장한 뒤 새 목록을 받을 때 쓴다", () => {
+    const action = readFileSync("src/app/admin/sections/actions.ts", "utf8");
+    expect(action).toMatch(/toSave = restoreLectureIds\(/);
+    expect(action).toMatch(/p_lectures: toSave,/);
+    const calendar = readFileSync("src/components/admin/sections/TermCalendar.tsx", "utf8");
+    expect(calendar).toMatch(/setLectures\(restoreLectureIds\(res\.lectures, saved\.lectures\)\)/);
+    expect(calendar).toMatch(/if \(idsFrom !== saved\.lectures\) \{\s*setIdsFrom\(saved\.lectures\);\s*setLectures\(restoreLectureIds\(lectures, saved\.lectures\)\);/);
   });
 });
 

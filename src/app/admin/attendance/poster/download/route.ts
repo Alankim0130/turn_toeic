@@ -1,6 +1,7 @@
 import { requireCrew } from "@/lib/auth";
 import { attendUrl } from "@/lib/attendance";
 import { posterDisposition } from "@/lib/attendance-poster";
+import { FILE_MESSAGE_HEADER } from "@/lib/file-download";
 import { loadPosterAssets } from "@/lib/attendance-poster-assets";
 import { buildPosterPdf } from "@/lib/attendance-poster-pdf";
 import { qrMatrix } from "@/lib/qr";
@@ -24,7 +25,7 @@ export async function GET() {
   if (error || !d?.token) {
     return new Response("포스터 QR 을 받지 못했어요. 잠시 뒤 다시 받아 주세요.", {
       status: 503,
-      headers: { ...headers, "content-type": "text/plain; charset=utf-8" },
+      headers: { ...headers, "content-type": "text/plain; charset=utf-8", [FILE_MESSAGE_HEADER]: "1" },
     });
   }
   const pdf = await buildPosterPdf({ qr: qrMatrix(attendUrl(site.url, d.token), "H"), issuedAt: d.created_at, assets: await loadPosterAssets() });

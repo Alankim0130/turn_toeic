@@ -5,7 +5,8 @@ import { headers } from "next/headers";
 import { isAuthWeakPasswordError } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { COMPLETE_PROFILE_PATH } from "@/lib/auth";
+import { COMPLETE_PROFILE_PATH, isAdmin } from "@/lib/auth";
+import { deleteSubscription } from "@/lib/push-subscription";
 import { getSocialLogins } from "@/lib/auth-providers";
 import { isSocialProvider } from "@/lib/social";
 import { site } from "@/lib/site";
@@ -182,8 +183,25 @@ export async function completeProfile(_prev: AuthState, formData: FormData): Pro
   redirect(next === "/my" ? "/my?welcome=1" : next);
 }
 
-export async function signOut() {
+export async function signOut(formData?: FormData) {
   const supabase = await createClient();
+  // 이 기기의 알림을 끈다 (`PushLogoutField` 가 넣은 주소) — 같은 기기를 다른 사람이 이어 쓰면 앞사람의 숙제 미제출 · 불라방 알림이
+  // 이름과 함께 계속 뜬다 (2026-10-16 점검). 강사 · 관리자 기기는 관리자 알림(네이버 예약 · 등업신청 …)을 받는 자기 기기라 남긴다 —
+  // 로그아웃했다 다시 들어와 알림이 꺼진 줄 모르고 놓치지 않게. 지우다 실패해도 로그아웃은 한다
+  const endpoint = formData?.get("push_endpoint");
+  if (typeof endpoint === "string" && endpoint) {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        const { data: me } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+        if (!isAdmin(me?.role)) await deleteSubscription(user.id, endpoint);
+      }
+    } catch (error) {
+      console.error("[signOut] 알림 기기 지우기", (error as Error).message);
+    }
+  }
   await supabase.auth.signOut();
   revalidatePath("/", "layout");
   redirect("/");

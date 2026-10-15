@@ -21,7 +21,7 @@ import { columnDetail, columnHeading, marksText, rosterMarks, toneOf, type Class
 import { HEAD_H, MX, NAME_PT, nameSlots, PAGE_H, planRosterSheets, rosterBrand, ROW_H, shownColumns, SUB_COLUMNS, type RosterSheet } from "./class-roster-sheets";
 import { zipFiles } from "./zip";
 
-/** 쪽 하나에 무엇을 적었나 — 테스트가 PDF 의 쪽과 같은지 본다 (`note` = 표 아래에 적은 학생이 없는 반) */
+/** 쪽 하나에 무엇을 적었나 — 테스트가 PDF 의 쪽과 같은지 본다 (`note` = 표 아래에 적은 학생이 없는 반 · 칸을 찾지 못한 학생 수) */
 export type RosterDocxPage = { level: string | null; columns: string[]; part: number; note: string };
 export type RosterDocx = {
   bytes: Uint8Array;

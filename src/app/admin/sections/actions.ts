@@ -10,6 +10,7 @@ import { requireCrew, requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import { isYmd, labelKo } from "@/components/admin/sections/dates";
 import { isLectureKind, sortLectureKinds } from "@/lib/utils";
+import { restoreLectureIds } from "@/lib/lecture";
 import { SUBJECT_LABEL } from "@/lib/instructor-subject";
 import { timetableRowOf } from "@/lib/timetable-row";
 
@@ -163,6 +164,22 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
   }
 
   const supabase = await createClient();
+  // 같은 특강이 id 없이 오면(달력에서 뺐다가 다시 누름 · 막 만든 특강을 다시 저장) 저장된 그 특강의 id 를 되살린다 — 그대로 보내면 DB 가
+  // 원래 특강을 지우고 새로 만들어 신청 받기 · 정원 · 신청 조건 · 안내가 처음으로 돌아간다 (2026-10-16 점검, `restoreLectureIds`).
+  // 못 읽으면 예전처럼 그대로 보낸다
+  let toSave = lectures;
+  if (parts.includes("lectures") && lectures.some((l) => l.id === null)) {
+    const { data: term } = await supabase.from("terms").select("id").eq("year", year).eq("month", month).maybeSingle();
+    const { data: existing } = term
+      ? await supabase.from("special_lectures").select("id, date, lecturer_id, content, kinds").eq("term_id", term.id)
+      : { data: null };
+    if (existing?.length) {
+      toSave = restoreLectureIds(
+        lectures.map((l) => ({ ...l, lecturerId: l.lecturer_id })),
+        existing.map((e) => ({ id: e.id, date: e.date, lecturerId: e.lecturer_id, content: e.content ?? "", kinds: e.kinds })),
+      ).map(({ id, date, lecturer_id, content, kinds }) => ({ id, date, lecturer_id, content, kinds }));
+    }
+  }
   const { data, error } = await supabase.rpc("save_term_schedule", {
     p_year: year,
     p_month: month,
@@ -170,7 +187,7 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
     p_closes: closes,
     p_mwf: mwf,
     p_ttf: ttf,
-    p_lectures: lectures,
+    p_lectures: toSave,
     p_parts: parts,
   });
 

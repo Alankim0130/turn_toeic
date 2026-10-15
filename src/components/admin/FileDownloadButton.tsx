@@ -1,7 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { downloadText, FILE_KINDS, fileNameFromDisposition, messageText, prefersShareSheet, responseKind, shareFailure, type FileKind } from "@/lib/file-download";
+import {
+  downloadText,
+  FILE_KINDS,
+  FILE_MESSAGE_HEADER,
+  fileNameFromDisposition,
+  messageText,
+  prefersShareSheet,
+  responseKind,
+  shareFailure,
+  type FileKind,
+} from "@/lib/file-download";
 import { cn } from "@/lib/utils";
 
 type Phase = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; file: File; at: number } | { kind: "error"; text: string };
@@ -32,17 +42,15 @@ function shareSheetReady(kind: FileKind): boolean {
  *   그래서 누르면 파일을 받아 **공유 시트**(파일에 저장 · 프린트 · 카카오톡 · Word 앱)를 연다. 파일을 만드는 동안 '누른 순간' 이 지나가면
  *   브라우저가 시트를 막으므로(NotAllowedError) 만든 파일을 들고 `저장 · 인쇄 창 열기` 로 바꿔 **한 번 더 누르게** 한다.
  * - 글 오류(400 · 404 · 503)는 버튼 아래에 그 글을, 로그인 · 권한으로 튕겼으면 지금 화면을 다시 연다 (그쪽으로 간다).
+ * - **주소가 바뀌면 처음부터다**(`key={href}`, 2026-10-16 점검) — 달 칩 · 보기 · 탭처럼 물음표 뒤만 바뀌는 이동은 Next 가 이 조각을 다시 만들지 않아서,
+ *   10월 PDF 를 든 `저장 · 인쇄 창 열기` 가 11월 화면에 남아 누르면 10월 파일이 저장됐다. 바뀐 순간 만들던 파일도 버린다 (조각이 내려가 `alive` 가 꺼진다).
  * 규칙은 `src/lib/file-download.ts` (`file-download.test.ts`). 서버가 그리는 첫 모양은 늘 링크라 기기 판정이 하이드레이션을 어긋내지 않는다.
  */
-export function FileDownloadButton({
-  href,
-  fileName,
-  kind = "pdf",
-  className,
-  title,
-  align = "start",
-  children,
-}: {
+export function FileDownloadButton(props: FileDownloadButtonProps) {
+  return <DownloadButton key={props.href} {...props} />;
+}
+
+type FileDownloadButtonProps = {
   /** 파일 라우트 (attachment 로 준다) */
   href: string;
   /** 응답 머리에서 이름을 못 읽을 때의 저장 이름 */
@@ -54,7 +62,9 @@ export function FileDownloadButton({
   /** 안내 글을 버튼 아래 어느 쪽에 붙일지 — 오른쪽 끝 버튼이면 end */
   align?: "start" | "end";
   children: ReactNode;
-}) {
+};
+
+function DownloadButton({ href, fileName, kind = "pdf", className, title, align = "start", children }: FileDownloadButtonProps) {
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const working = useRef(false);
   const text = downloadText(kind);
@@ -92,13 +102,16 @@ export function FileDownloadButton({
       return null;
     }
     if (!alive.current) return null;
-    const got = responseKind({ ok: res.ok, contentType: res.headers.get("content-type"), redirected: res.redirected }, kind);
+    const got = responseKind(
+      { ok: res.ok, contentType: res.headers.get("content-type"), redirected: res.redirected, message: res.headers.get(FILE_MESSAGE_HEADER) === "1" },
+      kind,
+    );
     if (got === "reload") {
       window.location.reload();
       return null;
     }
     if (got === "message") {
-      setPhase({ kind: "error", text: messageText(await res.text().catch(() => "")) });
+      setPhase({ kind: "error", text: messageText(await res.text().catch(() => ""), kind) });
       return null;
     }
     if (got === "error") {

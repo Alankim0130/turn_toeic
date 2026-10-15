@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getSessionProfile } from "@/lib/auth";
 import { signOut } from "@/app/(auth)/actions";
+import { PushLogoutField } from "@/components/push/PushLogoutField";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 
@@ -31,6 +32,7 @@ export default async function AccountMergedPage() {
 
         <div className="mt-5 flex flex-wrap gap-2">
           <form action={signOut}>
+            <PushLogoutField />
             <SubmitButton pendingText="로그아웃 중…">로그아웃하고 다시 로그인</SubmitButton>
           </form>
           <Link href="/contact/inquiry" className="btn-secondary">문의하기</Link>

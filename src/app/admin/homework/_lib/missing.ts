@@ -56,7 +56,7 @@ const kstDate = (iso: string) => new Date(iso).toLocaleDateString("sv-SE", { tim
 type Page<T> = { data: T[] | null; error: unknown; count?: number | null };
 
 /** 1,000줄씩 — 첫 쪽에서 개수를 받고 남은 쪽은 함께 읽는다. 읽다 실패하면 거기까지 (빈 칸이 '안 냄' 으로 보이지 않게 호출하는 쪽이 판단한다) */
-async function readAll<T>(page: (from: number, to: number, count: boolean) => PromiseLike<Page<T>>): Promise<{ rows: T[]; ok: boolean }> {
+export async function readAll<T>(page: (from: number, to: number, count: boolean) => PromiseLike<Page<T>>): Promise<{ rows: T[]; ok: boolean }> {
   const first = await page(0, PAGE - 1, true);
   if (first.error) return { rows: [], ok: false };
   const rows = [...(first.data ?? [])];

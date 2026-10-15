@@ -313,6 +313,14 @@ export function missingStudentCount(groups: readonly MissingGroup[]): number {
   return ids.size;
 }
 
+/**
+ * 날짜별 카드 머리의 `안 낸 학생 N명` — 학생별 카드 · 레벨 탭과 같이 **알림을 받는 학생만** 센다 (2026-10-16 점검).
+ * '알림 안 받는 학생도 보기' 를 켜면 끈 학생도 목록에 회색으로 서는데, 예전에는 그들까지 세어 두 보기의 숫자가 갈렸다
+ */
+export function dayFlaggedCount(day: Pick<MissingDay, "missing">): number {
+  return day.missing.filter((m) => m.alerts).length;
+}
+
 /** '알림 안 받기' 를 누른 학생 수 (한 사람은 한 번) — 체크박스 이름에 적는다 */
 export function optedOutCount(groups: readonly MissingGroup[]): number {
   const ids = new Set<string>();

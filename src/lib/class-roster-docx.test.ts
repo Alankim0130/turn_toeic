@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildClassRoster, rosterDisposition, rosterFileName } from "./class-roster";
 import { BODY_MM, buildClassRosterDocx, emWidth, sheetHeightMm, xmlText } from "./class-roster-docx";
 import { buildClassRosterPdf } from "./class-roster-pdf";
-import { HEAD_H, NAME_PT, ROW_H, ROWS_PER_PAGE } from "./class-roster-sheets";
+import { HEAD_H, NAME_PT, planRosterSheets, ROW_H, ROWS_PER_PAGE, unplacedNote } from "./class-roster-sheets";
 import { NAMES, rosterOf, sec, trackRosterOf } from "./__fixtures__/class-roster-fixtures";
 import { unzip } from "./__fixtures__/unzip";
 import { readFileSync } from "node:fs";
@@ -115,6 +115,24 @@ describe("PDF 와 같은 쪽 — 쪽 나눔은 class-roster-sheets.ts 한곳", (
     const body = all(doc, "body")[0];
     const last = [...body.children].filter((c) => c.localName !== "sectPr").pop()!;
     expect(last.localName).toBe("p");
+  });
+});
+
+describe("칸을 찾지 못한 학생 — 종이에도 적는다 (2026-10-16 점검)", () => {
+  it("맨 마지막 쪽(PDF 는 바닥 글, Word 는 표 아래)에 'N명은 이 명단에 없어요' — 화면처럼. 없으면 아무것도 붙이지 않는다", async () => {
+    const roster = { ...rosterOf([3, 2, 4, 0]), unplaced: 2 };
+    const sheets = planRosterSheets(roster);
+    expect(sheets.length).toBeGreaterThan(1);
+    // 학생이 없는 반 글보다 앞에 · 마지막 쪽에만
+    expect(sheets.at(-1)!.note.startsWith(`${unplacedNote(2)} · 학생이 없는`)).toBe(true);
+    expect(sheets.slice(0, -1).some((x) => x.note.includes("칸을 찾지 못한"))).toBe(false);
+    const pdf = await pdfOf(roster);
+    expect(pdf.layout.at(-1)!.footer).toContain(unplacedNote(2));
+    const docx = docxOf(roster);
+    expect(docx.layout.at(-1)!.note).toContain(unplacedNote(2));
+    expect(docx.text.join("")).toContain(unplacedNote(2));
+    // 칸을 못 찾은 학생이 없으면 예전 그대로
+    expect(planRosterSheets(rosterOf([3, 2, 4, 0])).some((x) => x.note.includes("칸을 찾지 못한"))).toBe(false);
   });
 });
 

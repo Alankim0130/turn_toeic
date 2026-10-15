@@ -7,6 +7,7 @@ import { StaffModeSwitch } from "./StaffModeSwitch";
 import { DesktopNav } from "./DesktopNav";
 import { Avatar } from "./Avatar";
 import { signOut } from "@/app/(auth)/actions";
+import { PushLogoutField } from "@/components/push/PushLogoutField";
 
 export function SiteHeader({ profile, signedIn, access }: { profile: Profile | null; signedIn: boolean; access: StudentAccess }) {
   // 조교도 모드를 오간다 (2026-09-16 Alan)
@@ -48,6 +49,7 @@ export function SiteHeader({ profile, signedIn, access }: { profile: Profile | n
                 <span className="max-w-[7rem] truncate">{name ? `${name}님` : "마이페이지"}</span>
               </Link>
               <form action={signOut}>
+                <PushLogoutField />
                 <button type="submit" className="btn-secondary whitespace-nowrap !px-4 !py-2">
                   로그아웃
                 </button>

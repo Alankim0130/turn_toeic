@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createECDH, randomBytes } from "node:crypto";
 import { PUSH_BODY_MAX, pushBody, STUDENT_PUSH_KINDS, STUDENT_PUSH_TTL, STUDENT_PUSH_URL, studentPushMessage } from "./student-push";
-import { isPushServiceEndpoint } from "./push-endpoint";
+import { DEVICES_PER_USER, devicesOverLimit, isPushKeyPair, isPushServiceEndpoint } from "./push-endpoint";
 import { detectPush } from "@/components/push/push-client";
 
 /**
@@ -173,6 +174,93 @@ describe("구독 주소 — 푸시 서비스만 받는다", () => {
     ]) {
       expect(isPushServiceEndpoint(bad), bad).toBe(false);
     }
+  });
+});
+
+describe("구독 키 · 기기 수 · 보내기 · 로그아웃 (2026-10-16 점검)", () => {
+  /** 브라우저가 만드는 것과 같은 키 — P-256 공개 키(65바이트) · auth 16바이트, URL 안전 base64 */
+  const browserKeys = () => {
+    const ecdh = createECDH("prime256v1");
+    return { p256dh: ecdh.generateKeys().toString("base64url"), auth: randomBytes(16).toString("base64url") };
+  };
+
+  it("브라우저가 만든 키만 받는다 (끝의 = 는 있어도 된다)", () => {
+    const k = browserKeys();
+    expect(k.p256dh).toHaveLength(87);
+    expect(k.auth).toHaveLength(22);
+    expect(isPushKeyPair(k.p256dh, k.auth)).toBe(true);
+    expect(isPushKeyPair(`${k.p256dh}=`, `${k.auth}==`)).toBe(true);
+  });
+
+  it("아무 글자 · 길이가 틀린 키 · 곡선 위의 점이 아닌 키는 받지 않는다 — 예전에는 길이만 봐서 받았고, 보낼 때 서버 안에서 실패해 기기 줄이 지워지지 않았다", () => {
+    const k = browserKeys();
+    expect(isPushKeyPair("x", "y")).toBe(false);
+    expect(isPushKeyPair("", k.auth)).toBe(false);
+    expect(isPushKeyPair(k.p256dh, "")).toBe(false);
+    expect(isPushKeyPair(k.p256dh.slice(0, 80), k.auth)).toBe(false);
+    expect(isPushKeyPair(k.p256dh, k.auth.slice(0, 10))).toBe(false);
+    // URL 안전 base64 가 아닌 글자가 섞였다
+    expect(isPushKeyPair(`${k.p256dh.slice(0, 40)}+/${k.p256dh.slice(42)}`, k.auth)).toBe(false);
+    // 65바이트 · 0x04 로 시작해도 곡선 위의 점이 아니면
+    const offCurve = Buffer.alloc(65, 1);
+    offCurve[0] = 4;
+    expect(isPushKeyPair(offCurve.toString("base64url"), k.auth)).toBe(false);
+    // 0x04 로 시작하지 않는다
+    const wrongPrefix = Buffer.from(k.p256dh, "base64url");
+    wrongPrefix[0] = 2;
+    expect(isPushKeyPair(wrongPrefix.toString("base64url"), k.auth)).toBe(false);
+  });
+
+  it("한 사람 기기는 10개까지 — 넘치면 오래전에 처음 켠 기기부터 지우고, 방금 켠 기기는 남긴다", () => {
+    expect(DEVICES_PER_USER).toBe(10);
+    const rows = Array.from({ length: 12 }, (_, i) => ({ id: i + 1, endpoint: `e${i + 1}` }));
+    expect(devicesOverLimit(rows.slice(0, 10), "e10")).toEqual([]);
+    expect(devicesOverLimit(rows, "e12").sort((a, b) => a - b)).toEqual([1, 2]);
+    // 오래된 기기를 다시 켰으면(같은 주소 — 줄은 그대로라 id 가 작다) 그 기기는 남기고 그다음 오래된 것을 지운다
+    expect(devicesOverLimit(rows, "e1").sort((a, b) => a - b)).toEqual([2, 3]);
+  });
+
+  it("저장할 때 키를 보고, 기기 수를 정리한다 — 내 기기만 지운다", () => {
+    const src = readFileSync("src/lib/push-subscription.ts", "utf8");
+    expect(src).toMatch(/!isPushKeyPair\(p256dh, auth\)/);
+    expect(src).toMatch(/devicesOverLimit\(mine \?\? \[\], endpoint\.href\)/);
+    expect(src).toMatch(/\.delete\(\)\.in\("id", drop\)\.eq\("user_id", userId\)/);
+  });
+
+  it("보낼 때 기기를 100명씩 · 1,000줄 쪽으로 나눠 읽는다 — 한 번에 1,000줄까지만 와서 같은 묶음의 다른 학생 기기가 조용히 빠졌다", () => {
+    const src = readFileSync("src/lib/push.ts", "utf8");
+    expect(src).toMatch(/const USERS_PER_READ = 100;/);
+    expect(src).toMatch(/\.order\("id"\)\s*\.range\(from, from \+ ROWS_PER_PAGE - 1\)/);
+    expect(src).not.toMatch(/i \+= 200/);
+  });
+
+  it("알림 키가 틀린 모양이면 학생 알림을 가져가지 않는다 — 키를 실제로 넣어 보고 정한다 (예전에는 가져간 뒤 던져서 다 잃었다)", () => {
+    const src = readFileSync("src/lib/push.ts", "utf8");
+    expect(src).toMatch(/export function pushConfigured\(\) \{\s*return configure\(\);\s*\}/);
+    expect(src).toMatch(/try \{\s*webpush\.setVapidDetails\(subject, publicKey, privateKey\);\s*return true;\s*\} catch/);
+  });
+
+  it("학생이 로그아웃하면 이 기기의 알림을 끈다 — 같은 기기를 이어 쓰면 앞사람의 알림(이름 · 날짜)이 계속 떴다. 강사 · 관리자 기기는 남긴다", () => {
+    const actions = readFileSync("src/app/(auth)/actions.ts", "utf8");
+    expect(actions).toMatch(/export async function signOut\(formData\?: FormData\)/);
+    expect(actions).toMatch(/formData\?\.get\("push_endpoint"\)/);
+    expect(actions).toMatch(/if \(!isAdmin\(me\?\.role\)\) await deleteSubscription\(user\.id, endpoint\);/);
+    // 로그아웃하기 전에 지운다 — 로그아웃하면 누구의 기기인지 모른다
+    expect(actions.indexOf("deleteSubscription(user.id, endpoint)")).toBeLessThan(actions.indexOf("await supabase.auth.signOut()"));
+    // 로그아웃 폼마다 이 기기의 주소를 넣는다 — 새 로그아웃 폼을 만들면 여기에 걸린다
+    const forms: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (p.endsWith(".tsx") && readFileSync(p, "utf8").includes("action={signOut}")) forms.push(p);
+      }
+    };
+    walk("src");
+    expect(forms.sort()).toEqual(
+      ["src/app/account-merged/page.tsx", "src/components/admin/AdminNav.tsx", "src/components/layout/MobileMenu.tsx", "src/components/layout/SiteHeader.tsx"].sort(),
+    );
+    for (const f of forms) expect(readFileSync(f, "utf8"), f).toMatch(/<form action=\{signOut\}>\s*<PushLogoutField \/>/);
   });
 });
 

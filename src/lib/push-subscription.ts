@@ -2,7 +2,7 @@ import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { isPushServiceEndpoint } from "@/lib/push-endpoint";
+import { devicesOverLimit, isPushKeyPair, isPushServiceEndpoint } from "@/lib/push-endpoint";
 
 /**
  * 기기의 푸시 구독 저장 · 지우기 — 관리자 알림 설정(`/admin/notifications`)과 학생 알림(`/my/notifications`, 2026-10-15)이 함께 쓴다.
@@ -25,15 +25,21 @@ export async function saveSubscription(userId: string, input: SubscriptionInput)
   if (!isPushServiceEndpoint(endpoint.href)) return { ok: false, error: "이 브라우저의 알림 주소는 받을 수 없어요. 크롬 · 사파리(홈 화면 앱)에서 다시 켜 주세요." };
   const p256dh = String(input?.p256dh ?? "");
   const auth = String(input?.auth ?? "");
-  if (!p256dh || !auth || p256dh.length > 200 || auth.length > 100) return { ok: false, error: "구독 키가 올바르지 않아요." };
+  if (!p256dh || !auth || p256dh.length > 200 || auth.length > 100 || !isPushKeyPair(p256dh, auth)) return { ok: false, error: "구독 키가 올바르지 않아요." };
 
-  const { error } = await createAdminClient()
+  const admin = createAdminClient();
+  const { error } = await admin
     .from("push_subscriptions")
     .upsert(
       { user_id: userId, endpoint: endpoint.href, p256dh, auth, user_agent: String(input?.userAgent ?? "").slice(0, 300) || null },
       { onConflict: "endpoint" },
     );
   if (error) return { ok: false, error: "저장하지 못했어요. 잠시 후 다시 시도해 주세요." };
+
+  // 기기 수의 끝 — 넘친 만큼 오래된 기기를 지운다. 지우다 실패해도 켜기는 된 것이다 (다음에 켤 때 다시 정리한다)
+  const { data: mine } = await admin.from("push_subscriptions").select("id, endpoint").eq("user_id", userId).order("id", { ascending: false });
+  const drop = devicesOverLimit(mine ?? [], endpoint.href);
+  if (drop.length > 0) await admin.from("push_subscriptions").delete().in("id", drop).eq("user_id", userId);
   return { ok: true };
 }
 

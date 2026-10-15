@@ -30,9 +30,12 @@ export type PushResult = { sent: number; failed: number; removed: number };
 
 const EMPTY: PushResult = { sent: 0, failed: 0, removed: 0 };
 
-/** 알림 키(VAPID)가 다 있나 — 없으면 보내지 못하므로 학생 알림 대기열을 가져가지 않는다 (가져가면 표시만 되고 사라진다) */
+/**
+ * 알림 키(VAPID)가 다 있고 **쓸 수 있는 모양인가** — 아니면 보내지 못하므로 학생 알림 대기열을 가져가지 않는다 (가져가면 표시만 되고 사라진다).
+ * 값이 있어도 모양이 틀리면(`mailto:` 없는 VAPID_SUBJECT · 키 길이) 보낼 때 던져서, 예전에는 가져간 줄을 다 잃었다 (2026-10-16 점검)
+ */
 export function pushConfigured() {
-  return Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT);
+  return configure();
 }
 
 function configure() {
@@ -43,8 +46,13 @@ function configure() {
     console.warn("[push] VAPID 설정이 없어 알림을 보내지 않습니다");
     return false;
   }
-  webpush.setVapidDetails(subject, publicKey, privateKey);
-  return true;
+  try {
+    webpush.setVapidDetails(subject, publicKey, privateKey);
+    return true;
+  } catch (error) {
+    console.error("[push] VAPID 설정이 올바르지 않아 알림을 보내지 않습니다", (error as Error).message);
+    return false;
+  }
 }
 
 type SubscriptionRow = { id: number; endpoint: string; p256dh: string; auth: string };
@@ -131,6 +139,10 @@ export async function pushToUser(userId: string, message: PushMessage): Promise<
 
 /** 한 번에 함께 보내는 알림 수 — 숙제 미제출을 한 레벨(300명까지)에 보내도 함수 시간 안에 끝나게 나눠 보낸다 */
 const STUDENT_PUSH_BATCH = 20;
+/** 기기를 읽을 때 한 번에 묻는 학생 수 — 주소(`in.(…)`)가 너무 길어지지 않게 (다른 곳도 100명씩) */
+const USERS_PER_READ = 100;
+/** API 가 한 번에 주는 줄 수의 끝 — 그만큼 오면 다음 쪽을 더 읽는다 */
+const ROWS_PER_PAGE = 1000;
 
 /**
  * 학생 알림함 줄을 그 학생의 기기로 보낸다 (숙제 미제출 · 불라방 시작 — `src/lib/student-push.ts`).
@@ -147,10 +159,20 @@ export async function pushStudentMessages(rows: StudentPushRow[]): Promise<PushR
     const admin = createAdminClient();
     const userIds = [...new Set(items.map((i) => i.userId))];
     const subsOf = new Map<string, SubscriptionRow[]>();
-    for (let i = 0; i < userIds.length; i += 200) {
-      const { data, error } = await admin.from("push_subscriptions").select("id, user_id, endpoint, p256dh, auth").in("user_id", userIds.slice(i, i + 200));
-      if (error) throw error;
-      for (const s of data ?? []) subsOf.set(s.user_id, [...(subsOf.get(s.user_id) ?? []), s]);
+    // 쪽으로 나눠 읽는다 — 한 번에 1,000줄까지만 와서, 넘치면 같은 묶음의 다른 학생 기기가 조용히 빠졌다 (2026-10-16 점검)
+    for (let i = 0; i < userIds.length; i += USERS_PER_READ) {
+      const ids = userIds.slice(i, i + USERS_PER_READ);
+      for (let from = 0; ; from += ROWS_PER_PAGE) {
+        const { data, error } = await admin
+          .from("push_subscriptions")
+          .select("id, user_id, endpoint, p256dh, auth")
+          .in("user_id", ids)
+          .order("id")
+          .range(from, from + ROWS_PER_PAGE - 1);
+        if (error) throw error;
+        for (const s of data ?? []) subsOf.set(s.user_id, [...(subsOf.get(s.user_id) ?? []), s]);
+        if ((data ?? []).length < ROWS_PER_PAGE) break;
+      }
     }
     const total: PushResult = { ...EMPTY };
     const ready = items.filter((i) => subsOf.has(i.userId));

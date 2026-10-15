@@ -8,7 +8,8 @@ import { deleteSubscription, ownsSubscription, saveSubscription, type Subscripti
 /**
  * 학생 휴대폰 알림 켜기 · 끄기 · 테스트 (2026-10-15 Alan — 숙제 미제출 · 불라방 시작을 푸시로).
  * 로그인한 사람의 **자기 기기만** 저장 · 지운다 (`push-subscription.ts` 가 관리자 알림과 같은 규칙으로).
- * 받는 알림은 학생 알림함의 두 종류뿐이다 — 이 기기를 켰다고 관리자 알림이 오지 않는다(`notifyStaff` 는 강사 · 관리자 계정만 고른다).
+ * 학생 계정이면 받는 알림은 학생 알림함의 두 종류뿐이다 — 이 기기를 켰다고 관리자 알림이 오지 않는다(`notifyStaff` 는 강사 · 관리자 계정만 고른다).
+ * 강사 · 관리자가 학생 모드에서 켜면 그 계정의 기기라 관리자 알림도 온다 (관리자 알림 설정에서 켠 것과 같다).
  */
 
 export type StudentPushResult = { ok: true; message?: string } | { ok: false; error: string };

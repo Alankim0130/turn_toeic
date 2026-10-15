@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildMissingBoard,
   buildMissingDays,
+  dayFlaggedCount,
   defaultPicks,
   dueAt,
   dueLabel,
@@ -562,6 +563,13 @@ describe("날짜별 보기 — 'N강 · 10월 6일' 마다 안 낸 학생 (2026-
       ["kim", true],
       ["late", true],
     ]);
+  });
+
+  it("카드 머리의 '안 낸 학생 N명' 은 알림을 받는 학생만 센다 — '알림 안 받는 학생도 보기' 를 켜도 고르기 · 탭 숫자와 같다 (2026-10-16 점검)", () => {
+    // 끈 학생(off)도 줄로는 서지만(회색) 숫자에는 넣지 않는다 — 예전에는 4명으로 적고 고르기는 3명이었다
+    expect(day("2026-10-09").missing).toHaveLength(4);
+    expect(dayFlaggedCount(day("2026-10-09"))).toBe(3);
+    expect(dayFlaggedCount({ missing: [] })).toBe(0);
   });
 
   it("기한 전인 날은 아직 안 낸 학생이 그대로 선다 — 화면이 '기한 전' 으로 접어 둔다", () => {

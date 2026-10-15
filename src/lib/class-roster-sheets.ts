@@ -98,13 +98,20 @@ export const emptyNote = (by: RosterBy, cols: readonly RosterColumn[]) =>
     })
     .join(", ")}`;
 
+/**
+ * 칸을 찾지 못한 학생 — 화면(`ClassRosterView`)처럼 종이에도 적는다. 안 적으면 그 학생이 빠진 줄 모른 채 인쇄된다 (2026-10-16 점검).
+ * 배정된 반(속성반 · 2주완성)이 품을 시간 반이 그 달에 아직 안 열린 학생이다 — 이름은 카드 보기에 있다
+ */
+export const unplacedNote = (n: number) => `칸을 찾지 못한 학생 ${n}명은 이 명단에 없어요 — 학생명단 카드 보기에서 확인해 주세요`;
+
 /** 쪽 바닥의 기본 글 — 학생이 없는 반을 적지 않는 쪽 */
 export const rosterBrand = (by: RosterBy) => `역전토익 학생명단 · ${by === "track" ? "레벨별" : "반별"}`;
 
 /**
  * 쪽 하나 — `block` 의 칸들에 `from` ~ `to` 번째 이름을 적는다 (칸마다 같은 자리 — 이름이 그보다 적은 칸은 있는 만큼).
  * `part` 는 그 칸들의 몇 번째 쪽인가(0 = 첫 쪽 — 그 뒤는 `이어서`), `levelStart` 는 레벨의 첫 쪽(칸이 많아 나뉜 레벨도 한 레벨로 본다).
- * `empties` = 이 쪽에 적을 학생이 없는 반(그 레벨 마지막 쪽 · 맨 마지막 쪽), `note` = 그것을 적은 글(없으면 빈 글자).
+ * `empties` = 이 쪽에 적을 학생이 없는 반(그 레벨 마지막 쪽 · 맨 마지막 쪽), `note` = 그것을 적은 글(없으면 빈 글자) —
+ * 맨 마지막 쪽에는 칸을 찾지 못한 학생 수도 앞에 붙는다 (`unplacedNote`).
  * 학생이 하나도 없는 명단은 `block` 이 빈 쪽 하나다.
  */
 export type RosterSheet = {
@@ -144,5 +151,9 @@ export function planRosterSheets(roster: ClassRoster): RosterSheet[] {
     sheet.empties = [...(block && sheet.levelEnd ? roster.empty.filter((c) => c.level === block.level.level) : []), ...(index === sheets.length - 1 ? orphans : [])];
     sheet.note = sheet.empties.length > 0 ? emptyNote(roster.by, sheet.empties) : "";
   });
+  if (roster.unplaced > 0) {
+    const last = sheets[sheets.length - 1];
+    last.note = [unplacedNote(roster.unplaced), last.note].filter(Boolean).join(" · ");
+  }
   return sheets;
 }

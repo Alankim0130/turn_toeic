@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { saveTermSchedule, type TermPart } from "@/app/admin/sections/actions";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
-import { brushLectures } from "@/lib/lecture";
+import { brushLectures, restoreLectureIds } from "@/lib/lecture";
 import { cn, LECTURE_BASES, lectureDayTags, lectureKindsOf, sortLectureKinds, type LectureKind } from "@/lib/utils";
 import { HOLIDAY_YEAR_RANGE, hasHolidayData, holidayNamesBetween } from "@/lib/holidays";
 import { WEEKDAY_KO, coveringGrid, labelKo, shiftMonth, termKey, weekdayOf } from "./dates";
@@ -111,6 +111,13 @@ export function TermCalendar({
   const [mwf, setMwf] = useState(() => new Set(saved.mwf));
   const [ttf, setTtf] = useState(() => new Set(saved.ttf));
   const [lectures, setLectures] = useState<Lecture[]>(() => saved.lectures.map((l, i) => ({ ...l, key: `saved-${i}` })));
+  // 저장한 뒤 서버가 새 목록을 주면(router.refresh) 아직 id 가 없는 특강에 저장된 id 를 붙인다 — 막 만든 특강을 고쳐 다시 저장할 때
+  // id 없이 보내면 DB 가 지우고 새로 만들어 그사이 정한 신청 설정이 사라진다 (2026-10-16 점검, `restoreLectureIds`)
+  const [idsFrom, setIdsFrom] = useState(saved.lectures);
+  if (idsFrom !== saved.lectures) {
+    setIdsFrom(saved.lectures);
+    setLectures(restoreLectureIds(lectures, saved.lectures));
+  }
   const [brush, setBrush] = useState<{ lecturerId: number | null; kinds: LectureKind[]; content: string }>({
     lecturerId: lecturers[0]?.id ?? null,
     kinds: [],
@@ -266,7 +273,8 @@ export function TermCalendar({
       content,
       kinds,
     }));
-    setLectures(res.lectures);
+    // 뺐다가 다시 누른 특강이면 원래 id 를 되살린다 — 화면은 그대로인데 저장하면 지우고 새로 만드는 일이 없게
+    setLectures(restoreLectureIds(res.lectures, saved.lectures));
     if (res.removed > 0) {
       setNotice(null);
       return;

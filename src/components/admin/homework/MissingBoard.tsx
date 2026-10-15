@@ -8,6 +8,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Icon } from "@/components/ui/Icon";
 import { SUBJECT_LABEL, type HomeworkSubject } from "@/lib/homework";
 import {
+  dayFlaggedCount,
   dueLabel,
   HOMEWORK_MISSING_TITLE,
   homeworkMissingMessage,
@@ -394,6 +395,8 @@ const DayCard = memo(function DayCard({
   const allAlerted = day.overdue && pickable.length === 0 && day.missing.some((m) => m.alerts);
   const allPicked = pickable.length > 0 && pickable.every((id) => selected.has(id));
   const twoSubjects = day.subjects.length > 1;
+  // 머리의 '안 낸 학생 N명' 은 알림을 받는 학생만 — 학생별 카드 · 레벨 탭과 같은 수 (끈 학생은 '보기' 를 켜야 회색으로 선다)
+  const flagged = dayFlaggedCount(day);
 
   // 반마다 — 줄은 이미 반 순서로 서 있다
   const runs: { key: string; students: MissingDayView["missing"] }[] = [];
@@ -485,8 +488,11 @@ const DayCard = memo(function DayCard({
         <span className="ml-auto shrink-0 text-xs font-bold">
           {!day.overdue ? (
             <span className="rounded-full bg-surface px-2 py-0.5 text-slate ring-1 ring-line">기한 전</span>
+          ) : flagged > 0 ? (
+            <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700">안 낸 학생 {flagged}명</span>
           ) : day.missing.length > 0 ? (
-            <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700">안 낸 학생 {day.missing.length}명</span>
+            // 남은 것은 '알림 안 받는 학생도 보기' 로 선 학생뿐이다 — 회색으로 몇 명인지만
+            <span className="rounded-full bg-surface px-2 py-0.5 text-slate ring-1 ring-line">알림 안 받는 학생 {day.missing.length}명</span>
           ) : (
             <span className="rounded-full bg-brand-500 px-2 py-0.5 text-white">모두 냈어요</span>
           )}

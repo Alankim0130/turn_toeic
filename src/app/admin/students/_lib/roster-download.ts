@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { todayKST } from "@/lib/utils";
 import { rosterPeriod, type ClassRoster, type RosterBy } from "@/lib/class-roster";
+import { FILE_MESSAGE_HEADER } from "@/lib/file-download";
 import { TERM_COLUMNS, type TermLite } from "../../_lib/queries";
 import { loadClassRoster } from "./class-roster";
 
@@ -12,7 +13,9 @@ import { loadClassRoster } from "./class-roster";
  */
 export const ROSTER_HEADERS = { "cache-control": "private, no-store", "x-robots-tag": "noindex, nofollow" } as const;
 
-const text = (status: number, body: string) => new Response(body, { status, headers: { ...ROSTER_HEADERS, "content-type": "text/plain; charset=utf-8" } });
+/** 글 오류 — 버튼(`FileDownloadButton`)이 이 글을 그대로 보여 준다 (`FILE_MESSAGE_HEADER` 가 있는 글만) */
+const text = (status: number, body: string) =>
+  new Response(body, { status, headers: { ...ROSTER_HEADERS, "content-type": "text/plain; charset=utf-8", [FILE_MESSAGE_HEADER]: "1" } });
 
 export type RosterDownload = { ok: true; term: TermLite; by: RosterBy; roster: ClassRoster; period: string } | { ok: false; response: Response };
 
@@ -22,7 +25,9 @@ export async function loadRosterDownload(req: NextRequest): Promise<RosterDownlo
   if (!m) return { ok: false, response: text(400, "어느 달 명단인지 알 수 없어요. 학생명단 화면에서 다시 받아 주세요.") };
 
   const supabase = await createClient();
-  const { data: terms } = await supabase.from("terms").select(TERM_COLUMNS);
+  const { data: terms, error } = await supabase.from("terms").select(TERM_COLUMNS);
+  // 못 읽은 것을 '그 달이 없다' 로 말하지 않는다 (2026-10-16 점검 — 잠깐의 DB 오류에 있는 달이 404 로 보였다)
+  if (error) return { ok: false, response: text(503, "명단을 다 불러오지 못했어요. 잠시 뒤 다시 받아 주세요.") };
   const term = (terms ?? []).find((t) => t.year === Number(m[1]) && t.month === Number(m[2]));
   if (!term) return { ok: false, response: text(404, "그 달 기수가 없어요. 학생명단 화면에서 다시 받아 주세요.") };
 

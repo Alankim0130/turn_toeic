@@ -6,6 +6,7 @@ import { Icon } from "@/components/ui/Icon";
 import { activeAdminHref, navAdminFor, navAdminSectionsFor } from "@/lib/site";
 import { cn } from "@/lib/utils";
 import { signOut } from "@/app/(auth)/actions";
+import { PushLogoutField } from "@/components/push/PushLogoutField";
 import { NavPendingRing } from "@/components/layout/NavPending";
 
 export function isAdminActive(pathname: string, href: string) {
@@ -72,6 +73,7 @@ export function AdminSidebar({ name, roleLabel, role }: { name: string; roleLabe
             학생 모드로
           </Link>
           <form action={signOut}>
+            <PushLogoutField />
             <button type="submit" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-ink-soft hover:bg-surface hover:text-ink">
               <Icon name="logout" size={22} />
               로그아웃

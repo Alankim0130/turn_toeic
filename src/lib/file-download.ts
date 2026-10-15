@@ -78,19 +78,25 @@ export function fileNameFromDisposition(header: string | null | undefined, fallb
 }
 
 /**
+ * 우리 파일 라우트가 글 오류(400 · 404 · 503)에 붙이는 응답 머리 — 버튼은 이 머리가 있는 글만 그대로 보여 준다.
+ * 플랫폼 오류(시간 초과 504 등)도 `text/plain` 으로 오는데, 그 원문("An error occurred with your deployment …")을 버튼 아래에 띄우지 않으려는 것이다 (2026-10-16 점검)
+ */
+export const FILE_MESSAGE_HEADER = "x-file-message";
+
+/**
  * 받은 응답을 어떻게 다루나.
  * - `file` — 바라던 파일(PDF · Word)이다. 저장 창을 연다
- * - `message` — 우리 라우트의 글 오류(400 · 404 · 503, `text/plain`)라 그 글을 버튼 아래에 보여 준다
+ * - `message` — 우리 라우트의 글 오류(400 · 404 · 503, `text/plain` + `FILE_MESSAGE_HEADER`)라 그 글을 버튼 아래에 보여 준다
  * - `reload` — 로그인 화면 · 권한 없음으로 **튕겼다**(redirect). 지금 화면을 다시 열면 그쪽(로그인 → 다시 이 화면)으로 간다.
  *   파일 주소로 바로 가면 로그인 뒤 PDF 가 화면에 떠서 같은 문제로 돌아온다
- * - `error` — 그 밖 (서버 오류 화면 · 다른 형식 등). 일반 안내
+ * - `error` — 그 밖 (서버 오류 화면 · 머리 없는 글 · 다른 형식 등). 일반 안내
  */
 export type FetchedKind = "file" | "message" | "reload" | "error";
 
-export function responseKind(r: { ok: boolean; contentType: string | null; redirected?: boolean }, kind: FileKind = "pdf"): FetchedKind {
+export function responseKind(r: { ok: boolean; contentType: string | null; redirected?: boolean; message?: boolean }, kind: FileKind = "pdf"): FetchedKind {
   const type = (r.contentType ?? "").toLowerCase();
   if (r.ok && type.includes(FILE_KINDS[kind].mime)) return "file";
-  if (type.startsWith("text/plain")) return "message";
+  if (r.message && type.startsWith("text/plain")) return "message";
   if (r.redirected) return "reload";
   return "error";
 }
@@ -98,10 +104,10 @@ export function responseKind(r: { ok: boolean; contentType: string | null; redir
 /** 우리 라우트의 글 오류를 그대로 보여 줄 때의 길이 끝 — 서버 오류 원문이 길게 쏟아지지 않게 */
 export const MESSAGE_MAX = 200;
 
-/** 글 오류 정리 — 비었으면 일반 안내 */
-export function messageText(body: string): string {
+/** 글 오류 정리 — 비었으면 그 종류(PDF · Word)의 일반 안내 */
+export function messageText(body: string, kind: FileKind = "pdf"): string {
   const t = body.replace(/\s+/g, " ").trim();
-  return t ? (t.length > MESSAGE_MAX ? `${t.slice(0, MESSAGE_MAX)}…` : t) : DOWNLOAD_TEXT.failed;
+  return t ? (t.length > MESSAGE_MAX ? `${t.slice(0, MESSAGE_MAX)}…` : t) : downloadText(kind).failed;
 }
 
 /**

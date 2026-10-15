@@ -17,6 +17,7 @@ import { NavPendingRing } from "./NavPending";
 import { InstallApp } from "@/components/pwa/InstallApp";
 import { RefreshButton } from "@/components/pwa/RefreshButton";
 import { signOut } from "@/app/(auth)/actions";
+import { PushLogoutField } from "@/components/push/PushLogoutField";
 
 const noopSubscribe = () => () => {};
 
@@ -195,6 +196,7 @@ export function MobileMenu({
           {staff && <StaffModeSwitch variant="panel" role={role} />}
           {signedIn && (
             <form action={signOut}>
+              <PushLogoutField />
               <button type="submit" className="btn-ghost w-full">
                 로그아웃
               </button>
