@@ -96,12 +96,14 @@ describe("lectureCameo — 강사와 종류에 맞는 캐리커처", () => {
     expect(lectureCameo("이혜영", ["lc_video"])?.pose).toBe("notebook");
     expect(lectureCameo("이혜영", ["mock1"])?.pose).toBe("point");
     expect(lectureCameo("이혜영", ["mock1_paper"])?.pose).toBe("point");
+    expect(lectureCameo("이혜영", ["mock2_pdf"])?.pose).toBe("point"); // PDF 수령도 모의고사 (2026-10-16)
   });
   it("이영수 RC특강(현강 · 녹화영상)은 태블릿 컷, 모의고사면 엄지척", () => {
     expect(lectureCameo("이영수", ["rc"])?.pose).toBe("tablet");
     expect(lectureCameo("이영수", ["rc_video"])?.pose).toBe("tablet");
     expect(lectureCameo("이영수", ["mock2"])?.pose).toBe("thumbsup");
     expect(lectureCameo("이영수", ["mock2_paper"])?.pose).toBe("thumbsup");
+    expect(lectureCameo("이영수", ["mock1_pdf"])?.pose).toBe("thumbsup");
   });
   it("강사가 없거나 두 분이 아니면 그리지 않는다", () => {
     expect(lectureCameo(null, ["rc"])).toBeNull();
@@ -122,10 +124,11 @@ describe("lectureCameo — 강사와 종류에 맞는 캐리커처", () => {
 });
 
 /**
- * 특강 종류 여덟 · 특강 하나에 하나 (2026-10-15 Alan — "1. RC특강 (현강신청)/ RC 특강(녹화영상신청) 2. LC특강 (현강신청)/ LC 특강(녹화영상신청)
- * 3. 1차 모의고사 (현강신청)/ 1차 모의고사 (시험지 수령 신청) 4. 2차 모의고사 (현강신청)/ 2차 모의고사 (시험지 수령 신청) 이렇게 총 8개로").
+ * 특강 종류 열 · 특강 하나에 하나 (2026-10-15 Alan — "1. RC특강 (현강신청)/ RC 특강(녹화영상신청) 2. LC특강 (현강신청)/ LC 특강(녹화영상신청)
+ * 3. 1차 모의고사 (현강신청)/ 1차 모의고사 (시험지 수령 신청) 4. 2차 모의고사 (현강신청)/ 2차 모의고사 (시험지 수령 신청) 이렇게 총 8개로"
+ * → 2026-10-16 Alan "모의고사에서 'pdf수령' 신청이 하나 더 추가되면 좋겠어!!" — 1차 · 2차 모의고사 PDF 수령 신청).
  */
-describe("특강 종류 여덟 — Alan 이 적은 이름 · DB check · 순서 · 과목", () => {
+describe("특강 종류 열 — Alan 이 적은 이름 · DB check · 순서 · 과목", () => {
   it("이름은 Alan 이 적은 그대로, 지금 값 rc · lc · mock1 · mock2 가 현강신청이다", () => {
     expect(LECTURE_KINDS.map((k) => k.label)).toEqual([
       "RC특강 (현강신청)",
@@ -134,10 +137,16 @@ describe("특강 종류 여덟 — Alan 이 적은 이름 · DB check · 순서 
       "LC특강 (녹화영상신청)",
       "1차 모의고사 (현강신청)",
       "1차 모의고사 (시험지 수령 신청)",
+      "1차 모의고사 (PDF 수령 신청)",
       "2차 모의고사 (현강신청)",
       "2차 모의고사 (시험지 수령 신청)",
+      "2차 모의고사 (PDF 수령 신청)",
     ]);
     for (const v of ["rc", "lc", "mock1", "mock2"]) expect(LECTURE_KINDS.find((k) => k.value === v)?.way, v).toBe("onsite");
+    // PDF 수령은 모의고사에만 — 특강(RC · LC)은 현강 · 녹화영상 둘 그대로
+    expect(LECTURE_KINDS.filter((k) => k.way === "pdf").map((k) => k.value)).toEqual(["mock1_pdf", "mock2_pdf"]);
+    expect(LECTURE_KINDS.filter((k) => k.base === "rc").map((k) => k.wayLabel)).toEqual(["현강신청", "녹화영상신청"]);
+    expect(LECTURE_KINDS.filter((k) => k.base === "mock2").map((k) => k.wayLabel)).toEqual(["현강신청", "시험지 수령 신청", "PDF 수령 신청"]);
   });
   it("DB check(special_lectures_kinds_check — 마지막 정의)와 같은 값 · 특강 하나에 하나 · private.lecture_kinds 와 같은 순서", () => {
     const check = lastCheck("special_lectures_kinds_check");
@@ -152,7 +161,7 @@ describe("특강 종류 여덟 — Alan 이 적은 이름 · DB check · 순서 
     expect(save).toContain(`k not in (${LECTURE_KIND_VALUES.map((k) => `'${k}'`).join(", ")})`);
   });
   it("과목 — 녹화영상도 그 과목이다 (DB private.lecture_kind_subject 와 같다)", () => {
-    expect(LECTURE_KIND_VALUES.map(lectureKindSubject)).toEqual(["rc", "rc", "lc", "lc", null, null, null, null]);
+    expect(LECTURE_KIND_VALUES.map(lectureKindSubject)).toEqual(["rc", "rc", "lc", "lc", null, null, null, null, null, null]);
     const fn = lastFn("private.lecture_kind_subject");
     expect(fn).toContain("when p_kind in ('rc', 'rc_video') then 'rc'");
     expect(fn).toContain("when p_kind in ('lc', 'lc_video') then 'lc'");
@@ -162,6 +171,7 @@ describe("특강 종류 여덟 — Alan 이 적은 이름 · DB check · 순서 
   it("제목은 그 이름 그대로 — 내용이 있으면 덧붙인다", () => {
     expect(lectureTitle({ kinds: ["rc_video"], content: null })).toBe("RC특강 (녹화영상신청)");
     expect(lectureTitle({ kinds: ["mock2_paper"], content: "16:00" })).toBe("2차 모의고사 (시험지 수령 신청) — 16:00");
+    expect(lectureTitle({ kinds: ["mock1_pdf"], content: null })).toBe("1차 모의고사 (PDF 수령 신청)");
     expect(lectureTitle({ kinds: [], content: "설명회" })).toBe("설명회");
   });
   it("같은 날 특강은 RC 현강 · 녹화 · LC … · 2차 시험지 순, 종류 없는 특강은 맨 뒤", () => {
@@ -171,9 +181,10 @@ describe("특강 종류 여덟 — Alan 이 적은 이름 · DB check · 순서 
       { id: 3, date: "2026-10-24", kinds: ["rc_video"] },
       { id: 4, date: "2026-10-17", kinds: ["mock1"] },
       { id: 7, date: "2026-10-24", kinds: ["rc"] },
+      { id: 1, date: "2026-10-24", kinds: ["mock2_pdf"] },
       { id: 2, date: "2026-10-24", kinds: ["mock2"] },
     ];
-    expect(sortLectures(list).map((l) => l.id)).toEqual([4, 7, 3, 2, 5, 9]);
+    expect(sortLectures(list).map((l) => l.id)).toEqual([4, 7, 3, 2, 5, 1, 9]);
   });
 });
 
@@ -261,6 +272,11 @@ describe("반 편성 달력 — 고른 종류마다 특강 하나 (brushLectures
     expect(tags.map((t) => t.tiny)).toEqual(["RC", "2차", "특강"]);
     expect(tags[0].label).toBe("RC특강 (현강신청), RC특강 (녹화영상신청)");
     expect(lectureDayTags([["lc_video"]]).map((t) => t.short)).toEqual(["LC 녹화"]);
+    // 모의고사 PDF 수령 (2026-10-16) — 같은 날 현강 · 시험지 · PDF 가 한 표시로
+    const mock = lectureDayTags([["mock1_pdf"], ["mock1"], ["mock1_paper"]]);
+    expect(mock.map((t) => t.short)).toEqual(["1차 현강·시험지·PDF"]);
+    expect(mock[0].label).toBe("1차 모의고사 (현강신청), 1차 모의고사 (시험지 수령 신청), 1차 모의고사 (PDF 수령 신청)");
+    expect(lectureDayTags([["mock2_pdf"]]).map((t) => t.short)).toEqual(["2차 PDF"]);
     expect(lectureDayTags([])).toEqual([]);
   });
 });
@@ -527,6 +543,8 @@ describe("단과 학생은 제 과목 특강만 — sectionSubjects · lectureSu
   it("모의고사만인 특강은 누구나 · 종합(두 과목) · 속성반 · 2주완성 · 묶음 · 단과 둘을 함께 듣는 학생은 막히지 않는다", () => {
     expect(lectureSubjectBlock(["mock1"], mine(rcUnit))).toEqual([]);
     expect(lectureSubjectBlock(["mock2_paper"], mine(lcUnit))).toEqual([]);
+    expect(lectureSubjectBlock(["mock1_pdf"], mine(rcUnit))).toEqual([]);
+    expect(lectureSubjectBlock(["mock2_pdf"], mine(lcUnit))).toEqual([]);
     expect(lectureSubjectBlock([], mine(lcUnit))).toEqual([]);
     expect(lectureSubjectBlock(null, mine(lcUnit))).toEqual([]);
     for (const s of [bundle, sparta, twoweek]) {

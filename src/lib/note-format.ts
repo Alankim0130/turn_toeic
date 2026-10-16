@@ -193,14 +193,17 @@ export function trimRuns(runs: NoteRun[]): NoteRun[] {
   return out;
 }
 
-/** 앞에서 `count` 글자(코드 포인트)만 — 접힌 안내의 앞부분을 서식째 보여 준다 */
-export function sliceRuns(runs: NoteRun[], count: number): NoteRun[] {
-  const out: NoteRun[] = [];
+/**
+ * 앞에서 `count` 글자(코드 포인트)만 — 접힌 안내의 앞부분을 서식째 보여 준다.
+ * 조각에 붙은 다른 칸(링크 표시 — `note-links.ts`)도 그대로 따라간다
+ */
+export function sliceRuns<T extends NoteRun>(runs: readonly T[], count: number): T[] {
+  const out: T[] = [];
   let left = count;
   for (const r of runs) {
     if (left <= 0) break;
     const chars = Array.from(r.text);
-    out.push({ text: chars.slice(0, left).join(""), style: r.style });
+    out.push({ ...r, text: chars.slice(0, left).join("") });
     left -= chars.length;
   }
   return out;
@@ -223,14 +226,14 @@ export function runClassName(s: NoteStyle): string {
 /** 서식 태그를 모두 지운 글 — `서식 지우기` 버튼이 고른 부분에 쓴다 */
 export const stripNoteTags = (text: string) => text.replace(TAG, "");
 
-/** 줄마다 자른 조각 — 보여 줄 때 줄마다 정렬이 다르다 */
-export function splitLines(runs: NoteRun[]): NoteRun[][] {
-  const lines: NoteRun[][] = [[]];
+/** 줄마다 자른 조각 — 보여 줄 때 줄마다 정렬이 다르다. 조각에 붙은 다른 칸(링크 표시)도 그대로 따라간다 */
+export function splitLines<T extends NoteRun>(runs: readonly T[]): T[][] {
+  const lines: T[][] = [[]];
   for (const r of runs) {
     const parts = r.text.split("\n");
     parts.forEach((part, k) => {
       if (k > 0) lines.push([]);
-      if (part) lines[lines.length - 1].push({ text: part, style: r.style });
+      if (part) lines[lines.length - 1].push({ ...r, text: part });
     });
   }
   return lines;

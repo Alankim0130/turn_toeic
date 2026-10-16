@@ -97,8 +97,9 @@ export default async function MyLecturePage() {
                     </span>
                   </div>
 
-                  {/* 강사님 안내 — 수업자료실 안내와 같은 서식 글 (2026-10-15). 길면 앞 네 줄만 보이고 펼친다 */}
-                  {l.notice && <MaterialNote note={l.notice} className="bg-violet-50/70" />}
+                  {/* 강사님 안내 — 수업자료실 안내와 같은 서식 글 (2026-10-15). 길면 앞 네 줄만 보이고 펼친다.
+                      글 속 주소는 누르면 새 창으로 간다 (2026-10-16 Alan — "안내글에서 링크가 있다면 클릭했을때 바로가기가 되면 좋겠어") */}
+                  {l.notice && <MaterialNote note={l.notice} linkify className="bg-violet-50/70" />}
 
                   {/* 신청 현황 왼쪽, 오른쪽에 강사 캐리커처 + 말풍선 — 손짓이 왼쪽을 향하므로 콘텐츠 오른쪽에 둔다 */}
                   <div className="flex items-end gap-3">

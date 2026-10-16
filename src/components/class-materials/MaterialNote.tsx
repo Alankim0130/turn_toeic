@@ -1,4 +1,6 @@
 import { noteView } from "@/lib/class-materials";
+import { runsLength, sliceRuns } from "@/lib/note-format";
+import { linkRuns } from "@/lib/note-links";
 import { NoteBody } from "@/components/note/NoteBody";
 import { cn } from "@/lib/utils";
 import { FoldButton } from "./FoldButton";
@@ -16,9 +18,15 @@ import { FoldButton } from "./FoldButton";
  * - **글자 서식 · 줄 정렬**은 `note-format.ts` 가 풀고 `NoteBody` 가 정해 둔 클래스만 붙여 그린다 — HTML 을 그대로 넣지 않는다.
  *   접을지 · 글자 수는 태그를 빼고 보이는 글자로 센다.
  * - `showCount` — 관리자 줄에서 접힌 글이 몇 자인지 (붙여 넣은 스크립트가 다 들어갔는지 볼 수 있게). 학생에게는 적지 않는다.
+ * - `linkify` — 글 속 주소(`https://` · `www.`)를 누르면 새 창으로 간다 (2026-10-16 Alan — 특강 안내. `note-links.ts`). 지금은 학생 특강 카드만 켠다.
+ *   주소는 **글 전체에서** 찾은 뒤 앞부분을 자른다 — 접힌 앞부분 끝에서 주소가 잘려도 링크는 온전한 주소로 간다.
+ *   접힌 앞부분의 링크는 `<summary>` 안에 있지만 누르면 링크만 열리고 접기는 그대로다 (링크가 먼저 눌린다 — HTML 의 누름 규칙).
  */
-export function MaterialNote({ note, className, showCount = false }: { note: string; className?: string; showCount?: boolean }) {
-  const { folded, preview, full, aligns, chars } = noteView(note);
+export function MaterialNote({ note, className, showCount = false, linkify = false }: { note: string; className?: string; showCount?: boolean; linkify?: boolean }) {
+  const view = noteView(note);
+  const { folded, aligns, chars } = view;
+  const full = linkify ? linkRuns(view.full) : view.full;
+  const preview = !linkify ? view.preview : folded ? sliceRuns(full, runsLength(view.preview)) : full;
   const box = cn("rounded-xl px-3 py-2 text-sm leading-relaxed text-ink-soft", className);
   const label = <span className="mr-1.5 text-xs font-black text-brand-700">안내</span>;
 

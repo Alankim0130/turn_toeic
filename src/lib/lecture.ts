@@ -61,7 +61,7 @@ export const ddayLabel = (dday: number) => (dday === 0 ? "D-DAY" : `D-${dday}`);
 
 /**
  * 특강 카드의 강사 캐리커처와 한마디 (2026-10-02 Alan "강사에 맞춰서 케릭커쳐도 같이 웃기게"). 자세는 종류를 따른다 —
- * 이혜영 LC특강(현강 · 녹화영상) = 헤드폰 건 노트 컷, 모의고사(현강 · 시험지 수령)면 윙크 가리키기 · 이영수 RC특강 = 태블릿 설명 컷, 모의고사면 엄지척.
+ * 이혜영 LC특강(현강 · 녹화영상) = 헤드폰 건 노트 컷, 모의고사(현강 · 시험지 수령 · PDF 수령)면 윙크 가리키기 · 이영수 RC특강 = 태블릿 설명 컷, 모의고사면 엄지척.
  * 그림은 site.instructors[].caricatures (InstructorCameo) — 새 자세를 지어내지 않는다. 이름이 두 강사가 아니면 그리지 않는다.
  *
  * **말풍선은 응원만이다** (2026-10-07 Alan — "헤드폰 가져오세요 라고 적혀있는데 진짜 가져올 수 있어! 이거 아닌데 말이야. 오해를 불러일으키는 문구는 빼줘").
@@ -160,7 +160,7 @@ export function snsFollowError(message: string | null | undefined): string | nul
   return null;
 }
 
-/** 같은 날 특강 순서 — 날짜 → 종류(RC 현강 · 녹화 · LC … · 2차 시험지) → 먼저 만든 것. 학생 · 관리자 특강 신청이 함께 쓴다 */
+/** 같은 날 특강 순서 — 날짜 → 종류(RC 현강 · 녹화 · LC … · 2차 시험지 · PDF) → 먼저 만든 것. 학생 · 관리자 특강 신청이 함께 쓴다 */
 export function sortLectures<T extends { id: number; date: string; kinds: readonly string[] | null }>(list: readonly T[]): T[] {
   return [...list].sort((a, b) => a.date.localeCompare(b.date) || lectureKindRank(a.kinds) - lectureKindRank(b.kinds) || a.id - b.id);
 }
@@ -284,7 +284,7 @@ export function sectionSubjects(s: { subject?: string | null; course?: { course_
 }
 
 /**
- * 특강 종류(kinds) 중 내가 듣지 않는 과목 — 비어 있으면 신청할 수 있다. 모의고사(현강 · 시험지 수령)는 늘 비고(누구나), RC특강 · LC특강은
+ * 특강 종류(kinds) 중 내가 듣지 않는 과목 — 비어 있으면 신청할 수 있다. 모의고사(현강 · 시험지 수령 · PDF 수령)는 늘 비고(누구나), RC특강 · LC특강은
  * 현강이든 녹화영상이든 그 과목을 들어야 한다. 내 과목을 모르면(빈 집합 — 그 달 수강생이 아님) 막지 않는다 — DB 도 그때는 정책(lecture_signup_open)이 막는다.
  */
 export function lectureSubjectBlock(kinds: readonly string[] | null | undefined, mine: ReadonlySet<string>): Subject[] {

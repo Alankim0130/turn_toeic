@@ -53,7 +53,7 @@ const MODES: { value: Mode; label: string; hint: string; on: string; off: string
   {
     value: "lecture",
     label: "특강",
-    hint: "강사 · 종류 · 내용을 정한 뒤 날짜를 누르세요. 종류를 여러 개 고르면 종류마다 특강이 하나씩 생겨요 (현강 · 녹화영상 · 시험지 수령은 따로 신청받아요). 같은 날짜를 다시 누르면 빠져요. 수업일과 같은 날도 되고, 앞뒤 달 날짜도 찍을 수 있어요.",
+    hint: "강사 · 종류 · 내용을 정한 뒤 날짜를 누르세요. 종류를 여러 개 고르면 종류마다 특강이 하나씩 생겨요 (현강 · 녹화영상 · 시험지 수령 · PDF 수령은 따로 신청받아요). 같은 날짜를 다시 누르면 빠져요. 수업일과 같은 날도 되고, 앞뒤 달 날짜도 찍을 수 있어요.",
     on: "border-violet-600 bg-violet-600 text-white",
     off: "border-violet-200 bg-paper text-violet-700 hover:border-violet-400",
   },
@@ -807,19 +807,23 @@ function KindChip({ label, ariaLabel, on, onClick, small = false }: { label: str
 }
 
 /**
- * 특강 종류 고르기 — 무슨 특강인가(RC특강 · LC특강 · 1차 · 2차 모의고사)마다 한 줄에 두 칸(현강신청 · 녹화영상 / 시험지 수령 신청) (2026-10-15 Alan 이 적은 여덟 가지 그대로).
+ * 특강 종류 고르기 — 무슨 특강인가(RC특강 · LC특강 · 1차 · 2차 모의고사)마다 한 줄 — 특강은 두 칸(현강신청 · 녹화영상신청), 모의고사는 세 칸(현강신청 · 시험지 수령 신청 · PDF 수령 신청)
+ * (2026-10-15 Alan 이 적은 여덟 가지 + 2026-10-16 모의고사 PDF 수령).
  * 붓은 여러 개(종류마다 특강이 하나씩), 특강 목록의 한 줄은 하나만 — 누르는 쪽이 정한다.
+ * 붓(큰 칸)은 한 줄에 하나씩 — 모의고사 세 칸이 반쪽 폭에 다 안 들어가 셋째 칸이 이름 아래로 떨어졌다. 특강 목록(작은 칸)은 넓은 화면에서 두 줄씩.
  */
 function KindPicker({ label, isOn, onPick, small = false }: { label: string; isOn: (kind: string) => boolean; onPick: (kind: string) => void; small?: boolean }) {
   return (
-    <div role="group" aria-label={label} className="grid gap-1.5 lg:grid-cols-2">
+    <div role="group" aria-label={label} className={cn("grid gap-1.5", small && "lg:grid-cols-2")}>
       {LECTURE_BASES.map((b) => (
-        <div key={b.value} className="flex min-w-0 flex-wrap items-center gap-1.5">
-          {/* 휴대폰은 이름이 제 줄, 두 칸이 그 아래 나란히 — 이름 옆에 두면 둘째 칸만 다음 줄로 떨어진다 */}
+        <div key={b.value} className="flex min-w-0 flex-wrap items-center gap-1.5 sm:flex-nowrap sm:items-baseline">
+          {/* 휴대폰은 이름이 제 줄, 칸들이 그 아래 — 이름 옆에 두면 둘째 칸부터 다음 줄로 떨어진다. 넓으면 이름 옆에 칸 묶음, 넘치면 칸끼리 줄을 바꾼다 */}
           <span className={cn("shrink-0 font-black text-violet-800", small ? "w-full text-xs sm:w-20" : "w-full text-sm sm:w-24")}>{b.label}</span>
-          {lectureKindsOf(b.value).map((k) => (
-            <KindChip key={k.value} small={small} label={k.wayLabel} ariaLabel={k.label} on={isOn(k.value)} onClick={() => onPick(k.value)} />
-          ))}
+          <span className="flex min-w-0 flex-wrap gap-1.5">
+            {lectureKindsOf(b.value).map((k) => (
+              <KindChip key={k.value} small={small} label={k.wayLabel} ariaLabel={k.label} on={isOn(k.value)} onClick={() => onPick(k.value)} />
+            ))}
+          </span>
         </div>
       ))}
     </div>

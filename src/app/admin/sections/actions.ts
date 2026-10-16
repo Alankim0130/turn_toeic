@@ -135,7 +135,7 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
     date: String(l?.date ?? ""),
     lecturer_id: Number(l?.lecturerId),
     content: String(l?.content ?? "").trim(),
-    // 정해진 종류(여덟 가지 — RC · LC특강 현강 · 녹화영상, 1 · 2차 모의고사 현강 · 시험지 수령)만, 정해진 순서로, 중복 없이
+    // 정해진 종류(열 가지 — RC · LC특강 현강 · 녹화영상, 1 · 2차 모의고사 현강 · 시험지 수령 · PDF 수령)만, 정해진 순서로, 중복 없이
     kinds: sortLectureKinds((Array.isArray(l?.kinds) ? l.kinds : []).map(String).filter(isLectureKind)),
   }));
   const badLecture = lectures.find(
