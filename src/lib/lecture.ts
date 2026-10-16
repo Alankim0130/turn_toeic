@@ -3,65 +3,50 @@ import { isSubject, SUBJECT_LABEL, type Subject } from "@/lib/instructor-subject
 import { isContainerProgram } from "@/lib/two-week";
 import { lectureKindRank, lectureKindSubject, lectureKindLabel, sortLectureKinds } from "@/lib/utils";
 
-/**
- * 특강 신청 상태. DB(private.lecture_signup_open)와 같은 규칙으로 화면에서도 판정한다.
- * 화면 안내일 뿐 실제 판단은 RLS·트리거가 한다.
- */
-export type LectureSignupRow = {
-  id: number;
-  date: string;
-  signup: boolean;
+/** 특강의 신청 방식 줄 (`special_lecture_ways` — 2026-10-16). 받기 · 조건 · 정원은 강사가 특강 신청 → 특강 설정에서 고른다 */
+export type LectureWayRow = {
+  way: string;
+  enabled: boolean;
   capacity: number | null;
-  signup_opens_at: string | null;
+  signup_condition: string;
   applied_count: number;
 };
 
-export type LectureState = "none" | "not_open" | "open" | "full" | "closed";
+export type LectureState = "none" | "open" | "full" | "closed";
+
+/** 이 방식의 정원이 찼나 */
+export const wayFull = (w: Pick<LectureWayRow, "capacity" | "applied_count">) => w.capacity !== null && w.applied_count >= w.capacity;
+/** 남은 자리. 정원이 없으면 null */
+export const seatsLeft = (w: Pick<LectureWayRow, "capacity" | "applied_count">) =>
+  w.capacity === null ? null : Math.max(0, w.capacity - w.applied_count);
 
 /**
- * 신청 시작의 기본값 — **특강 7일 전 자정(KST)** (2026-10-02 Alan "특강신청도 지금 전부다 열려있는데, 일주일전부터 하나씩 열어주면").
- * 강사가 /admin/lectures 에서 신청 시작을 따로 적으면 그 값이 먼저다. DB `private.lecture_signup_open` 과 같은 규칙 — 바꾸면 둘 다.
+ * 특강 신청 상태 — DB `private.lecture_signup_open` · `private.lecture_way_open` 과 같은 규칙.
+ * **강사가 '신청 받기' 를 누른 특강(signup)만, 특강 당일까지** (2026-10-16 Alan — "지금은 7일전부터 오픈인데 이 기능을 없애고 강사가 직접 '신청받기' 버튼을
+ * 누르면 바로 오픈되면서 신청을 받을 수 있도록"). 2026-10-02 ~ 10-16 의 7일 전 자정 자동 열림 · 신청 시작 시각은 없앴다.
+ * - `none` — 신청 받기 전(받는 방식이 하나도 없어도). 학생 특강 신청 화면에 서지 않는다 (반 편성 달력 · 내 시간표에는 선다)
+ * - `open` — 신청 받는 중 · `full` — 받는 방식이 모두 정원이 찼다 · `closed` — 특강 날이 지났다
+ * 화면 안내일 뿐 실제 판단은 RLS · 트리거가 한다.
  */
-export const LECTURE_SIGNUP_LEAD_DAYS = 7;
-
-const DAY_MS = 86_400_000;
-const dateToUtc = (date: string) => Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)));
-
-/** 'YYYY-MM-DD' 에서 days 만큼 옮긴 날짜 (음수면 앞으로) */
-export const shiftDate = (date: string, days: number) => new Date(dateToUtc(date) + days * DAY_MS).toISOString().slice(0, 10);
-
-/** ISO 시각 → 한국 날짜 'YYYY-MM-DD' */
-export const kstDateOf = (iso: string) => new Date(new Date(iso).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
-
-/** 신청이 열리는 시각(ISO). 따로 정한 값이 없으면 특강 7일 전 자정(KST) */
-export function lectureOpensAt(l: Pick<LectureSignupRow, "date" | "signup_opens_at">): string {
-  return l.signup_opens_at ?? new Date(`${shiftDate(l.date, -LECTURE_SIGNUP_LEAD_DAYS)}T00:00:00+09:00`).toISOString();
-}
-
-/** todayKst: 'YYYY-MM-DD', now: 지금(ms). 신청은 신청 시작(비우면 7일 전 자정)부터 특강 당일까지 */
-export function lectureState(l: LectureSignupRow, todayKst: string, now = Date.now()): LectureState {
-  if (!l.signup) return "none";
+export function lectureState(l: { date: string; signup: boolean }, ways: readonly LectureWayRow[], todayKst: string): LectureState {
   if (todayKst > l.date) return "closed";
-  if (new Date(lectureOpensAt(l)).getTime() > now) return "not_open";
-  if (l.capacity !== null && l.applied_count >= l.capacity) return "full";
-  return "open";
+  const open = ways.filter((w) => w.enabled);
+  if (!l.signup || open.length === 0) return "none";
+  return open.every(wayFull) ? "full" : "open";
 }
 
-/**
- * 신청 시작까지 **D-day** (한국 날짜 기준 날수 — 0 이면 오늘 열린다 = D-DAY). 이미 열렸으면 null.
- * 잠긴 특강 카드에 크게 적는다 (2026-10-02 Alan "잠겨있는거는 카운트다운 D-day").
- */
-export function signupDday(l: Pick<LectureSignupRow, "date" | "signup_opens_at">, todayKst: string, now = Date.now()): number | null {
-  const opens = lectureOpensAt(l);
-  if (new Date(opens).getTime() <= now) return null;
-  return Math.max(0, Math.round((dateToUtc(kstDateOf(opens)) - dateToUtc(todayKst)) / DAY_MS));
-}
+/** 학생 특강 신청 화면에 세우나 — 신청 받는 중(정원 마감 포함)인 특강만. 그 밖(신청 받기 전 · 지난 특강)은 내가 신청한 것만 기록으로 선다 */
+export const lectureListed = (l: { date: string; signup: boolean; ways: readonly LectureWayRow[] }, todayKst: string) => {
+  const state = lectureState(l, l.ways, todayKst);
+  return state === "open" || state === "full";
+};
 
+/** D-day 표기 — 다시보기 종강 띠가 쓴다 */
 export const ddayLabel = (dday: number) => (dday === 0 ? "D-DAY" : `D-${dday}`);
 
 /**
- * 특강 카드의 강사 캐리커처와 한마디 (2026-10-02 Alan "강사에 맞춰서 케릭커쳐도 같이 웃기게"). 자세는 종류를 따른다 —
- * 이혜영 LC특강(현강 · 녹화영상) = 헤드폰 건 노트 컷, 모의고사(현강 · 시험지 수령 · PDF 수령)면 윙크 가리키기 · 이영수 RC특강 = 태블릿 설명 컷, 모의고사면 엄지척.
+ * 특강 카드의 강사 캐리커처와 한마디 (2026-10-02 Alan "강사에 맞춰서 케릭커쳐도 같이 웃기게"). 자세는 무슨 특강인가를 따른다 —
+ * 이혜영 LC특강 = 헤드폰 건 노트 컷, 모의고사면 윙크 가리키기 · 이영수 RC특강 = 태블릿 설명 컷, 모의고사면 엄지척.
  * 그림은 site.instructors[].caricatures (InstructorCameo) — 새 자세를 지어내지 않는다. 이름이 두 강사가 아니면 그리지 않는다.
  *
  * **말풍선은 응원만이다** (2026-10-07 Alan — "헤드폰 가져오세요 라고 적혀있는데 진짜 가져올 수 있어! 이거 아닌데 말이야. 오해를 불러일으키는 문구는 빼줘").
@@ -72,7 +57,6 @@ export function lectureCameo(
   lecturer: string | null | undefined,
   kinds: string[] | null | undefined,
 ): { name: "이혜영" | "이영수"; pose: "point" | "notebook" | "thumbsup" | "tablet"; line: string } | null {
-  // 녹화영상 신청도 그 과목 특강이다 (2026-10-15 — rc_video · lc_video)
   const k = new Set((kinds ?? []).map(lectureKindSubject));
   if (lecturer === "이혜영") {
     return k.has("lc")
@@ -88,22 +72,20 @@ export function lectureCameo(
 }
 
 export const LECTURE_STATE_LABEL: Record<LectureState, string> = {
-  none: "",
-  not_open: "곧 시작",
+  none: "신청 받기 전",
   open: "신청 받는 중",
   full: "정원 마감",
   closed: "신청 마감",
 };
 
 export const LECTURE_STATE_CLASS: Record<LectureState, string> = {
-  none: "",
-  not_open: "bg-violet-100 text-violet-800",
+  none: "bg-violet-100 text-violet-800",
   open: "bg-brand-100 text-brand-700",
   full: "bg-amber-100 text-amber-800",
   closed: "bg-line text-slate",
 };
 
-/** "RC특강 (녹화영상신청) — 파트5 집중" — 2026-10-15 부터 특강 하나에 종류 하나 (그 전 특강은 마이그레이션이 나눴다) */
+/** "1차 모의고사 — 오후 2시" — 무슨 특강(없으면 메모만) */
 export function lectureTitle(l: { kinds: string[] | null; content: string | null }) {
   const kinds = sortLectureKinds(l.kinds ?? []).map(lectureKindLabel);
   const memo = l.content?.trim();
@@ -111,32 +93,33 @@ export function lectureTitle(l: { kinds: string[] | null; content: string | null
   return memo ? `${kinds.join(" · ")} — ${memo}` : kinds.join(" · ");
 }
 
-/** 신청 시작 일시를 "9/17 00:05" 로 (한국 시간) */
-export function formatKstDateTime(iso: string) {
-  const kst = new Date(new Date(iso).getTime() + 9 * 60 * 60 * 1000);
-  const m = kst.getUTCMonth() + 1;
-  const d = kst.getUTCDate();
-  const hh = String(kst.getUTCHours()).padStart(2, "0");
-  const mm = String(kst.getUTCMinutes()).padStart(2, "0");
-  return `${m}/${d} ${hh}:${mm}`;
-}
-
-/** 남은 자리. 정원이 없으면 null */
-export const seatsLeft = (l: LectureSignupRow) => (l.capacity === null ? null : Math.max(0, l.capacity - l.applied_count));
-
 /**
- * **신청 조건 — 강사가 특강마다 고른다** (2026-10-15 Alan — "특강마다 신청조건을 선택할 수 있으면 좋겠어. 1. 수업후기작성 2. 이미지참고 3. 조건없음").
+ * **신청 조건 — 강사가 신청 방식마다 고른다** (2026-10-15 Alan — "특강마다 신청조건을 선택할 수 있으면 좋겠어. 1. 수업후기작성 2. 이미지참고 3. 조건없음"
+ * → 2026-10-16 방식마다 — `special_lecture_ways.signup_condition`. 현장은 후기 · 시험지 수령은 구독 · 팔로우처럼 고른다).
  * - `review` — YBM 수강후기 링크를 올려야 신청된다 (2026-10-08 의 3주차 모의고사 조건 — 그때는 날짜로 저절로 정했고, 있던 특강은 마이그레이션 20261015130000 이 그 규칙대로 채웠다).
  * - `sns` — **역전토익 유튜브 구독 · 인스타그램 팔로우** (Alan 이 보낸 그림 — "댓글달기전 1) 역전토익 유튜브 구독을 눌러주세요 2) 역전토익 인스타그램을 팔로우 해주세요
  *   (기존 팔로우는 "기존"으로 표기 해주세요)"). 학생이 유튜브 구독을 체크하고 인스타그램 새로 팔로우 · 기존 팔로우 중 하나를 골라야 신청된다 — 이 사이트가 확인할 길은 없어
  *   학생이 한 것을 믿는다 (그림의 댓글 신청과 같다). 새로 · 기존만 `lecture_signups.sns_follow` 에 남는다. 그림의 `번호/이름/수강반` 댓글은 신청 자체가 대신한다.
  * - `none` — 조건 없음. **새로 만드는 특강은 조건 없음으로 시작한다** — 3주차라고 저절로 후기 조건이 걸리지 않는다.
- * DB check `special_lectures_signup_condition_check` · 신청 트리거 `private.lecture_signups_review_check` 와 같은 값 — 바꾸면 둘 다 (lecture.test.ts 가 SQL 도 본다).
+ * DB check `special_lecture_ways_condition_check` · 신청 트리거 `private.lecture_signups_review_check` 와 같은 값 — 바꾸면 둘 다 (lecture.test.ts 가 SQL 도 본다).
+ * `hint` 는 강사 화면(특강 설정), `student` 는 학생이 방식을 고르면 뜨는 조건 상자의 말이다.
  */
 export const LECTURE_CONDITIONS = [
-  { value: "review", label: "YBM 수강후기 작성", short: "후기 작성", hint: "학생이 YBM 홈페이지에 쓴 수강후기 링크를 올려야 신청돼요." },
-  { value: "sns", label: "유튜브 구독 · 인스타그램 팔로우", short: "구독 · 팔로우", hint: "학생이 역전토익 유튜브 구독 · 인스타그램 팔로우(새로 · 기존)를 체크해야 신청돼요." },
-  { value: "none", label: "조건 없음", short: "조건 없음", hint: "누르기만 하면 신청돼요." },
+  {
+    value: "review",
+    label: "YBM 수강후기 작성",
+    short: "후기 작성",
+    hint: "학생이 YBM 홈페이지에 쓴 수강후기 링크를 올려야 신청돼요.",
+    student: "YBM 홈페이지에 수강후기를 쓰고, 그 후기의 링크를 아래 칸에 붙여 넣어 주세요.",
+  },
+  {
+    value: "sns",
+    label: "유튜브 구독 · 인스타그램 팔로우",
+    short: "구독 · 팔로우",
+    hint: "학생이 역전토익 유튜브 구독 · 인스타그램 팔로우(새로 · 기존)를 체크해야 신청돼요.",
+    student: "역전토익 유튜브를 구독하고 인스타그램을 팔로우한 뒤, 아래에서 체크해 주세요.",
+  },
+  { value: "none", label: "조건 없음", short: "조건 없음", hint: "누르기만 하면 신청돼요.", student: "따로 할 일이 없어요. 바로 신청할 수 있어요." },
 ] as const;
 export type LectureCondition = (typeof LECTURE_CONDITIONS)[number]["value"];
 export const isLectureCondition = (v: unknown): v is LectureCondition =>
@@ -144,6 +127,10 @@ export const isLectureCondition = (v: unknown): v is LectureCondition =>
 /** 모르는 값(옛 화면 · 배포 사이)은 조건 없음으로 본다 — 막는 것은 DB 트리거다 */
 export const lectureCondition = (v: unknown): LectureCondition => (isLectureCondition(v) ? v : "none");
 export const lectureConditionLabel = (v: unknown) => LECTURE_CONDITIONS.find((c) => c.value === lectureCondition(v))!.label;
+export const lectureConditionOf = (v: unknown) => LECTURE_CONDITIONS.find((c) => c.value === lectureCondition(v))!;
+
+/** 조건이 있는 방식을 고르면 신청하기 버튼 위에 뜨는 안내 (2026-10-16 Alan "단, 조건을 이수완료하고 신청하기를 눌러달라는 안내문") */
+export const LECTURE_CONDITION_NOTICE = "신청 조건을 다 마친 뒤에 신청하기를 눌러 주세요.";
 
 /** 인스타그램 팔로우 — 새로 · 기존 (그림의 "기존 팔로우는 기존으로 표기") */
 export const SNS_FOLLOWS = [
@@ -160,31 +147,9 @@ export function snsFollowError(message: string | null | undefined): string | nul
   return null;
 }
 
-/** 같은 날 특강 순서 — 날짜 → 종류(RC 현강 · 녹화 · LC … · 2차 시험지 · PDF) → 먼저 만든 것. 학생 · 관리자 특강 신청이 함께 쓴다 */
+/** 같은 날 특강 순서 — 날짜 → 무슨 특강(RC · LC · 1차 · 2차 · 메모만) → 먼저 만든 것. 학생 · 관리자 특강 신청이 함께 쓴다 */
 export function sortLectures<T extends { id: number; date: string; kinds: readonly string[] | null }>(list: readonly T[]): T[] {
   return [...list].sort((a, b) => a.date.localeCompare(b.date) || lectureKindRank(a.kinds) - lectureKindRank(b.kinds) || a.id - b.id);
-}
-
-/**
- * 반 편성 달력의 특강 붓 — 날짜를 누르면 **고른 종류마다 특강을 하나씩** 만든다 (2026-10-15 — 특강 하나 = 종류 하나).
- * 고른 종류가 그 날 · 그 강사 · 그 내용으로 이미 다 있으면 다시 누른 것이라 **모두 뺀다** (예전 "같은 특강을 다시 누르면 빠져요").
- * 일부만 있으면 없는 것만 더한다. 종류를 안 골랐으면 내용만 있는 특강 하나다.
- */
-export function brushLectures<T extends { date: string; lecturerId: number; content: string; kinds: string[] }>(
-  lectures: readonly T[],
-  brush: { date: string; lecturerId: number; content: string; kinds: readonly string[] },
-  make: (kinds: string[]) => T,
-): { lectures: T[]; added: number; removed: number } {
-  const content = brush.content.trim();
-  const targets: string[][] = brush.kinds.length > 0 ? sortLectureKinds([...brush.kinds]).map((k) => [k]) : [[]];
-  const same = (l: T, kinds: string[]) =>
-    l.date === brush.date && l.lecturerId === brush.lecturerId && l.content.trim() === content && sortLectureKinds(l.kinds).join("+") === kinds.join("+");
-  const missing = targets.filter((kinds) => !lectures.some((l) => same(l, kinds)));
-  if (missing.length === 0) {
-    const next = lectures.filter((l) => !targets.some((kinds) => same(l, kinds)));
-    return { lectures: next, added: 0, removed: lectures.length - next.length };
-  }
-  return { lectures: [...lectures, ...missing.map((kinds) => make(kinds))], added: missing.length, removed: 0 };
 }
 
 /** 특강을 가리는 값 — 날 · 강사 · 종류 · 내용 (id 는 DB 의 것, 화면에서 막 만든 특강은 null) */
@@ -194,7 +159,7 @@ const lectureIdentity = (l: LectureIdentity) => `${l.date}|${l.lecturerId}|${sor
 /**
  * id 가 빠진 특강에 **같은 특강의 저장된 id** 를 되살린다 (2026-10-16 점검).
  * 반 편성 달력에서 특강을 눌러 뺐다가 다시 누르면 화면은 그대로인데 id 없는 새 특강이 되고, 막 만든 특강도 저장한 뒤 화면의 id 가 비어 있었다.
- * 그대로 저장하면 DB(`save_term_schedule`)가 원래 특강을 지우고 새로 만들어 신청 받기 · 정원 · 신청 조건 · 안내가 처음으로 돌아간다
+ * 그대로 저장하면 DB(`save_term_schedule`)가 원래 특강을 지우고 새로 만들어 신청 받기 · 신청 방식 · 정원 · 신청 조건 · 안내가 처음으로 돌아간다
  * (신청자가 있으면 "신청자가 있는 특강은 뺄 수 없어요" 로 막힌다). 그래서 날 · 강사 · 종류 · 내용이 같고 목록에서 아직 안 쓰는 저장된 특강의 id 를 준다 —
  * 저장된 특강 하나는 한 번만. 바뀐 것이 없으면 받은 목록을 그대로 돌려준다. 서버 액션(`saveTermSchedule`)과 달력 화면이 함께 쓴다.
  */
@@ -284,12 +249,11 @@ export function sectionSubjects(s: { subject?: string | null; course?: { course_
 }
 
 /**
- * 특강 종류(kinds) 중 내가 듣지 않는 과목 — 비어 있으면 신청할 수 있다. 모의고사(현강 · 시험지 수령 · PDF 수령)는 늘 비고(누구나), RC특강 · LC특강은
- * 현강이든 녹화영상이든 그 과목을 들어야 한다. 내 과목을 모르면(빈 집합 — 그 달 수강생이 아님) 막지 않는다 — DB 도 그때는 정책(lecture_signup_open)이 막는다.
+ * 무슨 특강(kinds) 중 내가 듣지 않는 과목 — 비어 있으면 신청할 수 있다. 모의고사는 늘 비고(누구나), RC특강 · LC특강은
+ * 현장이든 수업영상 받기든 그 과목을 들어야 한다. 내 과목을 모르면(빈 집합 — 그 달 수강생이 아님) 막지 않는다 — DB 도 그때는 정책(lecture_signup_open)이 막는다.
  */
 export function lectureSubjectBlock(kinds: readonly string[] | null | undefined, mine: ReadonlySet<string>): Subject[] {
   if (mine.size === 0) return [];
-  // 녹화영상 신청도 그 과목이다 (2026-10-15 — rc_video = RC · lc_video = LC). 종류마다 과목은 lectureKindSubject 한곳
   const subjects = new Set((kinds ?? []).map(lectureKindSubject).filter((s): s is Subject => s !== null && !mine.has(s)));
   return [...subjects];
 }

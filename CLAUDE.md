@@ -92,10 +92,10 @@
    중급속성은 650+850, 실전속성은 750+850 이 저절로 함께 열린다. **화면에서 레벨 숫자로 거르지 말 것** (작업 원칙 4).
    **`src/app/my/_lib/queries.test.ts` 가 소스를 읽어 못박는다 — `queries.ts` 한 파일이 아니라 학생이 닿는 파일 전부**
    (`src/app/my` · `(public)` · `attend` · `(auth)` · `auth` · `src/components`(관리자 조각 빼고) · `src/lib/auth.ts`).
-   스태프에게 열린 **스물여섯 표**를 읽는 함수에 좁히기(`my_section_ids` · 내 시간표의 `my_schedule_section_ids`(개강 전 예비등록 반까지, 2026-10-02) · `user_id`·`student_id` · 내 id 로 넣는 행 ·
+   스태프에게 열린 **스물일곱 표**를 읽는 함수에 좁히기(`my_section_ids` · 내 시간표의 `my_schedule_section_ids`(개강 전 예비등록 반까지, 2026-10-02) · `user_id`·`student_id` · 내 id 로 넣는 행 ·
    계정 통합의 `from_user`·`to_user` · 부른 쪽이 준 `section_id`·`study_id` 목록 · 내 등록에서 뽑은 기수 `signupTerms` · 내 과정 칸 · 열린 회차 `roundCells`·`cellLevels`·`roundDates`(2026-10-05))가
    없으면 `npm test` 가 깨지고, **걸린 곳을 한꺼번에** 적는다 (첫 실패가 같은 표의 다른 구멍을 가리지 않게).
-   **반·기수로 열리는 것** `session_dates`·`replays`·`session_live_links`·`section_live_links`·`study_materials`·`special_lectures` ·
+   **반·기수로 열리는 것** `session_dates`·`replays`·`session_live_links`·`section_live_links`·`study_materials`·`special_lectures`·`special_lecture_ways`(특강의 신청 방식, 2026-10-16 — 특강이 보이면) ·
    **내 과정 칸 · 수업일로 열리는 것** `lc_books`·`lc_audio_tracks`(2026-10-03 레벨 → 10-05 과목 → 같은 날 **과정 칸 · 그 강의 수업일**. 강사·관리자는 전부. 도메인 규칙 7 "LC 음원")·`class_materials`(수업자료실, 2026-10-05 — 레벨 × 과목 × 과정 × 회차, 그 회차 수업일부터. 도메인 규칙 7-4)·`class_material_files`(그 자료의 파일 0 ~ 20개, 2026-10-06 — 부모 자료가 보이면)·`class_notices`(수업자료실 공지, 같은 날 — 범위 레벨 × 과목, 수강 중)·`class_notice_files`(공지 첨부 파일 0 ~ 20개, 2026-10-13 — 부모 공지가 보이면) ·
    **사람으로 열리는 것** `homework_submissions`·`enrollment_orders`·`enrollment_verifications`·`enrollments`·`lecture_signups`·
    `textbook_orders`·`study_signups`·`study_checkins`·`student_messages`·`account_merge_requests`·`attendance_stamps`·
@@ -1071,25 +1071,29 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
    `개강·종강` / `월수금` / `화목금` / `특강` 을 각각 저장할 수 있고, 바뀐 항목에만 저장 버튼이 열린다.
    `save_term_schedule(p_parts)` 로 그 항목만 갈아 끼우고 나머지는 건드리지 않는다 (`p_parts` 가 null 이면 전부 = 하단 **전체 저장**).
    한 트랙을 저장하면 그 날짜는 반대 트랙에서 빠진다 (한 날짜 = 한 트랙)
-6. **특강**은 수업일과 같은 날이어도 되고 하루에 여러 개도 된다. 특강마다 강사(`lecturers`: 이혜영·이영수)와
-   **종류 하나**(`special_lectures.kinds` — 열 가지 중 하나, 2026-10-15 Alan "RC특강과 모의고사 특강이 두 개 있는데 이거 구분해서 받아야해 … 총 8개로" →
-   2026-10-16 Alan "모의고사에서 'pdf수령' 신청이 하나 더 추가되면 좋겠어!!":
-   RC특강 현강신청 `rc` · 녹화영상신청 `rc_video` / LC특강 현강신청 `lc` · 녹화영상신청 `lc_video` / 1차 모의고사 현강신청 `mock1` · 시험지 수령 신청 `mock1_paper` · PDF 수령 신청 `mock1_pdf` /
-   2차 모의고사 현강신청 `mock2` · 시험지 수령 신청 `mock2_paper` · PDF 수령 신청 `mock2_pdf` — PDF 둘은 마이그레이션 20261016110000), 그리고 내용(메모, 선택, 1~100자). **종류를 고르거나 내용을 적거나 둘 중 하나는 있어야 한다.**
-   **한 특강에는 종류가 하나뿐이다** — 종류마다 신청을 따로 받는다 (DB check `cardinality(kinds) <= 1` · `save_term_schedule` 이 둘 이상을 `invalid_lectures` 로 거절, 서버 액션도 먼저 말한다).
-   **달력 붓은 종류를 여럿 고를 수 있고, 날짜를 누르면 고른 종류마다 특강이 하나씩 생긴다** (`brushLectures`, `src/lib/lecture.ts` — "특강 2개를 만들었어요"). 같은 날 같은 강사 · 내용 · 종류가 이미 있으면 그것을 지운다(붓질 되돌리기).
-   특강 목록의 한 줄은 종류를 하나만 고른다 (다시 누르면 비운다). 고르기 칸은 무슨 특강인가마다 한 줄(`KindPicker` — 특강 두 칸 · 모의고사 세 칸. 휴대폰은 이름이 제 줄, 칸들이 그 아래.
-   **붓은 넓은 화면에서도 한 줄에 하나** — 두 줄씩 두면 반쪽 폭에 모의고사 세 칸이 안 들어가 셋째 칸이 이름 아래로 떨어졌다(2026-10-16). 특강 목록의 작은 칸은 넓으면 두 줄씩, 넘치면 칸끼리 줄을 바꾼다).
-   2026-10-15 전에는 한 특강에 종류를 여럿 담았다(`RC특강 · 2차 모의고사`) — 마이그레이션 20261015130000 이 종류마다 나누고 신청을 옮겨 적었다 (6-1 "8가지 특강").
-   종류 목록·라벨은 `src/lib/utils.ts` 의 `LECTURE_BASES`(무슨 특강인가 넷) · `LECTURE_KINDS`(열) 한곳에서 관리하고 DB check 제약 · `private.lecture_kinds` 순서와 값이 같아야 한다 (`lecture.test.ts`).
-   달력 칸에는 무슨 특강인가로 묶어 짧게 적는다 (`lectureDayTags` — 넓으면 `RC 현강·녹화` · `1차 현강·시험지·PDF`(칸보다 길면 끝이 `…`), 좁으면 `RC` · `1차`).
+6. **특강**은 수업일과 같은 날이어도 되고 하루에 여러 개도 된다. **달력에서 정하는 것은 셋뿐이다 — 무슨 특강 · 강사 · 메모** (2026-10-16 Alan — "일정표에서 수업일정을 만들때
+   특강신청에 관한 디테일을 전부다 기입하지말고, 간략하게 기입하도록 해주고, 특강버튼을 클릭하고 해당 날짜를 누르면 팝업창이 나와서 기본설정을 할 수 있도록 해줘. 특강설정은 특강신청에서 다 할 수 있도록",
+   마이그레이션 20261016120000).
+   - **무슨 특강**(`special_lectures.kinds` — 넷 중 하나: RC특강 `rc` · LC특강 `lc` · 1차 모의고사 `mock1` · 2차 모의고사 `mock2`, 비우면 메모만 있는 특강) · 강사(`lecturers`: 이혜영·이영수) ·
+     메모(`content`, 선택, 1~100자 — `16:00` 같은 것). **종류를 고르거나 메모를 적거나 둘 중 하나는 있어야 한다.** 한 특강에 종류는 하나다 (DB check `special_lectures_kinds_check` —
+     `cardinality(kinds) <= 1` + 네 값, `save_term_schedule` 이 둘 이상 · 모르는 값을 `invalid_lectures` 로 거절, 서버 액션도 먼저 말한다).
+   - **`[특강]` 을 누르고 날짜를 누르면 그 날 특강 팝업**(`LectureDayDialog`)이 뜬다 — 그 날 있는 특강마다 종류 · 강사 · 메모를 고치고 `빼기`, 아래 `특강 더하기` 로 더한다
+     (종류를 여럿 고르면 종류마다 하나씩 — 같은 날 RC특강 + 2차 모의고사, 그 날 이미 있는 종류는 더하지 않는다). `특강 저장` 은 아래 따로 저장의 특강 저장과 같고 성공하면 팝업을 닫는다.
+     바깥을 눌러도 닫히지 않는다(`dismissible={false}`). **신청자가 있는 특강은 종류를 바꾸거나 뺄 수 없다** — 팝업이 잠그고(강사 · 메모는 고친다) DB 도 막는다
+     (트리거 `private.sync_lecture_ways` 의 `lecture_kind_signup_block` · `save_term_schedule` 의 `lecture_signup_block`).
+   - 달력 아래 특강 목록은 **요약**이다 — 날짜 · 무슨 특강 · 강사 · 메모 · `저장 전` · `신청 받는 중` · `신청 N명`, 줄을 누르면 그 날 팝업, 머리에 `신청 받기 · 방식 · 조건은 특강 설정에서` 링크.
+   - **새로 만든 특강은 신청을 받지 않는 채로 생기고(`signup` false) 신청 방식 줄이 모두 켜진다** (트리거 `private.sync_lecture_ways` — 받기 켬 · 조건 없음 · 정원 없음). 신청 받기 · 방식 · 조건 · 정원 · 안내는
+     **특강 신청 → 특강 설정**(6-1)에서 정하고, 달력 저장은 그 값을 건드리지 않는다. 신청자가 없는 특강의 종류를 바꾸면 방식 줄을 새 종류에 맞춰 다시 만든다.
+   - 2026-10-15 ~ 10-16 의 **열 가지 종류(`rc_video` · `mock1_paper` · `mock1_pdf` … — 신청 방식이 섞인 값) · 달력 붓(`brushLectures`) · 종류 고르기 칸(`KindPicker`)은 없앴다 — 되살리지 말 것.**
+     신청 방식은 특강 안에서 학생이 고른다(6-1). 그때 있던 특강은 마이그레이션이 같은 날 같은 특강으로 합쳤다.
+   - 종류 목록 · 라벨은 `src/lib/utils.ts` 의 `LECTURE_KINDS` 한곳 — DB check · `private.lecture_kinds` 순서와 같아야 한다 (`lecture.test.ts`).
+     달력 칸에는 특강마다 이름(`lectureDayTags` — 넓으면 `RC특강` · `2차 모의고사`(칸보다 길면 끝이 `…`), 좁으면 `RC` · `2차`, 메모만이면 `특강`).
    **특강은 id 로 유지된다** — 저장할 때 통째로 지우고 다시 넣지 않고 "있으면 수정, 없으면 추가, 빠지면 삭제" 로 움직인다.
-   **같은 특강이 id 없이 와도 원래 id 를 되살린다** (`restoreLectureIds`, 2026-10-16 점검) — 달력에서 특강을 눌러 뺐다가 다시 누르면 화면은 그대로인데 id 없는 새 특강이 되고,
-   막 만든 특강도 저장한 뒤 화면의 id 가 비어 있었다. 그대로 저장하면 원래 특강을 지우고 새로 만들어 **신청 받기 · 정원 · 신청 조건 · 안내가 처음으로 돌아갔다**
+   **같은 특강이 id 없이 와도 원래 id 를 되살린다** (`restoreLectureIds`, 2026-10-16 점검) — 달력에서 특강을 뺐다가 다시 더하면 화면은 그대로인데 id 없는 새 특강이 되고,
+   막 만든 특강도 저장한 뒤 화면의 id 가 비어 있었다. 그대로 저장하면 원래 특강을 지우고 새로 만들어 **신청 받기 · 신청 방식 · 조건 · 정원 · 안내가 처음으로 돌아갔다**
    (신청자가 있으면 "신청자가 있는 특강은 뺄 수 없어요" 로 영문 모를 거절). 날 · 강사 · 종류 · 내용이 같으면 같은 특강으로 본다 — 서버 액션(`saveTermSchedule`)이 DB 로 보내기 전에
-   (배포 사이 옛 화면에서 저장해도), 달력이 다시 누를 때와 저장 뒤 새 목록을 받을 때. 재생 DB · 브라우저로 확인(2026-10-16): 두 고침을 다 끄면 특강이 지워졌다 다시 생기고, 하나만 켜도 그대로다.
+   (배포 사이 옛 화면에서 저장해도), 달력이 다시 더할 때와 저장 뒤 새 목록을 받을 때(`withSavedInfo` 가 신청 받는 중 · 신청 수도 새로 받는다). 재생 DB · 브라우저로 확인(2026-10-16): 두 고침을 다 끄면 특강이 지워졌다 다시 생기고, 하나만 켜도 그대로다.
    신청자가 붙은 특강을 달력에서 빼려고 하면 저장 전체를 거부한다(`lecture_signup_block`).
-   **신청 설정(신청 받기·정원·신청 시작 · 신청 조건 · 안내)은 달력이 아니라 `/admin/lectures` 에서 한다.** 달력이 특강을 저장해도 그 값은 그대로 남는다
 7. 일요일·공휴일은 빨간색이고 **무슨 날인지 칸 안에 이름을 적는다** (`추석 연휴`·`대체공휴일`·`한글날` …).
    좁은 화면은 두 줄까지, 넓으면 한 줄. 공휴일은 `src/lib/holidays.ts` (공휴일 법·대체공휴일 규정, 2024~2032).
    임시공휴일이 새로 지정되면 여기에 추가. 앞뒤 달 날짜는 `10/1` 처럼 달을 함께 적는다 (이미지 저장과 같은 표기)
@@ -2230,75 +2234,101 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
 
 ### 6-1. 특강 신청 (2026-09-16 Alan 요청)
 
-- 특강마다 **신청을 받을지** 정한다 (`special_lectures.signup`). 신청 받는 특강은 정원(`capacity`, 비우면 제한 없음)과
-  신청 시작(`signup_opens_at`, 비우면 바로)을 갖는다. 설정은 `/admin/lectures`, 특강 자체(날짜·강사·종류)는 반 편성 달력.
-- **신청 받는 기간: 신청 시작부터 특강 당일까지**, 정원이 차기 전까지. 별도 마감일은 두지 않는다.
-  **신청 시작을 비우면 "바로" 가 아니라 특강 7일 전 자정(KST)이다** (2026-10-02 Alan "지금 전부다 열려있는데, 일주일전부터 하나씩 열어주면",
-  마이그레이션 20261002220000 — `LECTURE_SIGNUP_LEAD_DAYS` · `lectureOpensAt()` · DB `private.lecture_signup_open`, 바꾸면 셋 다). 강사가 적은 시각이 있으면 그 값.
-  그래서 한 달 특강 셋이 한꺼번에 열리지 않고 하나씩 열린다. 관리자 특강 목록은 `N/N 00:00 오픈 (7일 전 자정)` 으로 적는다.
+**특강 = 무슨 특강 하나 + 신청 방식** (2026-10-16 Alan — "1. 모의고사 신청을 클릭하면, 신청방식을 고를 수 있게 해줘. 버튼형식으로 현장 / 시험지수령 / pdf수령 그리고 신청조건을 보여주고,
+신청하기까지 들어가면 돼. (단, 조건을 이수완료하고 신청하기를 눌러달라는 안내문) 2. RC특강과 LC특강도 클릭하면 신청방식을 고를 수 있도록 해줘. 현장 / 수업영상받기 … 3. 일정표에는 특강이
+표시되도록 하는데, 실제 신청받는곳에서는 전부 안보이도록해줘. 지금은 7일전부터 오픈인데 이 기능을 없애고 강사가 직접 '신청받기' 버튼을 누르면 바로 오픈되면서 신청을 받을 수 있도록 바꿔줘.
+4. … 맨 위에 특강 종류 버튼을 만들어서 해당 버튼을 클릭하면 구분해서 보이도록 해줘. 예를들어, 모의고사를 누르면 아래에 추가적으로 전체, 현장, 시험지수령, pdf수령의 버튼이 또 나오고 …
+5. 일정표에서 … 간략하게 … 6. … 특강설정 버튼을 특강신청에 하나 넣어놓고 해당 버튼을 누르면 종류별로 설정할 수 있도록 해줘.", 마이그레이션 20261016120000).
+
+- **특강 하나**(`special_lectures`) = 무슨 특강(RC특강 · LC특강 · 1차 · 2차 모의고사, 비우면 메모만) · 날 · 강사 · 메모 · 안내 · 신청 받기. 무슨 특강 · 날 · 강사 · 메모는 반 편성 달력(반 편성 달력 동작 6),
+  나머지는 특강 신청 화면에서 정한다.
+- **신청 방식**(`special_lecture_ways` — 특강마다 정해진 줄, 트리거 `private.sync_lecture_ways` 가 만든다): RC · LC특강 = **현장 · 수업영상 받기**, 1 · 2차 모의고사 = **현장 · 시험지 수령 · PDF 수령**,
+  메모만 있는 특강 = 현장 (`lectureWaysOf` = `private.lecture_ways_of` — 바꾸면 둘 다, 이름은 `LECTURE_WAYS` — Alan 이 적은 그대로, DB check `special_lecture_ways_way_check`).
+  **방식마다 받기(`enabled`) · 신청 조건 · 정원 · 신청 수**가 따로다. **신청 받기는 특강에 하나**다(`special_lectures.signup`) — 열면 켜 둔 방식들이 함께 열린다.
+  PDF 수령은 신청을 받는 것뿐이다 — PDF 파일을 이 사이트로 나눠 주는 기능은 없다(만들지 않았다 — 필요하면 묻는다). 수업영상 받기도 마찬가지(영상은 강사가 따로 보낸다).
+- **학생은 한 특강에 한 방식**만 신청한다(`lecture_signups.way`) — 바꾸려면 취소하고 다시 신청한다. 트리거 `lecture_signups_check_way` 가 막는다(`lecture_already_signed`, 학생 · 특강마다 advisory lock).
+  2026-10-16 전에 같은 특강의 방식 둘을 따로 신청해 둔 것(예: 현강 + 시험지 수령)은 지우지 않았다 — unique 는 (특강, 학생, 방식)이고 학생 카드 · 강사 명단에 방식마다 한 줄로 선다.
+- **신청은 강사가 `신청 받기` 를 눌러야 열린다 — 7일 전 자동 열림은 없앴다.** 연 특강을 특강 당일까지 받는다 (`private.lecture_signup_open` = 앱 `lectureState`: 신청 받기 · 오늘 ≤ 특강 날 · 그 달 수강생).
+  그 방식을 받는가는 `private.lecture_way_open`(정책 "lecture_signups: 수강생 신청"). 2026-10-02 ~ 10-16 의 7일 전 자정 자동 열림(`LECTURE_SIGNUP_LEAD_DAYS` · `lectureOpensAt` · `signup_opens_at`)과
+  잠긴 카드의 D-day · 카운트다운(`signupDday` · `SignupOpensIn`)은 지웠다 — **되살리지 말 것.** `special_lectures` 의 `signup_opens_at` · `capacity` · `signup_condition` 칸은 남아 있지만 쓰지 않는다(배포 사이 옛 앱).
+  상태(`lectureState`): `신청 받기 전`(아직 안 엶 · 받는 방식 없음) · `신청 받는 중` · `정원 마감`(받는 방식이 모두 찼다) · `신청 마감`(날짜 지남).
+- **학생 특강 신청 화면(`/my/lecture`, 수강생전용 → 특강신청)에는 신청 받는 중(정원 마감 포함)인 특강만** 선다 (`lectureListed`) — 신청 받기 전 · 지난 특강은 내가 신청한 것만 기록으로 선다.
+  **특강 날짜는 그대로 일정표에 선다** — 내 시간표(`/my/class`) · 대시보드 달력 · 반 편성 달력. 내 시간표의 "신청할 특강" 줄도 열린 특강과 내가 신청한 특강만 센다(`signupLectures`).
+  - 카드: 제목(무슨 특강 — 메모) · 날짜 · 강사 · 상태 칩 · 안내 · **신청 방식 목록**(방식마다 신청 수 · 정원) · 강사 캐리커처, 그 아래 **`신청하기`** →
+    **신청 방식 버튼**(`LectureSignupFlow`, `src/components/my/LectureSignup.tsx` — 켠 방식만 · 정원이 찬 방식은 누를 수 없다 · 방식이 하나면 미리 골라 둔다) → 고른 방식의 **신청 조건 상자**와,
+    조건이 있으면 노란 **"신청 조건을 다 마친 뒤에 신청하기를 눌러 주세요."**(`LECTURE_CONDITION_NOTICE` — Alan 의 "조건을 이수완료하고 신청하기를 눌러달라는 안내문") → 조건 칸(후기 링크 · 구독 · 팔로우 체크) →
+    `신청하기`(조건을 다 채우기 전에는 잠김). 모든 방식이 정원이면 `정원이 찼어요`. 신청하면 `신청 완료` + `내 신청 · {방식}` 과 올린 링크 · 팔로우, 받는 중이면 방식마다 `신청 취소`
+    (`cancelLectureSignup` 이 특강 · 방식 · 내 id 로 지운다). 받는 중이 아니면 "신청이 마감돼 직접 취소할 수 없어요. 강사에게 말씀해 주세요." — 스태프가 명단에서 취소한다.
+  - 보내기는 `onSubmit` 에서 직접 한다 — React 19 의 `<form action>` 이 끝나면 폼을 초기화해 고른 방식 · 붙여 넣은 링크 · 체크가 사라진다 (교재주문 폼과 같은 함정).
+- **관리자 특강 신청(`/admin/lectures`)은 종류 버튼 → 방식 버튼 → 명단** — 첫째 줄 `RC특강 · LC특강 · 1차 모의고사 · 2차 모의고사`(+ 메모만 있는 특강이 있으면 `특강`, 숫자 = 신청 수, solid),
+  둘째 줄 `전체 · 현장 · …`(그 종류의 방식, outline — `?type=` · `?way=`). 처음엔 신청 받는 중인 특강의 종류(`pickLectureType`, `src/app/admin/lectures/_lib/lectures.ts`). 1차 · 2차 모의고사는 버튼이 따로다.
+  특강마다 **상태 칩 · `신청 받기`(누르는 순간 열린다) / `신청 마감`(한 번 더 묻는다 — `LectureOpenButton`)** · 방식 칩(신청 수 / 정원 · 조건, 꺼진 방식은 줄 긋기 · 구독 · 팔로우 조건이면 `인스타 새로 팔로우 N · 기존 M`) ·
+  명단(이름 · 연락처 · 시각 · 방식 · 후기 링크 · 팔로우 · `취소`). 머리에 `특강 설정` · `반 편성`. 열기 · 마감은 `setLectureOpen` — 지난 특강 · 받는 방식이 없는 특강은 열지 않는다.
+- **특강 설정(`/admin/lectures/settings`) — 종류별로**: 같은 종류 버튼 아래 특강마다 **`신청 받기` 버튼 · 방식마다 받기 체크 · 신청 조건 · 정원(비우면 제한 없음) · 안내 · `설정 저장`**
+  (`updateLectureSettings` · `LectureSettingsForm`). 아직 안 연 특강에는 "아직 학생 화면에 보이지 않아요. 아래를 정하고 저장한 뒤 '신청 받기' 를 누르면 바로 열려요." 정원은 1~1000명이고
+  이미 신청한 수보다 적게 줄일 수 없다(DB check `special_lecture_ways_capacity_check` 도 같다). 신청 받는 중인 특강의 방식을 모두 끄지 못한다(먼저 마감). 조건을 바꾸면 "이미 신청한 N명에게는 바뀐 조건을 다시 묻지 않아요" 를 띄운다.
+  폼은 방식이 바뀔 때만 다시 그린다(`key` — 값이 바뀔 때마다 다시 그리면 저장 뒤 "특강 설정을 저장했어요." 가 바로 사라졌다). 쓰기는 강사 · 관리자 세션(칸 단위 grant `enabled, capacity, signup_condition` ·
+  정책 "special_lecture_ways: 스태프 수정"), 줄을 넣고 지우는 것은 트리거뿐. 방식 표 조회는 그 특강이 보이는 사람(스태프 확인이 먼저 — 화면 전환 속도 4).
+- **정원은 방식마다** — `lecture_signups_sync` 가 그 방식의 `applied_count` 를 조건부로 올려서 마지막 한 자리에 동시에 눌러도 넘지 않는다(`lecture_full`). 특강의 `applied_count` 는 모든 방식의 합(종류 버튼 숫자 · 반 편성 달력).
+- **신청 트리거는 이름 순으로 돈다** — `lecture_signups_check_way`(방식 — 비었으면(배포 사이 옛 앱) 첫 받는 방식 · **닫힌 방식이면 조건을 묻기 전에** `lecture_signup_closed` · 한 특강 한 방식) →
+  `lecture_signups_eligible_subject`(단과 과목, 아래) → `lecture_signups_review_check`(그 **방식의** 조건, 아래). 닫힘을 먼저 보지 않으면 받지 않는 방식에 "구독 · 팔로우를 하라" 가 먼저 떴다(재생 DB 로 재현).
+  서버 액션(`signupLecture`)은 방식을 꼭 받고 그 방식의 조건 · 받기를 먼저 보며, 새 오류(`lecture_already_signed` · `lecture_signup_closed`)를 학생 말로 바꾼다.
+- **옛 특강 합치기**(같은 마이그레이션) — 2026-10-15 ~ 10-16 에는 방식마다 특강이 따로였다(`rc_video` · `mock1_paper` · `mock1_pdf` … — 아래 "8가지 특강"). **같은 기수 · 같은 날 · 같은 무슨 특강을 하나로 합치고**
+  (강사 · 메모가 달라도 — 나중에 붓으로 더한 줄은 강사 · 메모를 다르게 고른 채 만들어지기도 했다. 남는 줄은 현장 줄, 메모만 있는 특강은 메모까지 같을 때만) 신청을 그 방식으로 옮겼다(같은 방식이 겹친 신청은 먼저 한 것만).
+  신청 받기: **그때 열려 있던 특강은 열린 그대로 · 열려 있던 방식만 켜고**, **아직 안 열린 특강(7일 전이 안 된 것)은 닫힌 채 모든 방식을 켠다** — 강사가 특강 설정을 보고 `신청 받기` 를 누른다.
+  지난 특강은 그때 받았는지 그대로. 안내는 이어 붙이고 정원 · 조건은 그 방식 줄의 것. 재생 DB 로 확인(2026-10-16): 남은 특강 5 · 합쳐 지운 줄 6 · 옮긴 신청 4 · 겹친 신청 0.
+- 확인 (2026-10-16 재생 DB · 브라우저): 세션 시험 — 구독 · 팔로우 필수 · 둘째 방식 `lecture_already_signed` · 받지 않는 방식 `lecture_signup_closed` · 후기 링크 필수 · RC 단과의 LC특강 막힘 · 닫힌 특강 막힘 ·
+  방식 정원 `lecture_full` · 정원 0 · 신청 수보다 작은 정원 거절 · 학생의 방식 수정 0줄 · 옛 앱 모양(방식 없음) → 첫 받는 방식 · 달력 저장의 옛 종류 거절 · 회원 · 배정 없는 조교 0줄 · 비회원 권한 없음.
+  화면 — 학생 신청하기 → 방식 → 조건 → 신청 · 취소, 관리자 신청 받기 → 학생 화면에 섬 → 마감, 특강 설정 저장(받기 끄기 · 정원 · 조건), 달력 팝업으로 더하기 → 저장(닫힌 채 · 방식 둘) → 빼기,
+  320 · 393 · 1280px 가로 넘침 없음. **실제 휴대폰으로는 못 해 봤다.**
 - **신청 자격은 스터디와 같다** — 그 달 반에 배정돼 지금 수강 중인 수강생 (`private.is_term_enrollee`, 2026-10-02 부터 예비등록생 제외).
   신청 즉시 확정(스태프 승인 없음), 신청 받는 중에는 본인이 취소할 수 있다. 그 뒤에는 스태프가 명단에서 취소한다.
 - **단과 학생은 제 과목 특강만** (2026-10-12 Alan — "특강신청에서 RC 단과반은 LC특강신청이 안되고, LC단과는 RC특강신청이 안되도록 설정이 되어야해", 마이그레이션 20261012110000).
-  특강 종류(`kinds`)의 과목을 들어야 한다 — RC 단과는 RC특강(현강 · 녹화)과 모의고사, LC 단과는 LC특강과 모의고사. **모의고사(현강 · 시험지 수령 · PDF 수령)는 누구나**.
-  종류의 과목은 `private.lecture_kind_subject` = 앱 `lectureKindSubject`(`rc` · `rc_video` → RC, `lc` · `lc_video` → LC, 모의고사 여섯 → 없음). 2026-10-12 ~ 10-15 에는 한 특강에 종류가 여럿이라
-  `RC특강 · 2차 모의고사` 처럼 과목이 든 특강은 그 과목 학생만이었다 — 2026-10-15 부터 종류마다 특강이 따로라 모의고사는 늘 따로 선다.
+  특강 종류(`kinds`)의 과목을 들어야 한다 — RC 단과는 RC특강과 모의고사, LC 단과는 LC특강과 모의고사. **모의고사는 누구나**. 신청 방식과 상관없다 — RC특강의 수업영상 받기도 RC 다.
+  종류의 과목은 `private.lecture_kind_subject` = 앱 `lectureKindSubject`(`rc` → RC, `lc` → LC, 모의고사 → 없음 — 2026-10-15 ~ 10-16 에는 `rc_video` · `lc_video` 도 셌다).
   과목은 그 달 수강 중인 **직접 배정 반**에서 읽는다 (`private.lecture_subjects_of` = 앱 `sectionSubjects`, `src/lib/lecture.ts`): 단과 상품(`course_type` lc · rc) = 그 과목 ·
   시간 단위 반 = 과목 칸(`class_sections.subject`) · 그릇 반(속성반 · 2주완성) · 과목 칸이 빈 반(묶음 120 · 140분 · 방학달 통짜 · 아직 안 고름) = 두 과목.
   학생명단 이름표 `RC단과` · `LC단과`(`singleSubjectOf`)와 같은 읽기라 주5일 60분(월수금 RC + 화목금 LC) · 650 RC 단과 + 750 LC 단과를 함께 듣는 학생은 두 과목 다 — 막히지 않는다.
   **막는 것은 DB 다** — BEFORE INSERT 트리거 `lecture_signups_eligible_subject`(`lecture_subject_mismatch` — 후기 링크 검사보다 이름이 앞이라 먼저 돈다). 그 달 수강생이 아니면(과목이 비면)
-  손대지 않고 정책(`lecture_signup_open`)이 막는다. 화면(`/my/lecture`)은 그 카드에 `내 과목 아님` 배지 + "RC 단과 수강생은 LC특강을 신청할 수 없어요" 를 적고 신청 버튼 · 카운트다운 ·
+  손대지 않고 정책(`lecture_signup_open`)이 막는다. 화면(`/my/lecture`)은 그 카드에 `내 과목 아님` 배지 + "RC 단과 수강생은 LC특강을 신청할 수 없어요" 를 적고 `신청하기` ·
   후기 안내를 그리지 않는다 (`lectureSubjectBlock` · `lectureSubjectNote`). 서버 액션은 DB 오류를 `LECTURE_SUBJECT_ERROR` 로 바꾼다. **바꾸면 둘 다** — `lecture.test.ts` 가 마지막 SQL 정의의
   네 갈래 · 트리거 · 액션 매핑을 본다. 재생 DB 세션 시험(2026-10-12 — 2026-10-15 에 녹화영상 · 시험지 종류로 다시: RC 단과 → `lc_video` · `lc` 막힘 · `mock2_paper` 됨): RC 단과 → LC특강 막힘 · RC특강 · 모의고사만 · RC특강+모의고사 됨, LC 단과 → RC특강 · RC특강+모의고사 막힘 ·
   LC특강 · 모의고사만 됨, 두 단과 · 속성반 · 묶음 · 과목 미정 → 다 됨, 배정 없는 회원 · 남의 이름 · 예비등록생 → 정책이 막음(RLS), 학생이 함수 직접 호출 → 권한 없음.
+  2026-10-16 신청 방식으로 다시: RC 단과 → LC특강(현장 · 수업영상 받기) 막힘 · 모의고사 됨.
 - **예비등록생도 특강 날짜는 미리 본다** (2026-10-02 Alan "예비등록생 내 시간표에도 특강 날짜는 미리 보여줘", 마이그레이션 20261002230000).
   조회 정책 "special_lectures: 수강생 조회" 가 `private.is_term_assignee`(배정만 보고 개강 전 포함)를 보고, 내 시간표(`getMySchedule`)가
   `getMyLectures({ upcoming: true })` 로 개강 전 기수의 특강까지 달력에 올린다. **신청은 그대로 개강일부터** — `lecture_signup_open` 은 `is_term_enrollee` 고,
   내 시간표의 "신청할 특강" 줄(`signupLectures`)도 수강 중인 기수만 든다. `/my/lecture` 는 잠금 그대로.
-- **잠긴 특강 카드는 D-day 다** (2026-10-02 Alan "잠겨있는거는 카운트다운 D-day"): 분홍 네모에 `D-3`(한국 날짜로 센다, 오늘 열리면 `D-DAY` — `signupDday`) +
-  `신청 시작까지 1일 03:12:08`(브라우저가 초마다) + `10/10 00:00 오픈`. `SignupOpensIn`.
 - **카드마다 강사 캐리커처와 한마디** (같은 날 Alan "강사에 맞춰서 케릭커쳐도 같이 웃기게"): `lectureCameo(강사 이름, 종류)` — 이혜영 LC특강은 헤드폰 노트 컷,
   모의고사만이면 윙크 가리키기 · 이영수 RC특강은 태블릿 컷, 모의고사만이면 엄지척. 말풍선 한 줄도 거기서 나온다 (`lecture.test.ts`).
   **말풍선은 응원만이다 — 학생이 그대로 따라 할 말(준비물 · "오기만 하세요")이나 강의 내용 · 점수 약속은 넣지 않는다** (2026-10-07 Alan — "헤드폰 가져오세요 라고 적혀있는데
   진짜 가져올 수 있어! 이거 아닌데 말이야. 오해를 불러일으키는 문구는 빼줘"). 강사님이 하신 말이 아니라 지어 넣은 한마디라서다 — 그날 `헤드폰 챙기세요!` ·
   `버릴 문제까지 알려 드려요. 오기만 하세요!` · `점수는 제가 올려 드릴게요!` 를 바꿨다 (`찍지 말고 풀어요. 제가 다 보고 있어요!` 는 Alan 이 보고 그대로 뒀다). 그림은
   `site.instructors[].caricatures` 의 네 자세뿐 — 새 자세를 그리지 않았다. 손짓이 왼쪽을 향해 카드 오른쪽, 신청 현황 옆에 선다.
-- 정원은 트리거가 지킨다 — `applied_count` 를 조건부로 올려서 마지막 한 자리에 동시에 눌러도 넘지 않는다.
-- 화면 판정은 `src/lib/lecture.ts` 의 `lectureState()` 가 하고, DB 의 `private.lecture_signup_open()` 과 같은 규칙이다.
-  상태: `곧 시작`(신청 전) · `신청 받는 중` · `정원 마감` · `신청 마감`(날짜 지남).
-- 학생 화면은 **`/my/lecture` (수강생전용 → 특강신청)**. 신청 카드에서 신청·취소한다.
-  `/my/class` 내 시간표는 신청할 특강이 있을 때 이 페이지로 보내는 줄만 두고, 월별 목록에는 "신청함" 배지를 붙인다.
-  `/my` 대시보드 바로가기에도 있다.
-- **8가지 특강 · 신청 조건 · 안내** (2026-10-15 Alan — "지금 받고있는 특강에서 RC특강과 모의고사 특강이 두 개 있는데 이거 구분해서 받아야해 … 총 8개로 구성되어있어야해.
-  그리고 특강마다 신청조건을 선택할 수 있으면 좋겠어. 1. 수업후기작성 2. 이미지참고 3. 조건없음 그리고 특강신청에서 강사님들이 안내문구를 쓸 수 있는 공간이 있으면 좋겠어.
-  안내문쓰는 공간은 수업자료실에서 사용하는 그 해당 포멧을 그대로", 마이그레이션 20261015130000).
-  - **종류 = 무슨 특강인가 × 받는 방법** — RC특강 · LC특강(현강신청 · 녹화영상신청) · 1차 · 2차 모의고사(현강신청 · 시험지 수령 신청 · **PDF 수령 신청** — 2026-10-16, 아래). 한 특강 = 한 종류라 **종류마다 신청 명단이 따로**다
-    (반 편성 달력 동작 6). 학생 카드 제목은 `RC특강 (녹화영상신청)` 처럼 종류 이름 그대로(`lectureTitle`)이고, 같은 날은 종류 순서로 선다(`sortLectures` — 날짜 → `LECTURE_KINDS` 순 → id —
-    학생 화면 · 강사 화면이 같은 것을 쓴다). 학생은 현강과 녹화를 **둘 다** 신청할 수 있다 (막지 않았다 — 막아야 하면 Alan 에게 묻는다).
-  - **묶음 특강 나누기** — 마이그레이션이 종류가 둘 이상인 특강(그날까지 `RC특강 · 2차 모의고사` 꼴)을 종류마다 하나로 나눴다: 첫 종류는 그 특강에 남고 나머지는 같은 날 · 강사 · 내용 · 신청 설정으로
-    새 특강이 되며, **신청자는 새 특강마다 옮겨 적는다**(후기 링크 그대로 — 신청 트리거 둘을 그동안만 끈다). 그래서 그날 묶음 특강을 신청한 학생은 나뉜 특강을 모두 신청한 것이 된다.
-    옛 종류 넷(`rc` · `lc` · `mock1` · `mock2`)은 그대로 **현강신청**이다.
-  - **모의고사 PDF 수령 신청 `mock1_pdf` · `mock2_pdf`** (2026-10-16 Alan — "모의고사에서 'pdf수령' 신청이 하나 더 추가되면 좋겠어!!", 마이그레이션 20261016110000) — 종류 여덟 → 열.
-    값 목록이 적힌 세 곳(`private.lecture_kinds` 순서 · check `special_lectures_kinds_check` · `save_term_schedule` 의 종류 검사)만 바꿨고, 과목이 없어 누구나 신청한다(`lecture_kind_subject` 그대로 — 모의고사).
-    **신청을 받는 것뿐이다** — PDF 파일을 이 사이트로 나눠 주는 기능은 없다(만들지 않았다 — 필요하면 묻는다). 학생 카드 제목 `1차 모의고사 (PDF 수령 신청)` · 같은 날은 시험지 다음 · 달력 칸 `1차 현강·시험지·PDF` ·
-    붓과 특강 목록의 모의고사 줄에 셋째 칸. 재생 DB · 브라우저(2026-10-16): 옛 check 가 막던 값이 들어가고 · 달력 저장으로 PDF 특강이 생기고 있던 특강 8개는 신청 설정까지 그대로 ·
-    한 특강 두 종류 · 모르는 값 · 조교 저장은 막힘 · RC 단과 학생이 PDF 수령 신청 됨(LC특강은 막힘) · 관리자 붓 → 날짜 → `특강 저장` · 학생 `신청하기` → `신청 완료` · 320 · 393 · 768 · 1280px.
-  - **신청 조건 `special_lectures.signup_condition`** — 강사 · 관리자가 `/admin/lectures` 에서 특강마다 고른다(`LECTURE_CONDITIONS`, `src/lib/lecture.ts`):
+- `/my/class` 내 시간표는 신청할 특강이 있을 때 특강 신청으로 보내는 줄만 두고, 월별 목록에는 "신청함" 배지를 붙인다. `/my` 대시보드 바로가기에도 있다.
+- **신청 조건 · 안내** (2026-10-15 Alan — "특강마다 신청조건을 선택할 수 있으면 좋겠어. 1. 수업후기작성 2. 이미지참고 3. 조건없음 그리고 특강신청에서 강사님들이 안내문구를 쓸 수 있는 공간이 있으면 좋겠어.
+  안내문쓰는 공간은 수업자료실에서 사용하는 그 해당 포멧을 그대로", 마이그레이션 20261015130000 → **2026-10-16 부터 신청 조건은 신청 방식마다**, 마이그레이션 20261016120000).
+  - **8가지 특강(2026-10-15 ~ 10-16)** — 그때는 "무슨 특강 × 받는 방법" 이 종류 하나였다(RC특강 현강신청 `rc` · 녹화영상신청 `rc_video` / LC특강 `lc` · `lc_video` / 1 · 2차 모의고사 현강신청 · 시험지 수령 신청 `mock1_paper` ·
+    PDF 수령 신청 `mock1_pdf`(20261016110000 — 여덟 → 열)). 20261015130000 이 그 전의 묶음 특강(`RC특강 · 2차 모의고사`)을 종류마다 나누고 신청을 옮겨 적었고, 20261016120000 이 같은 날 같은 특강을 다시 합쳐
+    받는 방법을 **신청 방식**으로 옮겼다(위 "옛 특강 합치기"). 옛 종류 넷(`rc` · `lc` · `mock1` · `mock2`)은 현장이 됐다.
+  - **신청 조건 `special_lecture_ways.signup_condition`** — 강사 · 관리자가 특강 설정에서 **방식마다** 고른다(`LECTURE_CONDITIONS`, `src/lib/lecture.ts` — 현장은 후기 · 시험지 수령은 구독 · 팔로우처럼):
     `review`(YBM 수강후기 작성 — 아래 후기 링크 규칙 그대로) · `sns`(유튜브 구독 · 인스타그램 팔로우 — Alan 의 "이미지참고". 그가 보낸 예전 댓글 조건 그림: "역전토익 유튜브 구독을 눌러주세요 …
-    역전토익 인스타그램을 팔로우 해주세요 (기존 팔로우는 "기존"으로 표기)") · `none`(조건 없음 — 기본).
-    **새 특강은 조건 없음으로 시작한다** — 2026-10-08 ~ 10-15 에는 3주차(개강일이 든 주 = 1주차) 모의고사 특강이 날짜로 저절로 후기 조건이었는데(`private.lecture_needs_review` — 지웠다) 이제 강사가 고른다.
-    마이그레이션이 그 옛 규칙에 걸리던 특강(나눈 뒤의 모의고사 종류)만 `review` 로 옮겨 적었다(10/24 2차 모의고사 등). **11월부터 3주차 모의고사의 후기 조건은 강사가 직접 고른다** (docs/HANDOVER.md "매달" 5).
-  - **sns 조건** — 학생 카드에 `역전토익 유튜브` · `역전토익 인스타그램` 버튼(`site.social.youtube` · `.instagram`, 새 창)과 `역전토익 유튜브를 구독했어요` 체크 · 인스타그램 `새로 팔로우했어요` /
-    `원래 팔로우하고 있었어요 (기존)` 고르기 — 둘 다 해야 `구독 · 팔로우하고 신청하기` 가 열린다. **학생이 스스로 체크하는 것이고 실제로 구독 · 팔로우했는지는 모른다**
+    역전토익 인스타그램을 팔로우 해주세요 (기존 팔로우는 "기존"으로 표기)") · `none`(조건 없음 — 기본). `hint` 는 강사 화면, `student` 는 학생이 방식을 고르면 뜨는 조건 상자의 말.
+    **새 특강은 모든 방식이 조건 없음으로 시작한다** — 2026-10-08 ~ 10-15 에는 3주차(개강일이 든 주 = 1주차) 모의고사 특강이 날짜로 저절로 후기 조건이었는데(`private.lecture_needs_review` — 지웠다) 이제 강사가 고른다.
+    20261015130000 이 그 옛 규칙에 걸리던 특강만 `review` 로 옮겨 적었고(10/24 2차 모의고사 등) 20261016120000 이 그 값을 그 방식 줄로 옮겼다.
+    **11월부터 3주차 모의고사의 후기 조건은 강사가 특강 설정에서 직접 고른다** (docs/HANDOVER.md "매달" 5).
+  - **sns 조건** — 그 방식을 고르면 조건 상자에 `역전토익 유튜브` · `역전토익 인스타그램` 버튼(`site.social.youtube` · `.instagram`, 새 창), 아래에 `역전토익 유튜브를 구독했어요` 체크 · 인스타그램
+    `새로 팔로우했어요` / `원래 팔로우하고 있었어요 (기존)` 고르기 — 둘 다 해야 `신청하기` 가 열린다. **학생이 스스로 체크하는 것이고 실제로 구독 · 팔로우했는지는 모른다**
     (유튜브 · 인스타그램에 물어볼 길이 없다 — 예전 댓글도 그랬다). 남기는 것은 인스타그램 새로 · 기존(`lecture_signups.sns_follow` — new | existing)뿐이고 유튜브 체크는 남기지 않는다.
-    강사 명단 줄마다 `유튜브 구독 · 인스타 새로 팔로우/기존 팔로우`, 머리에 `인스타 새로 팔로우 N · 기존 M`. 유튜브 채널 주소는 `site.social.youtube` 한곳(Alan 이 그림으로 준 주소).
-  - **조건은 DB 가 지킨다** — 신청을 넣을 때 트리거 `private.lecture_signups_review_check`(이름 그대로 — 이름 순이라 `lecture_signups_eligible_subject` 다음에 돈다)가 그 특강의 조건을 읽어
+    강사 명단 줄마다 `유튜브 구독 · 인스타 새로 팔로우/기존 팔로우`, 방식 칩 줄에 `인스타 새로 팔로우 N · 기존 M`(지금 보는 방식의 명단으로). 유튜브 채널 주소는 `site.social.youtube` 한곳(Alan 이 그림으로 준 주소).
+  - **조건은 DB 가 지킨다** — 신청을 넣을 때 트리거 `private.lecture_signups_review_check`(이름 그대로)가 **그 방식의** 조건을 읽어(`special_lecture_ways` 의 그 특강 · 그 방식 줄)
     review 면 아래 후기 링크 검사, sns 면 `sns_follow` 가 없을 때 `sns_follow_required`, 그 조건이 아닌 값(후기 링크 · 팔로우)은 비운다. 서버 액션(`signupLecture`)도 같은 말을 먼저 한다
-    (`snsFollowError` · `reviewLinkError`). 학생은 `sns_follow` 칸만 넣을 수 있다(`grant insert (sns_follow)`).
-    **조건을 바꿔도 이미 들어온 신청은 다시 묻지 않는다** — 강사 화면이 "이미 신청한 N명에게는 바뀐 조건을 다시 묻지 않아요" 를 띄운다.
-  - **안내 `special_lectures.notice`** — 수업자료실 안내와 **같은 편집기**(`NoteTextarea` — 굵게 · 밑줄 · 기울임 · 형광펜 · 색 · 크기 · 줄 정렬 · 표, 5만 자 = DB check)이고 **사진은 넣지 않는다**
-    (수업자료실 안내도 사진이 없다 — 사진이 필요하면 공지처럼 저장소를 붙여야 해서 묻는다). 학생 카드 제목 아래에 그대로 보인다(`MaterialNote` — 길면 앞 네 줄 + `전체 보기`). 보이는 글자가 없는 안내는 비운다.
-    쓰기는 강사 · 관리자 세션 UPDATE(`grant update (signup_condition, notice)`) — 학생 세션은 못 바꾼다. 신청을 받지 않는 특강은 조건 · 안내 칸을 숨기고, 저장해도 DB 값은 그대로 둔다(다시 켜면 돌아온다).
-    강사 폼은 `onSubmit` 에서 직접 보낸다 — `<form action>` 이면 React 19 가 끝난 뒤 폼을 초기화해 고른 조건 · 편집기 값이 처음 모양으로 돌아간다.
+    (`snsFollowError` · `reviewLinkError`). 학생은 `way` · `sns_follow` · `review_url` 칸만 넣는다(칸 단위 grant).
+    **조건을 바꿔도 이미 들어온 신청은 다시 묻지 않는다** — 특강 설정이 "이미 신청한 N명에게는 바뀐 조건을 다시 묻지 않아요" 를 띄운다.
+  - **안내 `special_lectures.notice`** — 특강에 하나(방식마다가 아니다). 수업자료실 안내와 **같은 편집기**(`NoteTextarea` — 굵게 · 밑줄 · 기울임 · 형광펜 · 색 · 크기 · 줄 정렬 · 표, 5만 자 = DB check)이고
+    **사진은 넣지 않는다** (수업자료실 안내도 사진이 없다 — 사진이 필요하면 공지처럼 저장소를 붙여야 해서 묻는다). 학생 카드 제목 아래에 그대로 보인다(`MaterialNote` — 길면 앞 네 줄 + `전체 보기`).
+    보이는 글자가 없는 안내는 비운다. 쓰기는 강사 · 관리자 세션 UPDATE(`grant update (signup_condition, notice)` 의 notice — signup_condition 칸은 이제 쓰지 않는다) — 학생 세션은 못 바꾼다.
+    특강 설정 폼은 `onSubmit` 에서 직접 보낸다 — `<form action>` 이면 React 19 가 끝난 뒤 폼을 초기화해 고른 조건 · 편집기 값이 처음 모양으로 돌아간다.
   - **안내 글 속 주소는 누르면 바로 간다** (2026-10-16 Alan — "특강신청에서 안내글에서 링크가 있다면 클릭했을때 바로가기가 되면 좋겠어") — 학생 특강 카드(`MaterialNote linkify`)만이다.
     **글은 그대로 두고 그릴 때** 글자 속 주소를 찾아 새 창 링크(`target=_blank` · `rel=noopener noreferrer`)로 감싼다 — 예전에 적어 둔 안내의 주소도 눌린다. 규칙은 `src/lib/note-links.ts` 한곳(`note-links.test.ts`):
     `https://` · `http://` · `www.` 로 시작하는 주소만(앞을 뺀 `naver.me/…` 는 `1.5배` · `file.pdf` 와 가를 수 없어 링크로 만들지 않는다) · 영문 · 숫자 · 주소 기호까지라
@@ -2307,8 +2337,9 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
     **접힌 안내는 글 전체에서 주소를 찾은 뒤 앞부분을 자른다** — 앞부분 끝에서 `https://drive.g…` 처럼 잘려도 누르면 온전한 주소로 간다. 그 링크는 `<summary>` 안이지만 누르면 링크만 열리고 접힘은 그대로다.
     **수업자료실 안내 · 공지 · 비대면 자료 안내는 켜지 않았다**(Alan 이 특강만 말했다 — 같은 편집기라 켜려면 `linkify` 하나다). 편집기(강사가 적는 칸)에서는 눌리지 않는다.
     확인(2026-10-16 재생 DB · 크로미움): 320 · 393 · 1280px 넘침 없음 · forms.gle · `www.kakao.com` · `https://open.kakao.com/…입니다` · 표 칸 · 접힌 앞부분 끝에서 잘린 주소가 모두 새 창으로 제 주소.
-  - 배포 사이: 새 칸을 못 읽으면 학생 · 강사 화면 모두 조건 없음 · 안내 없음으로 읽는다(`getMyLectures` · `getLectures` · `getSignups` 의 되돌림).
-  - 확인 (2026-10-15 재생 DB · 브라우저): 마이그레이션 앞 데이터(9월 · 10월 묶음 특강과 신청 · 후기 링크)를 넣고 적용 — 나누기 · 신청 옮기기 · 후기 조건 옮기기 · 트리거 다시 켜짐, 빈 DB 에 모든 마이그레이션 재생.
+  - 배포 사이: 새 표 · 칸(`special_lecture_ways` · `lecture_signups.way`)을 못 읽으면 학생 화면은 방식 없이 읽고(신청 받는 특강이 서지 않는다) 내 신청은 현장으로 본다(`getMyLectures` · `getMyLectureSignups` 의 되돌림).
+    옛 앱이 방식 없이 신청을 넣으면 트리거가 첫 받는 방식으로 채운다.
+  - 확인 (2026-10-15 재생 DB · 브라우저 — 8가지 특강 때): 마이그레이션 앞 데이터(9월 · 10월 묶음 특강과 신청 · 후기 링크)를 넣고 적용 — 나누기 · 신청 옮기기 · 후기 조건 옮기기 · 트리거 다시 켜짐, 빈 DB 에 모든 마이그레이션 재생.
     학생 화면 320 · 393 · 1280px 가로 넘침 없음 · 세 조건 신청(조건 없음 · 구독 · 팔로우(체크 전 잠김 · `기존` 저장) · 후기(맞는 링크 저장 · 다른 사이트 거절 · 칸 그대로)) · 안내 서식 ·
     RC 단과 학생에게 LC특강 둘(현강 · 녹화) `내 과목 아님`, 강사 화면 조건 바꾸기 · 안내 굵게 저장 · 신청 있는 특강의 경고 · 신청 받기 끄기(조건 · 안내 그대로),
     반 편성 달력 붓으로 두 종류 → 특강 둘 · 달력 저장 뒤에도 다른 특강의 조건 그대로 · 320 · 768 · 1280px.
@@ -2316,7 +2347,7 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   작성해서 올리는것이 신청조건이야. 학생이 후기를 적고 난 뒤에 이미지처럼 링크를 올리면 신청이 되는걸로 해줘. 그리고 후기작성방법도 알려주면 좋을 것 같아", 마이그레이션 20261008100000 —
   2026-10-15 부터는 3주차 모의고사에 저절로 붙지 않고 강사가 고르는 조건이다, 위).
   - 신청에 후기 링크 칸 `lecture_signups.review_url`(YBM 수강후기 링크 꼴만 · 2,000자 — 아래). 신청을 넣을 때 BEFORE INSERT 트리거가
-    `review_link_required` 로 막는다 — 서버 액션(`signupLecture`)이 먼저 말하고, 주소를 직접 불러 넣는 길도 같은 규칙이다. 조건이 후기가 아닌 특강에 딸려 온 링크는 저장하지 않는다.
+    `review_link_required` 로 막는다 — 서버 액션(`signupLecture`)이 먼저 말하고, 주소를 직접 불러 넣는 길도 같은 규칙이다. 조건이 후기가 아닌 방식에 딸려 온 링크는 저장하지 않는다.
     링크를 고치는 길은 없다 — 신청 받는 중이면 취소하고 다시 신청한다.
   - **YBM 수강후기 링크만 받는다 — `https://www.ybmedu.com/mypage/lessonView/<토큰>`** (같은 날 Alan 이 7월 3주차 모의고사 특강 때 학생들이 `번호/이름/반/링크` 로
     올린 화면을 보내 줬다 — 일곱 개가 전부 이 꼴. 그 화면의 실명 · 링크는 저장소에 넣지 않았다 — 테스트의 토큰 · 이름은 지어낸 것). 처음 몇 분(20261008100000)은 꼴을 몰라 http(s) 면 다 받았다.
@@ -2340,14 +2371,14 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
     오류는 `reviewLinkError`(`src/lib/lecture.ts`) 한곳이 학생 말로 바꾼다. 후기 쓰는 법 안내에 "후기 링크는 한 번만 쓸 수 있어요" 한 줄이 있다.
     **그 후기를 누가 썼는지는 여전히 모른다** — 이 작업 환경에서 YBM 후기 페이지를 열 수 없다. 먼저 올린 학생이 그 링크를 갖는다
     (로그인 없이 열리는 페이지에 작성자 이름이 보이면 대조할 수 있다 — Alan 에게 그 화면 캡처를 부탁해 두었다).
-  - 학생 카드(`/my/lecture`): 그 특강에 `YBM 수강후기를 쓰고 링크를 올려야 신청돼요` + 링크 꼴(`https://www.ybmedu.com/mypage/lessonView/…`) + `후기 쓰는 법 보기`(아래 안내로), 신청 받는 중이면 링크 칸 +
-    `후기 링크 올리고 신청하기`(칸이 비면 잠김), 신청하면 `올린 YBM 수강후기 링크`. 신청 전(잠김)에는 "신청이 열리기 전에 미리 써 두세요".
+  - 학생 카드(`/my/lecture`): 후기 조건인 방식을 고르면 조건 상자에 `신청 조건 · YBM 수강후기 작성` + 쓰는 법 한 줄 + 링크 꼴(`https://www.ybmedu.com/mypage/lessonView/…`) + `후기 쓰는 법 보기`(아래 안내로),
+    그 아래 노란 "신청 조건을 다 마친 뒤에 신청하기를 눌러 주세요." · 링크 칸 · `신청하기`(칸이 비면 잠김), 신청하면 `올린 YBM 수강후기 링크`.
     칸은 상태로 쥔다 — React 19 의 `<form action>` 이 끝나면 폼을 초기화해서, 안 그러면 오류와 함께 붙여 넣은 주소가 사라진다.
-  - **`YBM 수강후기 쓰는 법`**(`YbmReviewGuide`, `/my/lecture` 카드 아래 — 조건이 후기이고 아직 신청하지 않은 특강이 있을 때만): ① YBM 홈페이지 로그인(버튼 `YBM 홈페이지 열기` —
-    `site.academy.ybmHomeUrl`) ② 마이페이지의 '후기 작성하기' ③ 다 쓴 후기의 주소 복사(`…/mypage/lessonView/…` 로 시작) ④ 특강 카드에 붙여 넣고 신청 + 노란 상자 **"'후기 작성하기'가 안 보이면
+  - **`YBM 수강후기 쓰는 법`**(`YbmReviewGuide`, `/my/lecture` 카드 아래 — 후기 조건인 방식이 열려 있고(정원이 남은) 아직 신청하지 않은 특강이 있을 때만): ① YBM 홈페이지 로그인(버튼 `YBM 홈페이지 열기` —
+    `site.academy.ybmHomeUrl`) ② 마이페이지의 '후기 작성하기' ③ 다 쓴 후기의 주소 복사(`…/mypage/lessonView/…` 로 시작) ④ 특강 카드에서 신청 방식을 고르고 붙여 넣은 뒤 신청하기 + 노란 상자 **"'후기 작성하기'가 안 보이면
     YBM 홈페이지 회원가입(연동)이 안 된 거예요 → 1층 데스크에 내려가서 연동해 달라고"**(Alan 의 말 그대로). 마이페이지 그림은 등업신청 `ReceiptGuide` 와 같은 것.
     **③ 의 YBM 화면 속 단계(어디서 주소를 복사하나)는 YBM 을 직접 못 보고 적었다** — 실제와 다르면 `STEPS` 만 고친다. 주소의 꼴만은 7월 실제 링크로 확인했다.
-  - 강사 화면(`/admin/lectures`): 그 특강 머리에 `신청 조건 · YBM 수강후기 작성`, 신청자 줄 아래에 학생이 올린 링크(새 창) + 위 표시.
+  - 강사 화면(`/admin/lectures`): 그 방식 칩에 `· 후기 작성`, 신청자 줄 아래에 학생이 올린 링크(새 창) + 위 표시.
     조건이 생기기 전 신청은 `후기 링크 없음`. 후기가 아니면 그 줄의 `취소` 로 신청을 지운다.
   - 배포와 마이그레이션 사이: 그 칸은 마이그레이션 20261008100000 에서 생겼다 — 못 읽으면 학생 · 강사 화면 모두 링크 없이 신청만 읽는다(`getMyLectureSignups` · `getSignups` — 그대로 비우면 신청한 특강이 "신청 전" 으로 보인다).
 - **아직 없는 것**: 라이브 시청 링크, 특강 자료 배포 (미확정 8).
@@ -3635,16 +3666,27 @@ create table special_lectures (            -- 특강. 수업일과 겹쳐도 되
   term_id     bigint references terms on delete cascade,
   date        date not null,
   lecturer_id bigint references lecturers,
-  kinds       text[] not null default '{}', -- 종류 하나(cardinality ≤ 1, 20261015130000): rc | rc_video | lc | lc_video | mock1 | mock1_paper | mock1_pdf | mock2 | mock2_paper | mock2_pdf (LECTURE_KINDS — PDF 수령 20261016110000)
-  signup_condition text not null default 'none', -- 신청 조건 none | review(YBM 수강후기) | sns(유튜브 구독 · 인스타 팔로우) — 강사가 고른다 (20261015130000)
+  kinds       text[] not null default '{}', -- 무슨 특강 하나(cardinality ≤ 1, 20261016120000): rc | lc | mock1 | mock2, 비우면 메모만 (LECTURE_KINDS).
+                                            -- 2026-10-15 ~ 10-16 의 rc_video · mock1_paper · mock1_pdf … 는 신청 방식(special_lecture_ways)이 됐다
   notice      text,                         -- 강사 안내 (수업자료실 안내와 같은 서식 글, 5만 자) — 학생 특강 카드에 그대로
   content     text,                         -- 메모 (선택, 1~100자). 종류나 내용 중 하나는 있어야 한다
-  -- ─ 신청 (마이그레이션 20260916090000). 설정은 /admin/lectures 에서 ─
-  signup          boolean not null default false,  -- 신청을 받는 특강인가
-  capacity        int,                             -- 정원. null 이면 제한 없음
-  signup_opens_at timestamptz,                     -- 신청 시작. null 이면 바로. 마감은 특강 당일(KST)
-  applied_count   int not null default 0           -- lecture_signups 트리거가 유지 (직접 수정 불가)
+  signup          boolean not null default false,  -- 신청 받는 중 — 강사가 '신청 받기' 를 누르면 켜진다 (2026-10-16 — 7일 전 자동 열림 없음). 특강 당일까지 받는다
+  applied_count   int not null default 0,          -- 신청 수 합계 (모든 방식) — lecture_signups 트리거가 유지
+  -- 쓰지 않음 (2026-10-16, 배포 사이 옛 앱만): capacity · signup_opens_at · signup_condition — 정원 · 조건은 방식마다(special_lecture_ways)
 );
+
+create table special_lecture_ways (        -- 특강의 신청 방식 (20261016120000). 줄은 트리거 private.sync_lecture_ways 가 만든다 (무슨 특강이 정해질 때)
+  lecture_id       bigint references special_lectures on delete cascade,
+  way              text not null,           -- onsite(현장) | video(수업영상 받기) | paper(시험지 수령) | pdf(PDF 수령) — rc · lc = onsite · video, 모의고사 = onsite · paper · pdf, 메모만 = onsite
+  enabled          boolean not null default true,  -- 이 방식으로 받나 (끄면 학생 화면에 버튼이 없다)
+  capacity         int,                     -- 이 방식의 정원. null = 제한 없음. 1~1000 · 신청 수 이상 (check)
+  signup_condition text not null default 'none', -- none | review(YBM 수강후기) | sns(유튜브 구독 · 인스타 팔로우) — 방식마다 강사가 고른다
+  applied_count    int not null default 0,  -- 이 방식의 신청 수 — lecture_signups_sync 가 조건부로 올린다 (정원)
+  primary key (lecture_id, way)
+);
+-- 조회: 스태프 또는 그 특강이 보이는 사람. 수정: 강사 · 관리자, 칸 단위 grant (enabled, capacity, signup_condition). 넣고 지우기는 트리거뿐
+-- private.lecture_ways_of(무슨 특강) = 앱 lectureWaysOf · private.lecture_signup_open(특강) = 신청 받기 · 당일까지 · 그 달 수강생 · private.lecture_way_open(특강, 방식) = 그것 + 그 방식을 받나
+-- 트리거 special_lectures_sync_ways (AFTER INSERT / UPDATE OF kinds) — 방식 줄을 맞추고, 신청자가 있는데 무슨 특강을 바꾸면 lecture_kind_signup_block
 
 create table account_merge_requests (      -- 계정 통합 신청 (마이그레이션 20260918110000)
   id           bigint primary key,
@@ -3664,18 +3706,21 @@ create table account_merge_requests (      -- 계정 통합 신청 (마이그레
 -- 함수: public.confirm_identity(name, phone) · public.merge_candidates() · public.request_account_merge(other, keep)
 --       public.confirm_account_merge(request) → private.merge_accounts(from, to) · public.cancel_account_merge(request)
 
-create table lecture_signups (             -- 특강 신청. 한 특강에 한 사람 1건
+create table lecture_signups (             -- 특강 신청. 새 신청은 한 특강에 한 방식 (트리거 lecture_signups_check_way — lecture_already_signed)
   id         bigint primary key,
   lecture_id bigint references special_lectures,   -- 신청자가 있는 특강은 삭제 불가
   user_id    uuid references profiles on delete cascade,
   created_at timestamptz default now(),
   review_url text,                                 -- YBM 수강후기 링크 (20261008100000 · 20261008110000) — 조건이 review 인 특강만, https://www.ybmedu.com/mypage/lessonView/<토큰> 꼴 · 2,000자
-  sns_follow text,                                 -- 인스타그램 new(새로) | existing(기존) — 조건이 sns 인 특강만 (20261015130000). 유튜브 구독 체크는 남기지 않는다
-  unique(lecture_id, user_id)
+  sns_follow text,                                 -- 인스타그램 new(새로) | existing(기존) — 조건이 sns 인 방식만 (20261015130000). 유튜브 구독 체크는 남기지 않는다
+  way        text not null,                        -- 신청 방식 (20261016120000) — (lecture_id, way) → special_lecture_ways. 학생은 way · sns_follow · review_url 칸만 넣는다
+  unique(lecture_id, user_id, way)                 -- 2026-10-16 전에 방식 둘을 따로 신청해 둔 것은 남아 있다
 );
--- (private.lecture_needs_review — 2026-10-08 ~ 10-15 의 '3주차 모의고사' 판정. 20261015130000 이 지웠다 — 이제 special_lectures.signup_condition)
--- private.lecture_signups_review_check (BEFORE INSERT) : 그 특강의 조건으로 review 면 링크 필수(review_link_required) · 한 번만(taken · reused), sns 면 sns_follow 필수(sns_follow_required), 아니면 두 칸을 비운다
--- private.lecture_kind_subject(종류) : rc · rc_video → rc, lc · lc_video → lc, 모의고사 → null (단과 과목 막기가 쓴다)
+-- (private.lecture_needs_review — 2026-10-08 ~ 10-15 의 '3주차 모의고사' 판정. 20261015130000 이 지웠다 — 이제 방식마다 special_lecture_ways.signup_condition)
+-- BEFORE INSERT 트리거는 이름 순: lecture_signups_check_way(방식 채우기 · 닫힘 lecture_signup_closed · 한 특강 한 방식) → lecture_signups_eligible_subject(단과) → lecture_signups_review_check
+-- private.lecture_signups_review_check (BEFORE INSERT) : 그 방식의 조건으로 review 면 링크 필수(review_link_required) · 한 번만(taken · reused), sns 면 sns_follow 필수(sns_follow_required), 아니면 두 칸을 비운다
+-- private.lecture_signups_sync (AFTER INSERT · DELETE) : 그 방식의 applied_count 를 정원 안에서만 올린다(lecture_full) · 특강 합계도
+-- private.lecture_kind_subject(종류) : rc → rc, lc → lc, 모의고사 → null (단과 과목 막기가 쓴다 — 방식과 상관없이)
 -- private.review_link_key(주소) : 후기 키 = lessonView 뒤 토큰(소문자 · 끝 = 뗌). 같은 트리거가 다른 학생의 링크(review_link_taken) · 다른 달에 쓴 내 링크(review_link_reused)를 막는다 (20261008130000)
 -- private.lecture_subjects_of(학생, 기수) : 그 달 수강 중인 직접 배정 반이 주는 과목 lc · rc (단과 상품 = 그 과목 · 그릇 반 · 과목 칸 없음 = 두 과목). BEFORE INSERT 트리거
 --   lecture_signups_eligible_subject 가 특강 종류의 rc · lc 마다 그 과목을 듣는지 보고 lecture_subject_mismatch 로 막는다 — RC 단과는 LC특강 못 함 (20261012110000, 규칙 6-1)
@@ -3683,9 +3728,9 @@ create table lecture_signups (             -- 특강 신청. 한 특강에 한 �
 -- 저장: public.save_term_schedule(year, month, opens, closes, mwf[], ttf[], lectures jsonb, parts text[])
 --       — 스태프만, 한 트랜잭션. parts 는 'dates'|'mwf'|'ttf'|'lectures' 중 저장할 항목 (null 이면 전부).
 --       수업일·특강은 그 달 ±1개월까지 허용하고, 수업일이 다른 기수와 겹치면 거부한다.
---       특강 항목은 {"id","date","lecturer_id","kinds":[…],"content"} — id 가 있으면 수정, 없으면 추가, 목록에서
---       빠지면 삭제(신청자가 있으면 거부). signup·capacity·signup_opens_at 은 **넘어온 키만** 바꾼다
---       (마이그레이션 20260915131500 · 20260915140500 · 20260916090000).
+--       특강 항목은 {"id","date","lecturer_id","kinds":[무슨 특강 하나 이하],"content"} — id 가 있으면 수정, 없으면 추가(신청 받지 않는 채로 — 방식 줄은 트리거가),
+--       목록에서 빠지면 삭제(신청자가 있으면 거부). 신청 받기 · 방식 · 조건 · 정원 · 안내는 건드리지 않는다 (2026-10-16 — 특강 신청 → 특강 설정에서)
+--       (마이그레이션 20260915131500 · 20260915140500 · 20260916090000 · 20261016120000).
 -- 다시보기가 붙은 회차를 달력에서 빼면 저장 전체를 거부한다 (미확정 4 확정 전까지).
 
 create table courses (                     -- 강좌 마스터
@@ -4170,7 +4215,7 @@ create table naver_reservations (          -- (쓰지 않음) 예전 알림 원�
 >   4. **2주완성 학생의 출석 카드 · 내 출석에 그 달 종강일이 적혔다** ('10/6 개강 ~ 11/3 종강' — 들을 수 없는 뒤 절반까지). `my_attendance_summary` · `my_attendance_days` 의 `closes` 가
 >      기수 종강일이었다 (셈 · 수업일은 처음부터 내 반 것이라 맞았다). 이제 **내 반의 종강일**(2주완성은 앞 절반 마지막 날 — 다른 반은 기수 종강일과 같다, 마이그레이션 20261013120000 · `attendance.test.ts`).
 >   그대로 맞았던 것: 종강일 다음 날 닫힘 · 개강일 열림(자정 배치) · 10월생의 등록 둘 · 시간표 · 반 · 수강증 · 비대면 신청 기간(11/4~11/6, 11/7 부터 마감 안내) · 1회차 날짜 ·
->   특강 7일 전 오픈 · 3주차(11/21) 후기 링크 표시(2026-10-15 부터는 강사가 신청 조건으로 고른다) · 학생명단 · 출석(`지난 10월 기수 정정하기`) · 다시보기 D-day · 수업자료실 · LC 음원 잠금 · 2주완성 앞 절반.
+>   특강 7일 전 오픈(2026-10-16 부터는 강사가 '신청 받기' 를 누른다) · 3주차(11/21) 후기 링크 표시(2026-10-15 부터는 강사가 신청 조건으로 고른다) · 학생명단 · 출석(`지난 10월 기수 정정하기`) · 다시보기 D-day · 수업자료실 · LC 음원 잠금 · 2주완성 앞 절반.
 >   **강사가 해야 하는 순서와 빠뜨리면 생기는 일은 docs/HANDOVER.md "매달 — 다음 달 개강 2주 전쯤"** 에 적었다 (반은 강좌마다 `전체 선택` 으로 한 번에 · 비대면은 개강일 전에 열기 —
 >   잊으면 개강 7일 전부터 대시보드 · 밤 9시 알림이 알려 준다(2026-10-13) · 지난 달 공지 내리기 · Zoom 상시 링크는 달마다 새로 넣는다 — 2026-10-13 Alan "Zoom링크는 매달새로해야해", 옮기는 기능은 만들지 않는다).
 >   재생 DB 메모: 시험용 재생 DB 는 Supabase 의 기본 권한(새 표에 service_role 전부)을 흉내 내지 않는다 — 서버(서비스 롤) 코드를 돌리기 전에
@@ -4227,7 +4272,7 @@ where p.role='student'
 | `/my/attendance` | **출석 찍기** — 들어오면 **카메라가 바로 켜져** 강의실 앞 포스터 QR 을 찍는다(찍히면 크게 **출석!**) + 이번 기수 출석률 (현장 수강생). 휴대폰 기본 카메라로 찍으면 `/attend?t=…` 가 열린다 | member (대상 판정은 DB 함수) |
 | `/my/attendance/record` | **내 출석** — `N회 연속 출석 중!` · 이번 달 출석 도장 · 출석률 · **수업일마다 도장을 찍은 달력** · 지난 수업 기록. **지금 기수만**(종강하면 다음 기수로 새로) | member |
 | `/attend?t=…` | 강의실 QR 이 여는 주소 — 열리자마자 한 번 찍고 결과를 보여 준다 (로그인 뒤 돌아온다, 검색 제외) | member |
-| `/my/lecture` | **특강 신청** — 그 달 특강·모의고사 카드에서 신청·취소 (정원·신청 시작 카운트다운). **종류 열 — RC · LC특강 현강신청 / 녹화영상신청 · 1차 · 2차 모의고사 현강신청 / 시험지 수령 신청 / PDF 수령 신청 (2026-10-15 · PDF 10-16)**, 카드마다 강사 안내(서식 글 — 글 속 주소는 누르면 새 창, 2026-10-16)와 **신청 조건** — YBM 수강후기 링크 올리기 · 유튜브 구독 + 인스타그램 새로/기존 팔로우 체크 · 조건 없음 (강사가 고른다) + 카드 아래 `YBM 수강후기 쓰는 법`. **RC 단과는 RC특강만 · LC 단과는 LC특강만** (모의고사만은 누구나 — 다른 과목 카드는 `내 과목 아님`, 2026-10-12) | 그 달 수강생 |
+| `/my/lecture` | **특강 신청** — **강사가 신청을 연 특강만** 선다 (2026-10-16 — 7일 전 자동 열림 없음, 날짜는 내 시간표에). 카드마다 강사 안내(서식 글 — 글 속 주소는 누르면 새 창)와 신청 방식 목록, **`신청하기` → 신청 방식 버튼(모의고사 = 현장 · 시험지 수령 · PDF 수령, RC · LC특강 = 현장 · 수업영상 받기) → 그 방식의 신청 조건**(YBM 수강후기 링크 올리기 · 유튜브 구독 + 인스타그램 새로/기존 팔로우 체크 · 조건 없음 — 조건이 있으면 "신청 조건을 다 마친 뒤에 신청하기를 눌러 주세요.") **→ `신청하기`**. 한 특강에 한 방식 · 방식마다 정원 · 취소. 카드 아래 `YBM 수강후기 쓰는 법`. **RC 단과는 RC특강만 · LC 단과는 LC특강만** (모의고사는 누구나 — 다른 과목 카드는 `내 과목 아님`, 2026-10-12) | 그 달 수강생 |
 | `/my/live` | 불라방 입장 — 반마다 오늘 회차 → 다음 회차 → 상시 링크 중 하나. **수업이 시작되면 알림함으로 알려 준다**(불라방 수강생만) | student |
 | `/my/textbook` | 불라방 교재주문 — **내 반 교재가 미리 골라져 있다**(주5일 120분 4권 · 주3일 · 주5일 60분 2권, 지난 주문에서 받은 것은 빼고). **받는 방법 — 택배 · 학원에서 받기(현장수령 · 배송비 없음 · 받으러 올 날짜 · 몇 시쯤, 2026-10-07)**. 택배 배송지는 **주소 + 상세 주소(둘 다 필수 — 우편번호 · 요청사항 칸 없음, 2026-10-07)**. 합계·입금 계좌를 보고 입금자명을 적어 주문 (한 달 한 건). 내역은 주문마다 **주문완료 → 배송확인 → 배송시작** 단계 · 송장번호, 받으면 **배송완료**를 눌러 내역에서 지운다 (현장수령은 **주문완료 → 입금확인 → 수령완료**, 학원에서 건네면 저절로 사라진다) | 불라방 수강생 (**예비등록생 포함**) |
 | `/my/replay` | 강의 다시보기 — **일정표** (2026-10-07): 맨 위 **종강 D-day 띠**, 내 수업일 달력(월수금 분홍 · 화목금 잉크 · 녹화본 있는 날은 재생 알약 · 개강 · 종강 · 공휴일, 두 달이면 ‹ ›), 날짜를 누르면 그 날 녹화본(`650 RC 1회차` · 시간 — 누르면 그 자리에서 재생). 종강일까지. 저녁 반(화목금 인강 · 월수금 현장) 학생은 오전 짝 반의 녹화본(`인강 · 오전 수업 녹화본` / `오전 수업 녹화본` 배지) | student |
@@ -4254,12 +4299,13 @@ where p.role='student'
 | `/admin/students/[id]` | 학생 관리: 기본 정보 + **개인정보 수정**(강사·관리자 — 이름·휴대폰·대학·학과·성별, 2026-10-02), **등급 변경**, **올린 수강증**(2026-10-02 — 그림 · 자동 승인/승인/자동 반려/반려/검토 대기/반 개설 대기 · 읽은 값 한 줄 · 배정된 반 · 등업 검토 화면 링크), **반 배정 추가·해제**(기수별 · 강좌는 접힌 채 시작 · 주5일은 한 줄, 해제도 둘 같이), **계정 합치기**, 등록 이력. **조교는 못 연다** (2026-10-03 — 반 배정은 강사가 한다) | instructor |
 | `/admin/attendance` | **출석** — **지금 기수(개강일~종강일)만**. **날짜별**: 반별 현장 수강생의 출석(찍은 시각)·지각, 접어 둔 `처리`(출석 인정·결석·되돌리기, 사유 필수), 맨 위 **결석 학생에게 한 번에 알림**(강사·관리자만 — 결석은 한 단어, 2026-10-10). **한눈에 보기**: 학생 × 수업일 도장 격자, 결석이 많은 학생이 위로. 조교에게는 학생 이름이 학생 관리로 이어지지 않는다 | instructor · **조교** |
 | `/admin/attendance/poster` | **출석 QR 포스터** — 발행 시각, **`포스터 PDF 받기`**(`/download`, A4 한 장에 A5 두 장 — 아이폰은 저장 창), **`새로 만들기`**(강사·관리자만 — 누르면 옛 종이 무효, 바로 새 PDF 받기) | instructor · **조교** |
-| `/admin/sections` | **반 편성 달력만** (2026-10-02 Alan — "일정표 편성만 딱"): 개강일·종강일·월수금·화목금·특강 → 항목별 저장 / 전체 저장, 이전/다음 달, 이미지 저장. 위에 다섯 탭(`SectionsTabs`): 달력 · 개설 반 · 새 반 개설 · 담당 강사 · 스터디 시간 — 같은 `?term=` 을 들고 다닌다 | instructor |
+| `/admin/sections` | **반 편성 달력만** (2026-10-02 Alan — "일정표 편성만 딱"): 개강일·종강일·월수금·화목금·특강 → 항목별 저장 / 전체 저장, 이전/다음 달, 이미지 저장. **특강은 `[특강]` + 날짜 → 그 날 특강 팝업에서 무슨 특강 · 강사 · 메모만** (2026-10-16 — 신청 설정은 특강 신청 → 특강 설정). 위에 다섯 탭(`SectionsTabs`): 달력 · 개설 반 · 새 반 개설 · 담당 강사 · 스터디 시간 — 같은 `?term=` 을 들고 다닌다 | instructor |
 | `/admin/sections/classes` | 그 달 **개설 반 목록**(카드 → 반 상세). 반을 만들거나 지우면 여기로 돌아온다 (`?created=` · `?deleted=`) | instructor |
 | `/admin/sections/new` | **새 반 개설** — 그 달 시간표의 강좌 × 시간대 × 트랙 표로 일괄 개설(과목·과정은 시간표 값을 보여 주기만) + 하나씩 만들기. 달력에 개강일·종강일이 있어야 열린다 | instructor |
 | `/admin/sections/instructors` | **담당 강사 지정** — 편성표대로 채우기 · 손으로 고치기 | instructor |
 | `/admin/timetable` | **시간표 설정 — 달마다 한 벌** (`?month=YYYY-MM`). 맨 위 `‹ 달 ›` 과 `만든 달` 칩, 없는 달은 `N월 시간표 만들기`(앞선 달에서 가져와 과정 A/B 뒤집기 · 방학달 경계는 시간만). 과정 × 레벨 카드(브로슈어 모양)에 시간대 줄마다 시각(**시 · 분 고르기, 24시간제**) · **과정 A/B · 월수금/화목금 과목 LC/RC** · 화목금 인강, 두 시간 아래 **한달완성** 상자, 레벨 카드 메모, **2주완성반** 카드(850 시간 한 줄 — 방학달은 통짜 시간마다, 앞 절반만, 인강 · 과정 · 과목 없음, 2026-10-05). 고치면 그 달 반에 바로 적용 | instructor |
-| `/admin/lectures` | 특강 신청: 기수별 특강마다 신청 받기·정원·신청 시작 · **신청 조건**(YBM 수강후기 작성 · 유튜브 구독 · 인스타그램 팔로우 · 조건 없음) · **안내**(수업자료실 안내와 같은 서식 편집기, 2026-10-15) 설정 + 신청자 명단(스태프 취소). 후기 조건 특강은 신청자마다 **올린 YBM 후기 링크**(`다른 학생과 같은 링크` 표시, 2026-10-08), 구독 · 팔로우 조건은 `인스타 새로 · 기존 팔로우` | instructor |
+| `/admin/lectures` | **특강 신청** (2026-10-16): 기수 칩 → **종류 버튼**(RC특강 · LC특강 · 1차 모의고사 · 2차 모의고사, 숫자 = 신청 수) → **방식 버튼**(전체 · 현장 · 시험지 수령 · PDF 수령 / 전체 · 현장 · 수업영상 받기) → 그 학생들. 특강마다 상태 · **`신청 받기`(누르는 순간 학생 화면에 선다) / `신청 마감`** · 방식 칩(신청 수 / 정원 · 조건) · 명단(스태프 취소). 후기 조건 방식은 신청자마다 **올린 YBM 후기 링크**(`다른 학생과 같은 링크` 표시, 2026-10-08), 구독 · 팔로우 조건은 `인스타 새로 · 기존 팔로우`. 머리에 `특강 설정` · `반 편성` | instructor |
+| `/admin/lectures/settings` | **특강 설정** (2026-10-16 Alan "특강설정 버튼을 특강신청에 하나 넣어놓고 … 종류별로 설정") — 같은 종류 버튼 아래 특강마다 `신청 받기` · **신청 방식마다 받기 · 신청 조건(YBM 수강후기 작성 · 유튜브 구독 · 인스타그램 팔로우 · 조건 없음) · 정원** · **안내**(수업자료실 안내와 같은 서식 편집기) · `설정 저장` | instructor |
 | `/admin/sections/[id]` | 반 상세: 달력에서 파생된 수업일(읽기 전용) + **회차별 불라방 링크**·다시보기 여부, "끝나면 다시보기로" 스위치, 상시 불라방 링크, 정원·상태·강사 수정, 삭제. 과목·과정은 그 달 시간표 값을 보여 주기만 (시간표 줄이 없는 반만 여기서 고른다) | instructor |
 | `/admin/replays` | 녹화본 등록·회차 연결. 맨 위 **레벨 버튼**(650·750·850)으로 가르고 드롭다운은 기수별. 줄마다 `LC/RC · 트랙 · 시간`. **오전 시간 단위 반만** 나온다 — 묶음·스파르타·저녁 줄은 뺀다 (10월 36개 → 12개) | instructor |
 | `/admin/live-channels` | **유튜브 자동 연결** — Zoom 수업을 유튜브로 함께 송출(일부 공개)한 방송을 찾아 **비어 있는 불라방 링크에 넣고**(학생 알림 — 저녁 수업도, 2026-10-04) 오전 · 주간 수업은 끝나면 **다시보기로** (2026-10-01). 카드 넷 — 내 유튜브 채널(연결·끊기 · **지금 내 방송 확인**) · 강사님 연결 상태 · **선생님이 하실 순서**(준비 셋 · 수업마다 셋, 연결한 강사에게는 2번이 `완료` · 잘 안 될 때는 접어 둔다) · 오늘 회차마다 송출 상태. **관리자 설정(구글 키) 카드는 키가 없을 때만** 뜬다 (같은 날 Alan "이미 설정한 것들은 전부 없애줘" — 위 안내 띠 · "이렇게 돼요" 카드도 그때 뺐다) | instructor |

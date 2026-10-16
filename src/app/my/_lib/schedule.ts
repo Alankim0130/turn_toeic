@@ -1,7 +1,7 @@
 import { type CalendarMark } from "@/components/my/MonthCalendar";
 import { type DayRow, type LectureRow } from "@/components/my/MonthSchedule";
 import { formatTime, formatTimeRange, todayKST, TRACK_LABEL } from "@/lib/utils";
-import { lectureTitle } from "@/lib/lecture";
+import { lectureListed, lectureTitle } from "@/lib/lecture";
 import { classHours, toClassHours, type ClassHour } from "@/lib/class-hours";
 import { initialDay } from "@/lib/class-day";
 import { studentTrackLabel, week5SectionIds } from "@/lib/week5";
@@ -97,9 +97,10 @@ export async function getMySchedule() {
   const today = todayKST();
   const nextId = sessions.find((s) => s.date >= today)?.id ?? null;
 
-  // 신청을 받는 특강은 위로 따로 모아 보여 준다 (지난 특강은 빼고). 개강 전 기수의 특강은 날짜만 보이고 여기엔 안 든다 — 신청은 개강일부터
+  // 신청을 받는 특강은 위로 따로 모아 보여 준다 — 강사가 '신청 받기' 를 누른 특강만(2026-10-16) · 내가 신청한 특강.
+  // 개강 전 기수의 특강은 날짜만 보이고 여기엔 안 든다 — 신청은 개강일부터
   const signupLectures = lectures
-    .filter((l) => l.signup && signupTerms.has(l.term_id) && (today <= l.date || mySignups.has(l.id)))
+    .filter((l) => signupTerms.has(l.term_id) && (mySignups.has(l.id) || lectureListed(l, today)))
     .sort((a, b) => a.date.localeCompare(b.date));
 
   // 월별 그룹 — 수업일과 특강을 같은 달력에 함께 보여 준다

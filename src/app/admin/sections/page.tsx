@@ -57,6 +57,8 @@ export default async function AdminSectionsPage({ searchParams }: { searchParams
       lecturerId: l.lecturer_id,
       content: l.content ?? "",
       kinds: l.kinds ?? [],
+      applied: l.applied_count ?? 0,
+      open: !!l.signup,
     })),
   };
 

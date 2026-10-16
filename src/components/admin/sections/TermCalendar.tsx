@@ -5,16 +5,20 @@ import { useRouter } from "next/navigation";
 import { saveTermSchedule, type TermPart } from "@/app/admin/sections/actions";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
-import { brushLectures, restoreLectureIds } from "@/lib/lecture";
-import { cn, LECTURE_BASES, lectureDayTags, lectureKindsOf, sortLectureKinds, type LectureKind } from "@/lib/utils";
+import { Dialog } from "@/components/ui/Dialog";
+import { restoreLectureIds } from "@/lib/lecture";
+import { cn, LECTURE_KINDS, lectureDayTags, lectureKindLabel, lectureKindRank, sortLectureKinds } from "@/lib/utils";
 import { HOLIDAY_YEAR_RANGE, hasHolidayData, holidayNamesBetween } from "@/lib/holidays";
 import { WEEKDAY_KO, coveringGrid, labelKo, shiftMonth, termKey, weekdayOf } from "./dates";
 import { downloadCalendarImage } from "./calendarImage";
 
 type Mode = "opens" | "closes" | "mwf" | "ttf" | "lecture";
 type Track = "mwf" | "ttf";
-/** id 는 이미 저장된 특강. 신청자·정원이 붙어 있으므로 저장할 때 그대로 돌려줘야 한다 */
-export type TermLecture = { id: number | null; date: string; lecturerId: number; content: string; kinds: string[] };
+/**
+ * id 는 이미 저장된 특강. 신청 받기 · 신청 방식 · 신청자가 붙어 있으므로 저장할 때 그대로 돌려줘야 한다.
+ * `applied`(신청 수) · `open`(신청 받는 중)은 보여 주기만 한다 — 신청자가 있으면 종류를 바꾸거나 뺄 수 없다 (DB 도 막는다)
+ */
+export type TermLecture = { id: number | null; date: string; lecturerId: number; content: string; kinds: string[]; applied?: number; open?: boolean };
 /** 다른 기수(월)가 이미 수업일로 쓰고 있는 날짜 — 이 달에는 쓸 수 없다 */
 export type OtherTermDate = { date: string; track: Track; year: number; month: number };
 export type TermSchedule = { opens: string | null; closes: string | null; mwf: string[]; ttf: string[]; lectures: TermLecture[] };
@@ -53,7 +57,7 @@ const MODES: { value: Mode; label: string; hint: string; on: string; off: string
   {
     value: "lecture",
     label: "특강",
-    hint: "강사 · 종류 · 내용을 정한 뒤 날짜를 누르세요. 종류를 여러 개 고르면 종류마다 특강이 하나씩 생겨요 (현강 · 녹화영상 · 시험지 수령 · PDF 수령은 따로 신청받아요). 같은 날짜를 다시 누르면 빠져요. 수업일과 같은 날도 되고, 앞뒤 달 날짜도 찍을 수 있어요.",
+    hint: "날짜를 누르면 그 날 특강을 정하는 창이 떠요 — 무슨 특강 · 강사 · 메모만 정해요. 신청 받기 · 신청 방식 · 조건 · 정원 · 안내는 특강 신청 → 특강 설정에서 해요. 수업일과 같은 날도 되고, 앞뒤 달 날짜도 찍을 수 있어요.",
     on: "border-violet-600 bg-violet-600 text-white",
     off: "border-violet-200 bg-paper text-violet-700 hover:border-violet-400",
   },
@@ -68,6 +72,15 @@ const PART_ORDER: TermPart[] = ["dates", "mwf", "ttf", "lectures"];
 const sameDates = (a: string[], b: string[]) => a.length === b.length && [...a].sort().join(",") === [...b].sort().join(",");
 const lectureKey = (ls: TermLecture[]) =>
   ls.map((l) => `${l.date}|${l.lecturerId}|${sortLectureKinds(l.kinds).join("+")}|${l.content.trim()}`).sort().join("¶");
+
+/** 저장된 특강의 신청 수 · 신청 받는 중을 다시 붙인다 — 되살린 id 의 특강도 신청자가 있으면 종류를 바꾸거나 뺄 수 없다고 보여 준다 */
+const withSavedInfo = <T extends TermLecture>(list: T[], saved: readonly TermLecture[]): T[] => {
+  const byId = new Map(saved.flatMap((s) => (s.id === null ? [] : [[s.id, s] as const])));
+  return list.map((l) => {
+    const s = l.id === null ? undefined : byId.get(l.id);
+    return s && (l.applied !== s.applied || l.open !== s.open) ? { ...l, applied: s.applied, open: s.open } : l;
+  });
+};
 
 const shortDate = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))} (${WEEKDAY_KO[weekdayOf(d)]})`;
 
@@ -116,13 +129,10 @@ export function TermCalendar({
   const [idsFrom, setIdsFrom] = useState(saved.lectures);
   if (idsFrom !== saved.lectures) {
     setIdsFrom(saved.lectures);
-    setLectures(restoreLectureIds(lectures, saved.lectures));
+    setLectures(withSavedInfo(restoreLectureIds(lectures, saved.lectures), saved.lectures));
   }
-  const [brush, setBrush] = useState<{ lecturerId: number | null; kinds: LectureKind[]; content: string }>({
-    lecturerId: lecturers[0]?.id ?? null,
-    kinds: [],
-    content: "",
-  });
+  /** 특강 팝업 — 누른 날짜 (2026-10-16 Alan "특강버튼을 클릭하고 해당 날짜를 누르면 팝업창이 나와서 기본설정을 할 수 있도록") */
+  const [lectureDay, setLectureDay] = useState<{ date: string; inMonth: boolean } | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const monthPrefix = `${termKey(year, month)}-`;
@@ -145,8 +155,8 @@ export function TermCalendar({
     return map;
   }, [lectures]);
   const sortedLectures = useMemo(
-    () => [...lectures].sort((a, b) => a.date.localeCompare(b.date) || (lecturerName.get(a.lecturerId) ?? "").localeCompare(lecturerName.get(b.lecturerId) ?? "")),
-    [lectures, lecturerName],
+    () => [...lectures].sort((a, b) => a.date.localeCompare(b.date) || lectureKindRank(a.kinds) - lectureKindRank(b.kinds) || a.key.localeCompare(b.key)),
+    [lectures],
   );
 
   const current: TermSchedule = useMemo(
@@ -250,38 +260,6 @@ export function TermCalendar({
     settle(moved, spillNote(date, inMonth));
   };
 
-  /**
-   * 특강 하나 = 종류 하나 (2026-10-15 Alan — "구분해서 받아야해"). 붓에 고른 종류마다 특강을 하나씩 만들고(`brushLectures`),
-   * 고른 종류가 그 날 · 그 강사 · 그 내용으로 이미 다 있으면 모두 뺀다.
-   */
-  const toggleLecture = (date: string, inMonth: boolean) => {
-    if (brush.lecturerId === null) {
-      warn("특강 강사 명단이 비어 있어요. 관리자에게 강사 등록을 요청해 주세요.");
-      return;
-    }
-    const content = brush.content.trim();
-    if (brush.kinds.length === 0 && content === "") {
-      warn("특강 종류를 하나 이상 고르거나 내용을 적은 뒤 날짜를 눌러 주세요.");
-      return;
-    }
-    const lecturerId = brush.lecturerId;
-    const res = brushLectures(lectures, { date, lecturerId, content, kinds: brush.kinds }, (kinds) => ({
-      key: crypto.randomUUID(),
-      id: null,
-      date,
-      lecturerId,
-      content,
-      kinds,
-    }));
-    // 뺐다가 다시 누른 특강이면 원래 id 를 되살린다 — 화면은 그대로인데 저장하면 지우고 새로 만드는 일이 없게
-    setLectures(restoreLectureIds(res.lectures, saved.lectures));
-    if (res.removed > 0) {
-      setNotice(null);
-      return;
-    }
-    settle(res.added > 1 ? `${labelKo(date)}에 특강 ${res.added}개를 만들었어요 — 종류마다 따로 신청받아요.` : "", spillNote(date, inMonth));
-  };
-
   const onDay = (date: string, inMonth: boolean) => {
     if (readOnly) return;
     if (!mode) {
@@ -296,7 +274,8 @@ export function TermCalendar({
       setCloses(closes === date ? null : date);
       setNotice(null);
     } else if (mode === "lecture") {
-      toggleLecture(date, inMonth);
+      setLectureDay({ date, inMonth });
+      setNotice(null);
     } else {
       toggleTrack(mode, date, inMonth);
     }
@@ -304,8 +283,8 @@ export function TermCalendar({
 
   const updateLecture = (key: string, patch: Partial<TermLecture>) => setLectures(lectures.map((l) => (l.key === key ? { ...l, ...patch } : l)));
 
-  /** 고른 항목만 저장한다. parts 를 비우면 전부 저장 */
-  const save = (parts: TermPart[]) => {
+  /** 고른 항목만 저장한다. parts 를 비우면 전부 저장. onDone 은 저장이 끝나면 (특강 팝업이 성공하면 닫는다) */
+  const save = (parts: TermPart[], onDone?: (ok: boolean) => void) => {
     if (readOnly || parts.length === 0) return;
     const fail = (text: string) => setResult({ kind: "warning", text });
     if (parts.includes("dates")) {
@@ -321,7 +300,7 @@ export function TermCalendar({
     if (parts.includes("lectures")) {
       const empty = sortedLectures.find((l) => l.kinds.length === 0 && !l.content.trim());
       if (empty) {
-        fail(`${labelKo(empty.date)} 특강은 종류를 고르거나 내용을 적어 주세요.`);
+        fail(`${labelKo(empty.date)} 특강은 종류를 고르거나 메모를 적어 주세요.`);
         return;
       }
     }
@@ -348,6 +327,7 @@ export function TermCalendar({
       setSavingPart(null);
       if (!res.ok) {
         setResult({ kind: "warning", text: res.error });
+        onDone?.(false);
         return;
       }
       const applied = res.sections ? ` · 이 달 반 ${res.sections}개의 수업일에 반영` : "";
@@ -359,6 +339,7 @@ export function TermCalendar({
           : `${parts.map((x) => PART_LABEL[x]).join(" · ")}만 저장했어요. 월수금 ${res.mwf}회 · 화목금 ${res.ttf}회 · 특강 ${res.lectures}개${applied}`,
       });
       router.refresh();
+      onDone?.(true);
     });
   };
 
@@ -433,61 +414,6 @@ export function TermCalendar({
         </div>
       )}
 
-      {/* 특강 설정 — 강사·종류(중복 선택)·내용을 정한 뒤 날짜를 누른다 */}
-      {!readOnly && mode === "lecture" && (
-        <div className="space-y-3 rounded-xl2 border border-violet-200 bg-violet-50/60 p-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div>
-              <span className="label">강사</span>
-              <div className="flex gap-2">
-                {lecturers.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    aria-pressed={brush.lecturerId === t.id}
-                    onClick={() => setBrush({ ...brush, lecturerId: t.id })}
-                    className={cn(
-                      "rounded-full border px-4 py-2 text-sm font-bold transition",
-                      brush.lecturerId === t.id ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-paper text-violet-700 hover:border-violet-400",
-                    )}
-                  >
-                    {t.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="min-w-0 flex-1">
-              <label htmlFor="lecture-brush-content" className="label">
-                내용 <span className="font-semibold text-slate">(선택 — 종류만 골라도 돼요)</span>
-              </label>
-              <input
-                id="lecture-brush-content"
-                value={brush.content}
-                maxLength={100}
-                onChange={(e) => setBrush({ ...brush, content: e.target.value })}
-                placeholder="예: 파트2 집중"
-                className="input !py-2"
-              />
-            </div>
-          </div>
-          <div>
-            <span className="label">
-              종류 <span className="font-semibold text-slate">(여러 개 고르면 종류마다 특강이 하나씩 생겨요)</span>
-            </span>
-            <KindPicker
-              label="특강 종류"
-              isOn={(k) => brush.kinds.includes(k as LectureKind)}
-              onPick={(k) =>
-                setBrush({
-                  ...brush,
-                  kinds: (brush.kinds.includes(k as LectureKind) ? brush.kinds.filter((x) => x !== k) : sortLectureKinds([...brush.kinds, k])) as LectureKind[],
-                })
-              }
-            />
-          </div>
-        </div>
-      )}
-
       {notice && <Alert kind={notice.kind}>{notice.text}</Alert>}
 
       {/* 달력 */}
@@ -507,7 +433,7 @@ export function TermCalendar({
               const red = wd === 0 || !!names;
               const track: Track | null = mwf.has(c.date) ? "mwf" : ttf.has(c.date) ? "ttf" : null;
               const dayLectures = lecturesByDate.get(c.date) ?? [];
-              // 달력에는 무슨 특강인가로 묶어 짧게 (`RC 현강·녹화` · 좁으면 `RC`). 종류가 없으면 "특강" — lectureDayTags
+              // 달력에는 특강마다 이름 (`RC특강` · 좁으면 `RC`). 메모만 있는 특강은 "특강" — lectureDayTags
               const dayTags = lectureDayTags(dayLectures.map((l) => l.kinds));
               const isOpens = opens === c.date;
               const isCloses = closes === c.date;
@@ -639,66 +565,38 @@ export function TermCalendar({
         )}
       </div>
 
-      {/* 특강 목록 */}
+      {/* 특강 목록 — 요약만. 고치기는 그 날짜의 팝업에서, 신청 설정은 특강 신청 → 특강 설정에서 (2026-10-16 Alan "간략하게") */}
       {lectures.length > 0 && (
         <section aria-labelledby="lecture-list-title" className="rounded-xl2 border border-violet-200">
-          <h3 id="lecture-list-title" className="border-b border-violet-100 bg-violet-50/60 px-4 py-2.5 text-sm font-black text-ink">
-            특강 {lectures.length}개 <span className="font-semibold text-slate">— 강사·종류·내용은 여기서 바로 고칠 수 있어요. 신청 조건 · 안내는 특강 신청 화면에서 정해요</span>
+          <h3 id="lecture-list-title" className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-violet-100 bg-violet-50/60 px-4 py-2.5 text-sm font-black text-ink">
+            <span>
+              특강 {lectures.length}개 <span className="font-semibold text-slate">— 줄을 누르면 그 날 특강을 고쳐요</span>
+            </span>
+            <a href={`/admin/lectures/settings?term=${termKey(year, month)}`} className="text-xs font-bold text-violet-700 underline decoration-violet-200 underline-offset-2">
+              신청 받기 · 방식 · 조건은 특강 설정에서
+            </a>
           </h3>
           <ul className="divide-y divide-line">
-            {sortedLectures.map((l) => {
-              const blank = l.kinds.length === 0 && !l.content.trim();
-              return (
-                <li key={l.key} className="space-y-2 px-4 py-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="w-28 shrink-0 text-sm font-black text-violet-700">{labelKo(l.date)}</span>
-                    <div className="flex shrink-0 gap-1.5" role="group" aria-label={`${labelKo(l.date)} 특강 강사`}>
-                      {lecturers.map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          disabled={readOnly}
-                          aria-pressed={l.lecturerId === t.id}
-                          onClick={() => updateLecture(l.key, { lecturerId: t.id })}
-                          className={cn(
-                            "rounded-full border px-3 py-1.5 text-xs font-bold transition",
-                            l.lecturerId === t.id ? "border-violet-600 bg-violet-600 text-white" : "border-line bg-paper text-slate hover:border-violet-300",
-                          )}
-                        >
-                          {t.name}
-                        </button>
-                      ))}
-                    </div>
-                    {!readOnly && (
-                      <button
-                        type="button"
-                        onClick={() => setLectures(lectures.filter((x) => x.key !== l.key))}
-                        className="btn-ghost ml-auto shrink-0 !px-3 !py-1.5 text-xs"
-                      >
-                        삭제
-                      </button>
-                    )}
-                  </div>
-                  {/* 특강 하나에 종류 하나 — 다른 종류를 누르면 바뀌고, 고른 것을 다시 누르면 비운다(내용만 있는 특강) */}
-                  <KindPicker
-                    small
-                    label={`${labelKo(l.date)} 특강 종류`}
-                    isOn={(k) => l.kinds.includes(k)}
-                    onPick={(k) => !readOnly && updateLecture(l.key, { kinds: l.kinds.includes(k) ? [] : [k] })}
-                  />
-                  <input
-                    aria-label={`${labelKo(l.date)} 특강 내용`}
-                    value={l.content}
-                    maxLength={100}
-                    disabled={readOnly}
-                    onChange={(e) => updateLecture(l.key, { content: e.target.value })}
-                    placeholder="내용 (선택) — 종류만 골라도 됩니다"
-                    className={cn("input w-full !py-2 text-sm", blank && "border-amber-300")}
-                  />
-                  {blank && <p className="text-xs font-bold text-amber-600">종류를 고르거나 내용을 적어 주세요.</p>}
-                </li>
-              );
-            })}
+            {sortedLectures.map((l) => (
+              <li key={l.key}>
+                <button
+                  type="button"
+                  disabled={readOnly}
+                  onClick={() => setLectureDay({ date: l.date, inMonth: l.date.startsWith(monthPrefix) })}
+                  className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-left text-sm transition hover:bg-violet-50/50"
+                >
+                  <span className="w-28 shrink-0 font-black text-violet-700">{labelKo(l.date)}</span>
+                  <span className="font-black text-ink">{l.kinds[0] ? lectureKindLabel(l.kinds[0]) : "특강"}</span>
+                  <span className="text-slate">{lecturerName.get(l.lecturerId) ?? ""}</span>
+                  {l.content.trim() && <span className="min-w-0 truncate text-slate">· {l.content.trim()}</span>}
+                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                    {l.id === null && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">저장 전</span>}
+                    {l.open && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand-700">신청 받는 중</span>}
+                    {(l.applied ?? 0) > 0 && <span className="rounded-full bg-line px-2 py-0.5 text-[11px] font-bold text-slate">신청 {l.applied}명</span>}
+                  </span>
+                </button>
+              </li>
+            ))}
           </ul>
         </section>
       )}
@@ -784,47 +682,245 @@ export function TermCalendar({
       {sectionCount > 0 && !readOnly && (
         <p className="text-xs text-mist">저장하면 이 달 반 {sectionCount}개의 수업일·개강일·종강일이 달력대로 바뀌고, 수강생 시간표와 다시보기 회차도 함께 바뀝니다.</p>
       )}
+
+      {lectureDay && (
+        <LectureDayDialog
+          date={lectureDay.date}
+          spill={spillNote(lectureDay.date, lectureDay.inMonth)}
+          lectures={sortedLectures.filter((l) => l.date === lectureDay.date)}
+          lecturers={lecturers}
+          dirty={partDirty.lectures}
+          saving={saving}
+          result={savingPart === null ? result : null}
+          onClose={() => setLectureDay(null)}
+          onAdd={(kinds, lecturerId, content) => {
+            const made: Lecture[] = (kinds.length > 0 ? kinds.map((k) => [k]) : [[]]).map((ks) => ({
+              key: crypto.randomUUID(),
+              id: null,
+              date: lectureDay.date,
+              lecturerId,
+              content,
+              kinds: ks,
+            }));
+            // 뺐다가 다시 더한 특강이면 원래 id 를 되살린다 — 화면은 그대로인데 저장하면 지우고 새로 만드는 일이 없게
+            setLectures(withSavedInfo(restoreLectureIds([...lectures, ...made], saved.lectures), saved.lectures));
+            setResult(null);
+          }}
+          onChange={(key, patch) => {
+            updateLecture(key, patch);
+            setResult(null);
+          }}
+          onRemove={(key) => {
+            setLectures(lectures.filter((x) => x.key !== key));
+            setResult(null);
+          }}
+          onSave={() => save(["lectures"], (ok) => ok && setLectureDay(null))}
+        />
+      )}
     </div>
   );
 }
 
-function KindChip({ label, ariaLabel, on, onClick, small = false }: { label: string; ariaLabel?: string; on: boolean; onClick: () => void; small?: boolean }) {
+/**
+ * **그 날 특강 팝업** (2026-10-16 Alan — "일정표에서 수업일정을 만들때 특강신청에 관한 디테일을 전부다 기입하지말고, 간략하게 기입하도록 해주고,
+ * 특강버튼을 클릭하고 해당 날짜를 누르면 팝업창이 나와서 기본설정을 할 수 있도록 해줘. 특강설정은 특강신청에서 다 할 수 있도록").
+ * 정하는 것은 **무슨 특강(RC특강 · LC특강 · 1차 · 2차 모의고사 — 비우면 메모만) · 강사 · 메모** 셋뿐이다. 신청 받기 · 방식 · 조건 · 정원 · 안내는 특강 설정에서.
+ * - 그 날 있는 특강마다 종류 · 강사 · 메모를 고치고 뺀다. **신청자가 있으면 종류를 바꾸거나 뺄 수 없다** (DB 도 막는다 — 학생은 그 특강을 신청한 것이다).
+ * - 더하기: 종류를 여러 개 고르면 종류마다 특강이 하나씩 생긴다 (같은 날 RC특강 + 2차 모의고사). 그 날 이미 있는 종류는 더하지 않는다.
+ * - `특강 저장` 은 아래 따로 저장의 특강 저장과 같다 — 성공하면 팝업을 닫는다.
+ */
+function LectureDayDialog({
+  date,
+  spill,
+  lectures,
+  lecturers,
+  dirty,
+  saving,
+  result,
+  onClose,
+  onAdd,
+  onChange,
+  onRemove,
+  onSave,
+}: {
+  date: string;
+  spill: string;
+  lectures: (TermLecture & { key: string })[];
+  lecturers: { id: number; name: string }[];
+  dirty: boolean;
+  saving: boolean;
+  result: Notice | null;
+  onClose: () => void;
+  onAdd: (kinds: string[], lecturerId: number, content: string) => void;
+  onChange: (key: string, patch: Partial<TermLecture>) => void;
+  onRemove: (key: string) => void;
+  onSave: () => void;
+}) {
+  const [kinds, setKinds] = useState<string[]>([]);
+  const [lecturerId, setLecturerId] = useState<number | null>(lecturers[0]?.id ?? null);
+  const [content, setContent] = useState("");
+  const [warning, setWarning] = useState<string | null>(null);
+  const taken = new Set(lectures.flatMap((l) => l.kinds));
+
+  const add = () => {
+    const memo = content.trim();
+    if (lecturerId === null) return setWarning("특강 강사 명단이 비어 있어요. 관리자에게 강사 등록을 요청해 주세요.");
+    if (kinds.length === 0 && !memo) return setWarning("무슨 특강인지 고르거나 메모를 적어 주세요.");
+    const dup = kinds.filter((k) => taken.has(k));
+    if (dup.length > 0) return setWarning(`${dup.map(lectureKindLabel).join(" · ")}은 이 날 이미 있어요. 위에서 고쳐 주세요.`);
+    onAdd(sortLectureKinds(kinds), lecturerId, memo);
+    setKinds([]);
+    setContent("");
+    setWarning(null);
+  };
+
   return (
-    <button
-      type="button"
-      aria-pressed={on}
-      aria-label={ariaLabel}
-      onClick={onClick}
-      className={cn(
-        "rounded-full border font-bold transition",
-        small ? "px-2.5 py-1 text-xs" : "px-4 py-2 text-sm",
-        on ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-paper text-violet-700 hover:border-violet-400",
-      )}
-    >
-      {label}
-    </button>
+    <Dialog open title={`${labelKo(date)} 특강`} onClose={onClose} wide dismissible={false}>
+      <div className="space-y-4">
+        <p className="text-xs text-slate">
+          무슨 특강 · 강사 · 메모만 정해요. 신청 받기 · 신청 방식 · 조건 · 정원 · 안내는 특강 신청 → <b className="text-ink">특강 설정</b>에서 해요.
+          {spill && <span className="mt-1 block text-violet-700">{spill}</span>}
+        </p>
+
+        {lectures.length > 0 && (
+          <ul className="space-y-2">
+            {lectures.map((l) => {
+              const applied = l.applied ?? 0;
+              const locked = applied > 0;
+              const blank = l.kinds.length === 0 && !l.content.trim();
+              return (
+                <li key={l.key} className="space-y-2 rounded-xl border border-violet-200 bg-violet-50/40 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-black text-ink">{l.kinds[0] ? lectureKindLabel(l.kinds[0]) : "메모만 있는 특강"}</span>
+                    {l.id === null && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">저장 전</span>}
+                    {l.open && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand-700">신청 받는 중</span>}
+                    {locked && <span className="rounded-full bg-line px-2 py-0.5 text-[11px] font-bold text-slate">신청 {applied}명</span>}
+                    <button
+                      type="button"
+                      disabled={locked}
+                      onClick={() => onRemove(l.key)}
+                      className="btn-ghost ml-auto !px-3 !py-1.5 text-xs disabled:opacity-40"
+                      title={locked ? "신청자가 있는 특강은 뺄 수 없어요" : undefined}
+                    >
+                      빼기
+                    </button>
+                  </div>
+                  <KindChips
+                    label={`${labelKo(date)} 특강 종류`}
+                    selected={l.kinds}
+                    disabled={locked}
+                    onPick={(k) => onChange(l.key, { kinds: l.kinds.includes(k) ? [] : [k] })}
+                  />
+                  {locked && <p className="text-xs font-semibold text-slate">신청자가 있어 종류를 바꾸거나 뺄 수 없어요. 강사 · 메모는 고칠 수 있어요.</p>}
+                  <LecturerChips lecturers={lecturers} selected={l.lecturerId} onPick={(id) => onChange(l.key, { lecturerId: id })} label={`${labelKo(date)} 특강 강사`} />
+                  <input
+                    aria-label={`${labelKo(date)} 특강 메모`}
+                    value={l.content}
+                    maxLength={100}
+                    onChange={(e) => onChange(l.key, { content: e.target.value })}
+                    placeholder="메모 (선택) — 예: 오후 2시"
+                    className={cn("input w-full !py-2 text-sm", blank && "border-amber-300")}
+                  />
+                  {blank && <p className="text-xs font-bold text-amber-600">종류를 고르거나 메모를 적어 주세요.</p>}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <div className="space-y-2 rounded-xl border border-line bg-paper p-3">
+          <p className="text-sm font-black text-ink">특강 더하기</p>
+          <KindChips
+            label="더할 특강 종류"
+            selected={kinds}
+            onPick={(k) => setKinds(kinds.includes(k) ? kinds.filter((x) => x !== k) : sortLectureKinds([...kinds, k]))}
+          />
+          <p className="text-xs text-slate">여러 개 고르면 종류마다 특강이 하나씩 생겨요. 고르지 않고 메모만 적어도 돼요.</p>
+          <LecturerChips lecturers={lecturers} selected={lecturerId} onPick={setLecturerId} label="더할 특강 강사" />
+          <input
+            aria-label="더할 특강 메모"
+            value={content}
+            maxLength={100}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="메모 (선택) — 예: 오후 2시"
+            className="input w-full !py-2 text-sm"
+          />
+          <div className="flex justify-end">
+            <button type="button" onClick={add} className="btn-secondary !w-auto !px-4 !py-1.5 text-xs">
+              더하기
+            </button>
+          </div>
+          {warning && <p className="text-xs font-semibold text-amber-700">{warning}</p>}
+        </div>
+
+        {result && <Alert kind={result.kind}>{result.text}</Alert>}
+
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {dirty && <span className="mr-auto text-xs font-bold text-amber-600">저장하지 않은 특강 변경이 있어요</span>}
+          <button type="button" onClick={onClose} className="btn-ghost !px-4 !py-2 text-sm">
+            닫기
+          </button>
+          <button type="button" onClick={onSave} disabled={saving || !dirty} className="btn-primary !w-auto !px-5 !py-2 text-sm">
+            {saving ? "저장 중…" : "특강 저장"}
+          </button>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
-/**
- * 특강 종류 고르기 — 무슨 특강인가(RC특강 · LC특강 · 1차 · 2차 모의고사)마다 한 줄 — 특강은 두 칸(현강신청 · 녹화영상신청), 모의고사는 세 칸(현강신청 · 시험지 수령 신청 · PDF 수령 신청)
- * (2026-10-15 Alan 이 적은 여덟 가지 + 2026-10-16 모의고사 PDF 수령).
- * 붓은 여러 개(종류마다 특강이 하나씩), 특강 목록의 한 줄은 하나만 — 누르는 쪽이 정한다.
- * 붓(큰 칸)은 한 줄에 하나씩 — 모의고사 세 칸이 반쪽 폭에 다 안 들어가 셋째 칸이 이름 아래로 떨어졌다. 특강 목록(작은 칸)은 넓은 화면에서 두 줄씩.
- */
-function KindPicker({ label, isOn, onPick, small = false }: { label: string; isOn: (kind: string) => boolean; onPick: (kind: string) => void; small?: boolean }) {
+/** 무슨 특강 고르기 — RC특강 · LC특강 · 1차 모의고사 · 2차 모의고사 (2026-10-16 — 신청 방식은 고르지 않는다) */
+function KindChips({ label, selected, onPick, disabled = false }: { label: string; selected: readonly string[]; onPick: (kind: string) => void; disabled?: boolean }) {
   return (
-    <div role="group" aria-label={label} className={cn("grid gap-1.5", small && "lg:grid-cols-2")}>
-      {LECTURE_BASES.map((b) => (
-        <div key={b.value} className="flex min-w-0 flex-wrap items-center gap-1.5 sm:flex-nowrap sm:items-baseline">
-          {/* 휴대폰은 이름이 제 줄, 칸들이 그 아래 — 이름 옆에 두면 둘째 칸부터 다음 줄로 떨어진다. 넓으면 이름 옆에 칸 묶음, 넘치면 칸끼리 줄을 바꾼다 */}
-          <span className={cn("shrink-0 font-black text-violet-800", small ? "w-full text-xs sm:w-20" : "w-full text-sm sm:w-24")}>{b.label}</span>
-          <span className="flex min-w-0 flex-wrap gap-1.5">
-            {lectureKindsOf(b.value).map((k) => (
-              <KindChip key={k.value} small={small} label={k.wayLabel} ariaLabel={k.label} on={isOn(k.value)} onClick={() => onPick(k.value)} />
-            ))}
-          </span>
-        </div>
+    <div role="group" aria-label={label} className="flex flex-wrap gap-1.5">
+      {LECTURE_KINDS.map((k) => {
+        const on = selected.includes(k.value);
+        return (
+          <button
+            key={k.value}
+            type="button"
+            aria-pressed={on}
+            disabled={disabled}
+            onClick={() => onPick(k.value)}
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-60",
+              on ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-paper text-violet-700 hover:border-violet-400",
+            )}
+          >
+            {k.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function LecturerChips({
+  lecturers,
+  selected,
+  onPick,
+  label,
+}: {
+  lecturers: { id: number; name: string }[];
+  selected: number | null;
+  onPick: (id: number) => void;
+  label: string;
+}) {
+  return (
+    <div role="group" aria-label={label} className="flex flex-wrap gap-1.5">
+      {lecturers.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          aria-pressed={selected === t.id}
+          onClick={() => onPick(t.id)}
+          className={cn(
+            "rounded-full border px-3 py-1.5 text-xs font-bold transition",
+            selected === t.id ? "border-violet-600 bg-violet-600 text-white" : "border-line bg-paper text-slate hover:border-violet-300",
+          )}
+        >
+          {t.name}
+        </button>
       ))}
     </div>
   );

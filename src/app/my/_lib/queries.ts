@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionUser } from "@/lib/auth";
-import { todayKST } from "@/lib/utils";
+import { sortByWay, todayKST } from "@/lib/utils";
 import { week5SectionIds } from "@/lib/week5";
 import { materialVisibleTo } from "@/lib/study";
 import type { EnrollSection } from "@/lib/enroll-options";
@@ -10,7 +10,7 @@ import { isMaterialSubject, materialAccess, materialLinks, sortMaterialFiles, ty
 import { cellKey, cellLevels, isRoundOpen, isRoundSet, roundCells, roundDates, roundKey } from "@/lib/class-rounds";
 import { clipToOwnRange } from "@/lib/two-week";
 import { noticeAttachLabel, noticeVisible, scopeOf } from "@/lib/class-notices";
-import { sectionSubjects } from "@/lib/lecture";
+import { sectionSubjects, type LectureWayRow } from "@/lib/lecture";
 import type { Subject } from "@/lib/instructor-subject";
 
 /**
@@ -189,18 +189,18 @@ export type MySession = Awaited<ReturnType<typeof getMySessions>>[number];
  */
 export async function getMyLectures(opts: { upcoming?: boolean } = {}) {
   const supabase = await createClient();
-  // 신청 조건(signup_condition) · 안내(notice)는 마이그레이션 20261015130000 에서 생겼다 — 배포와 마이그레이션 사이에 못 읽으면 두 칸 없이 읽는다
-  // (그대로 비우면 특강이 하나도 없는 것처럼 보인다). 조건은 그때 조건 없음으로 보이고 DB 트리거가 막는다
-  const cols = "id, term_id, date, content, kinds, signup, capacity, signup_opens_at, applied_count, lecturer:lecturers(name), term:terms(year, month, enrollment_opens_at)";
+  // 신청 방식(special_lecture_ways)은 마이그레이션 20261016120000 에서 생겼다 — 못 읽으면(마이그레이션이 실패한 배포) 방식 없이 읽는다.
+  // 그러면 특강 날짜는 내 시간표에 그대로 서고, 받는 방식이 없어 특강 신청 화면에는 서지 않는다 (신청도 DB 가 막는다)
+  const cols = "id, term_id, date, content, kinds, signup, applied_count, notice, lecturer:lecturers(name), term:terms(year, month, enrollment_opens_at)";
   const read = async () => {
     const full = await supabase
       .from("special_lectures")
-      .select(`${cols}, signup_condition, notice`)
+      .select(`${cols}, ways:special_lecture_ways(way, enabled, capacity, signup_condition, applied_count)`)
       .order("date", { ascending: true })
       .order("id", { ascending: true });
-    if (!full.error) return full.data ?? [];
+    if (!full.error) return (full.data ?? []).map((l) => ({ ...l, ways: sortByWay(l.ways ?? []) }));
     const { data } = await supabase.from("special_lectures").select(cols).order("date", { ascending: true }).order("id", { ascending: true });
-    return (data ?? []).map((l) => ({ ...l, signup_condition: "none", notice: null as string | null }));
+    return (data ?? []).map((l) => ({ ...l, ways: [] as LectureWayRow[] }));
   };
   const [data, orders] = await Promise.all([read(), getMyOrders()]);
   const { signupTerms, opensOn } = await getMyStudyEligibility(orders);
@@ -209,24 +209,29 @@ export async function getMyLectures(opts: { upcoming?: boolean } = {}) {
 }
 export type MyLecture = Awaited<ReturnType<typeof getMyLectures>>[number];
 
-/** 내가 신청한 특강 한 건 — 신청 조건으로 올린 것 (후기 링크 · 인스타그램 팔로우). 조건이 없던 특강은 둘 다 null */
-export type MyLectureSignup = { reviewUrl: string | null; snsFollow: string | null };
+/** 내가 신청한 특강 한 건 — 신청 방식 · 그 방식의 조건으로 올린 것 (후기 링크 · 인스타그램 팔로우). 조건이 없던 방식은 둘 다 null */
+export type MyLectureSignup = { way: string; reviewUrl: string | null; snsFollow: string | null };
 
 /**
- * 내가 신청한 특강 — 특강 id → 올린 YBM 수강후기 링크(review 조건, 2026-10-08) · 인스타그램 새로 · 기존 팔로우(sns 조건, 2026-10-15).
- * 두 칸은 마이그레이션 20261008100000 · 20261015130000 에서 생겼다 — 배포와 마이그레이션 사이에 못 읽으면 한 칸씩 덜 읽는다
- * (그대로 비우면 신청한 특강이 전부 "신청 전" 으로 보인다).
+ * 내가 신청한 특강 — 특강 id → 신청(방식 · 올린 YBM 수강후기 링크 · 인스타그램 새로 · 기존 팔로우).
+ * **한 특강에 한 방식**이지만(2026-10-16 — 새 신청은 DB 가 막는다) 그 전에 방식 둘을 따로 신청해 둔 것이 남아 있을 수 있어 목록이다 (방식 순서).
  */
 export async function getMyLectureSignups() {
   const user = await getSessionUser();
-  if (!user) return new Map<number, MyLectureSignup>();
+  const out = new Map<number, MyLectureSignup[]>();
+  if (!user) return out;
   const supabase = await createClient();
-  const full = await supabase.from("lecture_signups").select("lecture_id, review_url, sns_follow").eq("user_id", user.id);
-  if (!full.error) return new Map<number, MyLectureSignup>((full.data ?? []).map((r) => [r.lecture_id, { reviewUrl: r.review_url, snsFollow: r.sns_follow }]));
-  const mid = await supabase.from("lecture_signups").select("lecture_id, review_url").eq("user_id", user.id);
-  if (!mid.error) return new Map<number, MyLectureSignup>((mid.data ?? []).map((r) => [r.lecture_id, { reviewUrl: r.review_url, snsFollow: null }]));
-  const { data } = await supabase.from("lecture_signups").select("lecture_id").eq("user_id", user.id);
-  return new Map<number, MyLectureSignup>((data ?? []).map((r) => [r.lecture_id, { reviewUrl: null, snsFollow: null }]));
+  const full = await supabase.from("lecture_signups").select("lecture_id, way, review_url, sns_follow").eq("user_id", user.id);
+  // 방식 칸을 못 읽으면(마이그레이션 전) 현장으로 본다
+  const rows = full.error
+    ? ((await supabase.from("lecture_signups").select("lecture_id, review_url, sns_follow").eq("user_id", user.id)).data ?? []).map((r) => ({ ...r, way: "onsite" }))
+    : (full.data ?? []);
+  for (const r of sortByWay(rows)) {
+    const list = out.get(r.lecture_id) ?? [];
+    list.push({ way: r.way, reviewUrl: r.review_url, snsFollow: r.sns_follow });
+    out.set(r.lecture_id, list);
+  }
+  return out;
 }
 
 /** 내가 신청한 특강 id 집합 */

@@ -57,7 +57,7 @@ export async function loadTermData(supabase: Client, y: number, m: number, opts:
         supabase.from("term_class_dates").select("date, track").eq("term_id", term.id).order("date"),
         supabase
           .from("special_lectures")
-          .select("id, date, lecturer_id, content, kinds, signup, capacity, signup_opens_at, applied_count")
+          .select("id, date, lecturer_id, content, kinds, signup, applied_count")
           .eq("term_id", term.id)
           .order("date")
           .order("id"),

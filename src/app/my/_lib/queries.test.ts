@@ -52,6 +52,8 @@ const WIDE_OPEN_TABLES = [
   "section_live_links",
   "study_materials",
   "special_lectures",
+  // 특강의 신청 방식 (2026-10-16 — 현장 · 수업영상 받기 · 시험지 수령 · PDF 수령) — 특강이 보이는 사람에게 열리므로 강사 · 관리자에게는 전부다. 학생 화면은 특강과 함께 임베드로 읽는다
+  "special_lecture_ways",
   // 내 과정 칸 · 수업일로 열리는 것 — 학생은 내 반의 레벨 × 과목 × 과정, 음원 · 자료는 그 회차 수업일부터(private.my_round_cells · my_open_rounds), 강사 · 관리자는 전부 (2026-10-03 · 10-05)
   "lc_books",
   "lc_audio_tracks",

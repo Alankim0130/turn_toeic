@@ -135,7 +135,7 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
     date: String(l?.date ?? ""),
     lecturer_id: Number(l?.lecturerId),
     content: String(l?.content ?? "").trim(),
-    // 정해진 종류(열 가지 — RC · LC특강 현강 · 녹화영상, 1 · 2차 모의고사 현강 · 시험지 수령 · PDF 수령)만, 정해진 순서로, 중복 없이
+    // 무슨 특강(넷 — RC특강 · LC특강 · 1차 · 2차 모의고사)만, 정해진 순서로, 중복 없이 (2026-10-16 — 현장 · 수업영상 · 시험지 · PDF 는 신청 방식이라 특강 설정에서)
     kinds: sortLectureKinds((Array.isArray(l?.kinds) ? l.kinds : []).map(String).filter(isLectureKind)),
   }));
   const badLecture = lectures.find(
@@ -148,10 +148,10 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
       // 종류를 고르거나 내용을 적거나, 둘 중 하나는 있어야 한다
       (l.kinds.length === 0 && l.content.length === 0),
   );
-  // 특강 하나 = 종류 하나 (2026-10-15 Alan — "구분해서 받아야해") — 달력 화면이 종류마다 특강을 따로 만든다. DB 도 막는다
+  // 특강 하나 = 무슨 특강 하나 (2026-10-16) — 달력 팝업이 고른 종류마다 특강을 따로 만든다. DB 도 막는다
   const multi = lectures.find((l) => l.kinds.length > 1);
   if (multi) {
-    return { ok: false, error: `${isYmd(multi.date) ? labelKo(multi.date) : "한"} 특강에 종류가 여러 개예요. 특강 하나에는 종류를 하나만 — 종류마다 특강을 따로 만들어 주세요.` };
+    return { ok: false, error: `${isYmd(multi.date) ? labelKo(multi.date) : "한"} 특강에 종류가 여러 개예요. 특강 하나에는 종류를 하나만 — 종류마다 특강을 따로 더해 주세요.` };
   }
   if (badLecture) {
     if (isYmd(badLecture.date) && !inWindow(badLecture.date)) return { ok: false, error: RPC_ERROR.class_date_out_of_range };
@@ -165,7 +165,7 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
 
   const supabase = await createClient();
   // 같은 특강이 id 없이 오면(달력에서 뺐다가 다시 누름 · 막 만든 특강을 다시 저장) 저장된 그 특강의 id 를 되살린다 — 그대로 보내면 DB 가
-  // 원래 특강을 지우고 새로 만들어 신청 받기 · 정원 · 신청 조건 · 안내가 처음으로 돌아간다 (2026-10-16 점검, `restoreLectureIds`).
+  // 원래 특강을 지우고 새로 만들어 신청 받기 · 신청 방식 · 정원 · 신청 조건 · 안내가 처음으로 돌아간다 (2026-10-16 점검, `restoreLectureIds`).
   // 못 읽으면 예전처럼 그대로 보낸다
   let toSave = lectures;
   if (parts.includes("lectures") && lectures.some((l) => l.id === null)) {
@@ -200,6 +200,10 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
     }
     if (error.message === "lecture_signup_block") {
       return { ok: false, error: `신청자가 있는 특강은 뺄 수 없어요: ${listDates(error.details)}. 먼저 신청자를 정리해 주세요.` };
+    }
+    // 신청자가 있는 특강의 무슨 특강(종류)을 바꾸면 학생이 신청한 것이 달라진다 (2026-10-16, private.sync_lecture_ways)
+    if (error.message === "lecture_kind_signup_block") {
+      return { ok: false, error: `신청자가 있는 특강은 종류를 바꿀 수 없어요: ${listDates(error.details)}. 다른 종류가 필요하면 특강을 새로 더해 주세요.` };
     }
     if (error.message === "date_in_other_term") {
       return { ok: false, error: `${listOtherTermDates(error.details)} 한 날짜는 한 기수(월)의 수업일로만 쓸 수 있어요. 그 달 달력에서 먼저 빼 주세요.` };

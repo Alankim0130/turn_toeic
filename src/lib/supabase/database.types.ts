@@ -1304,6 +1304,7 @@ export type Database = {
           review_url: string | null
           sns_follow: string | null
           user_id: string
+          way: string
         }
         Insert: {
           created_at?: string
@@ -1312,6 +1313,7 @@ export type Database = {
           review_url?: string | null
           sns_follow?: string | null
           user_id: string
+          way?: string
         }
         Update: {
           created_at?: string
@@ -1320,6 +1322,7 @@ export type Database = {
           review_url?: string | null
           sns_follow?: string | null
           user_id?: string
+          way?: string
         }
         Relationships: [
           {
@@ -1328,6 +1331,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "special_lectures"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lecture_signups_way_fkey"
+            columns: ["lecture_id", "way"]
+            isOneToOne: false
+            referencedRelation: "special_lecture_ways"
+            referencedColumns: ["lecture_id", "way"]
           },
           {
             foreignKeyName: "lecture_signups_user_id_fkey"
@@ -1787,6 +1797,41 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "section_headcounts"
             referencedColumns: ["section_id"]
+          },
+        ]
+      }
+      special_lecture_ways: {
+        Row: {
+          applied_count: number
+          capacity: number | null
+          enabled: boolean
+          lecture_id: number
+          signup_condition: string
+          way: string
+        }
+        Insert: {
+          applied_count?: number
+          capacity?: number | null
+          enabled?: boolean
+          lecture_id: number
+          signup_condition?: string
+          way: string
+        }
+        Update: {
+          applied_count?: number
+          capacity?: number | null
+          enabled?: boolean
+          lecture_id?: number
+          signup_condition?: string
+          way?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "special_lecture_ways_lecture_id_fkey"
+            columns: ["lecture_id"]
+            isOneToOne: false
+            referencedRelation: "special_lectures"
+            referencedColumns: ["id"]
           },
         ]
       }
