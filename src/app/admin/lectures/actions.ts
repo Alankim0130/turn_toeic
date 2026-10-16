@@ -19,7 +19,7 @@ function revalidateLectures() {
 }
 
 /**
- * **신청 받기 · 신청 마감** — 누르는 순간 학생 특강 신청 화면에 서거나 빠진다 (2026-10-16 Alan — "강사가 직접 '신청받기' 버튼을 누르면
+ * **신청 받기 · 신청 받기 취소** — 누르는 순간 학생 특강 신청 화면에 서거나 빠진다 (2026-10-16 Alan — "강사가 직접 '신청받기' 버튼을 누르면
  * 바로 오픈되면서 신청을 받을 수 있도록"). 7일 전 자동 열림은 없앴다. 지난 특강은 열지 않고, 받는 방식이 하나도 없으면 열지 않는다
  * (학생 화면에 고를 것이 없는 특강이 선다). 로그인한 세션으로 고친다 (정책 "special_lectures: 스태프 수정").
  */
@@ -41,7 +41,7 @@ export async function setLectureOpen(lectureId: number, open: boolean): Promise<
   if (error) return { error: "바꾸지 못했어요. 잠시 후 다시 시도해 주세요." };
   if (!data?.length) return { error: "수정 권한이 없거나 특강을 찾을 수 없어요." };
   revalidateLectures();
-  return { ok: true, message: open ? "신청을 열었어요. 학생 특강 신청 화면에 바로 보여요." : "신청을 마감했어요. 학생 화면에서 빠졌어요." };
+  return { ok: true, message: open ? "신청을 열었어요. 학생 특강 신청 화면에 바로 보여요." : "신청 받기를 취소했어요. 학생 특강 신청 화면에서 빠졌어요." };
 }
 
 /** 특강 설정의 저장 — 화면이 보낸 값 (폼은 직접 보낸다 — `LectureSettingsForm` 머리말) */
@@ -57,7 +57,7 @@ export type LectureSettingsInput = {
  * 무슨 특강 · 날짜 · 강사 · 메모는 반 편성 달력에서 정한다. 신청 받기는 따로 누르는 버튼이다 (`setLectureOpen`).
  * - 방식 줄은 DB 트리거가 만든다 — 여기서는 받기 · 조건 · 정원만 고친다 (칸 단위 grant).
  * - 정원은 비우면 제한 없음, 이미 신청한 수보다 적게 줄일 수 없다 (DB check 도 같다).
- * - 신청 받는 중인 특강에서 방식을 모두 끄면 학생 화면에 고를 것이 없어진다 — 막는다 (먼저 신청을 마감한다).
+ * - 신청 받는 중인 특강에서 방식을 모두 끄면 학생 화면에 고를 것이 없어진다 — 막는다 (먼저 신청 받기를 취소한다).
  * - 안내는 수업자료실 안내와 같은 꺾쇠 태그 글이고 상한도 같다(5만 자 — `noteTooLong`). 보이는 글자가 없으면 비운다.
  * - 조건을 바꿔도 **이미 들어온 신청은 다시 묻지 않는다** (트리거는 넣을 때만 본다) — 화면이 그렇게 적는다.
  */
@@ -93,7 +93,7 @@ export async function updateLectureSettings(input: LectureSettingsInput): Promis
     patches.push({ way: w.way, enabled: w.enabled === true, capacity, signup_condition: w.condition });
   }
   if (lecture.signup && !patches.some((p) => p.enabled)) {
-    return { error: "신청 받는 중인 특강이에요. 방식을 모두 끄려면 먼저 '신청 마감' 을 눌러 주세요." };
+    return { error: "신청 받는 중인 특강이에요. 방식을 모두 끄려면 먼저 '신청 받기 취소' 를 눌러 주세요." };
   }
 
   for (const p of patches) {
@@ -120,7 +120,7 @@ export async function updateLectureSettings(input: LectureSettingsInput): Promis
   return { ok: true, message: "특강 설정을 저장했어요." };
 }
 
-/** 스태프가 학생 대신 신청을 취소한다 (신청 마감 뒤에도 가능) */
+/** 스태프가 학생 대신 신청을 취소한다 (신청 받기를 취소한 뒤에도 · 지난 특강도) */
 export async function cancelLectureSignupByStaff(signupId: number): Promise<{ ok?: boolean; error?: string }> {
   await requireStaff();
   if (!Number.isInteger(signupId)) return { error: "잘못된 요청이에요." };

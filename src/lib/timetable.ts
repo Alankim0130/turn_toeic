@@ -57,3 +57,39 @@ export function courseShortName(name: string): string {
   const short = name.trim().replace(/^스파르타\s*/, "").replace(/^\d{3,4}\+?\s*/, "").trim();
   return short || name.trim();
 }
+
+/** 레벨 이름표의 재료 — `courses` 의 세 칸 */
+export type LevelCourse = { name: string; program?: string | null; target_score?: number | null };
+
+/**
+ * 학생 레벨 이름표 — 점수보장반 `650`, 속성반 `650 중급속성`, 2주완성 `850 2주완성`
+ * (2026-10-16 Alan — "특강 신청자 목록중에서 지금 이름과 전화번호가 나와있는데, 전화번호말고, 학생 본인의 레벨이 나오도록해줘").
+ * 레벨 숫자는 `courses.target_score`, 과정 이름은 `courseShortName` — 코드에 레벨을 적지 않는다 (작업 원칙 4).
+ * 속성반 · 2주완성은 같은 숫자의 점수보장반과 다른 수업이라 과정 이름을 붙인다 (관리자 시간표 카드 제목과 같은 모양).
+ * 레벨을 모르면 강좌 이름 그대로 — 지어내지 않는다.
+ */
+export function courseLevelLabel(c: LevelCourse): string {
+  const name = c.name.trim();
+  if (c.target_score == null) return name;
+  const program = c.program ?? "score";
+  if (program === "score") return String(c.target_score);
+  const short = courseShortName(name);
+  // 레벨 토큰을 떼고 남는 글자가 없던 이름(`스파르타 650+`)은 과정 이름으로 — `650 스파르타 650+` 처럼 레벨을 두 번 적지 않는다
+  const kind = short === name ? (isProgram(program) ? PROGRAM_LABEL[program] : name) : short;
+  return `${c.target_score} ${kind}`;
+}
+
+/**
+ * 학생 한 명의 레벨들 — 그 기수에 배정된 반의 강좌로. 같은 이름표는 한 번(주5일 · 120분은 한 강좌라 하나),
+ * 레벨 → 과정 순 (650 RC 단과 + 750 LC 단과면 `650` · `750`). `level` 은 레벨 숫자(색을 고를 때) — 모르면 null.
+ */
+export function studentLevels(courses: readonly LevelCourse[]): { label: string; level: number | null }[] {
+  const seen = new Map<string, { label: string; level: number | null; rank: number }>();
+  for (const c of courses) {
+    const label = courseLevelLabel(c);
+    if (!seen.has(label)) seen.set(label, { label, level: c.target_score ?? null, rank: programRank(c.program) });
+  }
+  return [...seen.values()]
+    .sort((a, b) => (a.level ?? Infinity) - (b.level ?? Infinity) || a.rank - b.rank || a.label.localeCompare(b.label, "ko"))
+    .map(({ label, level }) => ({ label, level }));
+}

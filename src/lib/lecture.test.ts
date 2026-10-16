@@ -297,6 +297,31 @@ describe("신청 — 한 특강에 한 방식 · 방식마다 정원 · 닫힌 �
     const actions = readFileSync("src/app/admin/lectures/actions.ts", "utf8");
     expect(actions.match(/await requireStaff\(\);/g)?.length).toBe(3);
   });
+
+  it("신청자 줄은 전화번호가 아니라 레벨 — 전화번호는 읽지도 않는다 (2026-10-16 Alan)", () => {
+    const page = readFileSync("src/app/admin/lectures/page.tsx", "utf8");
+    expect(page).not.toMatch(/phone/);
+    expect(page).toContain("getTermLevels(supabase, term.id)");
+    expect(page).toContain("<LevelChips ");
+    const lib = readFileSync("src/app/admin/lectures/_lib/lectures.ts", "utf8");
+    // 그 기수의 반 → 배정(1,000줄씩) → 강좌의 레벨 — 코드에 레벨을 적지 않는다
+    expect(lib).toMatch(/from\("class_sections"\)[\s\S]*?\.eq\("term_id", termId\)/);
+    expect(lib).toMatch(/from\("enrollments"\)[\s\S]*?\.range\(from, from \+ PAGE - 1\)/);
+    expect(lib).toContain("studentLevels(");
+    const code = lib.split("\n").filter((line) => !/^\s*(\*|\/\*\*|\/\/)/.test(line)).join("\n");
+    expect(code).not.toMatch(/\b[678]50\b/);
+  });
+
+  it("신청 받기 ↔ 신청 받기 취소 — 열린 특강에는 되돌리는 버튼이 있다 (2026-10-16 Alan '취소하는버튼이 없어')", () => {
+    const button = readFileSync("src/components/admin/lectures/LectureOpenButton.tsx", "utf8");
+    expect(button).toMatch(/>\s*신청 받기 취소\s*</);
+    expect(button).toContain('"신청 받기"');
+    // 날짜가 지난 특강의 상태 이름(신청 마감)과 같은 버튼 이름을 되살리지 않는다
+    expect(button).not.toMatch(/>\s*신청 마감\s*</);
+    expect(button).toContain("학생 특강 신청 화면에서 바로 빠져요");
+    const actions = readFileSync("src/app/admin/lectures/actions.ts", "utf8");
+    expect(actions).toContain("신청 받기를 취소했어요");
+  });
 });
 
 describe("반 편성 달력 — 특강 버튼 + 날짜 → 팝업에서 무슨 특강 · 강사 · 메모만 (2026-10-16 Alan)", () => {

@@ -22,7 +22,7 @@ export const metadata: Metadata = { title: "특강 설정", robots: { index: fal
  * **특강 설정 — 종류별로** (2026-10-16 Alan — "일정표에서 수업일정을 만들때 특강신청에 관한 디테일을 전부다 기입하지말고, 간략하게 …
  * 특강설정은 특강신청에서 다 할 수 있도록 부탁해" · "특강설정 버튼을 특강신청에 하나 넣어놓고 해당 버튼을 누르면 종류별로 설정할 수 있도록 해줘").
  * 특강 신청 화면의 `특강 설정` 버튼이 여기로 온다. 맨 위 종류 버튼(RC특강 · LC특강 · 1차 · 2차 모의고사)으로 고르고, 특강마다
- * **신청 받기 · 마감**(누르는 순간) · **신청 방식마다 받기 · 신청 조건 · 정원** · **안내**(저장)를 정한다.
+ * **신청 받기 · 취소**(누르는 순간) · **신청 방식마다 받기 · 신청 조건 · 정원** · **안내**(저장)를 정한다.
  * 날짜 · 강사 · 무슨 특강 · 메모는 반 편성 달력에서 정한다.
  */
 export default async function LectureSettingsPage({ searchParams }: { searchParams: Promise<{ term?: string; type?: string }> }) {
@@ -99,7 +99,7 @@ export default async function LectureSettingsPage({ searchParams }: { searchPara
                 </div>
                 <span className="flex flex-wrap items-center justify-end gap-2">
                   <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold", LECTURE_STATE_CLASS[state])}>{LECTURE_STATE_LABEL[state]}</span>
-                  <LectureOpenButton lectureId={l.id} open={l.signup} past={past} />
+                  <LectureOpenButton lectureId={l.id} open={l.signup} past={past} signups={l.applied_count} />
                 </span>
               </div>
               <div className="px-4 py-4">

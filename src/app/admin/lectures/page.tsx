@@ -11,6 +11,7 @@ import { TermChips } from "@/components/admin/TermChips";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { CancelLectureSignupButton } from "@/components/admin/lectures/CancelLectureSignupButton";
 import { LectureOpenButton } from "@/components/admin/lectures/LectureOpenButton";
+import { toneOf } from "@/lib/class-roster";
 import {
   isYbmReviewUrl,
   LECTURE_STATE_CLASS,
@@ -24,7 +25,16 @@ import {
 } from "@/lib/lecture";
 import { termParam } from "@/lib/study";
 import { pickTerm } from "../_lib/queries";
-import { getLectureTerms, getTermLectures, lectureTypeOf, lectureTypeTabs, MEMO_TYPE, pickLectureType } from "./_lib/lectures";
+import {
+  getLectureTerms,
+  getTermLectures,
+  getTermLevels,
+  lectureTypeOf,
+  lectureTypeTabs,
+  MEMO_TYPE,
+  pickLectureType,
+  type SignupLevel,
+} from "./_lib/lectures";
 
 export const metadata: Metadata = { title: "특강 신청", robots: { index: false } };
 
@@ -34,7 +44,10 @@ export const metadata: Metadata = { title: "특강 신청", robots: { index: fal
  * 또 나오고 거기를 누르면 해당 학생들이 보이도록해줘").
  * - 첫째 줄(solid) = 그 달에 있는 종류 — RC특강 · LC특강 · 1차 모의고사 · 2차 모의고사 (메모만 있는 특강은 `특강`). 숫자 = 신청 수.
  * - 둘째 줄(outline) = 전체 + 그 종류의 신청 방식 (현장 · 수업영상 받기 / 현장 · 시험지 수령 · PDF 수령).
- * - 특강마다 **신청 받기 · 신청 마감** 버튼 — 누르는 순간 학생 화면에 서거나 빠진다 (7일 전 자동 열림은 없앴다).
+ * - 특강마다 **신청 받기 ↔ 신청 받기 취소** 버튼 — 누르는 순간 학생 화면에 서거나 빠진다 (7일 전 자동 열림은 없앴다. 같은 날 Alan
+ *   "신청 받는 중 이라고 나와있는데, 취소하는버튼이 없어" — 그전 이름 `신청 마감` 은 날짜가 지난 특강의 상태 이름과 같아 되돌리는 버튼으로 읽히지 않았다).
+ * - 신청자 줄은 이름 · 방식 · **레벨** · 신청 시각 (같은 날 Alan "전화번호말고, 학생 본인의 레벨이 나오도록해줘" — **전화번호는 읽지도 않는다**.
+ *   레벨은 그 기수에 배정된 반의 강좌 — `getTermLevels`, 색은 반별 명단의 레벨 색).
  * - 방식 · 조건 · 정원 · 안내는 **특강 설정**(`/admin/lectures/settings`)에서, 날짜 · 강사 · 무슨 특강은 반 편성 달력에서.
  */
 export default async function AdminLecturesPage({ searchParams }: { searchParams: Promise<{ term?: string; type?: string; way?: string }> }) {
@@ -61,7 +74,9 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
 
   const termKey = termParam(term.year, term.month);
   const { lectures, error } = await getTermLectures(supabase, term.id);
-  const signups = lectures.length ? await getSignups(supabase, lectures.map((l) => l.id)) : [];
+  const [signups, termLevels] = lectures.length
+    ? await Promise.all([getSignups(supabase, lectures.map((l) => l.id)), getTermLevels(supabase, term.id)])
+    : [[], null];
   const typeOfLecture = new Map(lectures.map((l) => [l.id, lectureTypeOf(l)]));
 
   const type = pickLectureType(lectures, sp.type, today);
@@ -78,7 +93,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
 
   return (
     <>
-      <PageHeader icon="bolt" title="특강 신청" description="종류와 신청 방식을 골라 신청자를 봐요. 신청 받기 · 마감은 특강마다, 방식 · 조건 · 정원 · 안내는 특강 설정에서.">
+      <PageHeader icon="bolt" title="특강 신청" description="종류와 신청 방식을 골라 신청자를 봐요. 신청 받기 · 취소는 특강마다, 방식 · 조건 · 정원 · 안내는 특강 설정에서.">
         <Link href={settingsHref} className="btn-primary">
           <Icon name="admin" size={18} />
           특강 설정
@@ -92,6 +107,12 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
       {error && (
         <Alert kind="warning" title="특강을 읽지 못했어요" className="mb-4">
           <p>데이터베이스 업데이트가 아직 적용되지 않았거나 잠깐 연결이 끊겼어요. 잠시 뒤 새로고침해 주세요.</p>
+        </Alert>
+      )}
+
+      {termLevels && !termLevels.ok && (
+        <Alert kind="warning" className="mb-4">
+          학생 레벨을 다 읽지 못했어요. 잠시 뒤 새로고침해 주세요.
         </Alert>
       )}
 
@@ -130,7 +151,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
                 </div>
                 <span className="flex flex-wrap items-center justify-end gap-2">
                   <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold", LECTURE_STATE_CLASS[state])}>{LECTURE_STATE_LABEL[state]}</span>
-                  <LectureOpenButton lectureId={l.id} open={l.signup} past={l.date < today} />
+                  <LectureOpenButton lectureId={l.id} open={l.signup} past={l.date < today} signups={l.applied_count} />
                 </span>
               </div>
 
@@ -160,7 +181,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
 
               {shownRows.length === 0 ? (
                 <p className="px-4 py-3 text-sm text-mist">
-                  {rows.length > 0 ? `${lectureWayLabel(way)} 로 신청한 수강생이 없어요.` : l.signup ? "아직 신청한 수강생이 없어요." : "신청을 받기 전이에요. '신청 받기' 를 누르면 학생 화면에 나타나요."}
+                  {rows.length > 0 ? `${lectureWayLabel(way)} 로 신청한 수강생이 없어요.` : l.signup ? "아직 신청한 수강생이 없어요. 학생 특강 신청 화면에 보이고 있어요." : "신청을 받기 전이에요. '신청 받기' 를 누르면 학생 화면에 나타나요."}
                 </p>
               ) : (
                 <ol className="divide-y divide-line">
@@ -171,7 +192,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
                         <span className="w-6 font-black tabular-nums text-mist">{i + 1}</span>
                         <span className="font-bold text-ink">{s.student?.name ?? "이름 없음"}</span>
                         {way === "all" && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-bold text-brand-700">{lectureWayLabel(s.way)}</span>}
-                        {s.student?.phone && <span className="text-slate">{s.student.phone}</span>}
+                        {termLevels?.ok && <LevelChips levels={termLevels.byStudent.get(s.user_id) ?? []} order={termLevels.levels} />}
                         <span className="text-xs text-mist">{formatDate(s.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 신청</span>
                         <span className="ml-auto">
                           <CancelLectureSignupButton id={s.id} name={s.student?.name ?? "수강생"} />
@@ -193,14 +214,39 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
   );
 }
 
-/** 신청 명단 — 방식 · 후기 링크 · 인스타그램 팔로우와 함께 */
+/** 신청 명단 — 방식 · 후기 링크 · 인스타그램 팔로우와 함께. 전화번호는 읽지 않는다 (2026-10-16 — 줄에는 레벨을 적는다) */
 async function getSignups(supabase: Awaited<ReturnType<typeof createClient>>, ids: number[]) {
   const { data } = await supabase
     .from("lecture_signups")
-    .select("id, lecture_id, way, created_at, review_url, sns_follow, student:profiles(name, phone)")
+    .select("id, lecture_id, user_id, way, created_at, review_url, sns_follow, student:profiles(name)")
     .in("lecture_id", ids)
     .order("created_at");
   return data ?? [];
+}
+
+/**
+ * 신청자 레벨 — `650` · `650 중급속성` · `850 2주완성` (그 기수에 배정된 반의 강좌, 두 레벨이면 둘). 색은 학생명단 반별 명단과 같은 레벨 색
+ * (레벨 숫자를 그 기수 레벨 중 작은 것부터 센 자리 — 650 살구 · 750 노랑 · 850 하늘). 그 기수 배정이 없으면 '반 미배정'.
+ */
+function LevelChips({ levels, order }: { levels: readonly SignupLevel[]; order: readonly number[] }) {
+  if (levels.length === 0) return <span className="text-xs font-semibold text-mist">반 미배정</span>;
+  return (
+    <>
+      {levels.map((l) => {
+        const rank = l.level != null ? order.indexOf(l.level) : -1;
+        const tone = rank >= 0 ? toneOf(rank) : null;
+        return (
+          <span
+            key={l.label}
+            className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-bold", !tone && "bg-line text-slate")}
+            style={tone ? { background: tone.head, color: tone.ink } : undefined}
+          >
+            {l.label}
+          </span>
+        );
+      })}
+    </>
+  );
 }
 
 /**
