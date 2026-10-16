@@ -29,6 +29,7 @@ import {
   type LectureWayRow,
 } from "./lecture";
 import { LECTURE_KIND_VALUES, LECTURE_KINDS, LECTURE_WAY_VALUES, LECTURE_WAYS, lectureDayTags, lectureKindSubject, lectureWaysOf, sortByWay } from "./utils";
+import { ROSTER_HIDDEN_ROLES } from "./roster-accounts";
 
 /** 마이그레이션을 파일 순서대로 — 그 이름의 마지막 정의 본문을 꺼낸다 */
 const SQLS = readdirSync("supabase/migrations")
@@ -321,6 +322,67 @@ describe("신청 — 한 특강에 한 방식 · 방식마다 정원 · 닫힌 �
     expect(button).toContain("학생 특강 신청 화면에서 바로 빠져요");
     const actions = readFileSync("src/app/admin/lectures/actions.ts", "utf8");
     expect(actions).toContain("신청 받기를 취소했어요");
+  });
+});
+
+/**
+ * 강사 · 관리자 시험 신청은 세지 않는다 (2026-10-16 Alan — "강사가 테스트로 특강신청을 눌러본거는 집계에서 빼줘. 이혜영, 이영수, 알런").
+ * 이름이 아니라 진짜 등급(강사 · 관리자)으로 — 명단 규칙(roster-accounts)과 같은 집합, 조교 신청은 센다.
+ */
+describe("강사 · 관리자 시험 신청 — 신청 수 · 정원에 세지 않는다 (2026-10-16 Alan)", () => {
+  const MIG = readFileSync("supabase/migrations/20261016130000_lecture_staff_test.sql", "utf8");
+  const STAFF_ROLES_SQL = `(${ROSTER_HIDDEN_ROLES.map((r) => `'${r}'`).join(", ")})`;
+
+  it("칸 · 지금까지 들어온 신청 표시 · 다시 세기 — 진짜 등급으로, 이름을 적지 않는다", () => {
+    expect(STAFF_ROLES_SQL).toBe("('instructor', 'admin')");
+    expect(MIG).toContain("add column if not exists staff_test boolean not null default false");
+    expect(MIG).toMatch(new RegExp(`update public\\.lecture_signups s\\s+set staff_test = true[\\s\\S]*?p\\.role in \\('instructor', 'admin'\\)`));
+    // 다시 세는 수는 학생 신청만
+    expect(MIG).toMatch(/left join public\.lecture_signups s\s+on s\.lecture_id = w2\.lecture_id and s\.way = w2\.way and not s\.staff_test/);
+    expect(MIG).toContain("left join public.lecture_signups s on s.lecture_id = l2.id and not s.staff_test");
+    const code = MIG.split("\n").filter((line) => !/^\s*--/.test(line)).join("\n");
+    expect(code).not.toMatch(/이혜영|이영수|알런/);
+  });
+
+  it("방식 트리거가 신청을 넣을 때 맨 먼저 정한다 — 넣는 쪽 값은 믿지 않고, 학생은 그 칸을 쓸 권한이 없다", () => {
+    const fn = lastFn("private.lecture_signups_check_way");
+    expect(fn).toMatch(/new\.staff_test := exists \(\s*select 1 from public\.profiles p\s+where p\.id = new\.user_id and p\.role in \('instructor', 'admin'\)\s*\)/);
+    expect(fn).toContain(`p.role in ${STAFF_ROLES_SQL}`);
+    expect(fn.indexOf("new.staff_test :=")).toBeGreaterThan(0);
+    expect(fn.indexOf("new.staff_test :=")).toBeLessThan(fn.indexOf("if new.way is null then"));
+    expect(SQLS.join("\n")).not.toMatch(/grant (insert|update) \([^)]*staff_test[^)]*\) on public\.lecture_signups/);
+  });
+
+  it("신청 수 트리거 — 시험 신청은 올리지도 내리지도 않는다 (정원을 차지하지 않는다)", () => {
+    const fn = lastFn("private.lecture_signups_sync");
+    expect(fn).toMatch(/if old\.staff_test then\s+return old;/);
+    expect(fn).toMatch(/if new\.staff_test then\s+return new;/);
+    expect(fn.indexOf("if new.staff_test then")).toBeLessThan(fn.indexOf("(capacity is null or applied_count < capacity)"));
+  });
+
+  it("'신청자가 있으면' 막던 두 곳 · 후기 링크 한 번만은 시험 신청을 보지 않는다 — 특강과 함께 지운다", () => {
+    const ways = lastFn("private.sync_lecture_ways");
+    expect(ways).toContain("where s.lecture_id = new.id and not s.staff_test) then");
+    expect(ways).toContain("delete from public.lecture_signups s where s.lecture_id = new.id and s.staff_test;");
+    expect(ways.indexOf("'lecture_kind_signup_block'")).toBeLessThan(ways.indexOf("delete from public.lecture_signups s"));
+    const save = lastFn("public.save_term_schedule");
+    expect(save).toContain("where g.lecture_id = l.id and not g.staff_test);");
+    expect(save).toMatch(/delete from public\.lecture_signups g[\s\S]*?and g\.staff_test;[\s\S]*?delete from public\.special_lectures l/);
+    const review = lastFn("private.lecture_signups_review_check");
+    expect(review.match(/and not s\.staff_test/g)?.length).toBe(2);
+  });
+
+  it("화면 — 관리자 숫자 · 명단은 학생만 · 시험 신청은 따로(취소 그대로) · 학생 화면에 '세지 않아요' 한 줄", () => {
+    const page = readFileSync("src/app/admin/lectures/page.tsx", "utf8");
+    expect(page).toContain("const signups = allSignups.filter((s) => !s.staff_test);");
+    expect(page).toContain("const testSignups = allSignups.filter((s) => s.staff_test);");
+    expect(page).toContain("<StaffTestSignups ");
+    expect(page).toMatch(/function StaffTestSignups[\s\S]*?<CancelLectureSignupButton /);
+    // 칸을 못 읽으면(배포 사이) 칸 없이 다시 읽는다 — 명단이 비지 않게
+    expect(page).toContain("return (data ?? []).map((s) => ({ ...s, staff_test: false }));");
+    const queries = readFileSync("src/app/my/_lib/queries.ts", "utf8");
+    expect(queries).toContain('.select("lecture_id, way, review_url, sns_follow, staff_test").eq("user_id", user.id)');
+    expect(readFileSync("src/app/my/lecture/page.tsx", "utf8")).toContain("m.staffTest &&");
   });
 });
 

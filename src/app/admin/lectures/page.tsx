@@ -48,6 +48,8 @@ export const metadata: Metadata = { title: "특강 신청", robots: { index: fal
  *   "신청 받는 중 이라고 나와있는데, 취소하는버튼이 없어" — 그전 이름 `신청 마감` 은 날짜가 지난 특강의 상태 이름과 같아 되돌리는 버튼으로 읽히지 않았다).
  * - 신청자 줄은 이름 · 방식 · **레벨** · 신청 시각 (같은 날 Alan "전화번호말고, 학생 본인의 레벨이 나오도록해줘" — **전화번호는 읽지도 않는다**.
  *   레벨은 그 기수에 배정된 반의 강좌 — `getTermLevels`, 색은 반별 명단의 레벨 색).
+ * - **강사 · 관리자 시험 신청은 숫자 · 명단에 넣지 않는다** (같은 날 Alan — "강사가 테스트로 특강신청을 눌러본거는 집계에서 빼줘. 이혜영, 이영수, 알런").
+ *   종류 · 방식 숫자와 명단은 학생 신청만, 시험 신청은 특강마다 아래에 흐리게 따로 적고 거기서 지운다 (`StaffTestSignups` — DB 의 `staff_test`).
  * - 방식 · 조건 · 정원 · 안내는 **특강 설정**(`/admin/lectures/settings`)에서, 날짜 · 강사 · 무슨 특강은 반 편성 달력에서.
  */
 export default async function AdminLecturesPage({ searchParams }: { searchParams: Promise<{ term?: string; type?: string; way?: string }> }) {
@@ -74,9 +76,13 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
 
   const termKey = termParam(term.year, term.month);
   const { lectures, error } = await getTermLectures(supabase, term.id);
-  const [signups, termLevels] = lectures.length
+  const [allSignups, termLevels] = lectures.length
     ? await Promise.all([getSignups(supabase, lectures.map((l) => l.id)), getTermLevels(supabase, term.id)])
     : [[], null];
+  // 강사 · 관리자 시험 신청은 숫자 · 명단에 넣지 않고 특강마다 따로 적는다 (2026-10-16 Alan — "강사가 테스트로 특강신청을 눌러본거는 집계에서 빼줘").
+  // 방식 칩 · 신청 받기 취소의 수(applied_count)는 DB 가 이미 학생만 센다 — 여기 탭 숫자도 같은 집합이어야 한다
+  const signups = allSignups.filter((s) => !s.staff_test);
+  const testSignups = allSignups.filter((s) => s.staff_test);
   const typeOfLecture = new Map(lectures.map((l) => [l.id, lectureTypeOf(l)]));
 
   const type = pickLectureType(lectures, sp.type, today);
@@ -130,6 +136,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
           const state = lectureState(l, l.ways, today);
           const rows = typeSignups.filter((s) => s.lecture_id === l.id);
           const shownRows = way === "all" ? rows : rows.filter((s) => s.way === way);
+          const tests = testSignups.filter((s) => s.lecture_id === l.id && (way === "all" || s.way === way));
           const waysOf = new Map(l.ways.map((w) => [w.way, w]));
           // 구독 · 팔로우 조건 방식의 인스타그램 새로 · 기존 (2026-10-15) — 지금 보는 방식의 명단으로 센다
           const follows = { new: shownRows.filter((r) => r.sns_follow === "new").length, existing: shownRows.filter((r) => r.sns_follow === "existing").length };
@@ -206,6 +213,8 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
                   })}
                 </ol>
               )}
+
+              {tests.length > 0 && <StaffTestSignups rows={tests} showWay={way === "all"} />}
             </section>
           );
         })}
@@ -214,14 +223,56 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
   );
 }
 
-/** 신청 명단 — 방식 · 후기 링크 · 인스타그램 팔로우와 함께. 전화번호는 읽지 않는다 (2026-10-16 — 줄에는 레벨을 적는다) */
+/**
+ * 신청 명단 — 방식 · 후기 링크 · 인스타그램 팔로우 · 시험 신청 표시와 함께. 전화번호는 읽지 않는다 (2026-10-16 — 줄에는 레벨을 적는다).
+ * 시험 신청 칸(`staff_test`)은 마이그레이션 20261016130000 에서 생겼다 — 못 읽으면(배포 사이) 그 칸 없이 읽고 모두 학생 신청으로 본다 (명단이 비지 않게)
+ */
 async function getSignups(supabase: Awaited<ReturnType<typeof createClient>>, ids: number[]) {
+  const withTest = await supabase
+    .from("lecture_signups")
+    .select("id, lecture_id, user_id, way, created_at, review_url, sns_follow, staff_test, student:profiles(name)")
+    .in("lecture_id", ids)
+    .order("created_at");
+  if (!withTest.error) return withTest.data ?? [];
   const { data } = await supabase
     .from("lecture_signups")
     .select("id, lecture_id, user_id, way, created_at, review_url, sns_follow, student:profiles(name)")
     .in("lecture_id", ids)
     .order("created_at");
-  return data ?? [];
+  return (data ?? []).map((s) => ({ ...s, staff_test: false }));
+}
+
+/**
+ * **강사 · 관리자 시험 신청** — 신청 수 · 정원에 세지 않는다 (2026-10-16 Alan — "강사가 테스트로 특강신청을 눌러본거는 집계에서 빼줘. 이혜영, 이영수, 알런").
+ * 시험 신청인지는 DB 가 신청을 넣을 때 **진짜 등급**(강사 · 관리자)으로 정해 둔 `staff_test` 다 — 이름으로 가르지 않는다 (조교 신청은 센다).
+ * 학생 명단 아래에 흐리게 따로 적고 여기서 지운다 (특강 종류를 바꾸거나 반 편성 달력에서 빼면 DB 가 함께 지운다).
+ */
+function StaffTestSignups({
+  rows,
+  showWay,
+}: {
+  rows: readonly { id: number; way: string; created_at: string; student: { name: string } | null }[];
+  showWay: boolean;
+}) {
+  return (
+    <div className="border-t border-dashed border-line bg-surface/70 px-4 py-2.5">
+      <p className="text-xs font-bold text-slate">
+        강사 · 관리자 시험 신청 {rows.length}건 <span className="font-semibold text-mist">· 신청 수 · 정원에 세지 않아요</span>
+      </p>
+      <ul className="mt-1 divide-y divide-line/70">
+        {rows.map((s) => (
+          <li key={s.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-sm">
+            <span className="font-semibold text-slate">{s.student?.name ?? "이름 없음"}</span>
+            {showWay && <span className="rounded-full bg-line px-2 py-0.5 text-xs font-bold text-slate">{lectureWayLabel(s.way)}</span>}
+            <span className="text-xs text-mist">{formatDate(s.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 신청</span>
+            <span className="ml-auto">
+              <CancelLectureSignupButton id={s.id} name={s.student?.name ?? "강사"} />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 /**

@@ -166,6 +166,8 @@ export default async function MyLecturePage() {
                             {canCancel && <LectureCancelButton lectureId={l.id} way={m.way} />}
                           </div>
                           <MySignupRecord reviewUrl={m.reviewUrl} snsFollow={m.snsFollow} />
+                          {/* 강사 · 관리자가 학생 모드로 눌러 본 신청 — 신청 수가 그대로인 까닭 (2026-10-16 Alan "강사가 테스트로 특강신청을 눌러본거는 집계에서 빼줘") */}
+                          {m.staffTest && <p className="mt-1 text-slate">강사 · 관리자 계정의 시험 신청이라 신청 수에 세지 않아요.</p>}
                         </div>
                       ))}
                       {!canCancel && <p className="text-right text-xs text-slate">신청이 마감돼 직접 취소할 수 없어요. 강사에게 말씀해 주세요.</p>}

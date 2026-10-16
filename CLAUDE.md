@@ -462,7 +462,7 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
     **저녁 반은 따로 칸**이다(`18:30~19:30` — 종이에는 저녁 칸이 없었다. 저녁 학생을 오전 칸에 섞지 않는다).
     **강사 · 관리자 계정은 넣지 않고**(학생 화면을 보려고 넣은 테스트 배정) **조교 계정은 넣되 표시 맨 앞에 `조교`** 를 단다(`(조교)` · `(조교/불)` — 2026-10-16 Alan
     "명단에서 강사랑 관리자는 제외하고 수업이 설정되어 있는 조교는 조교라고 표시도 부탁해". 10-14 ~ 10-15 에는 조교도 뺐다). 조교는 그 칸에 이름이 서므로 칸 · 레벨 사람 수에 센다
-    (학생명단 등록생 탭 숫자도 조교를 센다 — `getRosterSets`). 누구를 빼고 누구에게 표시하나는 `src/lib/roster-accounts.ts` 한곳이고 **진짜 등급**으로 본다 — 숙제 미제출 · 출석 명단과 같은 규칙이다.
+    (학생명단 등록생 탭 숫자도 조교를 센다 — `getRosterSets`). 누구를 빼고 누구에게 표시하나는 `src/lib/roster-accounts.ts` 한곳이고 **진짜 등급**으로 본다 — 숙제 미제출 · 출석 명단과 같은 규칙이다 (특강 신청 수도 같은 집합 — 강사 · 관리자 신청은 시험 신청이라 세지 않는다, 도메인 규칙 6-1).
     **종강한 배정도 뺀다**(앞 절반이 끝난 2주완성 학생이 그 달 끝까지 칸에 남지 않게).
     품을 반이 아직 안 열려 칸을 못 찾은 학생(속성반 등)은 아래 한 줄 `칸을 찾지 못한 학생 N명` 으로 센다 — **PDF · Word 에도 맨 마지막 쪽 바닥(Word 는 표 아래)에 같은 말을 적는다**
     (`unplacedNote`, 2026-10-16 점검 — 그전에는 종이에서 말없이 빠졌다).
@@ -2281,6 +2281,23 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   폼은 방식이 바뀔 때만 다시 그린다(`key` — 값이 바뀔 때마다 다시 그리면 저장 뒤 "특강 설정을 저장했어요." 가 바로 사라졌다). 쓰기는 강사 · 관리자 세션(칸 단위 grant `enabled, capacity, signup_condition` ·
   정책 "special_lecture_ways: 스태프 수정"), 줄을 넣고 지우는 것은 트리거뿐. 방식 표 조회는 그 특강이 보이는 사람(스태프 확인이 먼저 — 화면 전환 속도 4).
 - **정원은 방식마다** — `lecture_signups_sync` 가 그 방식의 `applied_count` 를 조건부로 올려서 마지막 한 자리에 동시에 눌러도 넘지 않는다(`lecture_full`). 특강의 `applied_count` 는 모든 방식의 합(종류 버튼 숫자 · 반 편성 달력).
+- **강사 · 관리자 시험 신청은 세지 않는다** (2026-10-16 Alan — "강사가 테스트로 특강신청을 눌러본거는 집계에서 빼줘. 이혜영, 이영수, 알런", 마이그레이션 20261016130000).
+  - **이름이 아니라 진짜 등급으로 가른다** — 신청한 사람의 `profiles.role`(테스트 등급이 아니다)이 강사 · 관리자면 시험 신청(`lecture_signups.staff_test`)이다. 학생명단 · 숙제 미제출 · 출석 명단과
+    같은 집합(`src/lib/roster-accounts.ts` 의 `ROSTER_HIDDEN_ROLES` — `lecture.test.ts` 가 SQL 과 같은 값인지 본다)이라 **조교 신청은 센다**, 관리자 등급인 다른 계정의 신청도 빠진다.
+    **신청을 넣을 때 정해 둔다** — 맨 앞 BEFORE 트리거 `lecture_signups_check_way` 가 정하고 넣는 쪽 값은 믿지 않는다(학생은 그 칸에 쓸 권한도 없다 — 칸 단위 grant).
+    그래서 나중에 등급이 바뀌거나 계정을 지워도 신청 수가 어긋나지 않는다(지울 때 등급을 다시 묻지 않는다). 그날까지 들어온 신청은 그날 등급으로 표시하고 다시 셌다.
+  - 신청 수(방식 · 특강의 `applied_count`) · 정원에 **올리지도 내리지도 않는다** — 자리를 차지하지 않아 정원이 찬 방식에도 들어간다. 그래서 종류 · 방식 숫자 · 방식 칩 · 특강 설정 · 반 편성 달력의 `신청 N명` ·
+    학생 화면의 신청 수와 정원 마감이 모두 학생(과 조교)만 센다. 시험 신청을 넣을 때의 검사(닫힘 · 한 특강 한 방식 · 단과 과목 · 조건 · 후기 링크)는 학생과 같다 — 강사가 학생이 보는 오류를 그대로 시험해 본다.
+  - **'신청자가 있으면' 막던 두 곳도 시험 신청은 신청자로 치지 않는다** — 특강 종류 바꾸기(`lecture_kind_signup_block`) · 반 편성 달력에서 빼기(`lecture_signup_block`). 그때 그 특강의 시험 신청은
+    **함께 지운다**(옛 특강을 눌러 본 것이다 — 남겨 두면 신청 방식 줄 · 특강을 FK 로 지울 수 없다). 달력이 `신청 N명`(학생만)으로 잠그므로 화면과 DB 가 같은 말을 한다.
+  - **후기 링크 한 번만**(`review_link_taken` · `review_link_reused`)도 시험 신청 줄은 보지 않는다 — 강사가 학생의 후기 링크로 시험해 봐도 그 학생이 막히지 않게.
+  - 화면: 관리자 특강 신청은 학생 신청만 명단 · 숫자에 넣고, 시험 신청은 특강 카드 맨 아래 흐린 칸 `강사 · 관리자 시험 신청 N건 · 신청 수 · 정원에 세지 않아요`(`StaffTestSignups` — 이름 · 방식 · 시각 · `취소`)에 따로 적는다
+    (인스타 팔로우 셈 · `다른 학생과 같은 링크` 도 학생 신청만). 강사 · 관리자가 학생 모드로 신청하면 내 신청 칸에 `강사 · 관리자 계정의 시험 신청이라 신청 수에 세지 않아요.` 한 줄.
+    배포 사이(칸이 없을 때)는 두 화면 모두 칸 없이 다시 읽어 모두 학생 신청으로 본다 — 명단이 비지 않게.
+  - 재생 DB 세션 시험(2026-10-16): 마이그레이션 전 시험 신청 셋(강사 · 관리자 · 다른 강사) · 조교 신청 하나를 넣고 얹어 — 표시 · 다시 센 수(1차 모의고사 6 → 5, RC특강 1 → 0) · 학생이 시험 신청의 후기 링크로 신청됨 ·
+    학생이 표시 칸을 직접 넣으면 권한 오류 · 강사 시험 신청은 수가 그대로 · 강사에게도 다른 학생 링크는 `review_link_taken` · 정원 찬 방식에 학생은 `lecture_full` · 강사 시험 신청은 들어감 ·
+    등급을 학생으로 바꾼 뒤 지워도 수 그대로 · 조교 신청은 셈 · 시험 신청뿐인 특강의 종류 바꾸기 · 달력에서 빼기는 됨(시험 신청 함께 지워짐) · 학생 신청이 있으면 막힘 · 관리자 계정을 지워도 수 그대로 ·
+    끝에 트리거가 유지한 수와 다시 센 수가 같음. 화면 — 관리자 1280 · 393 · 320px(가로 넘침 없음) · 방식 버튼마다 시험 칸 · 시험 신청 취소 · 강사 학생 모드의 한 줄 · 반 편성 달력.
 - **신청 트리거는 이름 순으로 돈다** — `lecture_signups_check_way`(방식 — 비었으면(배포 사이 옛 앱) 첫 받는 방식 · **닫힌 방식이면 조건을 묻기 전에** `lecture_signup_closed` · 한 특강 한 방식) →
   `lecture_signups_eligible_subject`(단과 과목, 아래) → `lecture_signups_review_check`(그 **방식의** 조건, 아래). 닫힘을 먼저 보지 않으면 받지 않는 방식에 "구독 · 팔로우를 하라" 가 먼저 떴다(재생 DB 로 재현).
   서버 액션(`signupLecture`)은 방식을 꼭 받고 그 방식의 조건 · 받기를 먼저 보며, 새 오류(`lecture_already_signed` · `lecture_signup_closed`)를 학생 말로 바꾼다.
@@ -3725,12 +3742,13 @@ create table lecture_signups (             -- 특강 신청. 새 신청은 한 �
   review_url text,                                 -- YBM 수강후기 링크 (20261008100000 · 20261008110000) — 조건이 review 인 특강만, https://www.ybmedu.com/mypage/lessonView/<토큰> 꼴 · 2,000자
   sns_follow text,                                 -- 인스타그램 new(새로) | existing(기존) — 조건이 sns 인 방식만 (20261015130000). 유튜브 구독 체크는 남기지 않는다
   way        text not null,                        -- 신청 방식 (20261016120000) — (lecture_id, way) → special_lecture_ways. 학생은 way · sns_follow · review_url 칸만 넣는다
+  staff_test boolean not null default false,       -- 강사 · 관리자(진짜 등급) 시험 신청 (20261016130000) — 신청 수 · 정원에 세지 않는다. 신청할 때 lecture_signups_check_way 가 정한다
   unique(lecture_id, user_id, way)                 -- 2026-10-16 전에 방식 둘을 따로 신청해 둔 것은 남아 있다
 );
 -- (private.lecture_needs_review — 2026-10-08 ~ 10-15 의 '3주차 모의고사' 판정. 20261015130000 이 지웠다 — 이제 방식마다 special_lecture_ways.signup_condition)
--- BEFORE INSERT 트리거는 이름 순: lecture_signups_check_way(방식 채우기 · 닫힘 lecture_signup_closed · 한 특강 한 방식) → lecture_signups_eligible_subject(단과) → lecture_signups_review_check
--- private.lecture_signups_review_check (BEFORE INSERT) : 그 방식의 조건으로 review 면 링크 필수(review_link_required) · 한 번만(taken · reused), sns 면 sns_follow 필수(sns_follow_required), 아니면 두 칸을 비운다
--- private.lecture_signups_sync (AFTER INSERT · DELETE) : 그 방식의 applied_count 를 정원 안에서만 올린다(lecture_full) · 특강 합계도
+-- BEFORE INSERT 트리거는 이름 순: lecture_signups_check_way(시험 신청 표시 · 방식 채우기 · 닫힘 lecture_signup_closed · 한 특강 한 방식) → lecture_signups_eligible_subject(단과) → lecture_signups_review_check
+-- private.lecture_signups_review_check (BEFORE INSERT) : 그 방식의 조건으로 review 면 링크 필수(review_link_required) · 한 번만(taken · reused — 시험 신청 줄은 보지 않는다), sns 면 sns_follow 필수(sns_follow_required), 아니면 두 칸을 비운다
+-- private.lecture_signups_sync (AFTER INSERT · DELETE) : 그 방식의 applied_count 를 정원 안에서만 올린다(lecture_full) · 특강 합계도 — 시험 신청(staff_test)은 올리지도 내리지도 않는다 (20261016130000)
 -- private.lecture_kind_subject(종류) : rc → rc, lc → lc, 모의고사 → null (단과 과목 막기가 쓴다 — 방식과 상관없이)
 -- private.review_link_key(주소) : 후기 키 = lessonView 뒤 토큰(소문자 · 끝 = 뗌). 같은 트리거가 다른 학생의 링크(review_link_taken) · 다른 달에 쓴 내 링크(review_link_reused)를 막는다 (20261008130000)
 -- private.lecture_subjects_of(학생, 기수) : 그 달 수강 중인 직접 배정 반이 주는 과목 lc · rc (단과 상품 = 그 과목 · 그릇 반 · 과목 칸 없음 = 두 과목). BEFORE INSERT 트리거
@@ -4315,7 +4333,7 @@ where p.role='student'
 | `/admin/sections/new` | **새 반 개설** — 그 달 시간표의 강좌 × 시간대 × 트랙 표로 일괄 개설(과목·과정은 시간표 값을 보여 주기만) + 하나씩 만들기. 달력에 개강일·종강일이 있어야 열린다 | instructor |
 | `/admin/sections/instructors` | **담당 강사 지정** — 편성표대로 채우기 · 손으로 고치기 | instructor |
 | `/admin/timetable` | **시간표 설정 — 달마다 한 벌** (`?month=YYYY-MM`). 맨 위 `‹ 달 ›` 과 `만든 달` 칩, 없는 달은 `N월 시간표 만들기`(앞선 달에서 가져와 과정 A/B 뒤집기 · 방학달 경계는 시간만). 과정 × 레벨 카드(브로슈어 모양)에 시간대 줄마다 시각(**시 · 분 고르기, 24시간제**) · **과정 A/B · 월수금/화목금 과목 LC/RC** · 화목금 인강, 두 시간 아래 **한달완성** 상자, 레벨 카드 메모, **2주완성반** 카드(850 시간 한 줄 — 방학달은 통짜 시간마다, 앞 절반만, 인강 · 과정 · 과목 없음, 2026-10-05). 고치면 그 달 반에 바로 적용 | instructor |
-| `/admin/lectures` | **특강 신청** (2026-10-16): 기수 칩 → **종류 버튼**(RC특강 · LC특강 · 1차 모의고사 · 2차 모의고사, 숫자 = 신청 수) → **방식 버튼**(전체 · 현장 · 시험지 수령 · PDF 수령 / 전체 · 현장 · 수업영상 받기) → 그 학생들. 특강마다 상태 · **`신청 받기`(누르는 순간 학생 화면에 선다) ↔ `신청 받기 취소`(학생 화면에서 빠진다)** · 방식 칩(신청 수 / 정원 · 조건) · 명단(이름 · 방식 · **레벨** — 전화번호는 없다, 2026-10-16 · 스태프 취소). 후기 조건 방식은 신청자마다 **올린 YBM 후기 링크**(`다른 학생과 같은 링크` 표시, 2026-10-08), 구독 · 팔로우 조건은 `인스타 새로 · 기존 팔로우`. 머리에 `특강 설정` · `반 편성` | instructor |
+| `/admin/lectures` | **특강 신청** (2026-10-16): 기수 칩 → **종류 버튼**(RC특강 · LC특강 · 1차 모의고사 · 2차 모의고사, 숫자 = 신청 수) → **방식 버튼**(전체 · 현장 · 시험지 수령 · PDF 수령 / 전체 · 현장 · 수업영상 받기) → 그 학생들. 특강마다 상태 · **`신청 받기`(누르는 순간 학생 화면에 선다) ↔ `신청 받기 취소`(학생 화면에서 빠진다)** · 방식 칩(신청 수 / 정원 · 조건) · 명단(이름 · 방식 · **레벨** — 전화번호는 없다, 2026-10-16 · 스태프 취소) · **숫자 · 명단은 학생 신청만 — 강사 · 관리자 시험 신청은 카드 아래 흐린 칸에 따로**(취소는 거기서, 2026-10-16). 후기 조건 방식은 신청자마다 **올린 YBM 후기 링크**(`다른 학생과 같은 링크` 표시, 2026-10-08), 구독 · 팔로우 조건은 `인스타 새로 · 기존 팔로우`. 머리에 `특강 설정` · `반 편성` | instructor |
 | `/admin/lectures/settings` | **특강 설정** (2026-10-16 Alan "특강설정 버튼을 특강신청에 하나 넣어놓고 … 종류별로 설정") — 같은 종류 버튼 아래 특강마다 `신청 받기` · **신청 방식마다 받기 · 신청 조건(YBM 수강후기 작성 · 유튜브 구독 · 인스타그램 팔로우 · 조건 없음) · 정원** · **안내**(수업자료실 안내와 같은 서식 편집기) · `설정 저장` | instructor |
 | `/admin/sections/[id]` | 반 상세: 달력에서 파생된 수업일(읽기 전용) + **회차별 불라방 링크**·다시보기 여부, "끝나면 다시보기로" 스위치, 상시 불라방 링크, 정원·상태·강사 수정, 삭제. 과목·과정은 그 달 시간표 값을 보여 주기만 (시간표 줄이 없는 반만 여기서 고른다) | instructor |
 | `/admin/replays` | 녹화본 등록·회차 연결. 맨 위 **레벨 버튼**(650·750·850)으로 가르고 드롭다운은 기수별. 줄마다 `LC/RC · 트랙 · 시간`. **오전 시간 단위 반만** 나온다 — 묶음·스파르타·저녁 줄은 뺀다 (10월 36개 → 12개) | instructor |

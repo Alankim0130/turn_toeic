@@ -1303,6 +1303,7 @@ export type Database = {
           lecture_id: number
           review_url: string | null
           sns_follow: string | null
+          staff_test: boolean
           user_id: string
           way: string
         }
@@ -1312,6 +1313,7 @@ export type Database = {
           lecture_id: number
           review_url?: string | null
           sns_follow?: string | null
+          staff_test?: boolean
           user_id: string
           way?: string
         }
@@ -1321,6 +1323,7 @@ export type Database = {
           lecture_id?: number
           review_url?: string | null
           sns_follow?: string | null
+          staff_test?: boolean
           user_id?: string
           way?: string
         }

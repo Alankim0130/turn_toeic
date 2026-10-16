@@ -209,8 +209,11 @@ export async function getMyLectures(opts: { upcoming?: boolean } = {}) {
 }
 export type MyLecture = Awaited<ReturnType<typeof getMyLectures>>[number];
 
-/** 내가 신청한 특강 한 건 — 신청 방식 · 그 방식의 조건으로 올린 것 (후기 링크 · 인스타그램 팔로우). 조건이 없던 방식은 둘 다 null */
-export type MyLectureSignup = { way: string; reviewUrl: string | null; snsFollow: string | null };
+/**
+ * 내가 신청한 특강 한 건 — 신청 방식 · 그 방식의 조건으로 올린 것 (후기 링크 · 인스타그램 팔로우). 조건이 없던 방식은 둘 다 null.
+ * `staffTest` = 강사 · 관리자 계정의 시험 신청 — 신청 수 · 정원에 세지 않는다 (2026-10-16 Alan "강사가 테스트로 특강신청을 눌러본거는 집계에서 빼줘")
+ */
+export type MyLectureSignup = { way: string; reviewUrl: string | null; snsFollow: string | null; staffTest: boolean };
 
 /**
  * 내가 신청한 특강 — 특강 id → 신청(방식 · 올린 YBM 수강후기 링크 · 인스타그램 새로 · 기존 팔로우).
@@ -221,14 +224,18 @@ export async function getMyLectureSignups() {
   const out = new Map<number, MyLectureSignup[]>();
   if (!user) return out;
   const supabase = await createClient();
-  const full = await supabase.from("lecture_signups").select("lecture_id, way, review_url, sns_follow").eq("user_id", user.id);
-  // 방식 칸을 못 읽으면(마이그레이션 전) 현장으로 본다
-  const rows = full.error
-    ? ((await supabase.from("lecture_signups").select("lecture_id, review_url, sns_follow").eq("user_id", user.id)).data ?? []).map((r) => ({ ...r, way: "onsite" }))
-    : (full.data ?? []);
+  const withTest = await supabase.from("lecture_signups").select("lecture_id, way, review_url, sns_follow, staff_test").eq("user_id", user.id);
+  let rows = withTest.data ?? [];
+  if (withTest.error) {
+    // 시험 신청 칸(staff_test — 마이그레이션 20261016130000)을 못 읽으면(배포 사이) 그 칸 없이, 방식 칸도 못 읽으면(마이그레이션 전) 현장으로 본다
+    const full = await supabase.from("lecture_signups").select("lecture_id, way, review_url, sns_follow").eq("user_id", user.id);
+    rows = full.error
+      ? ((await supabase.from("lecture_signups").select("lecture_id, review_url, sns_follow").eq("user_id", user.id)).data ?? []).map((r) => ({ ...r, way: "onsite", staff_test: false }))
+      : (full.data ?? []).map((r) => ({ ...r, staff_test: false }));
+  }
   for (const r of sortByWay(rows)) {
     const list = out.get(r.lecture_id) ?? [];
-    list.push({ way: r.way, reviewUrl: r.review_url, snsFollow: r.sns_follow });
+    list.push({ way: r.way, reviewUrl: r.review_url, snsFollow: r.sns_follow, staffTest: r.staff_test });
     out.set(r.lecture_id, list);
   }
   return out;

@@ -9,6 +9,8 @@
  * 쓰는 곳: 학생명단 반별 · 레벨별 명단(화면 · PDF · Word — 이름 뒤 `(조교)`) · 숙제 미제출 명단 · 출석 명단(날짜별 · 한눈에 보기 · 결석 알림 —
  * DB 함수 `attendance_roster` · `attendance_term_board` 가 같은 집합을 본다, 마이그레이션 20261016100000). 학생명단 등록생 수(`getRosterSets`) ·
  * 대시보드 등록생 위젯(`course-headcount`)은 처음부터 강사 · 관리자만 뺐다 (조교는 센다).
+ * **특강 신청 수도 같은 집합이다** (같은 날 Alan "강사가 테스트로 특강신청을 눌러본거는 집계에서 빼줘") — 강사 · 관리자의 신청은 시험 신청(`lecture_signups.staff_test`)이라
+ * 신청 수 · 정원에 세지 않는다. 신청을 넣을 때 DB 트리거(`lecture_signups_check_way`, 마이그레이션 20261016130000)가 이 등급으로 정한다 (`lecture.test.ts` 가 같은 값인지 본다).
  * **진짜 등급(profiles.role)으로 본다** — 테스트 등급(test_role)은 강사 · 관리자만 가질 수 있다 (DB check).
  */
 
