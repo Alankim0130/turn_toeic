@@ -36,6 +36,7 @@ function Chevron({ dir }: { dir: "prev" | "next" }) {
  * - 달력은 **내 수업일**을 칠한다. 녹화본이 올라온 날은 트랙 색 알약에 재생 삼각형, 아직인 날은 가는 막대(지난 날은 흐리게).
  * - 수업일만 누를 수 있다 — 빈 날이 눌리는데 아무 일도 없으면 고장난 것처럼 보인다 (`MonthCalendar` 와 같은 규칙).
  * - 날짜를 고르면 그 날 녹화본이 수업 시간 순으로 선다 — `레벨 과목 N회차` · 시간 · (저녁 반이면) 오전 녹화본 배지.
+ *   N 은 주5일이면 두 트랙을 합친 내 수업일 순서다 (`ReplayEntry.round` — 서버가 `replayRounds` 로 센다).
  *   **누른 뒤에야 플레이어를 불러온다** (유튜브는 youtube-nocookie) — 누르지도 않은 영상까지 플레이어 수백 KB 를 받지 않게. 한 번에 하나만 튼다.
  * - 어느 녹화본 · 어느 수업일이 내 것인지는 서버가 정해서 넘긴다 (`getMyReplays` · `getMySessions` — `my_section_ids()` 로 좁힌 것).
  */
@@ -318,7 +319,7 @@ function ReplayRow({
 }) {
   const embed = replayEmbed(r.url);
   const subject = r.subject ? SUBJECT_LABEL[r.subject] : null;
-  const name = [r.level, subject, `${r.seq}회차`, part ? `영상 ${part}` : null].filter(Boolean).join(" ");
+  const name = [r.level, subject, `${r.round}회차`, part ? `영상 ${part}` : null].filter(Boolean).join(" ");
   const spoken = [name, r.time].filter(Boolean).join(" ");
 
   const body = (
@@ -331,7 +332,8 @@ function ReplayRow({
         <span className="flex flex-wrap items-baseline gap-x-1.5">
           {r.level && <span className="text-sm font-black tabular-nums text-slate">{r.level}</span>}
           {subject && <span className="font-black text-ink">{subject}</span>}
-          <span className="font-black text-brand-600">{r.seq}회차</span>
+          {/* 주5일은 두 트랙을 합친 내 수업일 순서 (2026-10-17 Alan — `replayRounds`) */}
+          <span className="font-black text-brand-600">{r.round}회차</span>
           {part && <span className="text-xs font-bold text-mist">영상 {part}</span>}
         </span>
         <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate">

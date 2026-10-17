@@ -28,7 +28,7 @@ export const pairKey = (s: Week5Section) => (s.time_block ? `${s.term_id}|${s.co
  * 내가 듣는 반 중 **주5일인 반의 id**. 같은 (기수·강좌·시간대)에 월수금과 화목금이 **둘 다** 있어야 짝이다.
  * 한 트랙만 있으면 주3일이라 트랙 이름을 그대로 보여 준다.
  */
-export function week5SectionIds(sections: Week5Section[]): Set<number> {
+export function week5SectionIds(sections: readonly Week5Section[]): Set<number> {
   const tracks = new Map<string, Set<string>>();
   for (const s of sections) {
     const k = pairKey(s);

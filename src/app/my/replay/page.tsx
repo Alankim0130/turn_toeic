@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ReplayCalendar, type ReplayMonth } from "@/components/my/ReplayCalendar";
 import { ReplayPeriod } from "@/components/my/ReplayPeriod";
 import { formatDate, todayKST } from "@/lib/utils";
-import { monthsOf, replayInitialDay, replayTerms, termFlags, type ClassDay, type ReplayEntry } from "@/lib/replay-calendar";
+import { monthsOf, replayInitialDay, replayRounds, replayTerms, termFlags, type ClassDay, type ReplayEntry } from "@/lib/replay-calendar";
 import { getMyAccessibleSections, getMyOrders, getMyReplays, getMySessions, getMyStudyEligibility } from "../_lib/queries";
 
 export const metadata: Metadata = {
@@ -34,26 +34,29 @@ export default async function ReplayPage() {
   const mine = new Set(mySections.map((s) => s.id));
   const recordedTracks = new Set(mySections.filter((s) => s.recorded).map((s) => s.track));
 
-  const replays: ReplayEntry[] = rows.flatMap((r) => {
-    const s = r.session;
-    const sec = s?.section;
-    if (!s || !sec) return [];
-    return [
-      {
-        id: r.id,
-        sessionId: s.id,
-        date: s.date,
-        seq: s.seq,
-        level: sec.course?.target_score ?? null,
-        subject: sec.subject === "lc" || sec.subject === "rc" ? sec.subject : null,
-        // 반 편성에서 시간을 받지 않아 회차 시간은 비어 있다 — 시간대 라벨(`10:00~11:00`)이 곧 수업 시간이다
-        time: sec.time_block ?? null,
-        track: sec.track,
-        url: r.video_url,
-        pair: mine.size > 0 && !mine.has(sec.id) ? (recordedTracks.has(sec.track) ? "recorded" : "evening") : null,
-      },
-    ];
-  });
+  const found = rows.flatMap((r) => (r.session?.section ? [{ r, s: r.session, sec: r.session.section }] : []));
+  // 회차 — 주5일로 듣는 녹화본은 반의 회차(트랙마다 따로 센다)가 아니라 월수금 · 화목금을 합친 내 수업일 순서다
+  // (2026-10-17 Alan "주5일반학생은 1회차, 2회차, 3회차, … 이렇게 순서대로", `replayRounds`)
+  const rounds = replayRounds(
+    found.map(({ r, s, sec }) => ({ id: r.id, date: s.date, seq: s.seq, section: sec, own: mine.has(sec.id) })),
+    mySections,
+    sessions.flatMap((s) => (s.section ? [{ termId: s.section.term_id, date: s.date }] : [])),
+  );
+
+  const replays: ReplayEntry[] = found.map(({ r, s, sec }) => ({
+    id: r.id,
+    sessionId: s.id,
+    date: s.date,
+    seq: s.seq,
+    round: rounds.get(r.id) ?? s.seq,
+    level: sec.course?.target_score ?? null,
+    subject: sec.subject === "lc" || sec.subject === "rc" ? sec.subject : null,
+    // 반 편성에서 시간을 받지 않아 회차 시간은 비어 있다 — 시간대 라벨(`10:00~11:00`)이 곧 수업 시간이다
+    time: sec.time_block ?? null,
+    track: sec.track,
+    url: r.video_url,
+    pair: mine.size > 0 && !mine.has(sec.id) ? (recordedTracks.has(sec.track) ? "recorded" : "evening") : null,
+  }));
 
   const classDays: ClassDay[] = [];
   const seen = new Set<string>();
