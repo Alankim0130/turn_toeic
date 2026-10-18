@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { HeartGlyph, NaverBookingCalendar } from "@/components/admin/naver/NaverBookingCalendar";
+import { NaverMark } from "@/components/ui/BrandMarks";
 import { requireStaff } from "@/lib/auth";
 import { calendarMonths, checkedAgo, NAVER_DAYS_AHEAD, slotLabel } from "@/lib/naver-booking";
 import { site } from "@/lib/site";
@@ -60,13 +61,16 @@ export default async function NaverReservationsPage() {
       <header className="mb-5">
         <div className="mb-1 flex items-center justify-between gap-3">
           <h1 className="text-2xl font-black tracking-tight text-ink sm:text-3xl">네이버 예약 현황</h1>
-          {/* 첫토익의 '네이버' 버튼 — 역전토익 강사상담 예약 페이지(새 창) */}
+          {/* 첫토익의 '네이버' 버튼 — 역전토익 강사상담 예약 페이지(새 창). 앞에 네이버 로고 (2026-10-18) */}
           <a
             href={site.academy.naverBookingUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-line bg-paper px-3 py-1.5 text-xs font-black text-ink transition hover:border-brand-300 hover:text-brand-600"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-line bg-paper py-1.5 pl-2 pr-3 text-xs font-black text-ink transition hover:border-brand-300 hover:text-brand-600"
           >
+            <span className="flex size-[18px] shrink-0 items-center justify-center rounded-[5px] bg-[#03C75A]">
+              <NaverMark size={9} />
+            </span>
             네이버
             <ExternalGlyph />
           </a>

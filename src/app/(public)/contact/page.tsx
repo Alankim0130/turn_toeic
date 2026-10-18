@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { Reveal } from "@/components/ui/Reveal";
-import { KakaoMark } from "@/components/ui/BrandMarks";
+import { KakaoMark, NaverMark } from "@/components/ui/BrandMarks";
 import { ExternalMark } from "@/components/layout/NavLinks";
 import { CONTACT_OPTIONS, type ContactOption } from "@/lib/site";
 import { cn } from "@/lib/utils";
@@ -79,13 +79,19 @@ export default function ContactPage() {
                 <p className="text-xs font-bold tracking-wide text-mist">{art.kind}</p>
                 <h2 className="mt-1 text-xl font-black text-ink">{o.label}</h2>
                 <p className="mt-1.5 text-sm text-slate">{o.summary}</p>
+                {/* 버튼은 그 회사 색 + 로고 — 카카오 노랑 + 심벌, 네이버 초록 + 흰 N (2026-10-18 Alan "네이버예약 앞에 네이버 로고"). 이메일 · 전화만 브랜드 핑크 */}
                 <span
                   className={cn(
                     "mt-5 inline-flex items-center gap-2 self-start rounded-full px-4 py-2 text-sm font-bold transition",
-                    o.key === "kakao" ? "bg-[#FEE500] text-black/85 group-hover:bg-[#F2DA00]" : "bg-brand-500 text-white shadow-pink group-hover:bg-brand-600",
+                    o.key === "kakao"
+                      ? "bg-[#FEE500] text-black/85 group-hover:bg-[#F2DA00]"
+                      : o.key === "naver"
+                        ? "bg-[#03C75A] text-white group-hover:bg-[#03B351]"
+                        : "bg-brand-500 text-white shadow-pink group-hover:bg-brand-600",
                   )}
                 >
                   {o.key === "kakao" && <KakaoMark size={18} />}
+                  {o.key === "naver" && <NaverMark size={13} />}
                   {art.cta}
                   {o.external && <ExternalMark className={o.key === "kakao" ? "text-black/60" : "text-white/80"} />}
                 </span>

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
-import { KakaoMark } from "@/components/ui/BrandMarks";
+import { KakaoMark, NaverMark } from "@/components/ui/BrandMarks";
 import { canUseFeature, CONTACT_OPTIONS, featureHref, NAV_MAIN, STUDENT_FEATURES, STUDENT_HUB } from "@/lib/site";
 import { cn } from "@/lib/utils";
 import { ExternalMark, isActivePath } from "./NavLinks";
@@ -204,7 +204,7 @@ function StudentDropdown({ access, pathname }: { access: NavAccess; pathname: st
 
 /**
  * 연락하기 드롭다운 (2026-10-01 Alan — 연락하기 · 네이버 상담예약 두 항목을 하나로 합치고 셋 중 고른다).
- * 목록은 `CONTACT_OPTIONS` 한곳 — 카카오톡(새 창) · 이메일·전화 문의(/contact/inquiry) · 네이버 예약(새 창). 카카오 줄은 노란 타일에 카카오 심벌.
+ * 목록은 `CONTACT_OPTIONS` 한곳 — 카카오톡(새 창) · 이메일·전화 문의(/contact/inquiry) · 네이버 예약(새 창). 카카오 줄은 노란 타일에 카카오 심벌, 네이버 줄은 초록 타일에 흰 N (2026-10-18).
  * **글자 자체는 허브(`/contact`, 카드 세 장)로 가는 링크**다 (같은 날 Alan "연락하기 페이지를 누르면 카드 3개만") — 마우스를 올리면 빠른 메뉴가 펼쳐지고,
  * 누르면 허브로 간다. 수강생전용 메뉴도 2026-10-02 부터 같은 방식이고, 키보드로는 링크를 따라가면 허브에 같은 세 갈래가 있다.
  */
@@ -230,10 +230,10 @@ function ContactDropdown({ pathname }: { pathname: string }) {
                   <span
                     className={cn(
                       "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1",
-                      o.key === "kakao" ? "bg-[#FEE500] ring-[#F2DA00]" : "bg-brand-50 ring-brand-100",
+                      o.key === "kakao" ? "bg-[#FEE500] ring-[#F2DA00]" : o.key === "naver" ? "bg-[#03C75A] ring-[#03B351]" : "bg-brand-50 ring-brand-100",
                     )}
                   >
-                    {o.key === "kakao" ? <KakaoMark size={22} /> : <Icon name={o.icon} size={24} />}
+                    {o.key === "kakao" ? <KakaoMark size={22} /> : o.key === "naver" ? <NaverMark size={17} /> : <Icon name={o.icon} size={24} />}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-black text-ink">{o.label}</span>

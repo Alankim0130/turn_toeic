@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cn, todayKST, formatDate, formatTimeRange } from "@/lib/utils";
 import { Icon, type IconName } from "@/components/ui/Icon";
+import { NaverMark } from "@/components/ui/BrandMarks";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { DonutChart } from "@/components/admin/charts/DonutChart";
@@ -344,8 +345,9 @@ export default async function AdminDashboardPage() {
           {/* 네이버 예약 — 오늘 · 내일. 누르면 네이버 예약 화면으로 간다 (그전에는 대시보드 아래로 내려갔다) */}
           <Link href={NAVER_PAGE} className="card flex flex-col p-4 transition hover:-translate-y-0.5 hover:shadow-pink sm:p-5 lg:col-span-2">
             <div className="flex items-center gap-2">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50">
-                <Icon name="calendar" size={20} />
+              {/* 네이버 로고 — 초록 타일에 흰 N (2026-10-18 Alan "네이버예약 앞에 네이버 로고를 넣어줘"). 브랜드 표식이라 관리자 파랑으로 바꾸지 않는다 */}
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#03C75A]">
+                <NaverMark size={15} />
               </span>
               <span className="text-sm font-bold text-slate">네이버 예약</span>
               <span aria-hidden className="ml-auto text-lg font-black text-line">›</span>

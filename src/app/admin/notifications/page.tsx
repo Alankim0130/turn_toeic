@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Icon } from "@/components/ui/Icon";
+import { NaverMark } from "@/components/ui/BrandMarks";
 import { PushSetup } from "@/components/push/PushSetup";
 import { SettingsForm } from "@/components/admin/notifications/SettingsForm";
 import { requireStaff } from "@/lib/auth";
@@ -95,7 +96,11 @@ export default async function NotificationsPage() {
 
         <section id="naver" aria-labelledby="naver-title" className="card scroll-mt-24 p-5 lg:col-span-2">
           <h2 id="naver-title" className="flex items-center gap-2 text-lg font-black text-ink">
-            <Icon name="calendar" size={26} />네이버 예약 자동 확인
+            {/* 네이버 로고 (2026-10-18) — 대시보드 네이버 예약 위젯과 같은 초록 타일 */}
+            <span className="flex size-[26px] shrink-0 items-center justify-center rounded-lg bg-[#03C75A]">
+              <NaverMark size={12} />
+            </span>
+            네이버 예약 자동 확인
           </h2>
           <p className="mt-2 text-sm leading-relaxed text-slate">
             10분마다 네이버 예약 페이지의 &ldquo;역전토익 강사상담&rdquo; 칸을 확인해요. 예약이 새로 잡히거나 취소되면 위에서 &ldquo;네이버 예약&rdquo;을 켜 둔

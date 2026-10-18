@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
 import { Logo } from "@/components/ui/Logo";
 import { activeAdminHref, canUseFeature, featureHref, NAV_DRAWER, navAdminFor, navAdminSectionsFor, site, STUDENT_FEATURES, type NavItem, type NavSection } from "@/lib/site";
-import { KakaoMark } from "@/components/ui/BrandMarks";
+import { KakaoMark, NaverMark } from "@/components/ui/BrandMarks";
 import { cn } from "@/lib/utils";
 import { ExternalMark, isActivePath } from "./NavLinks";
 import { isStudentAreaPath, type NavAccess } from "./DesktopNav";
@@ -258,13 +258,19 @@ function Row({
     "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-bold transition",
     active ? "bg-brand-50 text-brand-700" : "text-ink hover:bg-surface",
   );
-  // 카카오톡 상담 줄은 PC 드롭다운·/contact 와 같은 노란 타일 + 카카오 심벌 (2026-10-01)
+  // 카카오톡 상담 줄은 PC 드롭다운·/contact 와 같은 노란 타일 + 카카오 심벌 (2026-10-01),
+  // 네이버 예약 줄은 초록 타일 + 흰 N (2026-10-18 Alan "네이버예약 앞에 네이버 로고를 넣어줘")
   const kakao = item.href === site.academy.kakaoChatUrl;
+  const naver = item.href === site.academy.naverBookingUrl;
   const icon = (
     <span className="relative shrink-0">
       {kakao ? (
         <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[#FEE500]">
           <KakaoMark size={16} />
+        </span>
+      ) : naver ? (
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[#03C75A]">
+          <NaverMark size={11} />
         </span>
       ) : (
         <Icon name={item.icon} size={24} className={cn(locked && "opacity-60")} />
