@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireCrew } from "@/lib/auth";
+import { requireCrew, requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { buildMissingBoard, homeworkMissingMessage, missingRelated, MISSING_TITLE_MAX, rowOf, type MissingRow } from "@/lib/homework-missing";
+import { autoTime, kstDay, nextAutoRun } from "@/lib/homework-missing-auto";
+import { formatDate } from "@/lib/utils";
 import { TERM_COLUMNS } from "../../_lib/queries";
 import { loadMissingData, sectionSortKey } from "../_lib/missing";
 
@@ -76,4 +78,37 @@ export async function sendHomeworkMissingNotice(input: { termId: number; level: 
   revalidatePath("/admin/homework/missing");
   revalidatePath("/my", "layout"); // 학생 알림함 배지
   return { ok: true, sent: rows.length, skipped: ids.length - rows.length - unsubscribed, unsubscribed };
+}
+
+export type MissingAutoResult = { ok: true; message: string } | { ok: false; error: string };
+
+/**
+ * **자동 알림 설정 저장** (2026-10-19 Alan — "시간은 쌤들이 정할 수 있으며 … 여기 미제출알림 맨 위에 자동알림 보내기 설정칸이 있으면 좋겠어").
+ * 켜기 · 보내는 시각(오후 5시 ~ 밤 11시 55분, 5분 단위)만 받는다. **강사 · 관리자만** — 조교는 같은 화면에서 보기만 한다 (DB 정책도 강사 · 관리자만 바꾼다).
+ * 로그인한 사람의 세션으로 바꿔 정책이 한 번 더 막는다. 바꾼 사람 · 때와 켜는 순간 '첫 실행 날 0시부터 본다' 는 DB 트리거가 적는다.
+ * 저장한 뒤에 오는 시각부터 보낸다 — 이미 지난 오늘 시각으로 바꿔도 그 자리에서 보내지 않는다 (`nextAutoRun` · DB `homework_missing_auto_due`).
+ */
+export async function saveHomeworkMissingAuto(input: { enabled: boolean; hour: string; minute: string }): Promise<MissingAutoResult> {
+  await requireStaff();
+  const enabled = input?.enabled === true;
+  const time = autoTime(input?.hour, input?.minute);
+  if (!time) return { ok: false, error: "보내는 시각을 골라 주세요 — 오후 5시부터 밤 11시 55분까지, 5분 단위예요." };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("homework_missing_auto")
+    .update({ enabled, send_time: time })
+    .eq("id", true)
+    .select("schedule_changed_at");
+  if (error) return { ok: false, error: "저장하지 못했어요. 잠시 뒤 다시 해 주세요." };
+  if (!data || data.length === 0) {
+    return { ok: false, error: "저장하지 못했어요 — 테스트 등급을 켠 동안에는 바꿀 수 없어요. 방금 배포했다면 잠시 뒤 다시 해 주세요." };
+  }
+  revalidatePath("/admin/homework/missing");
+  if (!enabled) return { ok: true, message: "자동 알림을 껐어요. 미제출 알림은 아래에서 골라 보낼 수 있어요." };
+
+  const now = Date.now();
+  const { data: run } = await supabase.from("homework_missing_auto_runs").select("finished_at").eq("run_date", kstDay(now)).maybeSingle();
+  const next = nextAutoRun({ enabled, sendTime: time, scheduleChangedAt: Date.parse(data[0].schedule_changed_at) }, run ? { finished: !!run.finished_at } : null, now);
+  return { ok: true, message: next ? `저장했어요. 다음 자동 알림은 ${formatDate(next.day)} ${next.time}에 가요.` : "저장했어요." };
 }

@@ -534,15 +534,27 @@ const DATES_PER_LINE = 24;
  * 학생 한 명에게 갈 알림 글 — 학생마다 이름과 안 낸 날짜가 다르다 (첫토익처럼 "각 학생 이름과 상황에 맞게").
  * 학생은 숙제제출 달력에서 **날짜**로 찾으므로 회차 번호가 아니라 날짜를 적고, 레벨도 적는다 (속성반은 한 날짜에 레벨이 둘이다).
  * 적는 것은 **기한이 지난** 안 낸 숙제 전부다 — 새로 기한이 지난 것만이 아니라 전에 알린 것도 아직 안 냈으면 다시 적는다.
+ * 숙제마다 `level` 을 달면 레벨이 여럿인 한 통이 된다 (자동 알림 — 속성반의 650 · 850 을 한 통에, 2026-10-19). 줄은 레벨 → RC · LC 순.
  */
-export function homeworkMissingMessage(input: { name: string; level: number; missing: readonly Pick<MissingSlot, "date" | "subject">[]; past: number; done: number }): string {
+export function homeworkMissingMessage(input: {
+  name: string;
+  /** 숙제에 `level` 이 없을 때의 레벨 (레벨 탭 하나에서 보내는 손 알림) */
+  level?: number;
+  missing: readonly (Pick<MissingSlot, "date" | "subject"> & { level?: number })[];
+  past: number;
+  done: number;
+}): string {
   const lines: string[] = [];
-  for (const subject of HOMEWORK_SUBJECTS) {
-    const days = [...new Set(input.missing.filter((m) => m.subject === subject).map((m) => m.date))].sort();
-    if (days.length === 0) continue;
-    const shown = days.slice(0, DATES_PER_LINE).map(shortDay).join(", ");
-    const more = days.length > DATES_PER_LINE ? ` 외 ${days.length - DATES_PER_LINE}개` : "";
-    lines.push(`· ${homeworkLabel(input.level, subject)} — ${shown}${more}`);
+  const levelOf = (m: { level?: number }) => m.level ?? input.level;
+  const levels = [...new Set(input.missing.map(levelOf).filter((l): l is number => l != null))].sort((a, b) => a - b);
+  for (const level of levels) {
+    for (const subject of HOMEWORK_SUBJECTS) {
+      const days = [...new Set(input.missing.filter((m) => m.subject === subject && levelOf(m) === level).map((m) => m.date))].sort();
+      if (days.length === 0) continue;
+      const shown = days.slice(0, DATES_PER_LINE).map(shortDay).join(", ");
+      const more = days.length > DATES_PER_LINE ? ` 외 ${days.length - DATES_PER_LINE}개` : "";
+      lines.push(`· ${homeworkLabel(level, subject)} — ${shown}${more}`);
+    }
   }
   const who = input.name.trim() ? `${input.name.trim()} 학생, ` : "";
   const body = [

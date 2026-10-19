@@ -971,6 +971,77 @@ export type Database = {
           },
         ]
       }
+      homework_missing_auto: {
+        Row: {
+          covered_until: string | null
+          enabled: boolean
+          id: boolean
+          schedule_changed_at: string
+          send_time: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          covered_until?: string | null
+          enabled?: boolean
+          id?: boolean
+          schedule_changed_at?: string
+          send_time?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          covered_until?: string | null
+          enabled?: boolean
+          id?: boolean
+          schedule_changed_at?: string
+          send_time?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "homework_missing_auto_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      homework_missing_auto_runs: {
+        Row: {
+          error: string | null
+          finished_at: string | null
+          opted_out: number | null
+          run_date: string
+          sent: number | null
+          started_at: string
+          tracks: string[]
+          window_from: string | null
+        }
+        Insert: {
+          error?: string | null
+          finished_at?: string | null
+          opted_out?: number | null
+          run_date: string
+          sent?: number | null
+          started_at?: string
+          tracks?: string[]
+          window_from?: string | null
+        }
+        Update: {
+          error?: string | null
+          finished_at?: string | null
+          opted_out?: number | null
+          run_date?: string
+          sent?: number | null
+          started_at?: string
+          tracks?: string[]
+          window_from?: string | null
+        }
+        Relationships: []
+      }
       ybm_review_stats: {
         Row: {
           fetched_at: string
@@ -2684,6 +2755,10 @@ export type Database = {
       claim_student_pushes: {
         Args: { p_limit?: number }
         Returns: { body: string; id: number; kind: string; related: Json | null; title: string; user_id: string }[]
+      }
+      claim_homework_missing_auto: {
+        Args: never
+        Returns: { claimed_day: string; claimed_at: string; claimed_from: string }[]
       }
       live_detect_candidates: {
         Args: never

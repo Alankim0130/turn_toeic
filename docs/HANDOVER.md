@@ -143,7 +143,7 @@
   2. Authentication → Sign In / Providers — Email(확인 메일 켬), Google(클라이언트 ID), Kakao(REST API 키). 비밀번호 8자 이상 · 유출 비밀번호 차단.
   3. SMTP 는 아직 안 붙여 두었다 (운영 ‘아직 안 끝난 일’ 1번).
 - [ ] **3-5 DB 안의 자동 작업이 살아 있는지 본다** (넘길 것은 없다)
-  1. Integrations → Cron → Jobs 에 7개: `daily-status-transition` · `promote-live-replays` · `notify-live-class-start` · `naver-booking-sync` · `live-detect` · `student-push-retry` · `cron-history-cleanup` (하는 일은 부록 표).
+  1. Integrations → Cron → Jobs 에 8개: `daily-status-transition` · `promote-live-replays` · `notify-live-class-start` · `naver-booking-sync` · `live-detect` · `student-push-retry` · `homework-missing-auto` · `cron-history-cleanup` (하는 일은 부록 표).
   2. Integrations → Vault 에 `app_cron_secret` 하나 — DB가 우리 사이트를 부를 때 붙이는 비밀이고, DB 안에서 만든 값이라 건네줄 것이 없다.
   3. SQL Editor 에서 `select value from private.app_config where key = 'site_url';` → `https://winnertoeic.com` 이면 된다. 도메인을 바꿀 때만 고친다.
   4. Storage 에 비공개 저장소 9곳: `receipts` · `homework` · `lc-audio` · `lc-textbooks` · `study-materials` · `study-checkins` · `avatars` · `class-materials` · `class-notices`.
@@ -453,7 +453,7 @@ Vercel 에는 배포 · 환경변수 13개 · 자동 작업 3개 · 도메인 `w
 
 개발용 세 개(`SUPABASE_PROJECT_REF` · `SUPABASE_DB_PASSWORD` · `SUPABASE_ACCESS_TOKEN`)는 Vercel 에 없어도 된다. 그 밖의 비밀은 Supabase 설정(구글 · 카카오 로그인 키)과 DB 안(`app_cron_secret`)에 있다.
 
-### 저절로 도는 작업 10개
+### 저절로 도는 작업 11개
 
 | 이름 | 어디 | 언제 (한국 시간) | 하는 일 |
 | --- | --- | --- | --- |
@@ -463,6 +463,7 @@ Vercel 에는 배포 · 환경변수 13개 · 자동 작업 3개 · 도메인 `w
 | `naver-booking-sync` | Supabase → 사이트 | 10분마다 | 네이버 예약 칸을 확인하고 강사에게 알린다 |
 | `live-detect` | Supabase → 사이트 | 30초마다 (수업 앞뒤에만 실제로 부른다) | 강사님 유튜브 송출을 찾아 불라방 링크에 넣는다 |
 | `student-push-retry` | Supabase → 사이트 | 1분마다 (못 보낸 알림이 있을 때만 실제로 부른다) | 학생 휴대폰 알림(불라방 시작 · 숙제 미제출)을 놓쳤으면 다시 보낸다 — 평소에는 알림이 생기는 순간 바로 나간다 |
+| `homework-missing-auto` | Supabase → 사이트 | 5분마다 (쌤이 켜 둔 시각이 지났고 그날 아직 안 보냈을 때만 실제로 부른다) | 숙제 미제출 자동 알림 — 그날 기한이 지난 숙제를 안 낸 학생에게 하루 한 번. 켜기 · 시각은 숙제 미제출 알림 화면 맨 위 (처음엔 꺼져 있다) |
 | `cron-history-cleanup` | Supabase | 매일 03:40 | 자동 작업 기록을 7일치만 남긴다 |
 | `daily-digest` | Vercel | 매일 21:00 | 관리자 하루 요약 알림 (개강 7일 전부터 비대면 스터디를 안 열었으면 그 알림이 제목) |
 | `purge-receipts` | Vercel | 매일 03:20 | 판정 뒤 2개월 지난 수강증 원본을 지운다 |

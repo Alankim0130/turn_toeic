@@ -3,7 +3,7 @@ import { programRank } from "@/lib/timetable";
 import { parseTimeBlock } from "@/lib/time-blocks";
 import { collapseWeek5, week5SectionIds } from "@/lib/week5";
 import { sectionChip, type DB, type TermLite } from "../../_lib/queries";
-import { getProfileNames } from "../../_lib/profile-names";
+import { getProfileNames, type PersonName } from "../../_lib/profile-names";
 import { hiddenFromRoster, isAssistantAccount } from "@/lib/roster-accounts";
 
 /**
@@ -65,8 +65,13 @@ export async function readAll<T>(page: (from: number, to: number, count: boolean
 /**
  * 그 기수의 데이터. `students` 를 주면 그 학생들 것만 남긴다 (보내기 직전 서버가 다시 셀 때 — 낸 숙제도 그 학생들 것만 읽는다).
  * `ok` 가 거짓이면 일부를 못 읽은 것이다 — 화면은 '안 냄' 을 믿을 수 없다고 말하고, 보내기는 멈춘다.
+ * `names` — 이름 · 등급을 읽는 길. 기본은 로그인한 사람의 세션으로 `profile_names`(강사 · 관리자 · 조교만 부른다). 자동 알림(서버 · service_role)은 따로 준다
  */
-export async function loadMissingData(supabase: DB, term: TermLite, opts: { students?: readonly string[] } = {}): Promise<MissingData & { ok: boolean }> {
+export async function loadMissingData(
+  supabase: DB,
+  term: TermLite,
+  opts: { students?: readonly string[]; names?: (ids: string[]) => Promise<Map<string, PersonName>> } = {},
+): Promise<MissingData & { ok: boolean }> {
   const { data: sectionRows, error: sectionError } = await supabase
     .from("class_sections")
     .select("id, term_id, course_id, track, time_block, start_time, subject, enrollment_opens_at, closes_at, course:courses(name, target_score, program)")
@@ -176,7 +181,7 @@ export async function loadMissingData(supabase: DB, term: TermLite, opts: { stud
   // 낸 숙제 · 이름 · 등급 · 기한 · 안 받기는 서로 기다릴 까닭이 없다 — 함께 묻는다 (2026-10-09 "숙제미제출 알림 페이지를 클릭하면 로딩시간이 오래걸려")
   const [{ submissions, ok: subsOk }, names, { due, ok: dueOk }, { optedOut, ok: optOutOk }] = await Promise.all([
     readSubmissions(),
-    getProfileNames(supabase, studentIds),
+    opts.names ? opts.names(studentIds) : getProfileNames(supabase, studentIds),
     readDue(),
     readOptOuts(),
   ]);

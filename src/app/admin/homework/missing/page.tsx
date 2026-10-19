@@ -9,6 +9,7 @@ import { Icon } from "@/components/ui/Icon";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { TermChips } from "@/components/admin/TermChips";
 import { MissingBoard, type MissingDayView, type MissingGroupView } from "@/components/admin/homework/MissingBoard";
+import { MissingAutoCard, type MissingAutoView } from "@/components/admin/homework/MissingAutoCard";
 import {
   buildMissingBoard,
   buildMissingDays,
@@ -26,10 +27,12 @@ import {
   weekdayOf,
   type MissingGroup,
 } from "@/lib/homework-missing";
+import { autoTimeParts, kstDay, nextAutoRun, tracksLabel } from "@/lib/homework-missing-auto";
 import { termParam } from "@/lib/study";
 import { cn } from "@/lib/utils";
-import { requireCrew } from "@/lib/auth";
-import { pickTerm, termLabel, TERM_COLUMNS } from "../../_lib/queries";
+import { isStaff, requireCrew } from "@/lib/auth";
+import { pickTerm, termLabel, TERM_COLUMNS, type DB } from "../../_lib/queries";
+import { getProfileNames } from "../../_lib/profile-names";
 import { groupClasses, loadMissingData, readAll, sectionSortKey } from "../_lib/missing";
 
 export const metadata: Metadata = { title: "숙제 미제출 알림", robots: { index: false } };
@@ -59,16 +62,18 @@ const TERM_CHIPS = 6;
  * 고른 학생 · 보내기는 두 보기가 함께 쓴다 (보기를 바꿔도 고른 것이 남는다).
  */
 export default async function HomeworkMissingPage({ searchParams }: { searchParams: Promise<{ term?: string; level?: string; all?: string; view?: string }> }) {
-  await requireCrew();
+  const { profile } = await requireCrew();
   const sp = await searchParams;
   const supabase = await createClient();
   const today = todayKST();
   const showAll = sp.all === "1";
   const view = sp.view === "dates" ? "dates" : "students";
 
-  const [{ data: termRows }, { data: levelRows }] = await Promise.all([
+  const [{ data: termRows }, { data: levelRows }, autoView] = await Promise.all([
     supabase.from("terms").select(TERM_COLUMNS).order("year", { ascending: false }).order("month", { ascending: false }).limit(24),
     supabase.from("lc_levels").select("level").order("sort_order").order("level"),
+    // 자동 알림 설정 · 실행 기록 — 테스트 등급을 켠 강사 · 관리자는 RLS 가 학생으로 보아 못 읽는다
+    profile.test_role ? Promise.resolve<MissingAutoView>({ kind: "testing" }) : loadAutoView(supabase),
   ]);
   const allTerms = termRows ?? [];
   const term = pickTerm(allTerms, sp.term, today);
@@ -87,10 +92,14 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
     </PageHeader>
   );
 
+  // 자동 알림 설정 칸 — 맨 위 (2026-10-19 Alan "여기 미제출알림 맨 위에 자동알림 보내기 설정칸이 있으면 좋겠어"). 기수와 상관없는 설정이라 기수 칩보다 위다
+  const autoCard = <MissingAutoCard view={autoView} canEdit={isStaff(profile.role) && !profile.test_role} />;
+
   if (!term) {
     return (
       <>
         {header}
+        {autoCard}
         <EmptyState icon="calendar" title="아직 편성한 달이 없어요" description="반 편성 달력에서 그 달 수업일을 정하고 반을 열면, 학생들이 낸 숙제가 수업일마다 여기에 보여요." />
       </>
     );
@@ -174,6 +183,7 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
   return (
     <>
       {header}
+      {autoCard}
 
       <TermChips
         basePath="/admin/homework/missing"
@@ -260,4 +270,64 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
       )}
     </>
   );
+}
+
+/** "21:00" — 한국 시각 */
+const kstHm = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false });
+
+/**
+ * 자동 알림 설정 칸에 그릴 것 — 설정 한 줄 · 최근 실행 기록 · 바꾼 사람 이름 (조교 화면이라 이름은 `getProfileNames`).
+ * '다음 자동 알림' 은 DB 의 보낼 때 판정과 같은 규칙으로 센다 (`nextAutoRun`).
+ */
+async function loadAutoView(supabase: DB): Promise<MissingAutoView> {
+  const [{ data: setting, error }, { data: runs }] = await Promise.all([
+    supabase.from("homework_missing_auto").select("enabled, send_time, schedule_changed_at, updated_at, updated_by").eq("id", true).maybeSingle(),
+    supabase.from("homework_missing_auto_runs").select("run_date, started_at, finished_at, sent, opted_out, tracks, error").order("run_date", { ascending: false }).limit(14),
+  ]);
+  if (error || !setting) return { kind: "unreadable" };
+  const now = Date.now();
+  const { hour, minute } = autoTimeParts(setting.send_time);
+  const list = runs ?? [];
+  const todayRun = list.find((r) => r.run_date === kstDay(now));
+  const next = nextAutoRun(
+    { enabled: setting.enabled, sendTime: `${hour}:${minute}`, scheduleChangedAt: Date.parse(setting.schedule_changed_at) },
+    todayRun ? { finished: !!todayRun.finished_at } : null,
+    now,
+  );
+
+  const latest = list[0];
+  const when = (r: { run_date: string; started_at: string }) => `${formatDate(r.run_date)} ${kstHm(r.started_at)}`;
+  let last: Extract<MissingAutoView, { kind: "ready" }>["last"] = null;
+  if (latest) {
+    if (!latest.finished_at) {
+      last = latest.error
+        ? { text: `${when(latest)} · 보내지 못했어요 (${latest.error}) — 15분 뒤 다시 해요`, tone: "error" }
+        : { text: `${when(latest)} · 보내는 중이에요`, tone: "quiet" };
+    } else if ((latest.sent ?? 0) > 0) {
+      const what = tracksLabel(latest.tracks);
+      const off = (latest.opted_out ?? 0) > 0 ? ` · 알림 안 받기 ${latest.opted_out}명은 뺐어요` : "";
+      last = { text: `${when(latest)}${what ? ` · ${what}` : ""} · ${latest.sent}명에게 보냈어요${off}`, tone: "ok" };
+    } else {
+      const off = (latest.opted_out ?? 0) > 0 ? ` (알림 안 받기 ${latest.opted_out}명은 뺐어요)` : "";
+      last = { text: `${when(latest)} · 새로 기한이 지난 숙제를 안 낸 학생이 없었어요${off}`, tone: "quiet" };
+    }
+  }
+  const sentRun = latest && latest.finished_at && (latest.sent ?? 0) === 0 ? list.find((r) => r.finished_at && (r.sent ?? 0) > 0) : undefined;
+  const lastSent = sentRun ? `${when(sentRun)}${tracksLabel(sentRun.tracks) ? ` · ${tracksLabel(sentRun.tracks)}` : ""} · ${sentRun.sent}명` : null;
+
+  const names = setting.updated_by ? await getProfileNames(supabase, [setting.updated_by]) : new Map();
+  const who = setting.updated_by ? names.get(setting.updated_by)?.name : undefined;
+  const changed = setting.updated_by ? `${formatDate(setting.updated_at)} ${kstHm(setting.updated_at)}${who ? ` · ${who}` : ""}` : null;
+
+  return {
+    kind: "ready",
+    enabled: setting.enabled,
+    hour,
+    minute,
+    next: next ? `${formatDate(next.day)} ${next.time}` : null,
+    nextSoon: !!next?.soon,
+    last,
+    lastSent,
+    changed,
+  };
 }
