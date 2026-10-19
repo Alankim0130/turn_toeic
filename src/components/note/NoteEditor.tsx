@@ -21,8 +21,11 @@ import {
   docToNote,
   imageRun,
   lineOf,
+  moveObject,
   normalizeRuns,
+  objectStep,
   parseDoc,
+  removeObject,
   replaceTable,
   resizeImage,
   runClassName,
@@ -33,6 +36,7 @@ import {
   styleAt,
   tableRun,
   tableSize,
+  tableToNote,
   wordRangeAt,
   type NoteAlign,
   type NoteChange,
@@ -43,13 +47,15 @@ import {
   type NoteSize,
   type NoteStyle,
   type NoteTable,
+  type ObjectPlace,
 } from "@/lib/note-format";
+import { tableClipboard } from "@/lib/note-copy";
 import { pasteParts, type PastedTables } from "@/lib/note-paste";
 import { isImageType, MB, objectName } from "@/lib/upload";
 import { uploadFile } from "@/lib/upload-client";
 import { cn } from "@/lib/utils";
 import { TableEditDialog } from "./TableEditDialog";
-import { AlignGlyph, Divider, TableGlyph, Tool } from "./tools";
+import { AlignGlyph, ArrowGlyph, Divider, TableGlyph, Tool } from "./tools";
 
 const fmt = (n: number) => n.toLocaleString("ko-KR");
 
@@ -84,6 +90,10 @@ export type NoteEditorImages = {
  *   같은 날 "표를 직접 만드는 것도 넣어주면 좋겠어") — `표 넣기` 로 만들거나(크기 → 셀 채우기 · 줄 · 칸 · 합치기 팝업, `TableEditDialog`),
  *   붙여 넣은 HTML 에 표가 있으면 표로 받는다(`note-paste.ts` — 합친 칸 · 칸 정렬 · 머리칸 · 칸 안 줄바꿈, 색 · 글꼴은 글자처럼 빠진다). 표는 그림처럼 한 줄에 하나 ·
  *   한 글자(`OBJ`)이고, 누르면 `표 고치기`(같은 팝업) · `표 지우기` 가 뜬다. 클립보드에 표 HTML 과 그림 파일이 함께 있으면(엑셀 · 워드가 표 그림을 같이 싣는다) 표가 먼저다.
+ * - **표 옮기기 · 복사**(2026-10-19 Alan — "본문에 표를 삽입하려고 해서 위치 이동을 시킬려고 하니깐 위치이동이 안돼. 그리고 해당 표를 복사하려고해도 복사가 안돼") —
+ *   누른 표에 `위로` · `아래로`(한 줄씩 — `objectStep` · `moveObject`) · `복사` · `잘라내기`, PC 는 표를 끌어 줄 사이에 놓는다(놓을 자리에 줄이 그어진다).
+ *   표를 누르면 커서가 표 바로 뒤라 브라우저의 Ctrl+C 는 아무것도 복사하지 않았다 — 그 자리에서 누른 Ctrl(⌘)+C · X 는 편집기가 받아 표를 싣는다(`tableClipboard`).
+ *   클립보드의 표는 우리 편집기 · 워드 · 엑셀에 표로 붙고, 우리 편집기에는 칸 글자 한 자까지 그대로 돌아온다(`data-note-table`). 잘라내기는 다 실은 뒤에야 지운다.
  */
 export function NoteEditor({
   id,
@@ -112,6 +122,8 @@ export function NoteEditor({
   const editor = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const lastRange = useRef<[number, number] | null>(null);
+  /** 끌고 있는 표의 자리 — 이 편집기 안에서 끌기를 시작했을 때만 (다른 편집기 · 다른 곳에서 온 끌기는 받지 않는다) */
+  const dragFrom = useRef<number | null>(null);
   const urls = useRef<Record<string, string>>({ ...(images?.urls ?? {}) });
   const [value, setValue] = useState(defaultValue);
   const [hint, setHint] = useState<string | null>(null);
@@ -266,12 +278,13 @@ export function NoteEditor({
   function pickObj(node: HTMLElement) {
     const el = editor.current;
     if (!el || disabled) return;
-    const e = scan(el).entries.find((x) => x.node === node);
+    const s = scan(el);
+    const e = s.entries.find((x) => x.node === node);
     if (!e) return;
     if (node.dataset.table !== undefined) {
       const table = readTable(node);
       if (!table) return;
-      setPicked({ offset: e.start, kind: "table", table });
+      setPicked(tablePick(s.doc, e.start, table));
     } else {
       const img = readImg(node);
       if (!img) return;
@@ -299,8 +312,62 @@ export function NoteEditor({
     if (!el || picked?.kind !== "table") return;
     const next = replaceTable(scan(el).doc, picked.offset, table);
     repaint(next, picked.offset);
-    setPicked({ offset: picked.offset, kind: "table", table });
+    setPicked(tablePick(next, picked.offset, table));
     commit(next);
+  }
+
+  /** 표를 `to` 줄의 앞 · 뒤로 — 위로 · 아래로 버튼 · 끌어 놓기. 옮긴 표를 고른 채로 두어 이어서 누를 수 있다 */
+  function moveObj(from: number, to: ObjectPlace) {
+    const el = editor.current;
+    if (!el || disabled) return;
+    const moved = moveObject(scan(el).doc, from, to);
+    const table = moved && runAt(moved.doc, moved.offset)?.style.table;
+    if (!moved || !table) return;
+    repaint(moved.doc, moved.offset);
+    setPicked(tablePick(moved.doc, moved.offset, table));
+    el.focus({ preventScroll: true });
+    writeSelection(el, moved.offset + 1, moved.offset + 1);
+    // 옮긴 표가 칸 밖으로 나갔으면 보이는 데까지만 굴린다
+    const node = scan(el).entries.find((x) => x.kind === "obj" && x.start === moved.offset)?.node;
+    if (node instanceof HTMLElement) node.scrollIntoView({ block: "nearest" });
+    commit(moved.doc);
+  }
+
+  function moveStep(dir: "up" | "down") {
+    const el = editor.current;
+    if (!el || picked?.kind !== "table") return;
+    const to = objectStep(scan(el).doc, picked.offset, dir);
+    if (to) moveObj(picked.offset, to);
+  }
+
+  /**
+   * 고른 표를 클립보드에 — `복사` · `잘라내기` 버튼, 표 바로 뒤 커서에서 누른 Ctrl(⌘)+C · X.
+   * 잘라내기는 다 실은 뒤에야 지운다 (못 실었는데 지우면 표가 사라진다 — 이 편집기에는 되돌리기가 없다)
+   */
+  async function copyPicked(cut: boolean) {
+    const el = editor.current;
+    if (!el || picked?.kind !== "table") return;
+    const { offset, table } = picked;
+    if (!(await writeClipboard(tableClipboard(table)))) {
+      setHint("이 브라우저에서는 표를 복사하지 못했어요. 위로 · 아래로 버튼으로 옮겨 주세요.");
+      return;
+    }
+    const paste = "넣을 자리를 누르고 붙여 넣으세요 (Ctrl+V · 휴대폰은 길게 눌러 붙여넣기).";
+    if (!cut) {
+      setHint(`표를 복사했어요. ${paste}`);
+      return;
+    }
+    // 싣는 동안 칸이 바뀌었으면(다른 표가 그 자리로 왔으면) 지우지 않는다
+    const doc = scan(el).doc;
+    const here = runAt(doc, offset)?.style.table;
+    const next = here && tableToNote(here) === tableToNote(table) ? removeObject(doc, offset) : null;
+    if (!next || disabled) return;
+    setPicked(null);
+    repaint(next.doc, null);
+    el.focus({ preventScroll: true });
+    writeSelection(el, next.offset, next.offset);
+    commit(next.doc);
+    setHint(`표를 잘라 냈어요. ${paste}`);
   }
 
   /**
@@ -335,8 +402,8 @@ export function NoteEditor({
     insertBlocks(parts);
     setHint(
       truncated
-        ? `표가 커서 앞 ${TABLE_MAX_ROWS}줄 · ${TABLE_MAX_COLS}칸까지만 넣었어요. 표를 누르면 고치거나 지울 수 있어요.`
-        : "표를 붙여 넣었어요. 표를 누르면 고치거나 지울 수 있어요.",
+        ? `표가 커서 앞 ${TABLE_MAX_ROWS}줄 · ${TABLE_MAX_COLS}칸까지만 넣었어요. 표를 누르면 옮기거나 고칠 수 있어요.`
+        : "표를 붙여 넣었어요. 표를 누르면 옮기거나 고칠 수 있어요.",
     );
   }
 
@@ -345,7 +412,7 @@ export function NoteEditor({
     setTableEdit(null);
     if (!editor.current || disabled) return;
     insertBlocks([{ kind: "table", table }]);
-    setHint("표를 넣었어요. 표를 누르면 고치거나 지울 수 있어요.");
+    setHint("표를 넣었어요. 표를 누르면 옮기거나 고칠 수 있어요.");
   }
 
   function removePicked() {
@@ -357,7 +424,7 @@ export function NoteEditor({
     commit(next);
   }
 
-  const pickedTable = picked?.kind === "table" ? { table: picked.table, size: tableSize(picked.table) } : null;
+  const pickedTable = picked?.kind === "table" ? { table: picked.table, size: tableSize(picked.table), up: picked.up, down: picked.down } : null;
 
   return (
     <>
@@ -463,6 +530,24 @@ export function NoteEditor({
             {pickedTable.size.rows}줄 · {pickedTable.size.cols}칸
           </span>
           <span className="flex-1" />
+          <Tool label="표를 한 줄 위로" onUse={() => moveStep("up")} disabled={!pickedTable.up} wide>
+            <span className="inline-flex items-center gap-0.5">
+              <ArrowGlyph dir="up" />
+              위로
+            </span>
+          </Tool>
+          <Tool label="표를 한 줄 아래로" onUse={() => moveStep("down")} disabled={!pickedTable.down} wide>
+            <span className="inline-flex items-center gap-0.5">
+              <ArrowGlyph dir="down" />
+              아래로
+            </span>
+          </Tool>
+          <Tool label="표 복사 (Ctrl+C)" onUse={() => void copyPicked(false)} wide>
+            복사
+          </Tool>
+          <Tool label="표 잘라내기 (Ctrl+X) — 넣을 자리에서 붙여 넣으면 옮겨져요" onUse={() => void copyPicked(true)} wide>
+            잘라내기
+          </Tool>
           <Tool label="표 고치기 — 셀 글자 · 줄 · 칸 · 셀 합치기" onUse={() => setTableEdit({ table: pickedTable.table })} wide>
             표 고치기
           </Tool>
@@ -490,6 +575,15 @@ export function NoteEditor({
           setPicked(null);
           setHint(null);
         }}
+        onPointerDown={(e) => {
+          // 표 끌기 (PC 마우스) — 누르는 동안만 끌 수 있게 한다. 늘 draggable 이면 크롬이 글을 골라 복사할 때 표를 통째로 뺀다 (실측 — 전체 선택 · 복사에 표가 없었다)
+          if (e.pointerType !== "mouse" || e.button !== 0 || disabled) return;
+          const wrap = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-table]") : null;
+          if (!wrap || !e.currentTarget.contains(wrap)) return;
+          wrap.draggable = true;
+          // 끌지 않고 놓으면 바로 되돌린다 (칸 밖에서 놓아도). 끌었으면 onDragEnd · 놓은 뒤 다시 그리기가 되돌린다
+          window.addEventListener("pointerup", () => (wrap.draggable = false), { capture: true, once: true });
+        }}
         onClick={(e) => {
           const t = e.target;
           const obj = t instanceof Element ? t.closest<HTMLElement>("[data-img],[data-table]") : null;
@@ -507,7 +601,14 @@ export function NoteEditor({
             return;
           }
           if (e.metaKey || e.ctrlKey) {
-            const flag = ({ b: "bold", u: "underline", i: "italic" } as const)[e.key.toLowerCase() as "b" | "u" | "i"];
+            const key = keyLetter(e);
+            // 고른 표의 복사 · 잘라내기 — 커서가 그 표 바로 뒤(표를 누른 그대로)일 때만. 글자를 골랐으면 브라우저가 그 글자를 복사한다
+            if ((key === "c" || key === "x") && !e.altKey && !e.shiftKey && picked?.kind === "table" && caretOnObj(e.currentTarget, picked.offset)) {
+              e.preventDefault();
+              void copyPicked(key === "x");
+              return;
+            }
+            const flag = ({ b: "bold", u: "underline", i: "italic" } as const)[key as "b" | "u" | "i"];
             if (flag) {
               e.preventDefault();
               change({ kind: "flag", flag });
@@ -531,10 +632,55 @@ export function NoteEditor({
           const text = e.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n").replaceAll(OBJ, "");
           if (text) insert(text);
         }}
+        onDragStart={(e) => {
+          // 표 끌기 (PC) — 글자 끌기는 브라우저에 맡기고 놓기만 막는다 (예전과 같다)
+          const el = e.currentTarget;
+          const wrap = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-table]") : null;
+          if (!wrap || !el.contains(wrap)) return;
+          const entry = scan(el).entries.find((x) => x.node === wrap);
+          if (disabled || !entry || !readTable(wrap)) {
+            e.preventDefault();
+            return;
+          }
+          dragFrom.current = entry.start;
+          e.dataTransfer.effectAllowed = "move";
+          // 우리만 아는 형식 — 다른 칸(제목 입력 등)에 놓아도 글자가 들어가지 않는다
+          e.dataTransfer.setData(DRAG_TYPE, String(entry.start));
+          // 여기서 표를 고르지 않는다 — 도구줄이 칸 위에 생기며 표가 아래로 밀리면, 브라우저는 끌던 표가 마우스 밑에서 사라졌다고 보고 끌기를 바로 멈춘다 (크롬 실측)
+          wrap.classList.add(DRAGGING);
+        }}
+        onDragOver={(e) => {
+          if (dragFrom.current === null) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          markDrop(e.currentTarget, dropSpot(e.currentTarget, e.clientY));
+        }}
+        onDragLeave={(e) => {
+          if (dragFrom.current === null) return;
+          const next = e.relatedTarget;
+          if (!(next instanceof Node && e.currentTarget.contains(next))) markDrop(e.currentTarget, null);
+        }}
         onDrop={(e) => {
           e.preventDefault();
+          const el = e.currentTarget;
+          if (dragFrom.current !== null) {
+            const from = dragFrom.current;
+            dragFrom.current = null;
+            const spot = dropSpot(el, e.clientY);
+            markDrop(el, null);
+            if (spot) moveObj(from, placeOf(el, spot));
+            return;
+          }
           const files = [...e.dataTransfer.files].filter((f) => isImageType(f.type));
           if (images && files.length) void addImages(files);
+        }}
+        onDragEnd={(e) => {
+          dragFrom.current = null;
+          markDrop(e.currentTarget, null);
+          e.currentTarget.querySelectorAll<HTMLElement>("[data-table]").forEach((n) => {
+            n.classList.remove(DRAGGING);
+            n.draggable = false;
+          });
         }}
         className={cn(
           "input max-h-[70vh] resize-y overflow-y-auto !py-2 text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] text-ink-soft",
@@ -548,8 +694,8 @@ export function NoteEditor({
         <span className={cn(hint && "font-bold text-brand-700")}>
           {hint ??
             (images
-              ? "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 사진 · 표를 누르면 고칠 수 있어요. 다른 곳의 표는 복사해 붙여 넣어도 돼요."
-              : "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 한 번 더 누르면 풀려요. 표를 누르면 고칠 수 있어요. 다른 곳의 표는 복사해 붙여 넣어도 돼요.")}
+              ? "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 사진을 누르면 크기를 바꾸고, 표를 누르면 옮기기 · 복사 · 고치기가 나와요 (PC 는 표를 끌어서 옮겨도 돼요). 다른 곳의 표도 복사해 붙여 넣으면 돼요."
+              : "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 한 번 더 누르면 풀려요. 표를 누르면 옮기기 · 복사 · 고치기가 나와요 (PC 는 표를 끌어서 옮겨도 돼요). 다른 곳의 표도 복사해 붙여 넣으면 돼요.")}
         </span>
         <span className="shrink-0">
           {over && <>{fmt(length - max)}자를 줄여 주세요 · </>}
@@ -560,8 +706,67 @@ export function NoteEditor({
   );
 }
 
-/** 누른 그림 · 표 — 그 자리(offset)와 지금 값 */
-type Picked = { offset: number; kind: "img"; img: NoteImage } | { offset: number; kind: "table"; table: NoteTable };
+/** 누른 그림 · 표 — 그 자리(offset)와 지금 값. 표는 위로 · 아래로 갈 데가 있는지도 (버튼을 잠근다) */
+type Picked = { offset: number; kind: "img"; img: NoteImage } | { offset: number; kind: "table"; table: NoteTable; up: boolean; down: boolean };
+
+const tablePick = (doc: NoteDoc, offset: number, table: NoteTable): Picked => ({
+  offset,
+  kind: "table",
+  table,
+  up: objectStep(doc, offset, "up") !== null,
+  down: objectStep(doc, offset, "down") !== null,
+});
+
+/** `offset` 자리에서 시작하는 조각 */
+function runAt(doc: NoteDoc, offset: number): NoteRun | null {
+  let pos = 0;
+  for (const r of doc.runs) {
+    if (pos === offset) return r;
+    pos += Array.from(r.text).length;
+    if (pos > offset) return null;
+  }
+  return null;
+}
+
+/** 단축키 글자 — 한글 자판(ㅊ · ㅌ …)이어도 자리(KeyC)로 읽는다 */
+const keyLetter = (e: React.KeyboardEvent) => (/^[a-z]$/i.test(e.key) ? e.key.toLowerCase() : e.code.startsWith("Key") ? e.code.slice(3).toLowerCase() : "");
+
+/**
+ * 클립보드에 HTML · 글을 함께 싣는다. copy 이벤트에 직접 싣는 길이 먼저다 — 누른 그 순간 안에서 바로 끝나고(동기),
+ * 고른 글자가 없어도 스크립트의 copy 명령에는 이벤트가 온다 (크롬 실측. 사파리는 고른 글자가 없으면 copy 명령을 꺼 두는데,
+ * beforecopy 를 막아 두면 켜진다 — 그래서 함께 단다). 그 길이 막힌 브라우저면 비동기 클립보드로 —
+ * 이것도 같은 순간에 부른다 (기다린 뒤에 부르면 사파리가 막는다)
+ */
+async function writeClipboard({ html, text }: { html: string; text: string }): Promise<boolean> {
+  let done = false;
+  const onBeforeCopy = (e: Event) => e.preventDefault();
+  const onCopy = (e: ClipboardEvent) => {
+    if (!e.clipboardData) return;
+    e.clipboardData.setData("text/html", html);
+    e.clipboardData.setData("text/plain", text);
+    e.preventDefault();
+    e.stopPropagation();
+    done = true;
+  };
+  document.addEventListener("beforecopy", onBeforeCopy, true);
+  document.addEventListener("copy", onCopy, true);
+  try {
+    document.execCommand("copy");
+  } catch {
+    // 아래 길로
+  } finally {
+    document.removeEventListener("beforecopy", onBeforeCopy, true);
+    document.removeEventListener("copy", onCopy, true);
+  }
+  if (done) return true;
+  try {
+    if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) return false;
+    await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) })]);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function offsetOfRun(runs: NoteRun[], index: number) {
   let n = 0;
@@ -594,6 +799,8 @@ function readTable(el: HTMLElement): NoteTable | null {
 function tableElement(t: NoteTable): HTMLTableElement {
   const table = document.createElement("table");
   table.className = NOTE_TABLE;
+  // 저장 모양 — 글자와 함께 골라 복사해도(브라우저의 복사) 우리 편집기에 붙이면 칸 글자 한 자까지 그대로 돌아온다 (`note-paste.ts`)
+  table.dataset.noteTable = tableToNote(t);
   const body = document.createElement("tbody");
   for (const row of t.rows) {
     const tr = document.createElement("tr");
@@ -628,7 +835,7 @@ function paint(root: HTMLElement, doc: NoteDoc, urls: Record<string, string>, se
     const div = document.createElement("div");
     const a = doc.aligns[i] ?? "left";
     div.dataset.align = a;
-    div.className = alignClassName(a);
+    div.className = cn(alignClassName(a), DROP_MARK);
     for (const r of line) {
       if (r.style.img) {
         const img = document.createElement("img");
@@ -642,10 +849,11 @@ function paint(root: HTMLElement, doc: NoteDoc, urls: Record<string, string>, se
         div.append(img);
       } else if (r.style.table) {
         // 그림처럼 줄 안의 한 덩어리(inline-block) — 줄 끝 받침 <br> 이 표 아래 빈 줄을 만들지 않게
+        // 끌어서 옮긴다 (PC) — 누르면 고르고, 누른 채 끌면 줄 사이로. 끌 수 있게(draggable) 하는 것은 마우스를 누르는 동안만이다 (편집기의 onPointerDown)
         const wrap = document.createElement("div");
         wrap.dataset.table = JSON.stringify(r.style.table);
         wrap.contentEditable = "false";
-        wrap.className = cn(NOTE_TABLE_WRAP, "inline-block w-full cursor-pointer rounded-sm align-top", pos === selected && PICKED);
+        wrap.className = cn(NOTE_TABLE_WRAP, "inline-block w-full cursor-grab rounded-sm align-top active:cursor-grabbing", pos === selected && PICKED);
         wrap.append(tableElement(r.style.table));
         div.append(wrap);
       } else {
@@ -675,6 +883,47 @@ function paint(root: HTMLElement, doc: NoteDoc, urls: Record<string, string>, se
 function markPicked(root: HTMLElement, node: HTMLElement | null) {
   root.querySelectorAll("[data-img],[data-table]").forEach((el) => el.classList.remove(...PICKED_CLASSES));
   node?.classList.add(...PICKED_CLASSES);
+}
+
+/* ── 표 끌어 놓기 (2026-10-19) ── */
+
+/** 끌기 데이터 형식 — 우리 편집기만 읽는다 */
+const DRAG_TYPE = "application/x-winnertoeic-note-table";
+/** 끌고 있는 표 */
+const DRAGGING = "opacity-40";
+/** 놓을 자리 — 그 줄의 위 · 아래 끝에 그어지는 줄 (관리자 모드는 파랑, 학생 모드는 분홍 — 브랜드 토큰) */
+const DROP_MARK = "data-[drop=before]:shadow-[inset_0_3px_0_var(--color-brand-500)] data-[drop=after]:shadow-[inset_0_-3px_0_var(--color-brand-500)]";
+
+type DropSpot = { node: HTMLElement; place: "before" | "after" };
+
+/** 끌어 놓을 자리 — 마우스가 있는 줄과, 그 줄의 위 · 아래 절반 중 어디인가 (줄 가운데에 놓아도 줄을 가르지 않는다) */
+function dropSpot(root: HTMLElement, y: number): DropSpot | null {
+  const lines = [...root.children].filter((c): c is HTMLElement => c instanceof HTMLElement && isBlock(c));
+  for (const node of lines) {
+    const r = node.getBoundingClientRect();
+    if (y < r.bottom) return { node, place: y < r.top + r.height / 2 ? "before" : "after" };
+  }
+  const last = lines.at(-1);
+  return last ? { node: last, place: "after" } : null;
+}
+
+function markDrop(root: HTMLElement, spot: DropSpot | null) {
+  root.querySelectorAll<HTMLElement>("[data-drop]").forEach((n) => {
+    if (n !== spot?.node) delete n.dataset.drop;
+  });
+  if (spot && spot.node.dataset.drop !== spot.place) spot.node.dataset.drop = spot.place;
+}
+
+/** 놓을 줄의 글 모델 줄 번호 */
+function placeOf(root: HTMLElement, spot: DropSpot): ObjectPlace {
+  const { doc, entries } = scan(root);
+  return { line: lineOf(doc.runs, offsetAt(entries, spot.node, 0)), place: spot.place };
+}
+
+/** 커서가 `offset` 표 바로 뒤에 있거나 그 표만 골랐나 — 표를 누른 그대로인가 */
+function caretOnObj(root: HTMLElement, offset: number) {
+  const r = readSelection(root);
+  return !!r && ((r[0] === r[1] && r[0] === offset + 1) || (r[0] === offset && r[1] === offset + 1));
 }
 
 function styleOfNode(node: Node, root: HTMLElement): NoteStyle {

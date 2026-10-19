@@ -276,3 +276,89 @@ describe("표 (2026-10-07 Alan — 다른 블로그에서 붙여 넣은 표)", (
     expect(v.chars).toBe("아래 표를 외워 오세요\n".length + 1);
   });
 });
+
+import { moveObject, objectStep, removeObject, type NoteDoc } from "./note-format";
+
+describe("표 옮기기 (2026-10-19 Alan — 표를 넣고 위치 이동이 안 됐다)", () => {
+  const T: NoteTable = { rows: [[{ text: "의문사", head: true }, { text: "be" }], [{ text: "When", align: "center" }, { text: "am" }]] };
+  const TB = tableToNote(T);
+  /** 글 → 옮기기 → 글. 표 자리는 글에서 찾는다 */
+  const at = (note: string) => Array.from(runsText(parseDoc(note).runs)).indexOf(OBJ);
+  const move = (note: string, to: { line: number; place: "before" | "after" }) => {
+    const r = moveObject(parseDoc(note), at(note), to);
+    return r && { note: docToNote(r.doc), offset: r.offset, table: Array.from(runsText(r.doc.runs))[r.offset] === OBJ };
+  };
+  const step = (note: string, dir: "up" | "down") => {
+    const d = parseDoc(note);
+    const to = objectStep(d, at(note), dir);
+    return to && docToNote(moveObject(d, at(note), to)!.doc);
+  };
+
+  it("위로 · 아래로 — 혼자 선 표는 앞 · 뒤 줄과 자리를 바꾼다 (빈 줄도 한 줄)", () => {
+    const note = `가\n나\n${TB}\n\n다`;
+    expect(step(note, "up")).toBe(`가\n${TB}\n나\n\n다`);
+    expect(step(note, "down")).toBe(`가\n나\n\n${TB}\n다`);
+    // 여러 번 누르면 계속 간다 — 맨 위 · 맨 아래에서는 더 갈 데가 없다
+    expect(step(step(step(note, "up")!, "up")!, "up")).toBeNull();
+    expect(step(`${TB}\n가`, "up")).toBeNull();
+    expect(step(`가\n${TB}`, "down")).toBeNull();
+    expect(step(TB, "up")).toBeNull();
+    expect(step(TB, "down")).toBeNull();
+  });
+
+  it("같은 줄에 글자가 있으면 먼저 그 글자 위(아래)의 제 줄로 떼어 낸다 — 앞뒤 글자는 붙지 않고 두 줄로", () => {
+    expect(step(`가\n앞${TB}뒤\n나`, "up")).toBe(`가\n${TB}\n앞\n뒤\n나`);
+    expect(step(`가\n앞${TB}뒤\n나`, "down")).toBe(`가\n앞\n뒤\n${TB}\n나`);
+    expect(step(`가\n${TB}뒤`, "up")).toBe(`${TB}\n가\n뒤`);
+    expect(step(`가\n${TB}뒤`, "down")).toBe(`가\n뒤\n${TB}`);
+    expect(step(`앞${TB}`, "up")).toBe(`${TB}\n앞`);
+    expect(step(`앞${TB}`, "down")).toBeNull();
+  });
+
+  it("아무 줄 앞 · 뒤로 (끌어 놓기) — 새 자리 · 정렬 · 제자리", () => {
+    const note = `[center]가\n[right]${TB}\n나\n다`;
+    expect(move(note, { line: 0, place: "before" })).toEqual({ note: `[right]${TB}\n[center]가\n나\n다`, offset: 0, table: true });
+    expect(move(note, { line: 3, place: "after" })).toEqual({ note: `[center]가\n나\n다\n[right]${TB}`, offset: 6, table: true });
+    expect(move(note, { line: 2, place: "before" })?.note).toBe(note); // 바로 아래 줄 앞 = 제자리
+    expect(move(note, { line: 0, place: "after" })?.note).toBe(note); // 바로 위 줄 뒤 = 제자리
+    expect(move(note, { line: 1, place: "before" })?.note).toBe(note); // 제 줄
+    expect(move(note, { line: 1, place: "after" })?.note).toBe(note);
+    // 표 · 앞뒤 글자를 다른 서식과 함께 — 서식은 그대로 따라간다
+    expect(move(`[b]굵게[/b]\n${TB}`, { line: 0, place: "before" })?.note).toBe(`${TB}\n[b]굵게[/b]`);
+  });
+
+  it("두 표 · 그림 사이에서도 고른 표만 옮긴다", () => {
+    const other = tableToNote({ rows: [[{ text: "다른 표" }]] });
+    const note = `${other}\n가\n${TB}`;
+    const d = parseDoc(note);
+    const r = moveObject(d, Array.from(runsText(d.runs)).lastIndexOf(OBJ), { line: 0, place: "before" });
+    expect(docToNote(r!.doc)).toBe(`${TB}\n${other}\n가`);
+    const img = moveObject(parseDoc("가\n[img=images/a.png w=50]"), 2, { line: 0, place: "before" });
+    expect(docToNote(img!.doc)).toBe("[img=images/a.png w=50]\n가");
+  });
+
+  it("그 자리에 표가 없거나 줄이 틀리면 null", () => {
+    const d = parseDoc(`가\n${TB}`);
+    expect(moveObject(d, 0, { line: 0, place: "before" })).toBeNull();
+    expect(moveObject(d, 2, { line: 5, place: "before" })).toBeNull();
+    expect(moveObject(d, 2, { line: -1, place: "before" })).toBeNull();
+    expect(objectStep(d, 1, "up")).toBeNull();
+  });
+
+  it("잘라내기 — 혼자 선 줄은 줄째, 앞뒤 글자가 있으면 둘로 나뉘고 커서는 뺀 자리에", () => {
+    const cut = (note: string) => {
+      const r = removeObject(parseDoc(note), at(note));
+      return r && { note: docToNote(r.doc), offset: r.offset };
+    };
+    expect(cut(`가\n${TB}\n나`)).toEqual({ note: "가\n나", offset: 2 });
+    expect(cut(`가\n${TB}`)).toEqual({ note: "가", offset: 1 });
+    expect(cut(`${TB}\n가`)).toEqual({ note: "가", offset: 0 });
+    expect(cut(TB)).toEqual({ note: "", offset: 0 });
+    expect(cut(`가\n앞${TB}뒤`)).toEqual({ note: "가\n앞\n뒤", offset: 3 });
+    expect(cut(`[center]앞${TB}`)).toEqual({ note: "[center]앞", offset: 1 });
+    expect(cut(`${TB}뒤`)).toEqual({ note: "뒤", offset: 0 });
+    expect(removeObject(parseDoc("글만"), 0)).toBeNull();
+    const empty: NoteDoc = removeObject(parseDoc(TB), 0)!.doc;
+    expect(empty.aligns).toEqual(["left"]);
+  });
+});

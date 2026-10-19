@@ -56,6 +56,15 @@ export function AlignGlyph({ align }: { align: NoteAlign }) {
   );
 }
 
+/** 위 · 아래 꺾쇠 — 고른 표의 `위로` · `아래로` 버튼 (수업자료실 순서 단추와 같은 꼴) */
+export function ArrowGlyph({ dir }: { dir: "up" | "down" }) {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden className="size-3.5 fill-none stroke-current stroke-2">
+      <path d={dir === "up" ? "M3.5 10.5 8 6l4.5 4.5" : "M3.5 5.5 8 10l4.5-4.5"} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /** 표 그림 — `표 넣기` 버튼 */
 export function TableGlyph() {
   return (

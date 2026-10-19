@@ -1,4 +1,4 @@
-import { TABLE_MAX_COLS, TABLE_MAX_ROWS, cleanCellText, type NoteCell, type NoteCellAlign, type NoteTable } from "./note-format";
+import { TABLE_MAX_COLS, TABLE_MAX_ROWS, asNoteTable, cleanCellText, parseTableBody, type NoteCell, type NoteCellAlign, type NoteTable } from "./note-format";
 
 /**
  * 붙여 넣은 HTML 속 표 → 안내 글의 표 (2026-10-07 Alan — "수업자료실에서 안내사항에 이런표도 넣고싶어.
@@ -13,6 +13,8 @@ import { TABLE_MAX_COLS, TABLE_MAX_ROWS, cleanCellText, type NoteCell, type Note
  * - 줄 · 칸이 상한(`TABLE_MAX_ROWS` · `TABLE_MAX_COLS`)을 넘으면 잘라 넣고 `truncated` 로 알린다.
  * - **HTML 을 그대로 넣지 않는다** — 글자와 숫자 몇 개만 꺼내 `note-format.ts` 의 표로 만든다. `DOMParser` 문서는 스크립트가 돌지 않고 그림도 받지 않는다.
  * - 브라우저 밖(테스트)에서도 돌도록 DOM 의 기본 칸(nodeType · nodeName · childNodes · getAttribute)만 쓴다.
+ * - **우리 편집기에서 복사한 표**는 `<table data-note-table="[table]…[/table]">` 를 먼저 읽는다 (2026-10-19 — 표 복사 · 잘라내기 · 끌어 놓기,
+ *   `note-copy.ts` · 편집기 칸). 칸 안 빈칸 · 합친 칸까지 그대로 돌아온다. 못 읽는 값이거나 화면의 표와 꼴이 다르면(표의 몇 칸만 골라 복사) 화면에 보이는 대로 읽는다.
  */
 
 export type PastePart = { kind: "text"; text: string } | { kind: "table"; table: NoteTable };
@@ -199,8 +201,43 @@ function spanOf(el: Element, name: "rowspan" | "colspan"): number {
   return Math.min(n, name === "rowspan" ? TABLE_MAX_ROWS : TABLE_MAX_COLS);
 }
 
-/** HTML 표 하나 → 표. 칸이 하나도 없으면 null */
+/**
+ * 우리가 실어 둔 표 원본 (`data-note-table` — 저장 모양 그대로). 꼴이 틀리거나 상한을 넘으면 null.
+ * 밖에서 온 클립보드라도 아는 칸만 받는다(`asNoteTable`) — 표 글자일 뿐 HTML 로 들어가지 않는다
+ */
+function noteTableOf(el: Element): NoteTable | null {
+  const m = /^\[table\]([\s\S]*)\[\/table\]$/.exec(attr(el, "data-note-table"));
+  return m ? asNoteTable(parseTableBody(m[1])) : null;
+}
+
+/**
+ * HTML 표 하나 → 표. 칸이 하나도 없으면 null.
+ * 우리가 실어 둔 원본(`data-note-table`)은 **화면의 표와 같은 꼴일 때만** 쓴다 — 표의 몇 칸만 골라 복사해도(휴대폰에서 칸을 걸쳐 고르기 등)
+ * 브라우저는 감싼 `<table>` 을 속성째 실어서, 원본을 그대로 믿으면 고르지 않은 칸까지 표 전체가 붙는다
+ */
 function tableFrom(el: Element): { table: NoteTable; truncated: boolean } | null {
+  const seen = visualTable(el);
+  const exact = noteTableOf(el);
+  return exact && seen && sameCells(exact, seen.table) ? { table: exact, truncated: false } : seen;
+}
+
+/** 줄 수 · 줄마다 칸 수 · 합친 칸 · 칸 글자(빈칸을 한 칸으로 줄여서)가 같은가 — 정렬 · 머리칸은 고른 범위와 상관없어 보지 않는다 */
+function sameCells(a: NoteTable, b: NoteTable): boolean {
+  const squash = (s: string) => s.replace(/\s+/g, " ").trim();
+  return (
+    a.rows.length === b.rows.length &&
+    a.rows.every((row, r) => {
+      const other = b.rows[r];
+      return (
+        row.length === other.length &&
+        row.every((c, i) => (c.rowspan ?? 1) === (other[i].rowspan ?? 1) && (c.colspan ?? 1) === (other[i].colspan ?? 1) && squash(c.text) === squash(other[i].text))
+      );
+    })
+  );
+}
+
+/** 화면에 보이는 대로 — 줄 · 칸 · 합친 칸 · 정렬 · 머리칸 · 칸 글자 */
+function visualTable(el: Element): { table: NoteTable; truncated: boolean } | null {
   let trs = tableRows(el);
   let truncated = false;
   if (trs.length > TABLE_MAX_ROWS) {

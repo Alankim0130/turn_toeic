@@ -531,6 +531,101 @@ export function replaceTable(doc: NoteDoc, offset: number, table: NoteTable): No
   return { runs, aligns: doc.aligns };
 }
 
+/* ── 표 옮기기 (2026-10-19 Alan — "본문에 표를 삽입하려고 해서 위치 이동을 시킬려고 하니깐 위치이동이 안돼") ── */
+
+/** 덩어리를 놓을 자리 — `line` 째 줄의 앞(before) · 뒤(after)에 제 줄로 선다 */
+export type ObjectPlace = { line: number; place: "before" | "after" };
+
+type DocLine = { runs: NoteRun[]; align: NoteAlign };
+
+const docLines = (doc: NoteDoc): DocLine[] => splitLines(doc.runs).map((runs, i) => ({ runs, align: doc.aligns[i] ?? "left" }));
+const lineLength = (l: DocLine) => l.runs.reduce((n, r) => n + runLength(r), 0);
+/** `index` 째 줄이 시작하는 글자 자리 */
+const lineStartOf = (lines: DocLine[], index: number) => lines.slice(0, index).reduce((n, l) => n + lineLength(l) + 1, 0);
+
+function joinLines(lines: DocLine[]): NoteDoc {
+  const runs: NoteRun[] = [];
+  lines.forEach((l, i) => {
+    if (i > 0) runs.push({ text: "\n", style: {} });
+    runs.push(...l.runs);
+  });
+  return { runs: normalizeRuns(runs), aligns: lines.map((l) => l.align) };
+}
+
+/** `offset` 자리의 덩어리(표 · 그림)가 몇째 줄 · 그 줄의 몇째 조각인가 */
+function findObject(lines: DocLine[], offset: number): { line: number; index: number } | null {
+  let pos = 0;
+  for (let i = 0; i < lines.length; i++) {
+    for (let k = 0; k < lines[i].runs.length; k++) {
+      const r = lines[i].runs[k];
+      if (pos === offset && isObjStyle(r.style)) return { line: i, index: k };
+      pos += runLength(r);
+    }
+    pos += 1;
+  }
+  return null;
+}
+
+/**
+ * `offset` 자리의 덩어리를 글에서 뺀다 — 혼자 있던 줄은 줄째 빠지고, 앞뒤에 글자가 있던 줄은 그 자리에서 두 줄로 나뉜다
+ * (표는 칸 폭을 다 차지해 화면에서 그 둘을 가르고 있었다 — 그냥 빼면 두 줄이 한 줄로 붙는다). 덩어리가 없으면 null.
+ * `before` · `after` 는 그 줄에서 덩어리 앞 · 뒤에 있던 글자 줄 (없으면 null) — 뺀 뒤 `line` 째부터 차례로 선다
+ */
+function takeObject(doc: NoteDoc, offset: number) {
+  const lines = docLines(doc);
+  const at = findObject(lines, offset);
+  if (!at) return null;
+  const { runs, align } = lines[at.line];
+  const part = (rs: NoteRun[]): DocLine | null => (rs.length ? { runs: rs, align } : null);
+  const before = part(runs.slice(0, at.index));
+  const after = part(runs.slice(at.index + 1));
+  const rest = [before, after].filter((l): l is DocLine => l !== null);
+  return { total: lines.length, obj: runs[at.index], line: at.line, before, rest, lines: [...lines.slice(0, at.line), ...rest, ...lines.slice(at.line + 1)] };
+}
+
+/**
+ * 덩어리 하나를 `to` 줄의 앞 · 뒤로 옮긴다 — 옮긴 덩어리는 늘 제 줄에 혼자 선다 (표 넣기 · 붙여 넣기와 같은 규칙).
+ * `to.line` 은 옮기기 전의 줄 번호다. 덩어리 줄은 원래 줄의 정렬을 가져간다. 돌려주는 `offset` 은 옮긴 덩어리의 새 자리 · 덩어리가 없으면 null
+ */
+export function moveObject(doc: NoteDoc, offset: number, to: ObjectPlace): { doc: NoteDoc; offset: number } | null {
+  const taken = takeObject(doc, offset);
+  if (!taken || !Number.isInteger(to.line) || to.line < 0 || to.line >= taken.total) return null;
+  const { lines, obj, line, rest } = taken;
+  // 넣을 자리 — 덩어리를 뺀 뒤의 줄 번호로 (원래 줄 자리에는 남은 글자 0 ~ 2 줄이 선다)
+  let index: number;
+  if (to.line === line) index = to.place === "before" ? line : line + rest.length;
+  else {
+    const at = to.line < line ? to.line : to.line - 1 + rest.length;
+    index = to.place === "before" ? at : at + 1;
+  }
+  lines.splice(index, 0, { runs: [obj], align: doc.aligns[line] ?? "left" });
+  return { doc: joinLines(lines), offset: lineStartOf(lines, index) };
+}
+
+/**
+ * 위로 · 아래로 한 칸 — 앞(뒤) 줄과 자리를 바꾼다. 같은 줄에 글자가 있으면 먼저 그 글자 위(아래)의 제 줄로 떼어 낸다.
+ * 더 갈 데가 없으면(맨 위 · 맨 아래) null
+ */
+export function objectStep(doc: NoteDoc, offset: number, dir: "up" | "down"): ObjectPlace | null {
+  const lines = docLines(doc);
+  const at = findObject(lines, offset);
+  if (!at) return null;
+  const { line, index } = at;
+  if (dir === "up") return index > 0 ? { line, place: "before" } : line > 0 ? { line: line - 1, place: "before" } : null;
+  return index < lines[line].runs.length - 1 ? { line, place: "after" } : line < lines.length - 1 ? { line: line + 1, place: "after" } : null;
+}
+
+/** 덩어리를 뺀다 — 잘라내기. `offset` 은 뺀 자리(커서를 둘 곳 — 앞 글자가 있었으면 그 끝). 덩어리가 없으면 null */
+export function removeObject(doc: NoteDoc, offset: number): { doc: NoteDoc; offset: number } | null {
+  const taken = takeObject(doc, offset);
+  if (!taken) return null;
+  const { lines, line, before } = taken;
+  if (lines.length === 0) return { doc: { runs: [], aligns: ["left"] }, offset: 0 };
+  // 마지막 줄이 통째로 빠졌으면 글 끝
+  const caret = line < lines.length ? lineStartOf(lines, line) + (before ? lineLength(before) : 0) : lineStartOf(lines, lines.length) - 1;
+  return { doc: joinLines(lines), offset: caret };
+}
+
 /**
  * 표 모양 — 학생 화면(`NoteBody`)과 편집기가 같은 클래스를 쓴다. 표는 칸 폭을 꽉 채우고, 휴대폰에서 칸이 모자라면 표만 옆으로 민다
  * (낱말 가운데서 끊지 않는다 — 안내 글의 `overflow-wrap:anywhere` 를 표 안에서는 끈다). 줄 정렬이 표 칸에 번지지 않게 왼쪽이 기본이다.
