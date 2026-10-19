@@ -112,19 +112,6 @@ export function linkRuns(runs: readonly NoteRun[]): LinkedRun[] {
   return out;
 }
 
-/** 글자 한 덩어리(표 칸) → 글자 · 링크 조각 */
-export function linkText(text: string): { text: string; href?: string }[] {
-  const out: { text: string; href?: string }[] = [];
-  let at = 0;
-  for (const s of findUrls(text)) {
-    if (s.start > at) out.push({ text: text.slice(at, s.start) });
-    out.push({ text: text.slice(s.start, s.end), href: s.href });
-    at = s.end;
-  }
-  if (at < text.length) out.push({ text: text.slice(at) });
-  return out;
-}
-
 /** 안내 글 속 링크 모양 — 브랜드색 글자 + 밑줄. 긴 주소는 아무 데서나 줄을 바꾼다(표 칸 안에서도) */
 export const NOTE_LINK_CLASS =
   "font-semibold text-brand-700 underline decoration-brand-300 decoration-1 underline-offset-2 [overflow-wrap:anywhere] hover:decoration-brand-600";

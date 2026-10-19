@@ -3,10 +3,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { MaterialNote } from "@/components/class-materials/MaterialNote";
-import { NoteBody } from "@/components/note/NoteBody";
+import { NoteBody, NoteTableView } from "@/components/note/NoteBody";
 import { CLASS_MATERIAL_LINK_URL_MAX, noteView } from "./class-materials";
-import { OBJ, parseDoc, runsLength, runsText, sliceRuns, splitLines, tableToNote, type NoteRun } from "./note-format";
-import { findUrls, linkRuns, linkText, noteLinkHref } from "./note-links";
+import { OBJ, cellWithRuns, parseDoc, runsLength, runsText, sliceRuns, splitLines, tableToNote, type NoteRun, type NoteTable } from "./note-format";
+import { findUrls, linkRuns, noteLinkHref } from "./note-links";
 
 /**
  * 특강 안내 글 속 주소를 누르면 바로 가는 링크 (2026-10-16 Alan — "특강신청에서 안내글에서 링크가 있다면 클릭했을때 바로가기가 되면 좋겠어").
@@ -118,14 +118,38 @@ describe("조각에 링크 표시 — 서식이 갈라도 한 링크 · 그림 �
     // 링크 표시가 없으면 칸 글자는 예전처럼 글자뿐이다
     expect(renderToStaticMarkup(createElement(NoteBody, { runs, aligns: ["left", "left"] }))).not.toContain("<a ");
   });
-  it("표 칸 글자도 같은 규칙", () => {
-    expect(linkText("PDF https://a.com/p.pdf, 카톡 www.kakao.com")).toEqual([
+  it("표 칸 글자도 같은 규칙 — 칸의 서식 조각째 (2026-10-19 칸 글자 서식)", () => {
+    const parts = (runs: NoteRun[]) => linkRuns(runs).map((r) => (r.link ? { text: r.text, href: r.link.href } : { text: r.text }));
+    expect(parts([{ text: "PDF https://a.com/p.pdf, 카톡 www.kakao.com", style: {} }])).toEqual([
       { text: "PDF " },
       { text: "https://a.com/p.pdf", href: "https://a.com/p.pdf" },
       { text: ", 카톡 " },
       { text: "www.kakao.com", href: "https://www.kakao.com/" },
     ]);
-    expect(linkText("주소 없음")).toEqual([{ text: "주소 없음" }]);
+    expect(parts([{ text: "주소 없음", style: {} }])).toEqual([{ text: "주소 없음" }]);
+  });
+  it("칸 글자 서식이 학생 화면에 그대로 — 굵은 정답 · 칸 안 줄바꿈 · 서식이 갈라도 링크 하나", () => {
+    const q = "80. What is the company trying to do?\n(A) Implement a recycling program\n(B) Reduce electricity use";
+    const at = q.indexOf("(B)");
+    const table: NoteTable = {
+      rows: [
+        [cellWithRuns({ text: "" }, [{ text: q.slice(0, at), style: {} }, { text: q.slice(at), style: { bold: true } }])],
+        [cellWithRuns({ text: "" }, [{ text: "자료 https://a.com/", style: {} }, { text: "pdf", style: { bold: true } }, { text: " 받기", style: {} }])],
+      ],
+    };
+    const html = renderToStaticMarkup(createElement(NoteTableView, { table, linkify: true }));
+    expect(html).toContain('<span class="font-bold">(B) Reduce electricity use</span>');
+    expect(html).toContain("(A) Implement a recycling program\n");
+    expect(html.match(/<a /g)).toHaveLength(1);
+    expect(html).toContain('<a href="https://a.com/pdf" target="_blank" rel="noopener noreferrer"');
+    // linkify 가 아니면 링크 없이 서식만
+    const plain = renderToStaticMarkup(createElement(NoteTableView, { table }));
+    expect(plain).not.toContain("<a ");
+    expect(plain).toContain('<span class="font-bold">pdf</span>');
+    // 저장했다 다시 읽어도 같은 그림
+    const back = parseDoc(tableToNote(table)).runs[0].style.table;
+    expect(back).toEqual(table);
+    expect(renderToStaticMarkup(createElement(NoteTableView, { table: back!, linkify: true }))).toBe(html);
   });
   it("줄 자르기 · 앞부분 자르기가 링크 표시를 지킨다", () => {
     const linked = linkRuns(parseDoc("첫 줄\nhttps://a.com/x 둘째 줄").runs);

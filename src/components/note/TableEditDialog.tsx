@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
-import { NOTE_ALIGN_LABEL, NOTE_ALIGNS, TABLE_MAX_COLS, TABLE_MAX_ROWS, cleanCellText, type NoteAlign, type NoteTable } from "@/lib/note-format";
+import { NOTE_ALIGN_LABEL, NOTE_ALIGNS, TABLE_MAX_COLS, TABLE_MAX_ROWS, tidyCell, type NoteAlign, type NoteTable } from "@/lib/note-format";
 import {
   cellAt,
   cellsIn,
@@ -240,7 +240,7 @@ function GridEditor({ initial, isNew, onApply, onCancel }: { initial: TableGrid;
   }
 
   function apply() {
-    onApply(fromGrid({ ...grid, cells: grid.cells.map((x) => ({ ...x, text: cleanCellText(x.text).trim() })) }));
+    onApply(fromGrid({ ...grid, cells: grid.cells.map(tidyCell) }));
   }
 
   const where =
@@ -363,6 +363,12 @@ function GridEditor({ initial, isNew, onApply, onCancel }: { initial: TableGrid;
           ? "두 귀퉁이 셀을 차례로 누르면 그 사이가 모두 골라져요. 글자를 고치려면 ‘여러 셀 고르기’를 다시 눌러 끄세요."
           : "셀 안에서 Enter 로 줄을 바꿔요. 여러 셀은 끌거나 Shift+클릭으로 고르고, 휴대폰은 ‘여러 셀 고르기’를 켜고 두 귀퉁이를 차례로 누르세요."}
       </p>
+      {/* 글자 칸(textarea)은 서식을 그리지 못한다 — 굵게 한 정답이 사라진 줄 알지 않게 (2026-10-19 표 칸 글자 서식) */}
+      {grid.cells.some((x) => x.runs) && (
+        <p className="mt-1 text-[11px] leading-relaxed text-mist">
+          굵게 · 색 같은 글자 꾸밈은 여기 글자 칸에는 안 보이지만 그대로 남아요. 꾸밈을 바꾸려면 팝업을 닫고 편집기에서 표 안 글자를 골라 서식 버튼을 누르세요.
+        </p>
+      )}
       <Footer ok={isNew ? "표 넣기" : "적용"} onOk={apply} onCancel={onCancel} />
     </>
   );

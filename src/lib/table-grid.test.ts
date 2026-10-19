@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TABLE_MAX_COLS, TABLE_MAX_ROWS, asNoteTable, parseTableBody, tableSize, tableToNote, type NoteTable } from "./note-format";
+import { TABLE_MAX_COLS, TABLE_MAX_ROWS, asNoteTable, cellWithRuns, parseTableBody, runsText, tableSize, tableToNote, type NoteRun, type NoteTable } from "./note-format";
 import {
   cellAt,
   cellsIn,
@@ -49,6 +49,12 @@ function expectWellFormed(g: TableGrid) {
   }
   expect(cover.flat().every((n) => n === 1)).toBe(true);
   expect(new Set(g.cells.map((x) => x.id)).size).toBe(g.cells.length);
+  // 칸 글자 서식 — 이은 글자가 늘 칸 글자 · 서식이 없으면 runs 가 없다
+  for (const x of g.cells) {
+    if (!x.runs) continue;
+    expect(runsText(x.runs)).toBe(x.text);
+    expect(x.runs.some((r) => Object.keys(r.style).length > 0)).toBe(true);
+  }
   for (let r = 0; r < g.rows; r++) expect(g.cells.some((x) => x.r === r)).toBe(true);
   for (let c = 0; c < g.cols; c++) expect(g.cells.some((x) => x.c === c)).toBe(true);
   const t = fromGrid(g);
@@ -259,6 +265,40 @@ describe("표 격자 (2026-10-07 Alan — 표를 직접 만들기)", () => {
     expect(fromGrid(g)).toEqual(ALAN);
   });
 
+  it("칸 글자 서식(2026-10-19 — 정답 굵게)은 셀을 따라간다 — 격자로 옮겨도 · 합치기 · 나누기 · 줄 넣기 · 글자 고치기", () => {
+    const bold = (text: string): NoteRun => ({ text, style: { bold: true } });
+    const plain = (text: string): NoteRun => ({ text, style: {} });
+    const styled: NoteTable = {
+      rows: [
+        [cellWithRuns({ text: "" }, [plain("(A) x "), bold("(B) 정답")]), cellWithRuns({ text: "" }, [bold("굵은 칸")])],
+        [{ text: "보통" }, cellWithRuns({ text: "", align: "center" }, [plain("가"), { text: "나", style: { color: "red" } }])],
+      ],
+    };
+    let g = toGrid(styled);
+    expectWellFormed(g);
+    expect(fromGrid(g)).toEqual(styled);
+    // 줄을 넣어도 다른 셀의 서식은 그대로
+    expect(fromGrid(insertRow(g, 1, 0)).rows[0]).toEqual(styled.rows[0]);
+    // 합치기 — 서식째 줄을 바꿔 잇는다 (앞뒤 빈칸은 걷고)
+    const merged = mergeCells(g, rect(0, 0, 1, 0));
+    expect(cellAt(merged, 0, 0)?.runs).toEqual([plain("(A) x "), bold("(B) 정답"), plain("\n보통")]);
+    expectWellFormed(merged);
+    // 나누기 — 글자와 서식은 왼쪽 위 셀에
+    const split = splitCells(merged, [cellAt(merged, 0, 0)!.id]);
+    expect(cellAt(split, 0, 0)?.runs).toEqual(cellAt(merged, 0, 0)?.runs);
+    expect(cellAt(split, 1, 0)?.text).toBe("");
+    expectWellFormed(split);
+    // 팝업의 글자 칸에서 고쳐도 — 글자 칸은 한 번에 한 자리씩 바뀐다(치기 · 지우기 · 붙여 넣기 한 번마다 onChange).
+    // 앞 글자를 고친 것은 서식 그대로, 굵은 낱말 끝에 친 글자는 굵게
+    g = setText(g, cellAt(g, 0, 0)!.id, "(A) y (B) 정답");
+    g = setText(g, cellAt(g, 0, 0)!.id, "(A) y (B) 정답!");
+    expect(cellAt(g, 0, 0)?.runs).toEqual([plain("(A) y "), bold("(B) 정답!")]);
+    // 굵은 글자를 다 지우면 서식이 없는 칸이다
+    g = setText(g, cellAt(g, 0, 1)!.id, "");
+    expect(cellAt(g, 0, 1)).not.toHaveProperty("runs");
+    expectWellFormed(g);
+  });
+
   it("아무렇게나 고쳐도 격자가 무너지지 않는다 (줄 · 칸 넣기 · 지우기 · 합치기 · 나누기 2,000번)", () => {
     // 같은 순서가 매번 나오게 — 실패하면 다시 돌려 볼 수 있다
     let seed = 20261007;
@@ -266,11 +306,31 @@ describe("표 격자 (2026-10-07 Alan — 표를 직접 만들기)", () => {
       seed = (seed * 1103515245 + 12345) % 2147483648;
       return seed % n;
     };
-    let g = toGrid(ALAN);
+    // 칸 글자 서식도 함께 — 굵게 · 빨강이 섞인 칸에서 시작해 글자도 고친다 (2026-10-19)
+    let g = toGrid({
+      rows: ALAN.rows.map((row) =>
+        row.map((c, i) =>
+          i % 2 === 0 && c.text.length > 2
+            ? cellWithRuns(c, [
+                { text: c.text.slice(0, 2), style: { bold: true } },
+                { text: c.text.slice(2), style: { color: "red" } },
+              ])
+            : c,
+        ),
+      ),
+    });
+    expectWellFormed(g);
     for (let step = 0; step < 2000; step++) {
       const a = cellAt(g, rand(g.rows), rand(g.cols))!;
       const b = cellAt(g, rand(g.rows), rand(g.cols))!;
       const sel = selectionRect(g, a, b);
+      if (rand(4) === 0) {
+        // 글자 고치기 — 가운데 몇 글자를 바꾸거나 지우거나 더한다
+        const chars = Array.from(a.text);
+        const at = rand(chars.length + 1);
+        const cut = rand(Math.min(3, chars.length - at) + 1);
+        g = setText(g, a.id, [...chars.slice(0, at), ..."가\nb".slice(0, rand(4)), ...chars.slice(at + cut)].join(""));
+      }
       switch (rand(7)) {
         case 0:
           g = insertRow(g, rand(g.rows + 1), rand(g.rows));

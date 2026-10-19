@@ -10,11 +10,25 @@
  * - 셀 id 는 고치는 동안 그대로다 (화면의 key · 고른 셀이 따라간다). 새로 생긴 셀만 새 id 를 받는다.
  * - 상한은 글과 같다 (`TABLE_MAX_ROWS` · `TABLE_MAX_COLS`) — 넘게 넣으려 하면 그대로 돌려준다. 그래서 격자를 글로 되돌린 표는 늘 글로 다시 읽힌다.
  * - 줄 · 칸은 한 함수(`insertLine` · `deleteLines`)로 다루고 칸은 격자를 뒤집어(`transpose`) 같은 함수에 넣는다 — 두 벌을 따로 두면 한쪽만 고치는 날 갈라진다.
+ * - **칸 글자 서식(`runs`, 2026-10-19)은 셀을 따라간다** — 줄 · 칸 넣기 · 지우기 · 나누기는 셀을 그대로 옮기고, 합치기는 서식째 줄을 바꿔 잇고,
+ *   글자 칸에서 글자를 고치면 앞뒤로 그대로인 글자의 서식이 남는다 (`setText` → `editRunsText`). 팝업의 글자 칸은 서식을 보여 주지 않는다.
  */
-import { TABLE_MAX_COLS, TABLE_MAX_ROWS, type NoteAlign, type NoteCell, type NoteCellAlign, type NoteTable } from "./note-format";
+import {
+  TABLE_MAX_COLS,
+  TABLE_MAX_ROWS,
+  cellRuns,
+  cellWithRuns,
+  editRunsText,
+  trimRuns,
+  type NoteAlign,
+  type NoteCell,
+  type NoteCellAlign,
+  type NoteRun,
+  type NoteTable,
+} from "./note-format";
 
-/** 격자의 셀 — 왼쪽 위 자리(r · c)와 덮는 줄 수 · 칸 수(rs · cs) */
-export type GridCell = { id: number; r: number; c: number; rs: number; cs: number; text: string; align?: NoteCellAlign; head?: boolean };
+/** 격자의 셀 — 왼쪽 위 자리(r · c)와 덮는 줄 수 · 칸 수(rs · cs). `runs` 는 글자 서식 (`NoteCell` 과 같다) */
+export type GridCell = { id: number; r: number; c: number; rs: number; cs: number; text: string; runs?: NoteRun[]; align?: NoteCellAlign; head?: boolean };
 export type TableGrid = { rows: number; cols: number; cells: GridCell[]; nextId: number };
 /** 줄 r0~r1 · 칸 c0~c1 (끝 포함) */
 export type GridRect = { r0: number; c0: number; r1: number; c1: number };
@@ -89,7 +103,8 @@ export function toGrid(t: NoteTable): TableGrid {
         }
       }
       for (let i = 0; i < rs; i++) for (let j = 0; j < cs; j++) taken[r + i][c + j] = true;
-      placed.push(make(placed.length, r, c, rs, cs, x.text, x.align, x.head));
+      const cell = make(placed.length, r, c, rs, cs, x.text, x.align, x.head);
+      placed.push(x.runs ? cellWithRuns(cell, cellRuns(x)) : cell);
       c += cs;
       cols = Math.max(cols, c);
     }
@@ -113,7 +128,7 @@ export function fromGrid(g: TableGrid): NoteTable {
   return {
     rows: gridRows(g).map((row) =>
       row.map((x) => {
-        const cell: NoteCell = { text: x.text };
+        const cell: NoteCell = x.runs ? cellWithRuns({ text: x.text }, cellRuns(x)) : { text: x.text };
         if (x.rs > 1) cell.rowspan = x.rs;
         if (x.cs > 1) cell.colspan = x.cs;
         if (x.align) cell.align = x.align;
@@ -227,17 +242,17 @@ export function cellsIn(g: TableGrid, rect: GridRect): GridCell[] {
   return g.cells.filter((x) => x.r >= rect.r0 && bottom(x) <= rect.r1 && x.c >= rect.c0 && right(x) <= rect.c1).sort(byPlace);
 }
 
-/** 네모 안의 셀을 하나로 — 왼쪽 위 셀의 서식을 남기고, 글자는 읽는 순서대로 줄을 바꿔 잇는다 (빈 셀은 건너뛴다) */
+/** 네모 안의 셀을 하나로 — 왼쪽 위 셀의 서식(정렬 · 제목 셀)을 남기고, 글자는 읽는 순서대로 줄을 바꿔 잇는다 (빈 셀은 건너뛴다 · 글자 서식은 따라간다) */
 export function mergeCells(g: TableGrid, rect: GridRect): TableGrid {
   const inside = cellsIn(g, rect);
   if (inside.length < 2) return g;
   const [first] = inside;
-  const text = inside
-    .map((x) => x.text.trim())
-    .filter(Boolean)
-    .join("\n");
+  const runs = inside
+    .map((x) => trimRuns(cellRuns(x)))
+    .filter((rs) => rs.length > 0)
+    .flatMap((rs, k) => (k > 0 ? [{ text: "\n", style: {} }, ...rs] : rs));
   const gone = new Set(inside.map((x) => x.id));
-  const merged: GridCell = { ...first, r: rect.r0, c: rect.c0, rs: rect.r1 - rect.r0 + 1, cs: rect.c1 - rect.c0 + 1, text };
+  const merged = cellWithRuns<GridCell>({ ...first, r: rect.r0, c: rect.c0, rs: rect.r1 - rect.r0 + 1, cs: rect.c1 - rect.c0 + 1 }, runs);
   return normalize({ ...g, cells: [...g.cells.filter((x) => !gone.has(x.id)), merged] });
 }
 
@@ -288,7 +303,7 @@ export function setHead(g: TableGrid, ids: Iterable<number>, head: boolean): Tab
   };
 }
 
-/** 한 셀의 글자 */
+/** 한 셀의 글자 — 글자 서식이 있으면 앞뒤로 그대로인 글자의 서식을 남긴다 (`editRunsText`) */
 export function setText(g: TableGrid, id: number, text: string): TableGrid {
-  return { ...g, cells: g.cells.map((x) => (x.id === id ? { ...x, text } : x)) };
+  return { ...g, cells: g.cells.map((x) => (x.id !== id ? x : x.runs ? cellWithRuns(x, editRunsText(cellRuns(x), text)) : { ...x, text })) };
 }

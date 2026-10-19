@@ -9,7 +9,6 @@ import {
   NOTE_COLORS,
   NOTE_SIZES,
   NOTE_TABLE,
-  NOTE_TABLE_WRAP,
   OBJ,
   TABLE_MAX_COLS,
   TABLE_MAX_ROWS,
@@ -18,26 +17,38 @@ import {
   applyNoteChange,
   asNoteTable,
   cellClassName,
+  cellRuns,
+  cellStylesIn,
+  cellsAlign,
+  commonStyle,
   docToNote,
   imageRun,
   lineOf,
   moveObject,
+  noteStyleChanger,
   normalizeRuns,
   objectStep,
   parseDoc,
   removeObject,
   replaceTable,
   resizeImage,
+  restyleCells,
+  restyleRuns,
   runClassName,
   runsLength,
   runsText,
+  setCellsAlign,
   spliceDoc,
   splitLines,
   styleAt,
+  stylesIn,
+  tableAt,
+  tableNear,
   tableRun,
   tableSize,
   tableToNote,
   wordRangeAt,
+  type CellRange,
   type NoteAlign,
   type NoteChange,
   type NoteColor,
@@ -94,6 +105,13 @@ export type NoteEditorImages = {
  *   누른 표에 `위로` · `아래로`(한 줄씩 — `objectStep` · `moveObject`) · `복사` · `잘라내기`, PC 는 표를 끌어 줄 사이에 놓는다(놓을 자리에 줄이 그어진다).
  *   표를 누르면 커서가 표 바로 뒤라 브라우저의 Ctrl+C 는 아무것도 복사하지 않았다 — 그 자리에서 누른 Ctrl(⌘)+C · X 는 편집기가 받아 표를 싣는다(`tableClipboard`).
  *   클립보드의 표는 우리 편집기 · 워드 · 엑셀에 표로 붙고, 우리 편집기에는 칸 글자 한 자까지 그대로 돌아온다(`data-note-table`). 잘라내기는 다 실은 뒤에야 지운다.
+ * - **표 안 글자 서식**(같은 날 Alan — "표를 복사해서 넣고 난 뒤에 표 안에 정답을 진하게 표시하고 싶은데, 본문내용을 마우스로 쭈욱 드래그가 안잡혀") —
+ *   칸 글자를 끌어(두 번 눌러) 골라 서식 버튼 · Ctrl(⌘)+B · U · I · 정렬을 누르면 그 칸 글자에 건다(`readCellSelection` → `restyleCells` · `setCellsAlign`).
+ *   칸은 그대로 고칠 수 없는 덩어리라(글자는 `표 고치기` 에서) 칸 글자를 골라 둔 채 치기 · 지우기 · Enter · 붙여 넣기는 안내만 한다.
+ *   표를 끌어 옮기는 것은 **왼쪽 위 손잡이**(PC 마우스, `data-grip`)에서만 — 표 어디서나 끌리면 칸 글자를 고를 수가 없었다.
+ *   표를 한 번 누르면 조금 뒤에 고른다(`PICK_DELAY`) — 바로 고르면 도구줄이 생기며 표가 밀려, 두 번 눌러 낱말을 고르는 두 번째 누름이 다른 글자에 간다.
+ * - **표에 닿은 선택의 지우기 · 치기는 글 모델로**(같은 날 시험 중 찾음 — 예전부터 있던 일): 표 바로 윗줄을 줄바꿈까지 고른 채 지우면 크롬이 input 없이 표를 옮기다 말아
+ *   다음 글자에 표가 통째로 지워졌다. `beforeinput` 에서 막고 `insert` 로 한다(`tableNear` · `MODEL_INPUTS`).
  */
 export function NoteEditor({
   id,
@@ -122,13 +140,18 @@ export function NoteEditor({
   const editor = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const lastRange = useRef<[number, number] | null>(null);
+  /** 마지막으로 고른 표 칸 글자 — 휴대폰에서 버튼을 누르면 선택이 풀려도 그 칸에 건다 (`lastRange` 와 같은 까닭) */
+  const lastCells = useRef<CellSelection | null>(null);
+  /** 표를 한 번 누른 뒤 고르기까지 기다리는 중 (두 번 누르기면 거둔다) */
+  const pickTimer = useRef<number | undefined>(undefined);
   /** 끌고 있는 표의 자리 — 이 편집기 안에서 끌기를 시작했을 때만 (다른 편집기 · 다른 곳에서 온 끌기는 받지 않는다) */
   const dragFrom = useRef<number | null>(null);
   const urls = useRef<Record<string, string>>({ ...(images?.urls ?? {}) });
   const [value, setValue] = useState(defaultValue);
   const [hint, setHint] = useState<string | null>(null);
   const [active, setActive] = useState<NoteStyle>({});
-  const [activeAlign, setActiveAlign] = useState<NoteAlign>("left");
+  /** 눌린 정렬 버튼 — 고른 표 칸들의 정렬이 서로 다르면 없음(null) */
+  const [activeAlign, setActiveAlign] = useState<NoteAlign | null>("left");
   const [picked, setPicked] = useState<Picked | null>(null);
   /** 표 팝업 — `table` 이 있으면 누른 표 고치기, 없으면 새 표 만들기 */
   const [tableEdit, setTableEdit] = useState<{ table: NoteTable | null } | null>(null);
@@ -169,21 +192,65 @@ export function NoteEditor({
       const r = readSelection(el);
       if (!r) return;
       lastRange.current = r;
+      const cells = readCellSelection(el);
+      lastCells.current = cells;
       const { doc } = scan(el);
+      if (cells) {
+        // 표 칸 글자(와 함께 고른 표 밖 글자) — 고른 글자가 모두 가진 서식만 눌린 모양
+        setActive(commonStyle(selectionStyles(doc, cells)));
+        setActiveAlign(cells.within ? spansAlign(doc, cells.spans) : (doc.aligns[lineOf(doc.runs, r[0])] ?? "left"));
+        return;
+      }
       setActive(styleAt(doc.runs, r[0], r[1]));
       setActiveAlign(doc.aligns[lineOf(doc.runs, r[0])] ?? "left");
     };
     document.addEventListener("selectionchange", onSelect);
-    return () => document.removeEventListener("selectionchange", onSelect);
+    return () => {
+      document.removeEventListener("selectionchange", onSelect);
+      window.clearTimeout(pickTimer.current);
+    };
   }, []);
 
   /** 지금 선택 (없으면 마지막 선택) */
   const range = () => (editor.current && readSelection(editor.current)) ?? lastRange.current;
+  /** 지금 고른 표 칸 글자 — 칸에 선택이 없으면 마지막으로 고른 칸 글자 (휴대폰에서 버튼을 누르면 선택이 칸 밖으로 풀린다) */
+  const cellSelection = (el: HTMLElement) => (readSelection(el) ? readCellSelection(el) : lastCells.current);
+
+  /** 표 칸 글자를 바꾼 뒤 — 다시 그리고 고른 글자를 되살린다 (이어서 다른 서식을 누르거나 한 번 더 눌러 풀 수 있게) */
+  function finishCells(el: HTMLElement, next: NoteDoc, cells: CellSelection) {
+    setHint(null);
+    repaint(next);
+    el.focus({ preventScroll: true });
+    writeSpots(el, cells.start, cells.end);
+    // 누른 표의 값도 새로 — 복사 · 표 고치기가 바뀌기 전 표를 쓰지 않게
+    if (picked?.kind === "table") {
+      const t = tableAt(next, picked.offset);
+      if (t) setPicked(tablePick(next, picked.offset, t));
+    }
+    commit(next);
+  }
+
+  /** 표 칸 글자(와 함께 고른 표 밖 글자)에 서식 — 고른 글자 전부를 한 번에 세어 걸거나 푼다 (칸마다 따로 세면 굵은 칸만 풀린다) */
+  function changeCells(el: HTMLElement, doc: NoteDoc, cells: CellSelection, c: NoteChange) {
+    const styles = selectionStyles(doc, cells);
+    if (!styles.length) return;
+    const restyle = noteStyleChanger(c, styles);
+    let next = mapTables(doc, cells.spans, (t, ranges) => restyleCells(t, ranges, restyle));
+    const main = mainRange(cells);
+    if (main) next = { runs: restyleRuns(next.runs, main[0], main[1], restyle), aligns: next.aligns };
+    finishCells(el, next, cells);
+    setActive(commonStyle(selectionStyles(next, cells)));
+  }
 
   function change(c: NoteChange) {
     const el = editor.current;
     if (!el || disabled) return;
     const { doc } = scan(el);
+    const cells = cellSelection(el);
+    if (cells) {
+      changeCells(el, doc, cells, c);
+      return;
+    }
     let r = range();
     let caret: number | null = null;
     // 커서만 있으면 그 단어 전체 (워드처럼) — 서식을 건 뒤 커서는 제자리로
@@ -209,6 +276,17 @@ export function NoteEditor({
     const el = editor.current;
     if (!el || disabled) return;
     const { doc } = scan(el);
+    const cells = cellSelection(el);
+    if (cells) {
+      // 고른 표 칸들의 정렬 — 이미 다 그 정렬이면 왼쪽으로 (줄 정렬과 같은 규칙). 함께 고른 표 밖 줄도 정렬한다
+      const target: NoteAlign = a !== "left" && spansAlign(doc, cells.spans) === a ? "left" : a;
+      let next = mapTables(doc, cells.spans, (t, ranges) => setCellsAlign(t, ranges, target));
+      const main = mainRange(cells);
+      if (main) next = alignDoc(next, main[0], main[1], a);
+      finishCells(el, next, cells);
+      setActiveAlign(cells.within ? target : (next.aligns[lineOf(next.runs, main?.[0] ?? 0)] ?? "left"));
+      return;
+    }
     const r = range() ?? [0, 0];
     const next = alignDoc(doc, r[0], r[1], a);
     repaint(next);
@@ -231,6 +309,35 @@ export function NoteEditor({
     writeSelection(el, caret, caret);
     commit(next);
   }
+
+  // 표에 닿은 선택을 지우거나 그 위에 치기 — 브라우저에 맡기지 않고 글 모델로 한다 (2026-10-19 실측 — 예전부터 있던 일).
+  // 표 윗줄을 줄바꿈까지 고른 채(세 번 눌러 고른 줄) 지우거나 치면 크롬이 표를 그 줄로 옮기다 만 채 input 을 보내지 않고, 다음 글자에 표를 통째로 지웠다.
+  // 표 칸 안에서 끝나는 선택(잘라내기 등)은 칸 글자를 건드리지 않고 안내만 한다. 조합 중인 한글은 막을 수 없어 브라우저에 맡긴다 — 그 길은 표가 남았다
+  const tableInput = useRef<(e: InputEvent) => void>(() => {});
+  useEffect(() => {
+    tableInput.current = (e) => {
+      const el = editor.current;
+      if (!el || disabled || e.isComposing || !MODEL_INPUTS.has(e.inputType)) return;
+      if (window.getSelection()?.isCollapsed !== false) return;
+      if (endsInCell(readCellSelection(el))) {
+        e.preventDefault();
+        setHint(CELL_EDIT_HINT);
+        return;
+      }
+      const r = readSelection(el);
+      if (!r || !tableNear(scan(el).doc.runs, r[0], r[1])) return;
+      e.preventDefault();
+      const typed = e.inputType === "insertText" || e.inputType === "insertReplacementText" ? (e.data ?? e.dataTransfer?.getData("text/plain") ?? "") : "";
+      insert(e.inputType === "insertParagraph" || e.inputType === "insertLineBreak" ? "\n" : typed.replace(/\r\n?/g, "\n").replaceAll(OBJ, ""));
+    };
+  });
+  useEffect(() => {
+    const el = editor.current;
+    if (!el) return;
+    const on = (e: Event) => tableInput.current(e as InputEvent);
+    el.addEventListener("beforeinput", on);
+    return () => el.removeEventListener("beforeinput", on);
+  }, []);
 
   async function addImages(files: File[]) {
     if (!images || disabled || files.length === 0) return;
@@ -347,7 +454,9 @@ export function NoteEditor({
   async function copyPicked(cut: boolean) {
     const el = editor.current;
     if (!el || picked?.kind !== "table") return;
-    const { offset, table } = picked;
+    const { offset } = picked;
+    // 지금 칸의 표 — 고른 뒤 칸 글자 서식을 바꿨을 수 있다
+    const table = tableAt(scan(el).doc, offset) ?? picked.table;
     if (!(await writeClipboard(tableClipboard(table)))) {
       setHint("이 브라우저에서는 표를 복사하지 못했어요. 위로 · 아래로 버튼으로 옮겨 주세요.");
       return;
@@ -548,7 +657,11 @@ export function NoteEditor({
           <Tool label="표 잘라내기 (Ctrl+X) — 넣을 자리에서 붙여 넣으면 옮겨져요" onUse={() => void copyPicked(true)} wide>
             잘라내기
           </Tool>
-          <Tool label="표 고치기 — 셀 글자 · 줄 · 칸 · 셀 합치기" onUse={() => setTableEdit({ table: pickedTable.table })} wide>
+          <Tool
+            label="표 고치기 — 셀 글자 · 줄 · 칸 · 셀 합치기"
+            onUse={() => setTableEdit({ table: (editor.current && picked?.kind === "table" && tableAt(scan(editor.current).doc, picked.offset)) || pickedTable.table })}
+            wide
+          >
             표 고치기
           </Tool>
           <Tool label="표 지우기" onUse={removePicked} wide>
@@ -576,18 +689,31 @@ export function NoteEditor({
           setHint(null);
         }}
         onPointerDown={(e) => {
-          // 표 끌기 (PC 마우스) — 누르는 동안만 끌 수 있게 한다. 늘 draggable 이면 크롬이 글을 골라 복사할 때 표를 통째로 뺀다 (실측 — 전체 선택 · 복사에 표가 없었다)
+          // 표 끌기 (PC 마우스) — 왼쪽 위 손잡이를 누르는 동안만 끌 수 있게 한다. 표 어디서나 끌리면 칸 글자를 끌어 고를 수 없고(2026-10-19 Alan),
+          // 늘 draggable 이면 크롬이 글을 골라 복사할 때 표를 통째로 뺀다 (실측 — 전체 선택 · 복사에 표가 없었다)
           if (e.pointerType !== "mouse" || e.button !== 0 || disabled) return;
-          const wrap = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-table]") : null;
+          const grip = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-grip]") : null;
+          const wrap = grip?.closest<HTMLElement>("[data-table]");
           if (!wrap || !e.currentTarget.contains(wrap)) return;
           wrap.draggable = true;
           // 끌지 않고 놓으면 바로 되돌린다 (칸 밖에서 놓아도). 끌었으면 onDragEnd · 놓은 뒤 다시 그리기가 되돌린다
           window.addEventListener("pointerup", () => (wrap.draggable = false), { capture: true, once: true });
         }}
         onClick={(e) => {
+          const el = e.currentTarget;
           const t = e.target;
           const obj = t instanceof Element ? t.closest<HTMLElement>("[data-img],[data-table]") : null;
-          if (obj && e.currentTarget.contains(obj)) pickObj(obj);
+          window.clearTimeout(pickTimer.current);
+          if (obj && el.contains(obj) && obj.dataset.table !== undefined) {
+            // 표 칸 글자를 끌어(두 번 눌러) 골랐으면 그대로 둔다 — 표를 고르면 커서가 표 뒤로 가서 고른 글자가 풀린다
+            if (readCellSelection(el)) return;
+            // 조금 뒤에 고른다 — 두 번 눌러 낱말을 고르는 중일 수 있다. 바로 고르면 도구줄이 생기며 표가 밀려 두 번째 누름이 다른 글자에 간다
+            pickTimer.current = window.setTimeout(() => {
+              if (!readCellSelection(el)) pickObj(obj);
+            }, PICK_DELAY);
+            return;
+          }
+          if (obj && el.contains(obj)) pickObj(obj);
           else if (picked) {
             setPicked(null);
             if (editor.current) markPicked(editor.current, null);
@@ -595,6 +721,13 @@ export function NoteEditor({
         }}
         onKeyDown={(e) => {
           if (e.nativeEvent.isComposing) return;
+          const cells = readCellSelection(e.currentTarget);
+          // 표 칸 안에서 끝나는 선택에 치기 · 지우기 · Enter — 칸 글자는 표 고치기에서 고친다 (브라우저도 고칠 수 없는 칸이라 아무 일도 없어 안내한다)
+          if (endsInCell(cells) && isEditKey(e)) {
+            if (e.key !== "Process") e.preventDefault();
+            setHint(CELL_EDIT_HINT);
+            return;
+          }
           if (e.key === "Enter") {
             e.preventDefault();
             insert("\n");
@@ -603,9 +736,16 @@ export function NoteEditor({
           if (e.metaKey || e.ctrlKey) {
             const key = keyLetter(e);
             // 고른 표의 복사 · 잘라내기 — 커서가 그 표 바로 뒤(표를 누른 그대로)일 때만. 글자를 골랐으면 브라우저가 그 글자를 복사한다
-            if ((key === "c" || key === "x") && !e.altKey && !e.shiftKey && picked?.kind === "table" && caretOnObj(e.currentTarget, picked.offset)) {
+            if ((key === "c" || key === "x") && !e.altKey && !e.shiftKey && !cells && picked?.kind === "table" && caretOnObj(e.currentTarget, picked.offset)) {
               e.preventDefault();
               void copyPicked(key === "x");
+              return;
+            }
+            // 표 칸 안에서 끝나는 선택의 잘라내기 — 칸 글자는 지우지 않고 복사만 한다 (브라우저는 고칠 수 없는 칸이라 복사도 하지 않았다)
+            if (key === "x" && !e.altKey && endsInCell(cells)) {
+              e.preventDefault();
+              document.execCommand("copy");
+              setHint(CELL_EDIT_HINT);
               return;
             }
             const flag = ({ b: "bold", u: "underline", i: "italic" } as const)[key as "b" | "u" | "i"];
@@ -617,6 +757,11 @@ export function NoteEditor({
         }}
         onPaste={(e) => {
           e.preventDefault();
+          // 표 칸 안에서 끝나는 선택 — 칸 글자는 표 고치기에서 고친다 (그대로 두면 표 뒤에 붙는다)
+          if (endsInCell(readCellSelection(e.currentTarget))) {
+            setHint(CELL_EDIT_HINT);
+            return;
+          }
           // 표가 먼저 — 엑셀 · 워드는 표 HTML 과 함께 표를 찍은 그림도 싣는다
           const html = e.clipboardData.getData("text/html");
           const pasted = html ? pasteParts(html) : null;
@@ -633,9 +778,9 @@ export function NoteEditor({
           if (text) insert(text);
         }}
         onDragStart={(e) => {
-          // 표 끌기 (PC) — 글자 끌기는 브라우저에 맡기고 놓기만 막는다 (예전과 같다)
+          // 표 끌기 (PC, 손잡이) — 끄는 것이 표 덩어리 자체일 때만. 고른 칸 글자를 끄는 것은 글자 끌기라 브라우저에 맡기고 놓기만 막는다 (예전과 같다)
           const el = e.currentTarget;
-          const wrap = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-table]") : null;
+          const wrap = e.target instanceof HTMLElement && e.target.dataset.table !== undefined ? e.target : null;
           if (!wrap || !el.contains(wrap)) return;
           const entry = scan(el).entries.find((x) => x.node === wrap);
           if (disabled || !entry || !readTable(wrap)) {
@@ -694,8 +839,8 @@ export function NoteEditor({
         <span className={cn(hint && "font-bold text-brand-700")}>
           {hint ??
             (images
-              ? "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 사진을 누르면 크기를 바꾸고, 표를 누르면 옮기기 · 복사 · 고치기가 나와요 (PC 는 표를 끌어서 옮겨도 돼요). 다른 곳의 표도 복사해 붙여 넣으면 돼요."
-              : "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 한 번 더 누르면 풀려요. 표를 누르면 옮기기 · 복사 · 고치기가 나와요 (PC 는 표를 끌어서 옮겨도 돼요). 다른 곳의 표도 복사해 붙여 넣으면 돼요.")}
+              ? "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 표 안 글자도 골라서 바꿀 수 있어요. 사진을 누르면 크기를 바꾸고, 표를 누르면 옮기기 · 복사 · 고치기가 나와요 (PC 는 표 왼쪽 위 손잡이를 끌어서 옮겨도 돼요). 다른 곳의 표도 복사해 붙여 넣으면 돼요."
+              : "글자를 고르거나 단어에 커서를 두고 누르면 바로 바뀌어요. 한 번 더 누르면 풀려요. 표 안 글자도 골라서 바꿀 수 있어요. 표를 누르면 옮기기 · 복사 · 고치기가 나와요 (PC 는 표 왼쪽 위 손잡이를 끌어서 옮겨도 돼요). 다른 곳의 표도 복사해 붙여 넣으면 돼요.")}
         </span>
         <span className="shrink-0">
           {over && <>{fmt(length - max)}자를 줄여 주세요 · </>}
@@ -795,37 +940,111 @@ function readTable(el: HTMLElement): NoteTable | null {
   }
 }
 
-/** 표를 칸에 그린다 — 학생 화면(`NoteTableView`)과 같은 클래스. 칸 안 줄바꿈은 `<br>` (편집기에서 복사해 다시 붙여 넣어도 줄이 남게) */
+/**
+ * 표를 칸에 그린다 — 학생 화면(`NoteTableView`)과 같은 클래스. 칸 안 줄바꿈은 `<br>` (편집기에서 복사해 다시 붙여 넣어도 줄이 남게).
+ * 칸 글자는 서식 조각째(`runClassName`) 그리고, 칸마다 자리(`data-cell="줄.칸"`)를 적어 둔다 — 고른 칸 글자를 글 모델로 옮길 때 쓴다
+ */
 function tableElement(t: NoteTable): HTMLTableElement {
   const table = document.createElement("table");
   table.className = NOTE_TABLE;
   // 저장 모양 — 글자와 함께 골라 복사해도(브라우저의 복사) 우리 편집기에 붙이면 칸 글자 한 자까지 그대로 돌아온다 (`note-paste.ts`)
   table.dataset.noteTable = tableToNote(t);
   const body = document.createElement("tbody");
-  for (const row of t.rows) {
+  t.rows.forEach((row, ri) => {
     const tr = document.createElement("tr");
-    for (const c of row) {
+    row.forEach((c, ci) => {
       const cell = document.createElement(c.head ? "th" : "td");
       if (c.rowspan) cell.rowSpan = c.rowspan;
       if (c.colspan) cell.colSpan = c.colspan;
       cell.className = cellClassName(c);
-      // 빈 셀은 <br> 하나로 한 줄 높이 (학생 화면과 같다 — 붙여 넣기는 이것을 빈 셀로 읽는다)
-      if (c.text === "") cell.append(document.createElement("br"));
-      c.text.split("\n").forEach((line, k) => {
-        if (k > 0) cell.append(document.createElement("br"));
-        if (line) cell.append(line);
-      });
+      cell.dataset.cell = `${ri}.${ci}`;
+      if (c.text === "") {
+        // 빈 셀은 <br> 하나로 한 줄 높이 (학생 화면과 같다 — 붙여 넣기는 이것을 빈 셀로 읽는다). 받침이라 글자로 세지 않는다
+        const pad = document.createElement("br");
+        pad.dataset.pad = "1";
+        cell.append(pad);
+      }
+      for (const r of cellRuns(c)) {
+        const cls = runClassName(r.style);
+        let target: HTMLElement = cell;
+        if (cls) {
+          target = document.createElement("span");
+          target.className = cls;
+          cell.append(target);
+        }
+        r.text.split("\n").forEach((line, k) => {
+          if (k > 0) target.append(document.createElement("br"));
+          if (line) target.append(line);
+        });
+      }
       tr.append(cell);
-    }
+    });
     body.append(tr);
-  }
+  });
   table.append(body);
   return table;
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** 표 손잡이 — 표 왼쪽 위(칸 여백 자리), PC 에서 표에 마우스를 올리면 보인다. 누른 채 끌면 표를 옮긴다 (편집기의 onPointerDown) */
+function gripElement(): HTMLElement {
+  const grip = document.createElement("span");
+  grip.dataset.grip = "1";
+  grip.title = "끌어서 표 옮기기";
+  grip.setAttribute("aria-hidden", "true");
+  grip.className = GRIP;
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 8 14");
+  svg.setAttribute("class", "h-3.5 w-2 fill-current");
+  for (const [cx, cy] of [
+    [2, 2],
+    [6, 2],
+    [2, 7],
+    [6, 7],
+    [2, 12],
+    [6, 12],
+  ]) {
+    const dot = document.createElementNS(SVG_NS, "circle");
+    dot.setAttribute("cx", String(cx));
+    dot.setAttribute("cy", String(cy));
+    dot.setAttribute("r", "1.4");
+    svg.append(dot);
+  }
+  grip.append(svg);
+  return grip;
 }
 
 /** 누른 그림 · 표의 테두리 */
 const PICKED = "outline outline-2 outline-offset-2 outline-brand-500";
 const PICKED_CLASSES = PICKED.split(" ");
+/**
+ * 표 손잡이 — 표 왼쪽 위, 칸 여백(편집기 안쪽 여백 16px) 자리라 칸 글자를 가리지 않는다. 마우스를 표에 올리면 보인다
+ * (Tailwind 의 hover 는 마우스가 있는 기기에서만 켜진다 — 휴대폰에는 안 보이고, 휴대폰은 위로 · 아래로로 옮긴다)
+ */
+const GRIP =
+  "absolute -left-[15px] top-0 z-10 hidden h-6 w-3.5 cursor-grab items-center justify-center rounded text-mist select-none group-hover/table:flex hover:bg-brand-50 hover:text-brand-600 active:cursor-grabbing";
+/** 표를 한 번 누른 뒤 고르기까지 (ms) — 두 번 눌러 낱말을 고르는 사이에 도구줄이 생기지 않게 */
+const PICK_DELAY = 350;
+/** 표 칸 글자를 골라 둔 채 치기 · 지우기 · Enter · 붙여 넣기 */
+/** 표에 닿은 선택이면 글 모델로 하는 입력 — 지우기 · 잘라내기 · 끌어 옮기기 · 치기 · 줄바꿈 */
+const MODEL_INPUTS = new Set([
+  "deleteContentBackward",
+  "deleteContentForward",
+  "deleteWordBackward",
+  "deleteWordForward",
+  "deleteSoftLineBackward",
+  "deleteSoftLineForward",
+  "deleteHardLineBackward",
+  "deleteHardLineForward",
+  "deleteByCut",
+  "deleteByDrag",
+  "insertText",
+  "insertReplacementText",
+  "insertLineBreak",
+  "insertParagraph",
+]);
+const CELL_EDIT_HINT = "표 칸의 글자는 표를 누르고 ‘표 고치기’에서 고쳐요. 표 안 글자를 골라서는 굵게 · 색 같은 서식과 정렬만 바꿀 수 있어요.";
 
 /** 줄마다 `<div>` — 서식은 data-note 로 적어 두어 다시 읽을 때 쓴다 (클래스는 보이는 모양만) */
 function paint(root: HTMLElement, doc: NoteDoc, urls: Record<string, string>, selected: number | null) {
@@ -849,12 +1068,16 @@ function paint(root: HTMLElement, doc: NoteDoc, urls: Record<string, string>, se
         div.append(img);
       } else if (r.style.table) {
         // 그림처럼 줄 안의 한 덩어리(inline-block) — 줄 끝 받침 <br> 이 표 아래 빈 줄을 만들지 않게
-        // 끌어서 옮긴다 (PC) — 누르면 고르고, 누른 채 끌면 줄 사이로. 끌 수 있게(draggable) 하는 것은 마우스를 누르는 동안만이다 (편집기의 onPointerDown)
+        // 칸 글자는 끌어서 고르고(서식), 표 옮기기는 왼쪽 위 손잡이를 끈다 (PC). 끌 수 있게(draggable) 하는 것은 손잡이를 누르는 동안만이다 (편집기의 onPointerDown)
+        // 옆으로 미는 칸(scroll)을 안에 따로 둔다 — 덩어리가 넘침을 자르면 칸 여백 자리의 손잡이가 잘린다
         const wrap = document.createElement("div");
         wrap.dataset.table = JSON.stringify(r.style.table);
         wrap.contentEditable = "false";
-        wrap.className = cn(NOTE_TABLE_WRAP, "inline-block w-full cursor-grab rounded-sm align-top active:cursor-grabbing", pos === selected && PICKED);
-        wrap.append(tableElement(r.style.table));
+        wrap.className = cn("group/table relative my-1 inline-block w-full rounded-sm align-top", pos === selected && PICKED);
+        const scroll = document.createElement("div");
+        scroll.className = "max-w-full overflow-x-auto";
+        scroll.append(tableElement(r.style.table));
+        wrap.append(gripElement(), scroll);
         div.append(wrap);
       } else {
         const cls = runClassName(r.style);
@@ -1016,6 +1239,16 @@ function offsetAt(entries: Entry[], container: Node, offset: number): number {
     const e = entries.find((x) => x.node === container);
     if (e) return e.start + Array.from((container as Text).data.slice(0, offset)).length;
   }
+  // 표 덩어리 안의 끝점 — 표 글자보다 앞(덩어리 맨 앞 · 손잡이 자리)이면 표 앞, 아니면 표 뒤 (2026-10-19).
+  // 크롬은 표 위 글에서 끌어 내려온 선택의 끝을 덩어리 맨 앞(`wrap, 0`)에 둔다 — 그것을 표 뒤로 세면 서식을 건 뒤 되살린 선택이 표를 품어,
+  // 이어서 누른 Backspace · 붙여넣기에 표가 통째로 지워졌다
+  const wrap = entries.find((e): e is Extract<Entry, { kind: "obj" }> => e.kind === "obj" && e.node.contains(container));
+  const table = wrap?.node.querySelector("table");
+  if (wrap && table) {
+    const at = document.createRange();
+    at.setStart(container, offset);
+    return at.comparePoint(table, 0) >= 0 ? wrap.start : wrap.start + 1;
+  }
   const boundary = container.nodeType === Node.TEXT_NODE ? container : (container.childNodes[offset] ?? null);
   let n = 0;
   for (const e of entries) {
@@ -1045,32 +1278,208 @@ function readSelection(root: HTMLElement): [number, number] | null {
 
 const indexIn = (n: Node) => Array.prototype.indexOf.call(n.parentNode?.childNodes ?? [], n) as number;
 
-/** 다시 그린 칸에 선택을 되살린다 */
-function writeSelection(root: HTMLElement, start: number, end: number) {
-  const { entries } = scan(root);
-  const point = (target: number): [Node, number] => {
-    for (const e of entries) {
-      if (e.kind === "text" && target >= e.start && target <= e.start + e.len) return [e.node, Array.from(e.node.data).slice(0, target - e.start).join("").length];
-      if (e.kind === "obj" && target === e.start) return [e.node.parentNode!, indexIn(e.node)];
-      if (e.kind === "obj" && target === e.start + 1) return [e.node.parentNode!, indexIn(e.node) + 1];
-      if (e.kind === "nl" && target === e.start + 1) return e.block ? [e.node, 0] : [e.node.parentNode!, indexIn(e.node) + 1];
-    }
-    // 빈 첫 줄 · 끝
-    if (target === 0) return [root.firstChild ?? root, 0];
-    const last = root.lastChild;
-    if (last instanceof HTMLElement && isBlock(last)) {
-      const n = last.childNodes.length;
-      return [last, last.lastChild instanceof HTMLBRElement && last.lastChild.dataset[SENTINEL] ? n - 1 : n];
-    }
-    return [root, root.childNodes.length];
-  };
+/** 글자 자리 → 칸 안의 선택 끝점 */
+function textPoint(root: HTMLElement, entries: Entry[], target: number): [Node, number] {
+  for (const e of entries) {
+    if (e.kind === "text" && target >= e.start && target <= e.start + e.len) return [e.node, Array.from(e.node.data).slice(0, target - e.start).join("").length];
+    if (e.kind === "obj" && target === e.start) return [e.node.parentNode!, indexIn(e.node)];
+    if (e.kind === "obj" && target === e.start + 1) return [e.node.parentNode!, indexIn(e.node) + 1];
+    if (e.kind === "nl" && target === e.start + 1) return e.block ? [e.node, 0] : [e.node.parentNode!, indexIn(e.node) + 1];
+  }
+  // 빈 첫 줄 · 끝
+  if (target === 0) return [root.firstChild ?? root, 0];
+  const last = root.lastChild;
+  if (last instanceof HTMLElement && isBlock(last)) {
+    const n = last.childNodes.length;
+    return [last, last.lastChild instanceof HTMLBRElement && last.lastChild.dataset[SENTINEL] ? n - 1 : n];
+  }
+  return [root, root.childNodes.length];
+}
+
+function selectRange([sn, so]: [Node, number], [en, eo]: [Node, number]) {
   const sel = window.getSelection();
   if (!sel) return;
   const range = document.createRange();
-  const [sn, so] = point(start);
-  const [en, eo] = point(end);
   range.setStart(sn, so);
   range.setEnd(en, eo);
   sel.removeAllRanges();
   sel.addRange(range);
 }
+
+/** 다시 그린 칸에 선택을 되살린다 */
+function writeSelection(root: HTMLElement, start: number, end: number) {
+  const { entries } = scan(root);
+  selectRange(textPoint(root, entries, start), textPoint(root, entries, end));
+}
+
+/* ── 표 칸 안의 선택 (2026-10-19 Alan — "표 안에 정답을 진하게 표시하고 싶은데, 본문내용을 마우스로 쭈욱 드래그가 안잡혀") ──
+ * 표는 글 모델에서 한 글자라 칸 글자는 `scan` 이 훑지 않는다. 그래서 고른 끝점이 칸 안이면 칸마다 따로 센다 —
+ * 칸 글자의 자리는 글자 마디(코드 포인트)와 `<br>`(한 글자)로 세고, 빈 칸 받침 `<br data-pad>` 는 세지 않는다 (글 모델의 칸 글자와 같은 셈) */
+
+/** 표 칸 안에서 고른 글자 — 그 표의 글 자리(`offset`)와 칸 · 글자 자리 */
+type CellSpan = CellRange & { offset: number };
+/** 고른 끝점 — 표 칸 안이면 칸 · 칸 글자 자리, 아니면 글 자리 */
+type Spot = { kind: "text"; at: number } | { kind: "cell"; offset: number; row: number; index: number; at: number };
+/** 표 칸 글자에 걸친 선택 — 칸마다 고른 글자 · 두 끝점 · 두 끝이 모두 칸 안인가(`within` — 표 밖 글자는 고르지 않았다) */
+type CellSelection = { spans: CellSpan[]; start: Spot; end: Spot; within: boolean };
+
+/** 그 자리를 품은 표 칸 (`data-cell`) */
+function cellNodeOf(node: Node): HTMLElement | null {
+  const el = node instanceof Element ? node : node.parentElement;
+  const cell = el?.closest<HTMLElement>("[data-cell]") ?? null;
+  return cell?.closest("[data-table]") ? cell : null;
+}
+
+/** 칸의 자리 (`data-cell="줄.칸"`) */
+function cellPlace(cell: HTMLElement): { row: number; index: number } | null {
+  const m = /^(\d+)\.(\d+)$/.exec(cell.dataset.cell ?? "");
+  return m ? { row: Number(m[1]), index: Number(m[2]) } : null;
+}
+
+/** 칸 글자를 차례로 — 글자 마디와 줄바꿈 `<br>` (빈 칸 받침은 빼고) */
+function* cellAtoms(cell: HTMLElement): Generator<Text | HTMLBRElement> {
+  const walk = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+    if (node.nodeType === Node.TEXT_NODE) yield node as Text;
+    else if (node instanceof HTMLBRElement && !node.dataset.pad) yield node;
+  }
+}
+
+const atomLength = (a: Text | HTMLBRElement) => (a instanceof HTMLBRElement ? 1 : Array.from(a.data).length);
+
+function cellLength(cell: HTMLElement): number {
+  let n = 0;
+  for (const a of cellAtoms(cell)) n += atomLength(a);
+  return n;
+}
+
+/** 칸 안의 선택 끝점(node, offset) → 칸 글자 자리 */
+function cellOffsetOf(cell: HTMLElement, container: Node, offset: number): number {
+  const point = document.createRange();
+  point.setStart(container, offset);
+  let n = 0;
+  for (const a of cellAtoms(cell)) {
+    if (a === container) return n + Array.from((a as Text).data.slice(0, offset)).length;
+    // 이 글자(줄바꿈)가 끝점 뒤에서 시작하면 거기까지
+    const at: [Node, number] = a instanceof HTMLBRElement ? [a.parentNode!, indexIn(a)] : [a, 0];
+    if (point.comparePoint(at[0], at[1]) >= 0) return n;
+    n += atomLength(a);
+  }
+  return n;
+}
+
+/** 칸 글자 자리 → 칸 안의 선택 끝점 */
+function cellPoint(cell: HTMLElement, pos: number): [Node, number] {
+  let n = 0;
+  for (const a of cellAtoms(cell)) {
+    const len = atomLength(a);
+    if (a instanceof HTMLBRElement) {
+      if (pos === n) return [a.parentNode!, indexIn(a)];
+    } else if (pos <= n + len) return [a, Array.from(a.data).slice(0, pos - n).join("").length];
+    n += len;
+  }
+  return [cell, cell.childNodes.length];
+}
+
+/** 지금 고른 글자 중 표 칸에 든 것 — 칸 글자를 하나도 안 골랐으면(커서만 · 표 밖 글자만) null */
+function readCellSelection(root: HTMLElement): CellSelection | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+  const r = sel.getRangeAt(0);
+  if (!root.contains(r.startContainer) || !root.contains(r.endContainer)) return null;
+  const wraps = [...root.querySelectorAll<HTMLElement>("[data-table]")].filter((w) => r.intersectsNode(w));
+  if (wraps.length === 0) return null;
+  const { entries } = scan(root);
+  const offsetOf = new Map(entries.flatMap((e) => (e.kind === "obj" ? [[e.node, e.start] as const] : [])));
+  const spans: CellSpan[] = [];
+  for (const wrap of wraps) {
+    const offset = offsetOf.get(wrap);
+    if (offset === undefined) continue;
+    for (const cell of wrap.querySelectorAll<HTMLElement>("[data-cell]")) {
+      const place = cellPlace(cell);
+      if (!place || !r.intersectsNode(cell)) continue;
+      const start = cell.contains(r.startContainer) ? cellOffsetOf(cell, r.startContainer, r.startOffset) : 0;
+      const end = cell.contains(r.endContainer) ? cellOffsetOf(cell, r.endContainer, r.endOffset) : cellLength(cell);
+      if (end > start) spans.push({ offset, ...place, start, end });
+    }
+  }
+  if (spans.length === 0) return null;
+  const spot = (container: Node, at: number): Spot => {
+    const cell = cellNodeOf(container);
+    const wrap = cell?.closest<HTMLElement>("[data-table]");
+    const place = cell && cellPlace(cell);
+    const offset = wrap ? offsetOf.get(wrap) : undefined;
+    return cell && place && offset !== undefined
+      ? { kind: "cell", offset, ...place, at: cellOffsetOf(cell, container, at) }
+      : { kind: "text", at: offsetAt(entries, container, at) };
+  };
+  const start = spot(r.startContainer, r.startOffset);
+  const end = spot(r.endContainer, r.endOffset);
+  return { spans, start, end, within: start.kind === "cell" && end.kind === "cell" };
+}
+
+/**
+ * 고른 끝점 하나라도 표 칸 안인가 — 그 선택에 치기 · 지우기 · 붙여넣기는 막고 안내한다 (칸 글자는 표 고치기에서).
+ * 두 끝이 모두 표 밖이면(표를 통째로 품은 선택 · 전체 선택) 브라우저에 맡긴다 — 표째 지워진다
+ */
+const endsInCell = (c: CellSelection | null) => !!c && (c.start.kind === "cell" || c.end.kind === "cell");
+
+/** 다시 그린 칸에 고른 끝점을 되살린다 (표 칸 안이면 그 칸의 그 글자 자리) */
+function writeSpots(root: HTMLElement, start: Spot, end: Spot) {
+  const { entries } = scan(root);
+  const place = (s: Spot): [Node, number] | null => {
+    if (s.kind === "text") return textPoint(root, entries, s.at);
+    const wrap = entries.find((e) => e.kind === "obj" && e.start === s.offset)?.node;
+    const cell = wrap instanceof HTMLElement ? wrap.querySelector<HTMLElement>(`[data-cell="${s.row}.${s.index}"]`) : null;
+    return cell ? cellPoint(cell, s.at) : null;
+  };
+  const a = place(start);
+  const b = place(end);
+  if (a && b) selectRange(a, b);
+}
+
+/** 함께 고른 표 밖 글자 — 표 칸에서 시작했으면 그 표 바로 뒤부터, 표 칸에서 끝났으면 그 표 바로 앞까지 (사이의 표는 서식 연산이 건너뛴다) */
+function mainRange(cells: CellSelection): [number, number] | null {
+  const a = cells.start.kind === "text" ? cells.start.at : cells.start.offset + 1;
+  const b = cells.end.kind === "text" ? cells.end.at : cells.end.offset;
+  return b > a ? [a, b] : null;
+}
+
+/** 표마다 고른 칸 글자 */
+function groupSpans(doc: NoteDoc, spans: CellSpan[]): { offset: number; table: NoteTable; ranges: CellRange[] }[] {
+  const out: { offset: number; table: NoteTable; ranges: CellRange[] }[] = [];
+  for (const s of spans) {
+    let g = out.find((x) => x.offset === s.offset);
+    if (!g) {
+      const table = tableAt(doc, s.offset);
+      if (!table) continue;
+      g = { offset: s.offset, table, ranges: [] };
+      out.push(g);
+    }
+    g.ranges.push({ row: s.row, index: s.index, start: s.start, end: s.end });
+  }
+  return out;
+}
+
+/** 고른 칸이 든 표마다 `fn` 으로 바꾼 글 */
+function mapTables(doc: NoteDoc, spans: CellSpan[], fn: (t: NoteTable, ranges: CellRange[]) => NoteTable): NoteDoc {
+  let next = doc;
+  for (const g of groupSpans(doc, spans)) next = replaceTable(next, g.offset, fn(g.table, g.ranges));
+  return next;
+}
+
+/** 고른 글자 전부의 서식 — 표 칸 글자 + 함께 고른 표 밖 글자 */
+function selectionStyles(doc: NoteDoc, cells: CellSelection): NoteStyle[] {
+  const main = mainRange(cells);
+  return [...(main ? stylesIn(doc.runs, main[0], main[1]) : []), ...groupSpans(doc, cells.spans).flatMap((g) => cellStylesIn(g.table, g.ranges))];
+}
+
+/** 고른 칸들의 정렬 — 모두 같으면 그 정렬, 다르면 null */
+function spansAlign(doc: NoteDoc, spans: CellSpan[]): NoteAlign | null {
+  const aligns = groupSpans(doc, spans).map((g) => cellsAlign(g.table, g.ranges));
+  return aligns.length > 0 && aligns.every((a) => a !== null && a === aligns[0]) ? aligns[0] : null;
+}
+
+/** 칸 글자를 고치려는 키 — 치기(글자 · 한글 조합 시작) · 지우기 · Enter (단축키는 빼고) */
+const isEditKey = (e: React.KeyboardEvent) =>
+  e.key === "Enter" || e.key === "Backspace" || e.key === "Delete" || e.key === "Process" || (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey);

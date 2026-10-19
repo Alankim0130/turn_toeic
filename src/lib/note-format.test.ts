@@ -362,3 +362,216 @@ describe("표 옮기기 (2026-10-19 Alan — 표를 넣고 위치 이동이 안 
     expect(empty.aligns).toEqual(["left"]);
   });
 });
+
+import {
+  cellRuns,
+  cellStylesIn,
+  cellWithRuns,
+  cellsAlign,
+  commonStyle,
+  editRunsText,
+  noteStyleChanger,
+  parseTableBody,
+  restyleCells,
+  setCellsAlign,
+  stylesIn,
+  tableAt,
+  tidyCell,
+  type CellRange,
+  type NoteCell,
+  type NoteChange,
+  type NoteRun,
+} from "./note-format";
+
+describe("표 칸 글자 서식 (2026-10-19 Alan — 표 안에 정답을 진하게)", () => {
+  /** Alan 이 보여 준 문제지 표 꼴 — 칸마다 문제 한 줄 + 보기 네 줄 */
+  const Q80 = "80. According to the speaker, what is the company trying to do?\n(A) Implement a recycling program\n(B) Reduce electricity use\n(C) Apply for funding\n(D) Expand into global markets";
+  const Q83 = "83. What is the purpose of the announcement?\n(A) To introduce a new employee\n(B) To announce a schedule change";
+  const Q: NoteTable = { rows: [[{ text: Q80 }, { text: Q83 }]] };
+  const at = (text: string, part: string) => ({ start: text.indexOf(part), end: text.indexOf(part) + part.length });
+  /** 편집기와 같은 순서 — 고른 칸 글자들의 서식을 한 번에 세고 건다 */
+  const toggle = (t: NoteTable, ranges: CellRange[], change: NoteChange) => restyleCells(t, ranges, noteStyleChanger(change, cellStylesIn(t, ranges)));
+  const BOLD: NoteChange = { kind: "flag", flag: "bold" };
+  const roundTrip = (t: NoteTable) => parseTableBody(tableToNote(t).slice("[table]".length, -"[/table]".length));
+
+  it("칸 글자 일부를 굵게 → 칸 안에 [b] 태그로 저장되고 다시 읽으면 같다 · 글자는 그대로", () => {
+    const answer = { row: 0, index: 0, ...at(Q80, "(B) Reduce electricity use") };
+    const t = toggle(Q, [answer], BOLD);
+    const cell = t.rows[0][0];
+    expect(cell.text).toBe(Q80);
+    expect(cell.runs).toEqual([
+      { text: Q80.slice(0, answer.start), style: {} },
+      { text: "(B) Reduce electricity use", style: { bold: true } },
+      { text: Q80.slice(answer.end), style: {} },
+    ]);
+    expect(t.rows[0][1]).toEqual(Q.rows[0][1]); // 고르지 않은 칸은 그대로
+    const note = tableToNote(t);
+    expect(note).toContain("[b](B) Reduce electricity use[/b]");
+    expect(roundTrip(t)).toEqual(t);
+    // 글 한 편 안에서도 — 저장했다 다시 읽으면 한 글자도 다르지 않다
+    const doc = parseDoc(`문제\n${note}\n끝`);
+    expect(doc.runs[1].style.table).toEqual(t);
+    expect(docToNote(doc)).toBe(`문제\n${note}\n끝`);
+    // 한 번 더 누르면 풀린다 — 서식이 없는 칸은 예전 모양(글자뿐)으로 돌아간다
+    const off = toggle(t, [answer], BOLD);
+    expect(off).toEqual(Q);
+    expect(tableToNote(off)).toBe(tableToNote(Q));
+  });
+
+  it("칸 여럿을 함께 골랐으면 한 번에 센다 — 하나만 굵었으면 다 굵게, 다 굵었으면 다 풀기", () => {
+    const a = { row: 0, index: 0, ...at(Q80, "(B) Reduce electricity use") };
+    const b = { row: 0, index: 1, ...at(Q83, "(B) To announce a schedule change") };
+    const one = toggle(Q, [a], BOLD);
+    const both = toggle(one, [a, b], BOLD);
+    expect(cellStylesIn(both, [a, b]).every((s) => s.bold)).toBe(true);
+    expect(commonStyle(cellStylesIn(both, [a, b]))).toEqual({ bold: true });
+    expect(toggle(both, [a, b], BOLD)).toEqual(Q);
+  });
+
+  it("색 · 크기 · 형광펜 · 밑줄 · 기울임이 겹쳐도 · 칸 글자의 [ · \\ · 줄바꿈이 서식 안에 있어도 그대로 돌아온다", () => {
+    const cell: NoteCell = cellWithRuns({ text: "" }, [
+      { text: "정답 ", style: {} },
+      { text: "[B]\\n\n둘째 줄", style: { bold: true, color: "red", size: "lg", mark: true, underline: true, italic: true } },
+      { text: " [/td] [/table]", style: { color: "blue" } },
+    ]);
+    const t: NoteTable = { rows: [[cell, { text: "", head: true }]] };
+    expect(roundTrip(t)).toEqual(t);
+    expect(parseDoc(tableToNote(t)).runs).toEqual([tableRun(t)]);
+    expect(noteImagePaths(tableToNote(t))).toEqual([]);
+  });
+
+  it("칸 안의 맨 [ 는 아는 서식 태그 · 짝이 맞는 것만 — 아니면 그 표는 글자 그대로 (모르는 태그와 같은 규칙)", () => {
+    const bad = [
+      "[table][tr][td][b]x[/td][/tr][/table]", // 닫지 않은 서식
+      "[table][tr][td]x[/b][/td][/tr][/table]", // 짝 없는 닫기
+      "[table][tr][td][color=purple]x[/color][/td][/tr][/table]", // 모르는 색
+      "[table][tr][td][b=1]x[/b][/td][/tr][/table]", // 값이 붙은 굵게
+      "[table][tr][td][center]x[/td][/tr][/table]", // 줄 정렬은 칸 안에 없다
+      "[table][tr][td][img=images/a.png][/td][/tr][/table]", // 그림도
+      "[table][tr][td][s]x[/s][/td][/tr][/table]", // 모르는 태그
+    ];
+    for (const s of bad) {
+      expect(parseDoc(s).runs.every((r) => !r.style.table)).toBe(true);
+      expect(runsText(parseDoc(s).runs)).toBe(s);
+    }
+    // 아는 것은 받는다 — 겹친 서식 · 거꾸로 닫기
+    expect(parseTableBody("[tr][td][b][color=red]a[/b]b[/color][/td][/tr]")?.rows[0][0]).toEqual({
+      text: "ab",
+      runs: [
+        { text: "a", style: { bold: true, color: "red" } },
+        { text: "b", style: { color: "red" } },
+      ],
+    });
+    // 서식 태그만 있고 글자가 없는 칸은 빈 칸
+    expect(parseTableBody("[tr][td][b][/b][/td][/tr]")?.rows[0][0]).toEqual({ text: "" });
+  });
+
+  it("칸 조각 다듬기 — 아는 서식만 · 서식이 없으면 runs 를 두지 않는다 · 글자와 어긋난 runs 는 글자만 믿는다", () => {
+    const messy = [
+      { text: "a", style: { bold: true, img: { path: "images/x.png", w: 50 }, color: "purple" } },
+      { text: "b", style: { bold: true } },
+      { text: "", style: { italic: true } },
+      { text: "c", style: { underline: false, mark: undefined } },
+    ] as NoteRun[];
+    expect(cellWithRuns({ text: "x", head: true }, messy)).toEqual({ text: "abc", head: true, runs: [{ text: "ab", style: { bold: true } }, { text: "c", style: {} }] });
+    expect(cellWithRuns({ text: "x", runs: [{ text: "x", style: { bold: true } }] }, [{ text: "plain", style: {} }])).toEqual({ text: "plain" });
+    expect(cellRuns({ text: "abc", runs: [{ text: "ab", style: { bold: true } }] })).toEqual([{ text: "abc", style: {} }]);
+    expect(cellRuns({ text: "" })).toEqual([]);
+  });
+
+  it("밖에서 온 값(편집기 칸의 data-table · 붙여 넣기)의 칸 서식도 꼴을 다시 본다", () => {
+    const ok = { rows: [[{ text: "정답 (B)", runs: [{ text: "정답 ", style: {} }, { text: "(B)", style: { bold: true } }] }]] };
+    expect(asNoteTable(JSON.parse(JSON.stringify(ok)))).toEqual(ok);
+    // 아는 서식만 · 글자와 어긋나면 서식만 버리고 글자는 남긴다
+    expect(asNoteTable({ rows: [[{ text: "ab", runs: [{ text: "a", style: { bold: "yes", color: "red", table: { rows: [] } } }, { text: "b", style: null }] }]] })).toEqual({
+      rows: [[{ text: "ab", runs: [{ text: "a", style: { color: "red" } }, { text: "b", style: {} }] }]],
+    });
+    expect(asNoteTable({ rows: [[{ text: "ab", runs: [{ text: "zz", style: { bold: true } }] }]] })).toEqual({ rows: [[{ text: "ab" }]] });
+    expect(asNoteTable({ rows: [[{ text: "ab", runs: "굵게" }]] })).toEqual({ rows: [[{ text: "ab" }]] });
+    expect(asNoteTable({ rows: [[{ text: `a${OBJ}b`, runs: [{ text: `a${OBJ}`, style: { bold: true } }, { text: "b", style: {} }] }]] })).toEqual({
+      rows: [[{ text: "ab", runs: [{ text: "a", style: { bold: true } }, { text: "b", style: {} }] }]],
+    });
+  });
+
+  it("칸 정렬 — 모두 같을 때만 그 정렬 · 왼쪽은 표시 없음", () => {
+    const ranges: CellRange[] = [
+      { row: 0, index: 0, start: 0, end: 2 },
+      { row: 0, index: 1, start: 0, end: 2 },
+    ];
+    expect(cellsAlign(Q, ranges)).toBe("left");
+    const centered = setCellsAlign(Q, ranges, "center");
+    expect(centered.rows[0].map((c) => c.align)).toEqual(["center", "center"]);
+    expect(cellsAlign(centered, ranges)).toBe("center");
+    expect(cellsAlign(setCellsAlign(centered, [ranges[0]], "right"), ranges)).toBeNull();
+    expect(setCellsAlign(centered, ranges, "left")).toEqual(Q);
+    expect(cellsAlign(Q, [{ row: 5, index: 0, start: 0, end: 1 }])).toBeNull();
+  });
+
+  it("글 속 표 찾기 (tableAt)", () => {
+    const doc = parseDoc(`앞\n${tableToNote(Q)}\n뒤`);
+    expect(tableAt(doc, 2)).toEqual(Q);
+    expect(tableAt(doc, 0)).toBeNull();
+    expect(tableAt(doc, 3)).toBeNull();
+  });
+
+  it("표 고치기에서 글자를 고쳐도 서식이 남는다 — 바뀐 자리의 새 글자는 그 자리 첫 글자(없으면 앞 글자)의 서식을 잇는다", () => {
+    const runs: NoteRun[] = [
+      { text: "(B) ", style: {} },
+      { text: "Reduce", style: { bold: true } },
+      { text: " use", style: {} },
+    ];
+    const show = (rs: NoteRun[]) => rs.map((r) => (r.style.bold ? `*${r.text}*` : r.text)).join("");
+    expect(editRunsText(runs, "(B) Reduce use")).toBe(runs); // 그대로면 그대로
+    expect(show(editRunsText(runs, "(B) RedXuce use"))).toBe("(B) *RedXuce* use"); // 굵은 낱말 안에 친 글자
+    expect(show(editRunsText(runs, "(B) Reduced use"))).toBe("(B) *Reduced* use"); // 굵은 낱말 바로 뒤 — 앞 글자를 잇는다
+    expect(show(editRunsText(runs, "(B) Cut use"))).toBe("(B) *Cut* use"); // 굵은 낱말을 바꿔 쳤다
+    expect(show(editRunsText(runs, "(B)  use"))).toBe("(B)  use"); // 굵은 낱말을 지웠다
+    expect(show(editRunsText(runs, "(C) Reduce use"))).toBe("(C) *Reduce* use"); // 앞의 다른 글자만 바꿨다
+    expect(show(editRunsText(runs, "x(B) Reduce use"))).toBe("x(B) *Reduce* use"); // 맨 앞에 — 뒤 글자(서식 없음)를 잇는다
+    expect(show(editRunsText(runs, ""))).toBe("");
+    expect(runsText(editRunsText(runs, "전혀 다른 글"))).toBe("전혀 다른 글");
+  });
+
+  it("표 고치기의 적용 — 줄바꿈 · 덩어리 글자를 다듬고 앞뒤 빈칸을 걷어도 서식은 남는다", () => {
+    const c = cellWithRuns({ text: "" }, [
+      { text: " \r\n", style: {} },
+      { text: `정답${OBJ}`, style: { bold: true } },
+      { text: " (B)\n ", style: {} },
+    ]);
+    expect(tidyCell(c)).toEqual({ text: "정답 (B)", runs: [{ text: "정답", style: { bold: true } }, { text: " (B)", style: {} }] });
+    expect(tidyCell({ text: "  그냥 글 " })).toEqual({ text: "그냥 글" });
+  });
+
+  it("고른 글자의 서식 · 공통 서식", () => {
+    const runs: NoteRun[] = [
+      { text: "ab", style: { bold: true, color: "red" } },
+      { text: OBJ, style: { table: Q } },
+      { text: "cd", style: { bold: true } },
+    ];
+    expect(stylesIn(runs, 0, 5)).toEqual([{ bold: true, color: "red" }, { bold: true }]);
+    expect(commonStyle(stylesIn(runs, 0, 5))).toEqual({ bold: true });
+    expect(commonStyle([])).toEqual({});
+    // 고른 글자가 없으면 거는 쪽 (빈 목록이 '다 굵다' 로 읽히지 않게)
+    expect(noteStyleChanger(BOLD, [])({})).toEqual({ bold: true });
+  });
+});
+
+import { tableNear } from "./note-format";
+
+describe("표에 닿은 선택 (2026-10-19 — 표 윗줄을 줄바꿈까지 지우다 표를 잃었다)", () => {
+  // "Part 4\n[표]\n아래" — 표는 7번째 글자
+  const runs = parseDoc(`Part 4\n${tableToNote({ rows: [[{ text: "A" }]] })}\n아래`).runs;
+  it("표를 품었거나 표 바로 앞에서 끝나면 닿았다", () => {
+    expect(tableNear(runs, 0, 7)).toBe(true); // 윗줄 + 줄바꿈 (세 번 눌러 고른 줄) — 바로 뒤가 표
+    expect(tableNear(runs, 3, 7)).toBe(true);
+    expect(tableNear(runs, 0, 9)).toBe(true); // 표를 품었다
+    expect(tableNear(runs, 7, 8)).toBe(true); // 표만
+  });
+  it("표에서 떨어진 선택 · 표 바로 뒤에서 시작하는 선택은 아니다 (크롬이 제대로 한다)", () => {
+    expect(tableNear(runs, 0, 6)).toBe(false); // 윗줄만 (줄바꿈 빼고)
+    expect(tableNear(runs, 0, 4)).toBe(false);
+    expect(tableNear(runs, 8, 10)).toBe(false); // 표 바로 뒤부터
+    expect(tableNear(runs, 9, 11)).toBe(false); // 아랫줄
+    expect(tableNear(parseDoc("가나다\n라마").runs, 0, 6)).toBe(false);
+  });
+});
