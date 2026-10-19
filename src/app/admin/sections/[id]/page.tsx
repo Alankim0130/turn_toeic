@@ -58,7 +58,8 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
     supabase.from("section_live_links").select("live_url, updated_at").eq("section_id", id).maybeSingle(),
     supabase.from("enrollments").select("id", { count: "exact", head: true }).eq("section_id", id),
     isAdmin(profile.role)
-      ? supabase.from("profiles").select("id, name, role").in("role", ["instructor", "admin"]).order("name")
+      ? // 합쳐진 옛 계정(merged_into)은 담당 강사 목록에서 뺀다 — 같은 이름이 둘 서면 어느 쪽인지 알 수 없다 (2026-10-19)
+        supabase.from("profiles").select("id, name, role").in("role", ["instructor", "admin"]).is("merged_into", null).order("name")
       : Promise.resolve({ data: null }),
     supabase.from("class_sections").select("id, track, time_block, book_set, subject").eq("term_id", section.term_id).eq("course_id", section.course_id).neq("id", id),
   ]);

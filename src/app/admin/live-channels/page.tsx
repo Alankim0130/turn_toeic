@@ -87,7 +87,9 @@ export default async function LiveChannelsPage({ searchParams }: { searchParams:
   const [{ data: channels }, { data: staff }, { data: sessions }] = await Promise.all([
     // 토큰 칸은 읽지 않는다 (권한도 없다) — 상태 칸만
     supabase.from("youtube_channels").select("user_id, channel_id, channel_title, linked_at, last_checked_at, last_live_at, last_error, last_error_at"),
-    supabase.from("profiles").select("id, name, role, subject").in("role", ["instructor", "admin"]).order("name"),
+    // 합쳐진 옛 계정(merged_into)은 뺀다 — 합칠 때 등급이 같아야 해서 옛 계정도 강사 등급으로 남는다
+    // (2026-10-19 Alan "이혜영 쌤이 두번 노출" — 옛 이메일 계정이 과목 없이 '미연결' 로 한 번 더 섰다)
+    supabase.from("profiles").select("id, name, role, subject").in("role", ["instructor", "admin"]).is("merged_into", null).order("name"),
     supabase
       .from("session_dates")
       .select(

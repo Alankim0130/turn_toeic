@@ -47,9 +47,9 @@ export async function updateStudentRole(_prev: StudentActionState, formData: For
   if (!canAssignRole(profile.role)) return { error: "등급 변경은 강사·관리자만 할 수 있어요." };
   if (target.role === role) return { ok: true, message: `이미 ${ROLE_LABEL[role]}이에요.` };
 
-  // 마지막 관리자를 내리면 아무도 등급을 되돌릴 수 없다
+  // 마지막 관리자를 내리면 아무도 등급을 되돌릴 수 없다 — 합쳐진 옛 계정은 로그인할 수 없으니 세지 않는다
   if (target.role === "admin" && role !== "admin") {
-    const { count } = await supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "admin").neq("id", id);
+    const { count } = await supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "admin").is("merged_into", null).neq("id", id);
     if (!count) return { error: "마지막 관리자예요. 다른 사람을 먼저 관리자로 올린 뒤 바꿔 주세요." };
   }
 

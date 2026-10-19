@@ -274,6 +274,17 @@ function parseSectionFields(formData: FormData, allowedStatus: string[]): { fiel
   return { values, fields: { capacity, status: values.status, book_set: bookSet, subject } };
 }
 
+/**
+ * 담당으로 둘 수 있는 계정인가 — 강사·관리자이고 **합쳐진 옛 계정이 아니다** (2026-10-19 — 이혜영 강사의 옛 이메일 계정이
+ * 강사 등급 그대로 남아 담당 강사 목록에 한 번 더 섰다). 반 상세 · 하나씩 만들기 · 일괄 지정이 같이 쓴다 — 화면이 보낸 id 를 그대로 믿지 않는다
+ */
+async function isAssignableInstructor(supabase: Awaited<ReturnType<typeof createClient>>, id: string): Promise<boolean> {
+  const { data } = await supabase.from("profiles").select("role, merged_into").eq("id", id).maybeSingle();
+  return !!data && (data.role === "instructor" || data.role === "admin") && !data.merged_into;
+}
+
+const NOT_ASSIGNABLE = "강사·관리자 계정만 담당으로 둘 수 있어요.";
+
 /* ─── 반 개설: 개강일·종강일·수업일은 그 달 달력에서 가져온다 ───────────── */
 export async function createSection(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireStaff();
@@ -301,6 +312,7 @@ export async function createSection(_prev: ActionState, formData: FormData): Pro
   // 담당은 DB 트리거가 LC 교재로 저절로 정한다 (마이그레이션 20260918120000). 관리자가 일부러 고른 사람만 넣고,
   // 만든 사람을 기본값으로 넣지 않는다 — 과목을 못 읽는 반에 알런이 남는 길이었다
   const instructorId = isAdmin(profile.role) && values.instructor_id ? values.instructor_id : null;
+  if (instructorId && !(await isAssignableInstructor(supabase, instructorId))) return { error: NOT_ASSIGNABLE, values };
   const sessionsOf = (t: string) => (classDates ?? []).filter((d) => d.track === t).length || 1;
   const base = {
     ...parsed.fields,
@@ -344,7 +356,10 @@ export async function updateSection(_prev: ActionState, formData: FormData): Pro
 
   const supabase = await createClient();
   const patch: SectionUpdate = { ...parsed.fields };
-  if (isAdmin(profile.role) && values.instructor_id) patch.instructor_id = values.instructor_id;
+  if (isAdmin(profile.role) && values.instructor_id) {
+    if (!(await isAssignableInstructor(supabase, values.instructor_id))) return { error: NOT_ASSIGNABLE, values };
+    patch.instructor_id = values.instructor_id;
+  }
   // 과정·과목은 그 달 시간표가 정한다 (2026-09-29) — 시간표 줄이 있는 반은 여기서 바꾸지 않는다.
   // 화면에도 칸이 없지만, 옛 화면이 보낸 빈 값이 시간표와 어긋나게 덮어쓰지 않도록 서버가 한 번 더 뺀다
   const { data: current } = await supabase
@@ -504,8 +519,7 @@ export async function assignInstructor(input: { sectionIds: number[]; instructor
   if (!instructorId) return { ok: false, error: "강사를 골라 주세요." };
 
   const supabase = await createClient();
-  const { data: target } = await supabase.from("profiles").select("id, name, role").eq("id", instructorId).maybeSingle();
-  if (!target || !["instructor", "admin"].includes(target.role)) return { ok: false, error: "강사·관리자 계정만 담당으로 둘 수 있어요." };
+  if (!(await isAssignableInstructor(supabase, instructorId))) return { ok: false, error: NOT_ASSIGNABLE };
 
   const { data, error } = await supabase.from("class_sections").update({ instructor_id: instructorId }).in("id", ids).select("id");
   if (error) return { ok: false, error: `강사를 바꾸지 못했어요. ${error.message}` };

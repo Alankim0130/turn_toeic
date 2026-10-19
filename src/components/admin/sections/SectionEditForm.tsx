@@ -27,6 +27,9 @@ export function SectionEditForm({
 }) {
   const [state, action] = useActionState<ActionState, FormData>(updateSection, {});
   const v: Record<string, string | undefined> = { ...values, ...(state.values ?? {}) };
+  // 지금 담당이 목록에 있나 — 없으면(미지정 · 목록에서 빠진 계정) 빈 칸을 맨 앞에 두고 골라 둔다. 빈 칸이 없으면 브라우저가
+  // 첫 사람을 골라 두어 '기본 정보 저장' 만 눌러도 그 사람이 담당이 됐다 (2026-10-19). 빈 칸은 담당을 바꾸지 않는다 (updateSection)
+  const listed = !!v.instructor_id && !!instructors?.some((i) => i.id === v.instructor_id);
 
   return (
     <form action={action} className="space-y-5">
@@ -39,7 +42,8 @@ export function SectionEditForm({
         {instructors && (
           <div>
             <label htmlFor="instructor_id" className="label">담당 강사 (관리자만 변경 가능)</label>
-            <select id="instructor_id" name="instructor_id" className="input" defaultValue={v.instructor_id ?? ""}>
+            <select id="instructor_id" name="instructor_id" className="input" defaultValue={listed ? v.instructor_id : ""}>
+              {!listed && <option value="">{v.instructor_id ? "지금 담당 그대로" : "자동 — 편성표대로"}</option>}
               {instructors.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.name} ({i.role === "admin" ? "관리자" : "강사"})

@@ -94,7 +94,7 @@ async function deliver(rows: SubscriptionRow[], message: PushMessage): Promise<P
 export async function notifyStaff(kind: NotificationKind, message: PushMessage): Promise<PushResult> {
   try {
     const admin = createAdminClient();
-    const { data: staff } = await admin.from("profiles").select("id").in("role", ["instructor", "admin"]);
+    const { data: staff } = await admin.from("profiles").select("id").in("role", ["instructor", "admin"]).is("merged_into", null);
     const staffIds = (staff ?? []).map((s) => s.id);
     if (staffIds.length === 0) return EMPTY;
 
