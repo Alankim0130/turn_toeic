@@ -12,6 +12,7 @@ import { clipToOwnRange } from "@/lib/two-week";
 import { noticeAttachLabel, noticeVisible, scopeOf } from "@/lib/class-notices";
 import { sectionSubjects, type LectureWayRow } from "@/lib/lecture";
 import type { Subject } from "@/lib/instructor-subject";
+import { nowKst, sessionStarted, sessionState } from "@/lib/live-links";
 
 /**
  * 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다.
@@ -278,11 +279,15 @@ export type MyLiveCard = {
 /**
  * 불라방 카드 — 회차 링크가 우선이다 (2026-09-18 Alan: 오전반 라이브 주소가 끝나면 그대로 다시보기가 되므로 링크는 회차마다 다르다).
  * 오늘 회차 링크 → 앞으로 올 가장 가까운 회차 링크 → 반의 상시 링크(Zoom 같은 고정 방) 순으로 하나만 고른다.
+ * **끝난 수업의 회차 링크는 고르지 않는다** — 오늘 회차도 시간대가 끝나면(한국 시간, `sessionState` 가 past) 지난 회차다
+ * (2026-10-19 Alan — "불라방은 시간대 끝나고 나면 … 계속 저렇게 남아있어. 지금은 불라방이 있는시간대가 아닌데 말이야").
+ * 그전에는 날짜만 봐서 오후 다섯 시에도 그 날 10시 수업이 '오늘 N회차 라이브' 로 서고 입장 버튼이 녹화본으로 갔다.
  * 어느 반이 보이는지는 RLS(has_section_access)가 정한다.
  */
 export async function getMyLiveCards(): Promise<MyLiveCard[]> {
   const supabase = await createClient();
-  const today = todayKST();
+  const now = nowKst();
+  const today = now.date;
   const [{ data: ids, error: idsError }, { data: standing }, { data: perSession }, orders] = await Promise.all([
     supabase.rpc("my_section_ids"),
     supabase.from("section_live_links").select(`section_id, live_url, updated_at, section:class_sections(${SECTION_COLS})`),
@@ -303,7 +308,9 @@ export async function getMyLiveCards(): Promise<MyLiveCard[]> {
   const upcoming = (perSession ?? [])
     .filter((l) => {
       const sec = l.session?.section;
-      if (!sec || !isWebUrl(l.live_url) || l.session!.date < today || (mine && !mine.has(l.session!.section_id))) return false;
+      if (!sec || !isWebUrl(l.live_url) || (mine && !mine.has(l.session!.section_id))) return false;
+      // 끝난 수업은 지난 회차 — 오늘 회차도 시간대가 끝나면 (시간을 모르는 반은 그 날 내내 오늘 회차로 둔다)
+      if (sessionState({ date: l.session!.date, time_block: sec.time_block }, now.date, now.minutes) === "past") return false;
       const until = untilOf(sec.term_id);
       return !until || l.session!.date <= until;
     })
@@ -325,20 +332,30 @@ export async function getMyLiveCards(): Promise<MyLiveCard[]> {
   return [...cards.values()].sort((a, b) => a.sectionId - b.sectionId);
 }
 
-/** 오늘 이후 첫 수업일을 section_id 별로. `until`(반 → 마지막 날)이 있으면 그 뒤 날짜는 세지 않는다 (2주완성 — 내 반 종강일 뒤는 내 수업이 아니다) */
-export async function getNextSessionBySection(sectionIds: number[], until: ReadonlyMap<number, string> = new Map()) {
+/**
+ * 다음 수업 — 아직 시작하지 않은 첫 회차를 section_id 별로. `until`(반 → 마지막 날)이 있으면 그 뒤 날짜는 세지 않는다 (2주완성 — 내 반 종강일 뒤는 내 수업이 아니다).
+ * `blocks`(반 → 시간대 라벨)를 주면 **오늘 이미 시작한 회차는 건너뛴다** (2026-10-19 — 끝난 그 날 수업이 '다음 수업' 으로 남아 있었다). 시간을 모르면 그 날 내내 다음 수업이다.
+ */
+export async function getNextSessionBySection(
+  sectionIds: number[],
+  until: ReadonlyMap<number, string> = new Map(),
+  blocks: ReadonlyMap<number, string | null> = new Map(),
+) {
   if (sectionIds.length === 0) return new Map<number, { date: string; start_time: string | null; end_time: string | null; seq: number }>();
   const supabase = await createClient();
+  const now = nowKst();
   const { data } = await supabase
     .from("session_dates")
     .select("section_id, seq, date, start_time, end_time")
     .in("section_id", sectionIds)
-    .gte("date", todayKST())
+    .gte("date", now.date)
     .order("date", { ascending: true });
   const map = new Map<number, { date: string; start_time: string | null; end_time: string | null; seq: number }>();
   for (const s of data ?? []) {
     const end = until.get(s.section_id);
-    if (!map.has(s.section_id) && (!end || s.date <= end)) map.set(s.section_id, s);
+    if (map.has(s.section_id) || (end && s.date > end)) continue;
+    if (sessionStarted({ date: s.date, time_block: blocks.get(s.section_id) ?? null }, now.date, now.minutes)) continue;
+    map.set(s.section_id, s);
   }
   return map;
 }

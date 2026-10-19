@@ -7,8 +7,8 @@ import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
 import { cn, formatDate, formatTime, formatTimeRange, TRACK_LABEL } from "@/lib/utils";
 import { studentTrackLabel } from "@/lib/week5";
-import { isYoutubeUrl } from "@/lib/live-links";
-import { getMyLiveCards, getMyStudyEligibility, getMyWeek5, getNextSessionBySection, termLabel } from "../_lib/queries";
+import { isYoutubeUrl, liveIdleState, nowKst, sessionStartLabel } from "@/lib/live-links";
+import { getMyLiveCards, getMySessions, getMyStudyEligibility, getMyWeek5, getNextSessionBySection, termLabel } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "불라방",
@@ -21,10 +21,24 @@ export default async function LivePage() {
   const g = await loadGated("live", () => Promise.all([getMyLiveCards(), getMyWeek5(), getMyStudyEligibility()]));
   if (g.locked) return g.locked;
   const [cards, week5, eligibility] = g.data;
-  const next = await getNextSessionBySection(
-    cards.map((c) => c.sectionId),
-    new Map(cards.flatMap((c) => (c.until ? [[c.sectionId, c.until] as const] : []))),
-  );
+  // 끝난 수업의 링크는 카드에서 빠진다 (2026-10-19 Alan "지금은 불라방이 있는시간대가 아닌데") — 그래서 수업 밖 시간에는 카드가 없고,
+  // 지금 수강 중이면 '지금은 불라방 수업 시간이 아니에요' 와 다음 수업을 적는다 (내 수업일 — 인강 반은 라이브가 없어 뺀다)
+  const now = nowKst();
+  const enrolled = eligibility.accessTerms.size > 0;
+  const [next, idle] = await Promise.all([
+    getNextSessionBySection(
+      cards.map((c) => c.sectionId),
+      new Map(cards.flatMap((c) => (c.until ? [[c.sectionId, c.until] as const] : []))),
+      new Map(cards.map((c) => [c.sectionId, c.section.time_block] as const)),
+    ),
+    cards.length === 0 && enrolled
+      ? getMySessions().then((sessions) => {
+          const live = sessions.flatMap((x) => (x.section && !x.section.recorded ? [{ date: x.date, time_block: x.section.time_block }] : []));
+          // 인강 반만 듣는 학생(저녁 화목금 주3일)은 라이브가 없다 — '남은 수업이 없어요' 가 아니라 녹화본으로 안내
+          return sessions.length > 0 && live.length === 0 ? ({ state: "recorded" } as const) : liveIdleState(live, now.date, now.minutes);
+        })
+      : null,
+  ]);
   // 개강 전 배정이 있으면 개강일을 적어 준다 (2026-10-02 Alan — 숙제업로드·LC음원과 같은 안내)
   const opens = cards.length === 0 ? [...eligibility.opensOn.values()].sort()[0] : undefined;
 
@@ -33,7 +47,33 @@ export default async function LivePage() {
       <PageHeader icon="live" title="불라방" description="현장 강의를 실시간 라이브로. 수업이 시작되면 알림으로 알려 드려요." />
 
       {cards.length === 0 ? (
-        opens ? (
+        idle ? (
+          idle.state === "soon" ? (
+            <EmptyState icon="live" title="곧 불라방이 열려요" description="선생님이 방송을 시작하면 알림이 오고, 여기에 입장 버튼이 생겨요." />
+          ) : idle.state === "next" ? (
+            <EmptyState
+              icon="timeslot"
+              title="지금은 불라방 수업 시간이 아니에요"
+              description={`다음 수업은 ${sessionStartLabel(idle.session, now.date, (d) => formatDate(d))}이에요. 수업이 시작되면 알림이 오고, 여기에 입장 버튼이 생겨요.`}
+            />
+          ) : idle.state === "recorded" ? (
+            <EmptyState
+              icon="replay"
+              title="인강 반은 불라방이 없어요"
+              description="그 날 오전 수업 녹화본을 아래 '지난 수업 다시보기' 에서 봐요."
+            />
+          ) : (
+            <EmptyState
+              icon="timeslot"
+              title="남은 불라방 수업이 없어요"
+              description={
+                opens
+                  ? `${formatDate(opens)} 개강부터 다시 여기에 입장 버튼이 생겨요. 지난 수업은 다시보기에서 볼 수 있어요.`
+                  : "지난 수업은 종강일까지 다시보기에서 볼 수 있어요."
+              }
+            />
+          )
+        ) : opens ? (
           <EmptyState
             icon="live"
             title="개강일부터 입장할 수 있어요"

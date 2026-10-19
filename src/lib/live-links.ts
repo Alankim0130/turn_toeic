@@ -76,6 +76,39 @@ export function sessionState(s: SessionTimeLike, today: string, nowMinutes: numb
   return "later";
 }
 
+/** 수업이 이미 시작했나 — 지난 날이거나 오늘 시작 시각이 됐다. 시간을 모르면 그 날 내내 시작 전으로 둔다 */
+export function sessionStarted(s: SessionTimeLike, today: string, nowMinutes: number): boolean {
+  if (s.date !== today) return s.date < today;
+  const span = parseTimeBlock(s.time_block);
+  return span !== null && nowMinutes >= span.start;
+}
+
+/**
+ * 학생 불라방 화면에 입장할 링크가 하나도 없을 때 할 말 (2026-10-19 Alan — "불라방은 시간대 끝나고 나면 … 계속 저렇게 남아있어.
+ * 지금은 불라방이 있는시간대가 아닌데 말이야"). 끝난 수업의 링크는 카드에서 빠지므로 수업 밖 시간에는 늘 이 자리가 선다.
+ * - soon: 지금 수업 중이거나 30분 안에 시작하는 수업이 있다 — 선생님이 방송을 켜면 입장 버튼이 생긴다
+ * - next: 아직 시작하지 않은 가장 가까운 수업 (오늘 남은 수업이거나 다음 수업일)
+ * - none: 남은 수업이 없다
+ * 회차는 부르는 쪽이 고른다 — 인강 반은 라이브가 없어 넣지 않는다.
+ */
+export function liveIdleState<T extends SessionTimeLike>(
+  sessions: readonly T[],
+  today: string,
+  nowMinutes: number,
+): { state: "soon" } | { state: "next"; session: T } | { state: "none" } {
+  const sorted = [...sessions].sort(compareSessions);
+  if (sorted.some((s) => sessionState(s, today, nowMinutes) === "now")) return { state: "soon" };
+  const next = sorted.find((s) => !sessionStarted(s, today, nowMinutes));
+  return next ? { state: "next", session: next } : { state: "none" };
+}
+
+/** 회차의 시작 시각 글자 — "오늘 11:10" · "10월 20일 (화) 10:00" (시간을 모르면 날짜만). 날짜 글자는 부르는 쪽이 만든다 */
+export function sessionStartLabel(s: SessionTimeLike, today: string, dateLabel: (date: string) => string): string {
+  const span = parseTimeBlock(s.time_block);
+  const time = span ? `${String(Math.floor(span.start / 60)).padStart(2, "0")}:${String(span.start % 60).padStart(2, "0")}` : "";
+  return [s.date === today ? "오늘" : dateLabel(s.date), time].filter(Boolean).join(" ");
+}
+
 /**
  * 강사 화면에 보일 회차 (2026-09-30 Alan "불라방 링크는 강사아이디별로 나오면 좋겠어. 다른강사는 안 보여줘도 괜찮아") —
  * 내가 담당인 반 + **담당이 비어 있는 반**. 담당이 비는 것은 두 과목을 이어 듣는 반(방학달 120분 반)이거나
