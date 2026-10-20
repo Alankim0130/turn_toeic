@@ -61,7 +61,7 @@ import {
   type ObjectPlace,
 } from "@/lib/note-format";
 import { tableClipboard } from "@/lib/note-copy";
-import { pasteParts, type PastedTables } from "@/lib/note-paste";
+import { pasteParts, pastedTextRuns, type Pasted } from "@/lib/note-paste";
 import { isImageType, MB, objectName } from "@/lib/upload";
 import { uploadFile } from "@/lib/upload-client";
 import { cn } from "@/lib/utils";
@@ -95,11 +95,14 @@ export type NoteEditorImages = {
  * - 그림(`images` 를 줄 때만): `사진 넣기` → 브라우저가 저장소에 바로 올리고 커서 자리에 한 줄로 넣는다. 그림을 누르면 크기(25 · 50 · 75 · 100% · 밀어서 10~100%)와
  *   지우기가 뜬다. 붙여 넣은 그림 파일도 같은 길로 올린다. 올리는 동안은 `onUploadingChange(true)` — 폼은 그동안 저장을 막는다
  *   (그 사이에 저장하면 사진이 빠진 글이 저장되고, 다 올라간 사진은 어디에도 안 붙는다).
- * - 붙여 넣기는 글자만 받는다(다른 곳의 색 · 글꼴이 딸려 오지 않게). 버튼은 누르는 순간 칸의 선택을 빼앗지 않게 `pointerdown` 기본 동작을 막고,
+ * - 붙여 넣기는 글자와 **굵게 · 기울임 · 밑줄**만 받는다(다른 곳의 색 · 글꼴 · 크기가 딸려 오지 않게). 굵게는 2026-10-20 Alan — "네이버 올렸던 글을 복사해서
+ *   홈피에 붙이기를 하면 굵은 부분이 다 사라지고 없어요 … 이거 답체크 하는데 시간이 꽤 걸리네요". 글자 · 줄 · 빈칸은 예전처럼 `text/plain` 그대로 두고
+ *   서식만 HTML 에서 읽어 얹는다(`pasteParts` → `pastedTextRuns`). 서식이 없으면 예전과 똑같이 글자만(앞 글자의 서식을 잇는다). 우리 편집기에서 복사한 글은
+ *   조각의 `data-note` 를 읽어 색 · 크기 · 형광펜까지 돌아온다. 버튼은 누르는 순간 칸의 선택을 빼앗지 않게 `pointerdown` 기본 동작을 막고,
  *   그래도 놓치는 휴대폰을 위해 마지막 선택을 기억해 둔다.
  * - **표**(2026-10-07 Alan — "안내사항에 이런표도 넣고싶어 … 다른 블로그에서 복사 붙여넣기로 했을때 표를 그대로 가져오는게 가능할까?" →
  *   같은 날 "표를 직접 만드는 것도 넣어주면 좋겠어") — `표 넣기` 로 만들거나(크기 → 셀 채우기 · 줄 · 칸 · 합치기 팝업, `TableEditDialog`),
- *   붙여 넣은 HTML 에 표가 있으면 표로 받는다(`note-paste.ts` — 합친 칸 · 칸 정렬 · 머리칸 · 칸 안 줄바꿈, 색 · 글꼴은 글자처럼 빠진다). 표는 그림처럼 한 줄에 하나 ·
+ *   붙여 넣은 HTML 에 표가 있으면 표로 받는다(`note-paste.ts` — 합친 칸 · 칸 정렬 · 머리칸 · 칸 안 줄바꿈 · 칸 글자의 굵게 · 기울임 · 밑줄, 색 · 글꼴은 글자처럼 빠진다). 표는 그림처럼 한 줄에 하나 ·
  *   한 글자(`OBJ`)이고, 누르면 `표 고치기`(같은 팝업) · `표 지우기` 가 뜬다. 클립보드에 표 HTML 과 그림 파일이 함께 있으면(엑셀 · 워드가 표 그림을 같이 싣는다) 표가 먼저다.
  * - **표 옮기기 · 복사**(2026-10-19 Alan — "본문에 표를 삽입하려고 해서 위치 이동을 시킬려고 하니깐 위치이동이 안돼. 그리고 해당 표를 복사하려고해도 복사가 안돼") —
  *   누른 표에 `위로` · `아래로`(한 줄씩 — `objectStep` · `moveObject`) · `복사` · `잘라내기`, PC 는 표를 끌어 줄 사이에 놓는다(놓을 자리에 줄이 그어진다).
@@ -481,9 +484,9 @@ export function NoteEditor({
 
   /**
    * 표(와 글자)를 커서 자리에 — 붙여 넣은 표 · 새로 만든 표. 표는 한 줄에 하나: 앞 글자가 줄 끝이 아니면 줄을 바꾸고, 뒤에도 줄을 바꿔 둔다 (사진 넣기와 같은 규칙).
-   * 함께 고른 앞뒤 글은 서식 없는 글자로 들어간다. 팝업이 열려 있던 동안에는 칸의 선택이 팝업에 가 있어 마지막으로 기억한 커서 자리(`lastRange`)에 넣는다
+   * 함께 고른 앞뒤 글은 글자로(굵게 · 기울임 · 밑줄째) 들어간다. 팝업이 열려 있던 동안에는 칸의 선택이 팝업에 가 있어 마지막으로 기억한 커서 자리(`lastRange`)에 넣는다
    */
-  function insertBlocks(parts: PastedTables["parts"]) {
+  function insertBlocks(parts: Pasted["parts"]) {
     const el = editor.current;
     if (!el || disabled) return;
     const text = Array.from(runsText(scan(el).doc.runs));
@@ -496,7 +499,7 @@ export function NoteEditor({
         runs.push(tableRun(part.table), { text: "\n", style: {} });
         lineStart = true;
       } else {
-        runs.push({ text: part.text, style: {} });
+        runs.push(...(part.runs ?? [{ text: part.text, style: {} }]));
         lineStart = false;
       }
     }
@@ -506,7 +509,7 @@ export function NoteEditor({
   }
 
   /** 붙여 넣은 표 (`note-paste.ts`) */
-  function insertPasted({ parts, truncated }: PastedTables) {
+  function insertPasted({ parts, truncated }: Pasted) {
     if (!editor.current || disabled) return;
     insertBlocks(parts);
     setHint(
@@ -762,11 +765,18 @@ export function NoteEditor({
             setHint(CELL_EDIT_HINT);
             return;
           }
-          // 표가 먼저 — 엑셀 · 워드는 표 HTML 과 함께 표를 찍은 그림도 싣는다
+          // 표가 먼저 — 엑셀 · 워드는 표 HTML 과 함께 표를 찍은 그림도 싣는다.
+          // 굵게 · 기울임 · 밑줄이 있는 글(2026-10-20 — 네이버 블로그의 굵은 정답)은 글자 · 줄은 text/plain 그대로, 서식만 HTML 에서 얹는다
           const html = e.clipboardData.getData("text/html");
+          const text = e.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n").replaceAll(OBJ, "");
           const pasted = html ? pasteParts(html) : null;
-          if (pasted) {
+          if (pasted?.parts.some((p) => p.kind === "table")) {
             insertPasted(pasted);
+            return;
+          }
+          if (pasted) {
+            const runs = pastedTextRuns(pasted, text);
+            if (runs.length) insert(runs);
             return;
           }
           const files = [...e.clipboardData.files].filter((f) => isImageType(f.type));
@@ -774,7 +784,6 @@ export function NoteEditor({
             void addImages(files);
             return;
           }
-          const text = e.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n").replaceAll(OBJ, "");
           if (text) insert(text);
         }}
         onDragStart={(e) => {

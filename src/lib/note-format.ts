@@ -417,8 +417,11 @@ export const imageRun = (path: string, w = 100): NoteRun => ({ text: OBJ, style:
 /** 칸 글자 → 글. `\` · `[` 앞에 `\`, 줄바꿈은 `\n` — 표가 한 줄로 남고 칸 안의 `[/td]` · `[/table]` 이 태그로 읽히지 않는다 */
 const escapeCell = (s: string) => s.replace(/[\\[\n]/g, (c) => (c === "\n" ? "\\n" : `\\${c}`));
 
-/** 칸 글자에 걸 수 있는 서식만 — 굵게 · 기울임 · 밑줄 · 형광펜 · 아는 색 · 아는 크기 (그림 · 표 · 모르는 값은 뺀다 — 밖에서 온 값도 이것만 받는다) */
-function textStyle(s: NoteStyle | null | undefined): NoteStyle {
+/**
+ * 글자에 걸 수 있는 서식만 — 굵게 · 기울임 · 밑줄 · 형광펜 · 아는 색 · 아는 크기 (그림 · 표 · 모르는 값은 뺀다 — 밖에서 온 값도 이것만 받는다).
+ * 칸 글자와 붙여 넣은 우리 편집기 글(`data-note`, `note-paste.ts`)이 쓴다
+ */
+export function textStyle(s: NoteStyle | null | undefined): NoteStyle {
   const out: NoteStyle = {};
   if (!s || typeof s !== "object") return out;
   for (const k of ["bold", "italic", "underline", "mark"] as const) if (s[k] === true) out[k] = true;

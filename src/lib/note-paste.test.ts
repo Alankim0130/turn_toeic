@@ -1,7 +1,7 @@
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
-import { TABLE_MAX_COLS, TABLE_MAX_ROWS, docToNote, parseDoc, tableRun, type NoteTable } from "./note-format";
-import { pasteParts } from "./note-paste";
+import { TABLE_MAX_COLS, TABLE_MAX_ROWS, docToNote, parseDoc, runsText, tableRun, type NoteRun, type NoteTable } from "./note-format";
+import { pasteParts, pastedTextRuns } from "./note-paste";
 
 /** 브라우저의 DOMParser 와 같은 HTML 파서(parse5) — 클립보드 HTML 을 그대로 넣어 본다 */
 const parse = (html: string) => new JSDOM(html).window.document;
@@ -79,10 +79,10 @@ describe("붙여 넣은 표 → 안내 글의 표 (2026-10-07 Alan — 다른 �
     ]);
   });
 
-  it("표 앞뒤에 함께 고른 글은 글자로 — 문단 · <br> 마다 한 줄", () => {
+  it("표 앞뒤에 함께 고른 글은 글자로 — 문단 · <br> 마다 한 줄, 굵게는 그대로", () => {
     const r = paste(`<p>아래 표를 <b>보세요</b></p><p><br></p><table><tr><td>a</td></tr></table><div>끝<br>둘째 줄</div>`);
     expect(r?.parts).toEqual([
-      { kind: "text", text: "아래 표를 보세요" },
+      { kind: "text", text: "아래 표를 보세요", runs: [{ text: "아래 표를 ", style: {} }, { text: "보세요", style: { bold: true } }] },
       { kind: "table", table: { rows: [[{ text: "a" }]] } },
       { kind: "text", text: "끝\n둘째 줄" },
     ]);
@@ -123,10 +123,14 @@ describe("붙여 넣은 표 → 안내 글의 표 (2026-10-07 Alan — 다른 �
     expect(t?.rows[1]).toEqual([{ text: "끝", colspan: TABLE_MAX_COLS }]);
   });
 
-  it("표가 없거나 칸이 없으면 null — 예전처럼 글자만 붙여 넣는다", () => {
+  it("표도 서식도 없으면 null — 예전처럼 글자만 붙여 넣는다", () => {
     expect(paste("<p>글만</p>")).toBeNull();
     expect(paste("<p>앞</p><table></table>")).toBeNull();
     expect(paste("<table><tr></tr></table>")).toBeNull();
+    // 크롬은 복사한 글마다 font-weight: 400 을 붙인다 — 굵은 글자가 없으면 그대로 글자만
+    expect(paste(`<meta charset='utf-8'><span style="color: rgb(0, 0, 0); font-weight: 400; text-decoration-thickness: initial; text-decoration-style: initial;">보통 글</span>`)).toBeNull();
+    // 빈칸에만 걸린 굵게 · 밑줄은 서식이 아니다
+    expect(paste("<p>a<b> </b>b<u>&nbsp;</u></p>")).toBeNull();
   });
 
   it("칸 글자에 든 [ · \\ · 덩어리 글자(U+FFFC)도 저장 · 다시 읽기에 무너지지 않는다", () => {
@@ -134,5 +138,229 @@ describe("붙여 넣은 표 → 안내 글의 표 (2026-10-07 Alan — 다른 �
     expect(t.rows[0][0].text).toBe("[4주-10/06] [/td] [/table] \\n 끝");
     const note = docToNote({ runs: [tableRun(t)], aligns: ["left"] });
     expect(parseDoc(note).runs[0].style.table).toEqual(t);
+  });
+});
+
+/** 글 조각을 한 줄 글로 — `**굵게**` · `_기울임_` · `__밑줄__` (시험에서 읽기 쉽게) */
+const marked = (runs: readonly NoteRun[]) =>
+  runs
+    .map((r) => {
+      let t = r.text;
+      if (r.style.underline) t = `__${t}__`;
+      if (r.style.italic) t = `_${t}_`;
+      if (r.style.bold) t = `**${t}**`;
+      return t;
+    })
+    .join("");
+const textRuns = (html: string): NoteRun[] => {
+  const r = paste(html);
+  const t = r?.parts.find((p) => p.kind === "text");
+  if (!t || t.kind !== "text") throw new Error("글이 없다");
+  return t.runs ?? [{ text: t.text, style: {} }];
+};
+
+/** 크롬이 복사한 글의 바깥 style — 고른 글을 감싼 요소의 서식을 풀어 적는다 (font-weight: 400 · white-space: normal …) */
+const CHROME_WRAP =
+  "color: rgb(0, 0, 0); font-family: se-nanumgothic, sans-serif; font-size: 15px; font-style: normal; font-variant-ligatures: normal; font-variant-caps: normal; font-weight: 400; letter-spacing: normal; orphans: 2; text-align: start; text-indent: 0px; text-transform: none; widows: 2; word-spacing: 0px; -webkit-text-stroke-width: 0px; white-space: normal; background-color: rgb(255, 255, 255); text-decoration-thickness: initial; text-decoration-style: initial; text-decoration-color: initial;";
+/** 네이버 블로그(SmartEditor ONE) 글 한 문단 — 굵은 글은 문단 안의 <b> */
+const seP = (inner: string) => `<p class="se-text-paragraph se-text-paragraph-align- " style="" id="SE-p"><span style="" class="se-fs- se-ff-   " id="SE-s">${inner}</span></p>`;
+const NAVER_TEXT = `<meta charset='utf-8'><div class="se-module se-module-text" style="${CHROME_WRAP}">${[
+  seP("3. Who most likely is Mr. Johnson?"),
+  seP("(A) A new employee."),
+  seP("(B) A potential client."),
+  seP("<b>(C) One of your colleagues.</b>"),
+  seP("(D) A supplier."),
+  seP("\u200B"),
+  seP("4. What does the speaker ask the listener to do?"),
+  seP("(A) Send a document."),
+  `<p class="se-text-paragraph" style=""><b><span class="se-fs- se-ff-" style="">(B) Call him back.</span></b></p>`,
+].join("")}</div>`;
+/** 같은 글의 text/plain — 크롬이 문단마다 한 줄, 빈 문단은 U+200B 한 줄로 준다 */
+const NAVER_PLAIN = [
+  "3. Who most likely is Mr. Johnson?",
+  "(A) A new employee.",
+  "(B) A potential client.",
+  "(C) One of your colleagues.",
+  "(D) A supplier.",
+  "\u200B",
+  "4. What does the speaker ask the listener to do?",
+  "(A) Send a document.",
+  "(B) Call him back.",
+].join("\n");
+
+describe("붙여 넣은 글의 굵게 · 기울임 · 밑줄 (2026-10-20 Alan — 네이버 블로그의 굵은 정답이 사라졌다)", () => {
+  it("네이버 블로그 — 굵은 정답은 굵게, 빈 문단은 빈 줄", () => {
+    expect(marked(textRuns(NAVER_TEXT))).toBe(
+      [
+        "3. Who most likely is Mr. Johnson?",
+        "(A) A new employee.",
+        "(B) A potential client.",
+        "**(C) One of your colleagues.**",
+        "(D) A supplier.",
+        "",
+        "4. What does the speaker ask the listener to do?",
+        "(A) Send a document.",
+        "**(B) Call him back.**",
+      ].join("\n"),
+    );
+  });
+
+  it("구글 문서 — 전체를 감싼 <b style=font-weight:normal> 는 굵게가 아니다, 700 · italic · underline 은 그대로", () => {
+    const span = (css: string, text: string) =>
+      `<span style="font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;${css}font-variant:normal;vertical-align:baseline;white-space:pre;white-space:pre-wrap;">${text}</span>`;
+    const html = `<meta charset="utf-8"><b style="font-weight:normal;" id="docs-internal-guid-1a2b3c4d-7fff-1234-5678-9abcdef01234"><p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;">${span(
+      "font-weight:400;font-style:normal;text-decoration:none;",
+      "정답은 ",
+    )}${span("font-weight:700;font-style:normal;text-decoration:none;", "(C)")}${span("font-weight:400;font-style:italic;text-decoration:none;", "입니다")}</p><br><p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;">${span(
+      "font-weight:400;font-style:normal;text-decoration:underline;-webkit-text-decoration-skip:none;text-decoration-skip-ink:none;",
+      "밑줄",
+    )}</p></b><br class="Apple-interchange-newline">`;
+    expect(marked(textRuns(html))).toBe("정답은 **(C)**_입니다_\n\n__밑줄__");
+  });
+
+  it("워드 — <b> 는 굵게, <b> 안의 font-weight:normal 은 보통 (mso-… 는 읽지 않는다)", () => {
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office"><head><style><!-- p.MsoNormal {margin:0cm; font-family:"맑은 고딕";} a:link, span.MsoHyperlink {color:#0563C1; text-decoration:underline;} --></style></head><body lang=KO style='word-wrap:break-word'><!--StartFragment-->
+<p class=MsoNormal><span lang=EN-US>3. Who is it?<o:p></o:p></span></p>
+<p class=MsoNormal><b><span lang=EN-US>(C) One of your colleagues.</span></b><span lang=EN-US><o:p></o:p></span></p>
+<p class=MsoNormal><b><span lang=EN-US style='font-weight:normal;mso-bidi-font-weight:bold'>(D) 보통</span></b><i><span style='mso-bidi-font-style:normal'> 기울임</span></i></p>
+<!--EndFragment--></body></html>`;
+    expect(marked(textRuns(html))).toBe("3. Who is it?\n**(C) One of your colleagues.**\n(D) 보통_ 기울임_");
+  });
+
+  it("한글 — 따옴표로 감싼 값(font-weight:\"bold\")", () => {
+    const html = `<P CLASS=HStyle0 STYLE='text-align:left;'><SPAN STYLE='font-family:"한컴바탕";font-weight:"bold"'>굵게</SPAN><SPAN STYLE='font-style:"italic"'>기울임</SPAN><SPAN STYLE='text-decoration:"underline"'>밑줄</SPAN></P>`;
+    expect(marked(textRuns(html))).toBe("**굵게**_기울임___밑줄__");
+  });
+
+  it("우리 편집기에서 복사한 글 — data-note 로 색 · 크기 · 형광펜까지, 모르는 값 · 그림 · 표 · 깨진 값은 뺀다", () => {
+    const note = (o: object) => JSON.stringify(o).replace(/"/g, "&quot;");
+    const html = `<meta charset='utf-8'><div style="white-space: pre-wrap; font-weight: 400;"><div data-align="left" class="text-left">해설: <span class="font-bold text-red-600" data-note="${note({ bold: true, color: "red" })}" style="font-weight: 700; color: rgb(220, 38, 38);">(C)</span> <span data-note="${note({ mark: true, size: "lg", color: "purple", img: { path: "x", w: 50 } })}">형광</span><span data-note="{깨짐">그대로</span></div></div>`;
+    expect(textRuns(html)).toEqual([
+      { text: "해설: ", style: {} },
+      { text: "(C)", style: { bold: true, color: "red" } },
+      { text: " ", style: {} },
+      { text: "형광", style: { mark: true, size: "lg" } },
+      { text: "그대로", style: {} },
+    ]);
+  });
+
+  it("제목(h1~h6)은 굵게 — 다만 style 의 굵기(500)가 이긴다", () => {
+    expect(marked(textRuns(`<h3>제목</h3><h2 style="font-weight: 500">중간</h2><p>본문</p>`))).toBe("**제목**\n중간\n본문");
+  });
+
+  it("굵기 숫자 · bolder · lighter · !important · 대문자 · initial · inherit", () => {
+    expect(
+      marked(
+        textRuns(
+          `<p><span style="font-weight: 600">a</span><span style="font-weight: 500">b</span><strong style="font-weight: bolder">c</strong><b style="font-weight: lighter">d</b><span style="FONT-WEIGHT: BOLD !important">e</span><b><span style="font-weight: initial">f</span><span style="font-weight: inherit">g</span><span style="font-weight: unset">h</span></b></p>`,
+        ),
+      ),
+    ).toBe("**a**b**c**d**e**f**gh**");
+  });
+
+  it("기울임 — em · i · oblique, font-style: normal 은 보통", () => {
+    expect(marked(textRuns(`<p><em>a</em><span style="font-style: oblique 10deg">b</span><i style="font-style: normal">c</i><cite>d</cite></p>`))).toBe("_ab_c_d_");
+  });
+
+  it("font 줄임말 — 굵기 · 기울기를 적지 않으면 보통으로 되돌린다 (CSS 와 같다)", () => {
+    expect(
+      marked(textRuns(`<p><span style="font: italic bold 12px/30px Georgia, serif">x</span><b><span style="font: 12px serif">y</span><span style="font: inherit">z</span></b></p>`)),
+    ).toBe("**_x_**y**z**");
+  });
+
+  it("밑줄 — 자식이 지우지 못하고(CSS 와 같다), 링크 자신의 밑줄은 빼고, 밑줄 안의 링크는 밑줄", () => {
+    expect(
+      marked(
+        textRuns(
+          `<p><u>a<span style="text-decoration: none">b</span></u> <a href="https://x.test" style="text-decoration: underline; font-weight: 700">링크</a> <u>밑<a href="#">줄</a></u> <span style="text-decoration-line: underline line-through">c</span><ins>d</ins></p>`,
+        ),
+      ),
+    ).toBe("__ab__ **링크** __밑줄__ __cd__");
+  });
+
+  it("서식이 갈리는 자리의 빈칸도 하나로 — 앞 빈칸의 서식이 남는다", () => {
+    expect(textRuns(`<p>정답: <b> (C) </b> 입니다</p>`)).toEqual([
+      { text: "정답: ", style: {} },
+      { text: "(C) ", style: { bold: true } },
+      { text: "입니다", style: {} },
+    ]);
+  });
+
+  it("표 칸 — 표 · 줄 · 칸의 서식을 물려받고, 머리칸은 굵게를 뺀다(머리칸이 이미 굵다)", () => {
+    const t = onlyTable(`<table style="font-weight: bold"><tr><td>a</td><td style="font-weight: normal">b <b>c</b></td><th>머리 <i>기울임</i></th></tr><tr><td><u>밑줄</u></td></tr></table>`);
+    expect(t.rows).toEqual([
+      [
+        { text: "a", runs: [{ text: "a", style: { bold: true } }] },
+        { text: "b c", runs: [{ text: "b ", style: {} }, { text: "c", style: { bold: true } }] },
+        { text: "머리 기울임", runs: [{ text: "머리 ", style: {} }, { text: "기울임", style: { italic: true } }], head: true },
+      ],
+      [{ text: "밑줄", runs: [{ text: "밑줄", style: { bold: true, underline: true } }] }],
+    ]);
+    // 저장했다가 다시 읽어도 같다
+    expect(parseDoc(docToNote({ runs: [tableRun(t)], aligns: ["left"] })).runs[0].style.table).toEqual(t);
+  });
+
+  it("네이버 표 칸의 굵은 정답", () => {
+    const t = onlyTable(`<table class="se-table-content"><tbody><tr class="se-tr"><td class="se-cell"><div class="se-module se-module-text">${seP("80. What is the company trying to do?")}${seP("(A) Implement a recycling program")}${seP("<b>(B) Reduce electricity use</b>")}</div></td></tr></tbody></table>`);
+    expect(marked(t.rows[0][0].runs ?? [])).toBe("80. What is the company trying to do?\n(A) Implement a recycling program\n**(B) Reduce electricity use**");
+  });
+});
+
+describe("표가 없는 붙여 넣기 — 글자 · 줄은 text/plain 그대로, 서식만 얹는다 (pastedTextRuns)", () => {
+  const runs = (html: string, plain: string) => {
+    const r = paste(html);
+    if (!r) throw new Error("서식이 없다");
+    return pastedTextRuns(r, plain);
+  };
+
+  it("네이버 블로그 — text/plain 의 줄 그대로, 굵은 정답의 낱말 사이 빈칸까지 굵게, 빈 문단의 U+200B 는 뺀다", () => {
+    const out = runs(NAVER_TEXT, NAVER_PLAIN);
+    expect(runsText(out)).toBe(NAVER_PLAIN.replace("\u200B", ""));
+    expect(out).toContainEqual({ text: "(C) One of your colleagues.", style: { bold: true } });
+    expect(out).toContainEqual({ text: "(B) Call him back.", style: { bold: true } });
+    expect(out.filter((r) => r.style.bold).map((r) => r.text)).toEqual(["(C) One of your colleagues.", "(B) Call him back."]);
+  });
+
+  it("문단 사이 빈 줄 · 두 칸 빈칸 · 줄 앞 빈칸은 text/plain 이 준 그대로 (예전 붙여 넣기와 같다)", () => {
+    expect(runs(`<p style="margin: 0 0 1em">정답 <b>(C)</b></p><p>해설</p>`, "정답 (C)\n\n해설")).toEqual([
+      { text: "정답 ", style: {} },
+      { text: "(C)", style: { bold: true } },
+      { text: "\n\n해설", style: {} },
+    ]);
+    expect(runs(`<div style="white-space: pre-wrap"><div>  a  <b>b c</b>  d</div></div>`, "  a  b c  d")).toEqual([
+      { text: "  a  ", style: {} },
+      { text: "b c", style: { bold: true } },
+      { text: "  d", style: {} },
+    ]);
+  });
+
+  it("빈칸은 앞뒤 글자가 같은 서식일 때만 그 서식 — 줄바꿈은 서식이 없다", () => {
+    expect(runs(`<p><i>a b</i> c</p><p><i>d</i></p>`, "a b c\nd")).toEqual([
+      { text: "a b", style: { italic: true } },
+      { text: " c\n", style: {} },
+      { text: "d", style: { italic: true } },
+    ]);
+  });
+
+  it("\r\n 줄바꿈도 받는다 (윈도우)", () => {
+    expect(runsText(runs(`<p><b>a</b></p><p>b</p>`, "a\r\nb"))).toBe("a\nb");
+  });
+
+  it("text/plain 과 글자가 어긋나면(목록 기호 · 숨긴 글) HTML 에서 읽은 줄 그대로 — 굵게는 남는다", () => {
+    const html = `<ul><li><b>하나</b></li><li>둘</li></ul>`;
+    expect(runs(html, "• 하나\n• 둘")).toEqual([
+      { text: "하나", style: { bold: true } },
+      { text: "\n둘", style: {} },
+    ]);
+    // text/plain 이 비었으면(HTML 만 실린 클립보드)
+    expect(runs(html, "")).toEqual([
+      { text: "하나", style: { bold: true } },
+      { text: "\n둘", style: {} },
+    ]);
+  });
+
+  it("이모지를 잇는 글자(U+200D)는 둔다", () => {
+    const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
+    expect(runsText(runs(`<p><b>가족</b> ${family}</p>`, `가족 ${family}`))).toBe(`가족 ${family}`);
   });
 });
