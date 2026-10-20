@@ -28,6 +28,12 @@ import {
  *   `<b style="font-weight:normal">` 는 굵게가 아니고, 크롬이 복사할 때 붙이는 `font-weight: 400` · `700` 도 맞게 읽힌다. 밑줄은 조상의 밑줄을 자식이 지우지 못한다(CSS 와 같다).
  *   링크(`a`) 자신의 밑줄은 빼고(링크로 들어오지 않는다), 머리칸 글자의 굵게는 뺀다(머리칸이 이미 굵다 — 제목 셀을 풀면 보통 글자가 되게).
  *   **우리 편집기에서 복사한 글**은 조각마다 단 `data-note`(서식 JSON)를 읽어 색 · 크기 · 형광펜까지 그대로다 (`textStyle` — 아는 값만).
+ * - **워드 · 엑셀 · 한글 · 맥**(2026-10-20 Alan — "혹시 워드에서 복사할때도 진하게 설정이 같이 복사되면 좋겠어"): 크롬은 워드가 클립보드에 넣은 HTML 을 머리(`<style>`)까지 통째로 준다.
+ *   ① `<style>` 의 굵게 · 기울임(`font-weight` · `font-style` · `font`)을 그 요소에 얹는다(`applySheet` — 인라인 style 보다 앞, 태그 기본값보다 뒤 · CSS 와 같은 순서) —
+ *   워드의 글자 스타일(`span.a {font-weight:bold}` — 내가 만든 '정답' 스타일 · 책 제목 …) · 제목(`h1 {font-weight:normal}` — 워드 제목 1 은 굵지 않다) ·
+ *   엑셀 칸(`.xl65 {font-weight:700}`) · 맥(RTF 를 바꾼 `span.s1 {font-weight: bold}`)이 여기에 있다. 단순한 선택자만 읽고(`p` · `.xl65` · `span.a` · `p.MsoNormal, li.MsoNormal`)
+ *   시트의 밑줄은 읽지 않는다(거의 링크 꾸밈 `span.MsoHyperlink` 이다). ② 워드 목록 기호(`mso-list:Ignore` — 기호 글꼴 Symbol · Wingdings 로 그린 `·` · `ü` …)는
+ *   보이는 모양의 글자(• · ✓ …)와 탭으로, 워드 탭(`mso-tab-count`)은 탭으로 읽는다. `<b style='mso-bidi-font-weight:normal'>` 의 `mso-…` 는 읽지 않는다(굵게 그대로).
  * - 표 앞뒤에 함께 고른 글은 글자로 따로 들어간다 (줄은 화면에 보이던 대로 — 문단 · `<br>` 마다 한 줄, 빈 문단은 빈 줄). 줄 정렬은 가져오지 않는다.
  * - 네이버 블로그(SmartEditor ONE — 정렬이 칸이 아니라 문단 class `…-align-center` 에 있다) · 티스토리 · 워드 · 엑셀 · 구글 문서 · 한글의 표를 받는다.
  *   정렬은 칸 안 첫 글자에서 칸까지 올라가며 가장 가까운 것(`align` · `text-align` · `…align-center` class)이다 — CSS 상속과 같은 순서.
@@ -166,6 +172,145 @@ function styleWithin(el: Element, parent: NoteStyle): NoteStyle {
   return out;
 }
 
+/* ── 스타일 시트 (2026-10-20 — 워드 · 엑셀 · 한글 · 맥) ── */
+
+/** 시트에서 읽는 선언 — 굵게 · 기울임만 */
+const SHEET_PROPS = new Set(["font-weight", "font-style", "font"]);
+/** 단순한 선택자 — 태그 · 클래스(여럿)만. 자손(`td p`) · `a:link` · `[속성]` · `#id` 는 건너뛴다. 숫자로 시작하는 클래스(`span.1Char`)는 브라우저도 버린다 */
+const SIMPLE_SELECTOR = /^([a-z][a-z0-9]*|\*)?((?:\.-?[_a-z\u00a0-\uffff][\w\u00a0-\uffff-]*)*)$/i;
+
+type SheetRule = { tag: string; classes: string[]; spec: number; order: number; decls: string };
+
+/** CSS 글 → (선택자, 선언) 묶음. 따옴표 안의 `{ } ;` 는 글자로 보고, `@font-face` · `@page` · `@list`(워드) · `@media` 는 통째로 건너뛴다 */
+function cssBlocks(css: string): [string, string][] {
+  const out: [string, string][] = [];
+  let depth = 0;
+  let quote = "";
+  let start = 0;
+  let prelude = "";
+  let body = 0;
+  for (let i = 0; i < css.length; i++) {
+    const ch = css[i];
+    if (quote) {
+      if (ch === "\\") i++;
+      else if (ch === quote) quote = "";
+    } else if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === "{") {
+      if (depth++ === 0) {
+        prelude = css.slice(start, i).trim();
+        body = i + 1;
+      }
+    } else if (ch === "}") {
+      if (depth > 0 && --depth === 0) {
+        if (!prelude.startsWith("@")) out.push([prelude, css.slice(body, i)]);
+        start = i + 1;
+      }
+    } else if (ch === ";" && depth === 0) start = i + 1; // 블록 없는 @규칙 (`@import …;`)
+  }
+  return out;
+}
+
+/** 문서의 `<style>` 들 → 굵게 · 기울임을 정하는 규칙 (적힌 순서) */
+function sheetRules(doc: Document): SheetRule[] {
+  const rules: SheetRule[] = [];
+  for (const el of Array.from(doc.getElementsByTagName("style"))) {
+    // 워드 · 엑셀 · 한글은 시트를 `<!-- … -->` 로 감싸고 `/* Font Definitions */` 같은 주석을 단다
+    const css = (el.textContent ?? "").replace(/<!--|-->/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ");
+    for (const [prelude, body] of cssBlocks(css)) {
+      const decls = declarations(body).filter(([name]) => SHEET_PROPS.has(name));
+      if (!decls.length) continue;
+      const text = decls.map(([name, value]) => `${name}:${value}`).join(";");
+      for (const sel of prelude.split(",")) {
+        const m = SIMPLE_SELECTOR.exec(sel.trim());
+        if (!m || (!m[1] && !m[2])) continue;
+        const tag = m[1] && m[1] !== "*" ? m[1].toUpperCase() : "";
+        const classes = m[2] ? m[2].slice(1).toLowerCase().split(".") : [];
+        // 구체성 — 클래스가 태그를 이긴다 (`.xl65` 가 `td` 를, `p.a` 가 `.a` 를)
+        rules.push({ tag, classes, spec: classes.length * 2 + (tag ? 1 : 0), order: rules.length, decls: text });
+      }
+    }
+  }
+  return rules;
+}
+
+/**
+ * 시트의 굵게 · 기울임을 맞는 요소의 style 앞에 적는다 — 그 뒤의 인라인 style 이 이기고(`declarations` 는 적힌 순서대로 덮는다),
+ * 태그 기본값(`b` · `h1` …)은 그보다 먼저라 시트가 이긴다(워드 `h1 {font-weight:normal}`). 클래스는 대소문자를 가리지 않는다(문서형 없는 클립보드 HTML 은 브라우저도 그렇다)
+ */
+function applySheet(doc: Document) {
+  const rules = sheetRules(doc);
+  if (!rules.length) return;
+  const byTag = new Map<string, SheetRule[]>();
+  const byClass = new Map<string, SheetRule[]>();
+  const any: SheetRule[] = [];
+  for (const r of rules) {
+    const [map, key] = r.classes.length ? [byClass, r.classes[0]] : r.tag ? [byTag, r.tag] : [null, ""];
+    if (map) map.set(key, [...(map.get(key) ?? []), r]);
+    else any.push(r);
+  }
+  for (const el of Array.from(doc.getElementsByTagName("*"))) {
+    const tag = tagOf(el);
+    const classes = [...new Set(attr(el, "class").toLowerCase().split(/\s+/).filter(Boolean))];
+    const hits = [...any, ...(byTag.get(tag) ?? [])];
+    for (const c of classes) for (const r of byClass.get(c) ?? []) if ((!r.tag || r.tag === tag) && r.classes.every((x) => classes.includes(x))) hits.push(r);
+    if (!hits.length) continue;
+    hits.sort((p, q) => p.spec - q.spec || p.order - q.order);
+    el.setAttribute("style", `${hits.map((r) => r.decls).join(";")};${attr(el, "style")}`);
+  }
+}
+
+/* ── 워드 목록 기호 · 탭 (2026-10-20) ── */
+
+/** 워드 목록 기호 칸 — `<span style='mso-list:Ignore'>·<span style='font:7.0pt "Times New Roman"'>&nbsp;…</span></span>` (기호 · 번호 + 띄움) */
+const LIST_MARKER = /(?:^|;)\s*mso-list\s*:\s*ignore/i;
+/** 워드 탭 — `<span style='mso-tab-count:2'>&nbsp;…</span>` */
+const TAB_COUNT = /(?:^|;)\s*mso-tab-count\s*:\s*(\d+)/i;
+/** 글자 대신 그림을 그리는 기호 글꼴 */
+const SYMBOL_FONT = /^(?:symbol|wingdings(?: [23])?|webdings)$/;
+/** Wingdings 글자 → 보이는 모양 (워드 글머리 기호에 쓰는 것) — 모르는 글자는 • */
+const WINGDINGS: Record<string, string> = { l: "●", n: "■", o: "□", q: "❑", u: "◆", v: "❖", "§": "▪", Ø: "➢", ü: "✓" };
+
+/** 안의 글자 (숨긴 것 빼고) */
+function textOf(node: Node): string {
+  let s = "";
+  for (const c of Array.from(node.childNodes)) {
+    if (c.nodeType === TEXT_NODE) s += (c as Text).data;
+    else if (isElement(c) && !SKIP.has(tagOf(c)) && !isHidden(c)) s += textOf(c);
+  }
+  return s;
+}
+
+/** 이 글자를 그리는 글꼴 — 요소에서 문단까지 올라가며 가장 가까운 `font-family` 의 첫 이름 (소문자) */
+function fontFamilyOf(el: Element): string {
+  for (let e: Element | null = el; e; e = e.parentElement) {
+    const family = declarations(attr(e, "style"))
+      .filter(([name]) => name === "font-family")
+      .pop()?.[1];
+    if (family) return family.split(",")[0].trim();
+    if (BLOCK.has(tagOf(e))) break;
+  }
+  return "";
+}
+
+/** 목록 기호 글자 — 기호 글꼴 · 사용자 영역(U+F0xx — 기호 글꼴의 글자를 이렇게도 적는다)이면 보이는 모양으로, 번호(1. · 가. · ①)는 그대로 */
+function markerChar(ch: string, font: string): string {
+  const code = ch.codePointAt(0) ?? 0;
+  const pua = code >= 0xf000 && code <= 0xf0ff;
+  if (!pua && !SYMBOL_FONT.test(font)) return ch;
+  if (font === "wingdings") return WINGDINGS[String.fromCodePoint(pua ? code - 0xf000 : code)] ?? "•";
+  return "•";
+}
+
+/** 워드 목록 기호 — 띄움(&nbsp;)을 걷어 낸 기호 · 번호. 비었으면 "" */
+function listMarker(el: Element): string {
+  const text = textOf(el).replace(INVISIBLE, "").trim();
+  if (!text) return "";
+  const font = fontFamilyOf(el);
+  return Array.from(text)
+    .map((ch) => markerChar(ch, font))
+    .join("");
+}
+
 /** 칸 안 글자의 서식 — 표 바깥의 서식(`base`)에서 표 · 줄 묶음 · 줄 · 칸 차례로 (CSS 상속과 같은 순서) */
 function cellStyle(td: Element, table: Element, base: NoteStyle): NoteStyle {
   const chain: Element[] = [];
@@ -273,6 +418,19 @@ function walk(node: Node, out: Lines, onTable?: (el: Element, style: NoteStyle) 
     if (SKIP.has(tag) || isHidden(child)) continue;
     if (tag === "BR") {
       out.newline();
+      continue;
+    }
+    // 워드 목록 기호(• · 1. · 가.) + 탭 — 기호 글꼴의 글자(Symbol `·` · Wingdings `ü`)를 그대로 두면 다른 글자(· · ü)로 보인다
+    const css = attr(child, "style");
+    if (LIST_MARKER.test(css)) {
+      const marker = listMarker(child);
+      if (marker) out.text(`${marker}\t`, styleWithin(child, style));
+      continue;
+    }
+    // 워드 탭 — 안의 &nbsp; 여럿은 빈칸으로 퍼지니 탭 하나(들)로
+    const tabs = TAB_COUNT.exec(css);
+    if (tabs) {
+      out.text("\t".repeat(Math.min(Math.max(Number(tabs[1]), 1), 8)), styleWithin(child, style));
       continue;
     }
     if (tag === "TABLE") {
@@ -450,6 +608,7 @@ export function pasteParts(html: string, parse: (html: string) => Document = par
   const doc = parse(html);
   const root = doc.body ?? doc.documentElement;
   if (!root) return null;
+  applySheet(doc);
   const parts: PastePart[] = [];
   let truncated = false;
   const out = new Lines();
@@ -478,11 +637,121 @@ export function pasteParts(html: string, parse: (html: string) => Document = par
   return parts.some((p) => p.kind === "table" || p.runs) ? { parts, truncated } : null;
 }
 
+/* ── text/plain 과 HTML 글자 맞추기 (2026-10-20) ── */
+
+/** 맞춤의 상한 — 고칠 곳(넣기 · 빼기)이 이보다 많거나 일이 너무 크면 두 글이 다르다고 보고 HTML 에서 읽은 줄을 쓴다 */
+const MAX_EDITS = 1000;
+const MAX_WORK = 20_000_000;
+
+/**
+ * 두 글자 줄을 같은 글자끼리 차례대로 잇는다 (Myers 차이 — 고칠 곳이 적으면 빠르다). `a[i]` 와 이은 `b` 의 자리, 없으면 -1.
+ * 앞뒤의 같은 부분은 먼저 잇는다(보통은 이것으로 끝난다 — 워드 목록 기호처럼 몇 글자만 다를 때만 가운데를 맞춘다). 상한을 넘으면 null
+ */
+function alignGlyphs(a: readonly string[], b: readonly string[]): Int32Array | null {
+  const pairs = new Int32Array(a.length).fill(-1);
+  let lo = 0;
+  while (lo < a.length && lo < b.length && a[lo] === b[lo]) {
+    pairs[lo] = lo;
+    lo++;
+  }
+  let endA = a.length;
+  let endB = b.length;
+  while (endA > lo && endB > lo && a[endA - 1] === b[endB - 1]) {
+    endA--;
+    endB--;
+    pairs[endA] = endB;
+  }
+  const n = endA - lo;
+  const m = endB - lo;
+  if (!n || !m) return pairs;
+  const max = Math.min(MAX_EDITS, n + m);
+  const off = max + 1;
+  const v = new Int32Array(2 * max + 3);
+  // trace[d - 1] = d 번째 고침을 시작할 때의 v (k = -(d-1) … d-1)
+  const trace: Int32Array[] = [];
+  let work = 0;
+  for (let d = 0; d <= max; d++) {
+    if (d > 0) trace.push(v.slice(off - d + 1, off + d));
+    for (let k = -d; k <= d; k += 2) {
+      let x = k === -d || (k !== d && v[off + k - 1] < v[off + k + 1]) ? v[off + k + 1] : v[off + k - 1] + 1;
+      let y = x - k;
+      const x0 = x;
+      while (x < n && y < m && a[lo + x] === b[lo + y]) {
+        x++;
+        y++;
+      }
+      work += x - x0 + 1;
+      v[off + k] = x;
+      if (x >= n && y >= m) {
+        // 거꾸로 따라가며 대각선(같은 글자)마다 잇는다
+        for (let e = d; e > 0; e--) {
+          const prev = trace[e - 1];
+          const at = (kk: number) => prev[kk + e - 1];
+          const kk = x - y;
+          const down = kk === -e || (kk !== e && at(kk - 1) < at(kk + 1));
+          const pk = down ? kk + 1 : kk - 1;
+          const px = at(pk);
+          const py = px - pk;
+          const sx = down ? px : px + 1;
+          const sy = down ? py + 1 : py;
+          while (x > sx && y > sy) {
+            x--;
+            y--;
+            pairs[lo + x] = lo + y;
+          }
+          x = px;
+          y = py;
+        }
+        while (x > 0 && y > 0) {
+          x--;
+          y--;
+          pairs[lo + x] = lo + y;
+        }
+        return pairs;
+      }
+      if (work > MAX_WORK) return null;
+    }
+  }
+  return null;
+}
+
+/** 글자 · 숫자 — 맞춤이 그럴듯한지 셀 때 기호(목록 기호 · 문장 부호)는 세지 않는다 */
+const WORDISH = /[\p{L}\p{N}]/u;
+/** 사용자 영역 글자 — 기호 글꼴(Wingdings · Symbol)의 글자가 text/plain 에 이렇게 온다 (화면에는 네모나 빈칸) */
+const isPrivateUse = (ch: string) => {
+  const code = ch.codePointAt(0) ?? 0;
+  return code >= 0xe000 && code <= 0xf8ff;
+};
+
+/** 이은 것이 그럴듯한가 — 양쪽 다 글자 · 숫자의 대부분(80% 이상, 짧으면 두 자까지 봐준다)이 이어졌을 때만 */
+function closeEnough(a: readonly string[], b: readonly string[], pairs: Int32Array): boolean {
+  const usedB = new Uint8Array(b.length);
+  let wordA = 0;
+  let missA = 0;
+  pairs.forEach((j, i) => {
+    const w = WORDISH.test(a[i]);
+    if (w) wordA++;
+    if (j >= 0) usedB[j] = 1;
+    else if (w) missA++;
+  });
+  if (!usedB.some((u) => u === 1)) return false;
+  let wordB = 0;
+  let missB = 0;
+  b.forEach((ch, j) => {
+    if (!WORDISH.test(ch)) return;
+    wordB++;
+    if (!usedB[j]) missB++;
+  });
+  return missA <= 2 + wordA * 0.2 && missB <= 2 + wordB * 0.2;
+}
+
 /**
  * 표가 없는 붙여 넣기의 글자 조각 (2026-10-20) — 글자 · 줄 · 빈칸은 브라우저가 준 `text/plain` 그대로 두고(예전 붙여 넣기와 같게 — 문단 사이 빈 줄 · 두 칸 빈칸까지)
- * 서식만 HTML 에서 읽은 것(`pasteParts`)을 얹는다. 빈칸 · 줄바꿈 · 폭 없는 글자를 뺀 글자가 HTML 쪽과 한 자씩 같을 때만 얹고,
- * 어긋나면(브라우저마다 `text/plain` 을 만드는 법이 달라 목록 기호 · 숨긴 글이 끼면) HTML 에서 읽은 줄 그대로 쓴다 — 어느 쪽이든 굵게는 남는다.
- * 빈칸은 앞뒤 글자가 같은 서식일 때만 그 서식을 잇는다(굵은 낱말 사이 빈칸은 굵게, 보통 글과 굵은 글 사이는 보통). 줄바꿈은 서식이 없다.
+ * 서식만 HTML 에서 읽은 것(`pasteParts`)을 얹는다. 빈칸 · 줄바꿈 · 폭 없는 글자를 뺀 글자를 HTML 쪽과 차례대로 잇고(`alignGlyphs`), 이은 글자에 그 서식을 얹는다.
+ * 몇 글자가 달라도 된다 — 워드는 text/plain 에 목록 기호를 `•` 로 적고 HTML 에는 기호 글꼴의 `·` 로 적는다(이 글자들만 잇지 못한다). 글자 · 숫자의 대부분이
+ * 이어지지 않으면(`closeEnough` — 두 글이 다르다) HTML 에서 읽은 줄 그대로 쓴다 — 어느 쪽이든 굵게는 남는다.
+ * 잇지 못한 글자와 빈칸은 앞뒤 글자가 같은 서식일 때만 그 서식을 잇는다(굵은 낱말 사이 빈칸은 굵게, 보통 글과 굵은 글 사이는 보통). 줄바꿈은 서식이 없다.
+ * text/plain 의 사용자 영역 글자(U+E000~F8FF — 워드의 ✓ · ➢ 목록 기호)가 HTML 의 같은 자리 글자와 하나씩 짝지어지면 그 글자로 바꾼다(화면에 네모로 보이지 않게).
  * 폭 없는 글자 중 U+200B(네이버 빈 문단) · U+2060 · U+FEFF · U+FFFC 는 뺀다 — 이모지를 잇는 U+200D 는 둔다
  */
 export function pastedTextRuns(pasted: Pasted, plain: string): NoteRun[] {
@@ -496,18 +765,37 @@ export function pastedTextRuns(pasted: Pasted, plain: string): NoteRun[] {
   const glyphs: NoteRun[] = [];
   for (const r of fromHtml) for (const ch of Array.from(r.text)) if (!isGap(ch)) glyphs.push({ text: ch, style: r.style });
   const chars = Array.from(plain.replace(/\r\n?/g, "\n").replace(/[\u200B\u2060\uFEFF\uFFFC]/g, ""));
-  const styles: (NoteStyle | null)[] = [];
-  let j = 0;
-  for (const ch of chars) {
-    if (isGap(ch)) {
-      styles.push(null);
+  // 빈칸이 아닌 글자들 (text/plain 의 자리)
+  const at: number[] = [];
+  chars.forEach((ch, k) => {
+    if (!isGap(ch)) at.push(k);
+  });
+  if (!at.length || !glyphs.length) return fromHtml;
+  const a = at.map((k) => chars[k]);
+  const b = glyphs.map((g) => g.text);
+  const pairs = alignGlyphs(a, b);
+  if (!pairs || !closeEnough(a, b, pairs)) return fromHtml;
+  const styles: (NoteStyle | null)[] = chars.map(() => null);
+  pairs.forEach((j, i) => {
+    if (j >= 0) styles[at[i]] = glyphs[j].style;
+  });
+  // 잇지 못한 사용자 영역 글자 — 앞뒤로 이은 글자 사이의 틈이 HTML 쪽과 같은 길이면 하나씩 그 글자로
+  for (let i = 0; i < a.length; ) {
+    if (pairs[i] >= 0) {
+      i++;
       continue;
     }
-    if (glyphs[j]?.text !== ch) return fromHtml;
-    styles.push(glyphs[j++].style);
+    const start = i;
+    while (i < a.length && pairs[i] < 0) i++;
+    const from = start > 0 ? pairs[start - 1] + 1 : 0;
+    const to = i < a.length ? pairs[i] : b.length;
+    if (to - from !== i - start || !a.slice(start, i).every(isPrivateUse)) continue;
+    for (let t = 0; t < i - start; t++) {
+      chars[at[start + t]] = b[from + t];
+      styles[at[start + t]] = glyphs[from + t].style;
+    }
   }
-  if (j !== glyphs.length || j === 0) return fromHtml;
-  // 빈칸의 서식 — 같은 줄의 앞 글자와 뒤 글자 (줄바꿈에서 끊는다)
+  // 빈칸 · 잇지 못한 글자의 서식 — 같은 줄의 앞 글자와 뒤 글자 (줄바꿈에서 끊는다)
   const before: (NoteStyle | null)[] = [];
   let last: NoteStyle | null = null;
   chars.forEach((ch, k) => {

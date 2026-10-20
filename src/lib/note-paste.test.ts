@@ -64,7 +64,7 @@ describe("붙여 넣은 표 → 안내 글의 표 (2026-10-07 Alan — 다른 �
     expect(t.rows[0]).toEqual([{ text: "A", align: "center" }, { text: "B\n\nC" }, { text: "한글", align: "right" }]);
   });
 
-  it("구글 스프레드시트 — <style> 은 읽지 않고, colspan · 칸 style 의 정렬", () => {
+  it("구글 스프레드시트 — <style> 의 테두리는 읽지 않고(시트는 굵게 · 기울임만), colspan · 칸 style 의 정렬", () => {
     const t = onlyTable(`<google-sheets-html-origin><style type="text/css"><!--td {border: 1px solid #cccccc;}--></style><table xmlns="http://www.w3.org/1999/xhtml" cellspacing="0" cellpadding="0" dir="ltr" border="1" data-sheets-root="1"><colgroup><col width="100"/><col width="100"/></colgroup><tbody>
       <tr style="height:21px;"><td style="overflow:hidden;padding:2px 3px 2px 3px;vertical-align:bottom;text-align:center;" colspan="2" rowspan="1">합친 머리</td></tr>
       <tr style="height:21px;"><td style="overflow:hidden;text-align:right;">1,000</td><td style="overflow:hidden;">x</td></tr></tbody></table>`);
@@ -306,6 +306,450 @@ describe("붙여 넣은 글의 굵게 · 기울임 · 밑줄 (2026-10-20 Alan �
   });
 });
 
+/**
+ * 워드(윈도우 · 마이크로소프트 365)가 클립보드에 넣는 HTML — 크롬은 `<style>` 이 든 머리까지 통째로 준다 (CF_HTML 의 StartHTML 부터).
+ * 워드는 HTML 줄을 80자 남짓에서 CRLF 로 접는다 — 태그 속성 사이 · style 값의 `:` 뒤 · 글의 빈칸 자리에서
+ */
+const WORD_HEAD = `<html xmlns:v="urn:schemas-microsoft-com:vml"
+xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:w="urn:schemas-microsoft-com:office:word"
+xmlns:m="http://schemas.microsoft.com/office/2004/12/omml"
+xmlns="http://www.w3.org/TR/REC-html40">
+
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=utf-8">
+<meta name=ProgId content=Word.Document>
+<meta name=Generator content="Microsoft Word 15">
+<meta name=Originator content="Microsoft Word 15">
+<link rel=File-List
+href="file:///C:/Users/x/AppData/Local/Temp/msohtmlclip1/01/clip_filelist.xml">
+<!--[if gte mso 9]><xml>
+ <o:OfficeDocumentSettings>
+  <o:AllowPNG/>
+ </o:OfficeDocumentSettings>
+</xml><![endif]-->
+<link rel=themeData
+href="file:///C:/Users/x/AppData/Local/Temp/msohtmlclip1/01/clip_themedata.thmx">
+<!--[if gte mso 9]><xml>
+ <w:WordDocument>
+  <w:View>Normal</w:View>
+  <w:Zoom>0</w:Zoom>
+ </w:WordDocument>
+</xml><![endif]-->
+<style>
+<!--
+ /* Font Definitions */
+ @font-face
+	{font-family:"Cambria Math";
+	panose-1:2 4 5 3 5 4 6 3 2 4;
+	mso-font-charset:0;}
+@font-face
+	{font-family:"\\@맑은 고딕";
+	panose-1:2 11 5 3 2 0 0 2 0 4;
+	mso-font-charset:129;}
+ /* Style Definitions */
+ p.MsoNormal, li.MsoNormal, div.MsoNormal
+	{mso-style-unhide:no;
+	mso-style-qformat:yes;
+	mso-style-parent:"";
+	margin:0cm;
+	text-align:justify;
+	text-justify:inter-ideograph;
+	font-size:10.0pt;
+	mso-bidi-font-size:11.0pt;
+	font-family:"맑은 고딕";
+	mso-ascii-theme-font:minor-latin;
+	mso-bidi-font-weight:bold;
+	mso-font-kerning:1.0pt;}
+h1
+	{mso-style-priority:9;
+	mso-style-link:"제목 1 Char";
+	mso-style-next:표준;
+	margin:0cm;
+	page-break-after:avoid;
+	mso-outline-level:1;
+	font-size:14.0pt;
+	font-family:"맑은 고딕";
+	mso-ascii-theme-font:major-latin;
+	font-weight:normal;}
+p.MsoTitle, li.MsoTitle, div.MsoTitle
+	{mso-style-priority:10;
+	mso-style-link:"제목 Char";
+	margin-top:12.0pt;
+	text-align:center;
+	font-size:16.0pt;
+	font-family:"맑은 고딕";
+	font-weight:bold;}
+a:link, span.MsoHyperlink
+	{mso-style-priority:99;
+	color:#0563C1;
+	mso-themecolor:hyperlink;
+	text-decoration:underline;
+	text-underline:single;}
+strong
+	{mso-style-priority:22;
+	mso-style-unhide:no;
+	mso-style-qformat:yes;}
+span.MsoIntenseEmphasis
+	{mso-style-priority:21;
+	mso-style-unhide:no;
+	mso-style-qformat:yes;
+	color:#4472C4;
+	mso-themecolor:accent1;
+	font-style:italic;}
+span.1Char
+	{mso-style-name:"제목 1 Char";
+	mso-style-link:"제목 1";
+	font-family:"맑은 고딕";
+	font-weight:bold;}
+span.a
+	{mso-style-name:정답;
+	mso-style-unhide:no;
+	mso-style-qformat:yes;
+	mso-style-parent:"";
+	color:red;
+	font-weight:bold;}
+p.MsoListParagraph, li.MsoListParagraph, div.MsoListParagraph
+	{mso-style-priority:34;
+	margin-left:40.0pt;
+	mso-para-margin-left:4.0gd;
+	font-size:10.0pt;
+	font-family:"맑은 고딕";}
+.MsoChpDefault
+	{mso-style-type:export-only;
+	mso-default-props:yes;
+	font-family:"맑은 고딕";}
+ /* Page Definitions */
+ @page
+	{mso-page-border-surround-header:no;}
+@page WordSection1
+	{size:595.3pt 841.9pt;
+	margin:3.0cm 72.0pt 72.0pt 72.0pt;}
+div.WordSection1
+	{page:WordSection1;}
+ /* List Definitions */
+ @list l0
+	{mso-list-id:1176043113;
+	mso-list-type:hybrid;}
+@list l0:level1
+	{mso-level-number-format:bullet;
+	mso-level-text:\uF0B7;
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	margin-left:20.0pt;
+	text-indent:-20.0pt;
+	font-family:Symbol;}
+@list l1:level1
+	{mso-level-number-format:bullet;
+	mso-level-text:\uF0FC;
+	font-family:Wingdings;}
+@list l2:level1
+	{mso-level-text:"%1\\.";
+	mso-level-tab-stop:none;}
+ol
+	{margin-bottom:0cm;}
+ul
+	{margin-bottom:0cm;}
+-->
+</style>
+<!--[if gte mso 10]>
+<style>
+ /* Style Definitions */
+ table.MsoNormalTable
+	{mso-style-name:"표준 표";
+	font-weight:bold;}
+p.MsoNormal
+	{font-weight:bold;}
+</style>
+<![endif]-->
+</head>
+
+<body lang=KO style='tab-interval:40.0pt;word-wrap:break-word'>
+<!--StartFragment-->`;
+const WORD_TAIL = `<!--EndFragment-->
+</body>
+
+</html>`;
+const wordDoc = (body: string, eol = "\r\n") => [WORD_HEAD, body, WORD_TAIL].join(eol).replace(/\r?\n/g, eol);
+/** 워드 목록 문단 — 기호 칸(`mso-list:Ignore`) + 띄움(7pt &nbsp;) */
+const wordItem = (marker: string, markerStyle: string, body: string, list = "l0") =>
+  `<p class=MsoListParagraph style='margin-left:20.0pt;mso-para-margin-left:0gd;
+text-indent:-20.0pt;mso-list:${list} level1 lfo1'><![if !supportLists]><span
+lang=EN-US style='${markerStyle}'><span style='mso-list:Ignore'>${marker}<span
+style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+</span></span></span><![endif]>${body}</p>`;
+const WORD_BODY = `
+<p class=MsoTitle><span lang=EN-US>Part 3 </span>정답<span lang=EN-US><o:p></o:p></span></p>
+
+<h1><span lang=EN-US>Questions 3-4<o:p></o:p></span></h1>
+
+<p class=MsoNormal><span lang=EN-US>3. Who most likely is Mr. Johnson?<o:p></o:p></span></p>
+
+<p class=MsoNormal><span lang=EN-US>(A) A new employee.<o:p></o:p></span></p>
+
+<p class=MsoNormal><b style='mso-bidi-font-weight:normal'><span lang=EN-US
+style='font-family:"맑은 고딕";mso-ascii-theme-font:minor-latin;mso-hansi-theme-font:
+minor-latin'>(C) One of your
+colleagues.<o:p></o:p></span></b></p>
+
+<p class=MsoNormal><span lang=EN-US><o:p>&nbsp;</o:p></span></p>
+
+<p class=MsoNormal><span style='font-family:"맑은 고딕";mso-ascii-font-family:"맑은 고딕"'>해설</span><span
+lang=EN-US>: <span class=a>call back</span> </span>은 <i style='mso-bidi-font-style:
+normal'>다시 전화하다</i><span style='mso-spacerun:yes'>&nbsp; </span>예요<span
+lang=EN-US>.<o:p></o:p></span></p>
+
+${wordItem("·", "font-family:Symbol;mso-fareast-font-family:Symbol;mso-bidi-font-family:\nSymbol", "<b><span lang=EN-US>(B) Call him back.<o:p></o:p></span></b>")}
+
+${wordItem("ü", "font-family:\nWingdings;mso-fareast-font-family:Wingdings;mso-bidi-font-family:Wingdings", "<span lang=EN-US>Check the answer.<o:p></o:p></span>", "l1")}
+
+${wordItem("1.", "mso-bidi-font-family:\"맑은 고딕\";mso-bidi-theme-font:minor-latin", "<b><span lang=EN-US>정답 번호<o:p></o:p></span></b>", "l2").replace("<![if !supportLists]><span", "<![if !supportLists]><b><span").replace("</span></span></span><![endif]>", "</span></span></span></b><![endif]>")}
+
+<p class=MsoNormal><span lang=EN-US>A<span style='mso-tab-count:1'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+</span>B<o:p></o:p></span></p>
+
+<p class=MsoNormal><strong><span lang=EN-US>Strong</span></strong><span lang=EN-US> <span
+class=MsoIntenseEmphasis>Intense</span> <span class=1Char>Heading char</span><o:p></o:p></span></p>
+
+<p class=MsoNormal><a href="https://www.ybmedu.com/"><span class=MsoHyperlink><span
+lang=EN-US>www.ybmedu.com</span></span></a><span lang=EN-US><o:p></o:p></span></p>
+`;
+/** 같은 선택의 text/plain — 워드는 문단마다 CRLF, 목록은 기호 + 탭 (기본 글머리 •, Wingdings ✓ 는 사용자 영역 글자) */
+const WORD_PLAIN = [
+  "Part 3 정답",
+  "Questions 3-4",
+  "3. Who most likely is Mr. Johnson?",
+  "(A) A new employee.",
+  "(C) One of your colleagues.",
+  "",
+  "해설: call back 은 다시 전화하다  예요.",
+  "•\t(B) Call him back.",
+  "\uF0FC\tCheck the answer.",
+  "1.\t정답 번호",
+  "A\tB",
+  "Strong Intense Heading char",
+  "www.ybmedu.com",
+  "",
+].join("\r\n");
+/** 우리가 바라는 모양 — 제목(Title 스타일)은 굵게 · 제목 1 은 굵지 않음 · `<b>` · 글자 스타일 '정답' · strong 은 굵게, 강한 강조는 기울임, 링크 밑줄 · 숫자 클래스 규칙은 없음 */
+const WORD_MARKED = [
+  "**Part 3 정답**",
+  "Questions 3-4",
+  "3. Who most likely is Mr. Johnson?",
+  "(A) A new employee.",
+  "**(C) One of your colleagues.**",
+  "",
+  "해설: **call back** 은 _다시 전화하다_  예요.",
+  "•\t**(B) Call him back.**",
+  "✓\tCheck the answer.",
+  "**1.\t정답 번호**",
+  "A\tB",
+  "**Strong** _Intense_ Heading char",
+  "www.ybmedu.com",
+].join("\n");
+
+describe("워드에서 복사한 글 (2026-10-20 Alan — 워드에서 복사할 때도 진하게)", () => {
+  it("윈도우 워드 — 머리의 <style> 까지: 직접 굵게 · 글자 스타일 · 제목 · 목록 기호 · 탭 (HTML 에서 읽은 줄)", () => {
+    expect(marked(textRuns(wordDoc(WORD_BODY)))).toBe(WORD_MARKED);
+  });
+
+  it("윈도우 워드 — text/plain 에 서식을 얹으면 같은 모양 (목록 기호 •, 사용자 영역 ✓ 는 HTML 의 ✓ 로)", () => {
+    const r = paste(wordDoc(WORD_BODY));
+    if (!r) throw new Error("서식이 없다");
+    expect(marked(pastedTextRuns(r, WORD_PLAIN))).toBe(`${WORD_MARKED}\n`);
+  });
+
+  it("맥 워드 — 줄바꿈이 LF, text/plain 의 문단은 CR", () => {
+    const r = paste(wordDoc(WORD_BODY, "\n"));
+    if (!r) throw new Error("서식이 없다");
+    expect(marked(pastedTextRuns(r, WORD_PLAIN.replace(/\r\n/g, "\r")))).toBe(`${WORD_MARKED}\n`);
+  });
+
+  it("워드 목록 기호 — Symbol · Wingdings 글자는 보이는 모양으로, 사용자 영역(U+F0xx)도, 번호는 그대로", () => {
+    const item = (marker: string, font: string) => wordItem(marker, font ? `font-family:${font}` : "", "<b>굵게</b>");
+    const html = [
+      item("·", "Symbol"),
+      item("\uF0B7", ""),
+      item("§", "Wingdings"),
+      item("Ø", "Wingdings"),
+      item("v", "Wingdings"),
+      item("\uF0D8", "Wingdings"),
+      item("x", "Wingdings 2"),
+      item("o", '"Courier New"'),
+      item("가.", ""),
+      item("①", ""),
+    ].join("");
+    expect(marked(textRuns(html)).split("\n")).toEqual(["•", "•", "▪", "➢", "❖", "➢", "•", "o", "가.", "①"].map((m) => `${m}\t**굵게**`));
+  });
+
+  it("워드 표 + 목록 — 표 앞뒤의 글도 목록 기호 · 굵게 그대로, 칸 안의 굵게 · 목록", () => {
+    const body = `${wordItem("Ø", "font-family:Wingdings", "<b><span lang=EN-US>정답<o:p></o:p></span></b>")}
+<table class=MsoTableGrid border=1 cellspacing=0 cellpadding=0
+ style='border-collapse:collapse;border:none;mso-border-alt:solid windowtext .5pt;
+ mso-yfti-tbllook:1184;mso-padding-alt:0cm 5.4pt 0cm 5.4pt'>
+ <tr style='mso-yfti-irow:0;mso-yfti-firstrow:yes;mso-yfti-lastrow:yes'>
+  <td width=301 valign=top style='width:225.4pt;border:solid windowtext 1.0pt;
+  mso-border-alt:solid windowtext .5pt;padding:0cm 5.4pt 0cm 5.4pt'>
+  <p class=MsoNormal><b><span lang=EN-US>(C)<o:p></o:p></span></b></p>
+  </td>
+  <td width=301 valign=top style='width:225.4pt;border:solid windowtext 1.0pt;
+  border-left:none;padding:0cm 5.4pt 0cm 5.4pt'>
+  ${wordItem("·", "font-family:Symbol", "<span lang=EN-US>목록<o:p></o:p></span>")}
+  </td>
+ </tr>
+</table>
+<p class=MsoNormal><span class=a>끝</span></p>`;
+    const r = paste(wordDoc(body));
+    expect(r?.parts).toEqual([
+      { kind: "text", text: "➢\t정답", runs: [{ text: "➢\t", style: {} }, { text: "정답", style: { bold: true } }] },
+      { kind: "table", table: { rows: [[{ text: "(C)", runs: [{ text: "(C)", style: { bold: true } }] }, { text: "•\t목록" }]] } },
+      { kind: "text", text: "끝", runs: [{ text: "끝", style: { bold: true } }] },
+    ]);
+  });
+
+  it("워드 — 굵게가 없으면 null (예전처럼 text/plain 글자만), 머리 <style> 의 밑줄 · 조건부 주석 속 시트는 읽지 않는다", () => {
+    expect(paste(wordDoc(`<p class=MsoNormal><span lang=EN-US>보통 글<o:p></o:p></span></p>
+<p class=MsoNormal><a href="https://www.ybmedu.com/"><span class=MsoHyperlink>링크</span></a></p>
+${wordItem("·", "font-family:Symbol", "<span lang=EN-US>목록<o:p></o:p></span>")}`))).toBeNull();
+  });
+
+  it("워드 온라인(웹) — 인라인 style 의 font-weight: bold · 문단 끝 &nbsp;(EOP)", () => {
+    const run = (text: string, css: string) =>
+      `<span lang="EN-US" class="TextRun SCXW155563457 BCX0" style="margin: 0px; padding: 0px; user-select: text; -webkit-user-drag: none; -webkit-tap-highlight-color: transparent; font-variant-ligatures: none !important; font-size: 10pt; line-height: 17.2667px; font-family: &quot;맑은 고딕&quot;, &quot;맑은 고딕_EmbeddedFont&quot;, &quot;맑은 고딕_MSFontService&quot;, sans-serif;${css}" data-contrast="auto"><span class="NormalTextRun SCXW155563457 BCX0" style="margin: 0px; padding: 0px; user-select: text; -webkit-user-drag: none; -webkit-tap-highlight-color: transparent;">${text}</span></span>`;
+    const para = (inner: string) =>
+      `<div class="OutlineElement Ltr SCXW155563457 BCX0" style="margin: 0px; padding: 0px; user-select: text; overflow: visible; cursor: text; clear: both; position: relative; direction: ltr; color: rgb(0, 0, 0); font-family: &quot;Segoe UI&quot;, &quot;Segoe UI Web&quot;, Tahoma, Arial, sans-serif; font-size: 12px; font-style: normal; font-weight: 400; white-space: normal; background-color: rgb(255, 255, 255);"><p class="Paragraph SCXW155563457 BCX0" xml:lang="KO-KR" lang="KO-KR" paraid="1" paraeid="{a}{1}" style="margin: 0px; padding: 0px; user-select: text; overflow-wrap: break-word; white-space: pre-wrap; font-weight: normal; font-style: normal; vertical-align: baseline; font-kerning: none; background-color: transparent; color: windowtext; text-align: justify; text-indent: 0px;">${inner}<span class="EOP SCXW155563457 BCX0" data-ccp-props="{&quot;201341983&quot;:0}" style="margin: 0px; padding: 0px; font-size: 10pt; line-height: 17.2667px;">&nbsp;</span></p></div>`;
+    const html = `<meta charset='utf-8'>${para(run("정답은 ", "") + run("(C)", " font-weight: bold;"))}${para(run("해설", " font-style: italic;"))}`;
+    expect(marked(textRuns(html))).toBe("정답은 **(C)**\n_해설_");
+    const r = paste(html);
+    if (!r) throw new Error("서식이 없다");
+    expect(marked(pastedTextRuns(r, "정답은 (C) \n해설 "))).toBe("정답은 **(C)** \n_해설_ ");
+  });
+});
+
+describe("엑셀 · 한글 · 맥 — 시트(<style>)의 굵게 · 기울임", () => {
+  it("엑셀 — 칸 클래스(.xl65 font-weight:700 · .xl66 italic)가 td 규칙(400)을 이기고, 칸 안 <font class=font5> 도", () => {
+    const html = `<html xmlns:v="urn:schemas-microsoft-com:vml"
+xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:x="urn:schemas-microsoft-com:office:excel"
+xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=utf-8">
+<meta name=ProgId content=Excel.Sheet>
+<meta name=Generator content="Microsoft Excel 15">
+<style>
+<!--table
+	{mso-displayed-decimal-separator:"\\.";
+	mso-displayed-thousand-separator:"\\,";}
+@page
+	{margin:.75in .7in .75in .7in;}
+tr
+	{mso-height-source:auto;}
+br
+	{mso-data-placement:same-cell;}
+td
+	{padding-top:1px;
+	color:black;
+	font-size:11.0pt;
+	font-weight:400;
+	font-style:normal;
+	text-decoration:none;
+	font-family:"맑은 고딕", monospace;
+	text-align:general;
+	white-space:nowrap;}
+.xl65
+	{font-weight:700;
+	font-family:"맑은 고딕", monospace;}
+.xl66
+	{font-style:italic;}
+.font5
+	{color:black;
+	font-weight:700;
+	font-style:normal;}
+-->
+</style>
+</head>
+<body link="#0563C1" vlink="#954F72">
+<table border=0 cellpadding=0 cellspacing=0 width=216 style='border-collapse:
+ collapse;width:162pt'>
+<!--StartFragment-->
+ <col width=72 span=3 style='width:54pt'>
+ <tr height=22 style='height:16.5pt'>
+  <td height=22 class=xl65 width=72 style='height:16.5pt;width:54pt'>정답</td>
+  <td class=xl66 width=72 style='width:54pt'>해설</td>
+  <td width=72 style='width:54pt'>보통</td>
+ </tr>
+ <tr height=22 style='height:16.5pt'>
+  <td height=22 style='height:16.5pt'>(C)</td>
+  <td>보통<font class="font5">굵게</font></td>
+  <td class="XL65">B</td>
+ </tr>
+<!--EndFragment-->
+</table>
+</body>
+</html>`;
+    expect(onlyTable(html).rows).toEqual([
+      [{ text: "정답", runs: [{ text: "정답", style: { bold: true } }] }, { text: "해설", runs: [{ text: "해설", style: { italic: true } }] }, { text: "보통" }],
+      [{ text: "(C)" }, { text: "보통굵게", runs: [{ text: "보통", style: {} }, { text: "굵게", style: { bold: true } }] }, { text: "B", runs: [{ text: "B", style: { bold: true } }] }],
+    ]);
+  });
+
+  it(`한글(HWP) — 문단 스타일의 굵게("bold" 따옴표) · 바탕글은 보통 · 글자 모양의 굵게`, () => {
+    const html = `<HTML>
+<HEAD>
+<META NAME="Generator" CONTENT="Hancom HWP 12.0.0.535">
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=utf-8">
+<STYLE>
+<!--
+p.HStyle0
+	{style-name:"바탕글"; margin-top:0.0pt; margin-bottom:0.0pt; text-align:justify; text-indent:0.0pt; line-height:160%; font-size:10.0pt; font-family:함초롬바탕; letter-spacing:0; font-weight:"normal"; font-style:"normal"; color:#000000;}
+li.HStyle0
+	{style-name:"바탕글"; font-weight:"normal";}
+p.HStyle1
+	{style-name:"개요 1"; margin-left:10.0pt; font-size:10.0pt; font-family:함초롬바탕; font-weight:"bold"; font-style:"normal"; color:#000000;}
+-->
+</STYLE>
+</HEAD>
+<BODY>
+<!--StartFragment-->
+<P CLASS=HStyle1>1. 개요</P>
+<P CLASS=HStyle0>보통 <SPAN STYLE='font-weight:"bold"'>굵게</SPAN></P>
+<!--EndFragment-->
+</BODY>
+</HTML>`;
+    expect(marked(textRuns(html))).toBe("**1. 개요**\n보통 **굵게**");
+  });
+
+  it("맥(RTF 를 HTML 로 바꾼 클립보드 — Cocoa) — span.s1 의 굵게, p.p1 의 font 줄임말은 보통", () => {
+    const html = `<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta http-equiv="Content-Style-Type" content="text/css">
+<title></title>
+<meta name="Generator" content="Cocoa HTML Writer">
+<style type="text/css">
+p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px 'Apple SD Gothic Neo'}
+p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px 'Apple SD Gothic Neo'; min-height: 14.0px}
+span.s1 {font-family: 'AppleSDGothicNeo-Bold'; font-weight: bold; font-style: normal; font-size: 12.00px}
+span.s2 {font: italic 12.0px 'Apple SD Gothic Neo'}
+</style>
+</head>
+<body>
+<p class="p1"><span class="s1">(C) One of your colleagues.</span></p>
+<p class="p2"><br></p>
+<p class="p1">해설 <b>굵게</b> <span class="s2">기울임</span></p>
+</body>
+</html>`;
+    expect(marked(textRuns(html))).toBe("**(C) One of your colleagues.**\n\n해설 **굵게** _기울임_");
+  });
+
+  it("시트의 순서 — 같은 구체성이면 뒤 규칙이, 클래스가 태그를, 인라인 style 이 시트를 이긴다 · 자손 선택자는 건너뛴다", () => {
+    const html = `<style>p { font-weight: bold } .n { font-weight: normal } p.b { font-weight: bold } .x { font-weight: bold } .x { font-weight: normal } div p { font-style: italic }</style>
+<p>a</p><p class="n">b</p><p class="n b">c</p><p class="x">d</p><p class="n" style="font-weight: 700">e</p><div><p class="n">f</p></div>`;
+    expect(marked(textRuns(html)).split("\n")).toEqual(["**a**", "b", "**c**", "d", "**e**", "f"]);
+  });
+});
+
 describe("표가 없는 붙여 넣기 — 글자 · 줄은 text/plain 그대로, 서식만 얹는다 (pastedTextRuns)", () => {
   const runs = (html: string, plain: string) => {
     const r = paste(html);
@@ -346,17 +790,62 @@ describe("표가 없는 붙여 넣기 — 글자 · 줄은 text/plain 그대로,
     expect(runsText(runs(`<p><b>a</b></p><p>b</p>`, "a\r\nb"))).toBe("a\nb");
   });
 
-  it("text/plain 과 글자가 어긋나면(목록 기호 · 숨긴 글) HTML 에서 읽은 줄 그대로 — 굵게는 남는다", () => {
+  it("text/plain 에만 있는 목록 기호는 그대로 두고 서식만 얹는다 — 몇 글자가 달라도 굵게는 제자리", () => {
     const html = `<ul><li><b>하나</b></li><li>둘</li></ul>`;
     expect(runs(html, "• 하나\n• 둘")).toEqual([
+      { text: "• ", style: {} },
+      { text: "하나", style: { bold: true } },
+      { text: "\n• 둘", style: {} },
+    ]);
+    // 끼어든 글자는 앞뒤 글자가 같은 서식일 때만 그 서식 — 굵은 글 안이면 굵게, 굵은 글과 보통 글 사이면 보통
+    expect(runs(`<p><b>정답은 C 입니다</b> 끝</p>`, "정답은 (C) 입니다 끝")).toEqual([
+      { text: "정답은 (C) 입니다", style: { bold: true } },
+      { text: " 끝", style: {} },
+    ]);
+    expect(runs(`<p><b>정답은 C</b> 입니다</p>`, "정답은 (C) 입니다")).toEqual([
+      { text: "정답은 (C", style: { bold: true } },
+      { text: ") 입니다", style: {} },
+    ]);
+  });
+
+  it("두 글이 다르거나 text/plain 이 비면 HTML 에서 읽은 줄 그대로 — 굵게는 남는다", () => {
+    const html = `<ul><li><b>하나</b></li><li>둘</li></ul>`;
+    const fromHtml = [
       { text: "하나", style: { bold: true } },
       { text: "\n둘", style: {} },
-    ]);
+    ];
     // text/plain 이 비었으면(HTML 만 실린 클립보드)
-    expect(runs(html, "")).toEqual([
-      { text: "하나", style: { bold: true } },
-      { text: "\n둘", style: {} },
+    expect(runs(html, "")).toEqual(fromHtml);
+    // 글자 · 숫자의 대부분이 이어지지 않으면 (다른 글)
+    expect(runs(html, "전혀 다른 글이에요")).toEqual(fromHtml);
+    expect(runs(`<p><b>정답</b> 해설입니다</p>`, "정답 해설 말고 완전히 다른 문장이 길게 들어 있어요")).toEqual([
+      { text: "정답", style: { bold: true } },
+      { text: " 해설입니다", style: {} },
     ]);
+  });
+
+  it("사용자 영역 글자(기호 글꼴 — 워드의 ✓ 목록 기호)는 HTML 의 같은 자리 글자로 바꾼다", () => {
+    const html = `<p>✓\t<b>정답</b></p><p>\uF0A7 그대로</p>`;
+    // 앞의 U+F0FC 는 HTML 의 ✓ 와 짝이 되어 ✓ 로, 뒤의 U+F0A7 은 HTML 에도 그대로 있어 그대로
+    expect(runs(html, "\uF0FC\t정답\n\uF0A7 그대로")).toEqual([
+      { text: "✓\t", style: {} },
+      { text: "정답", style: { bold: true } },
+      { text: "\n\uF0A7 그대로", style: {} },
+    ]);
+  });
+
+  it("긴 글에 목록 기호가 수백 개 달라도 금방 맞춘다", () => {
+    const n = 400;
+    const line = (i: number) => `${i}번 문제의 정답은 (C) 이고 해설은 다음과 같다`;
+    const html = Array.from({ length: n }, (_, i) => `<p>•\t${i % 2 ? `<b>${line(i)}</b>` : line(i)}</p>`).join("");
+    const plain = Array.from({ length: n }, (_, i) => `\uF0B7\t${line(i)}`).join("\r\n");
+    const r = paste(html);
+    if (!r) throw new Error("서식이 없다");
+    const t0 = performance.now();
+    const out = pastedTextRuns(r, plain);
+    expect(performance.now() - t0).toBeLessThan(1500);
+    expect(runsText(out)).toBe(plain.replace(/\r\n/g, "\n").replaceAll("\uF0B7", "•"));
+    expect(out.filter((x) => x.style.bold).map((x) => x.text)).toEqual(Array.from({ length: n / 2 }, (_, k) => line(2 * k + 1)));
   });
 
   it("이모지를 잇는 글자(U+200D)는 둔다", () => {
