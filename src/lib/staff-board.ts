@@ -106,7 +106,7 @@ export function boardDateLabel(iso: string, now: Date = new Date()): string {
 }
 
 /**
- * 고친 글인가 — 올릴 때 트리거가 두 시각을 같은 값으로 적고, 제목 · 본문 · 링크가 바뀔 때만 고친 시각을 올린다.
+ * 고친 글인가 — 올릴 때 트리거가 두 시각을 같은 값으로 적고, 제목 · 본문 · 링크 · 레벨이 바뀔 때만 고친 시각을 올린다.
  * 파일만 더하거나 빼면 글은 그대로라 `고침` 이 붙지 않는다
  */
 export const isEditedPost = (post: { created_at: string; updated_at: string }) => new Date(post.updated_at).getTime() - new Date(post.created_at).getTime() > 1000;

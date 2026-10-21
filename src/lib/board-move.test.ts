@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  BULK_SKIP,
+  bulkDraftOf,
+  bulkSteps,
+  bulkSummary,
   classPlaceLabel,
   materialMoveBlock,
+  materialMoveIssue,
   moveDraftOf,
   movedFromLabel,
   movedFromOf,
   moveTargetError,
   moveTargetOf,
+  originTargetOf,
   pathMap,
+  type BulkPost,
 } from "./board-move";
 import { noteImagePaths, rewriteNoteImages } from "./note-format";
 
@@ -134,5 +141,106 @@ describe("사진 경로 바꾸기 (rewriteNoteImages) — 다른 버킷으로 �
   });
   it("바꿀 것이 없으면 그대로", () => {
     expect(rewriteNoteImages("[img=images/aaa.png]", new Map())).toBe("[img=images/aaa.png]");
+  });
+});
+
+/**
+ * 여러 개 한꺼번에 옮기기 (2026-10-21 Alan — "자료를 넘길때 여러개를 한번에 선택해서 넘길수 있도록 하면 좋겠어. 그리고 전체선택도 같이 만들어줘").
+ * 옮길 곳을 한 번 고르면 글마다 옮길 곳 · 건너뛸 까닭이 정해진다 — 화면이 그대로 하나씩 옮긴다.
+ */
+const post = (id: number, extra: Partial<BulkPost> = {}): BulkPost => ({ id, title: `글 ${id}`, levels: [650], movedFrom: null, materialIssue: null, ...extra });
+
+describe("회차 자료로 못 가는 까닭 (materialMoveIssue) — 하나 옮기기와 같은 판정", () => {
+  it("사진 · 빈 글 · 괜찮은 글", () => {
+    expect(materialMoveIssue({ body: "[img=images/a.png]", files: 1, links: 0 })).toBe("photo");
+    expect(materialMoveIssue({ body: "[u][/u]", files: 0, links: 0 })).toBe("empty");
+    expect(materialMoveIssue({ body: "스크립트", files: 0, links: 0 })).toBeNull();
+    expect(materialMoveBlock({ body: "[img=images/a.png]", files: 0, links: 0 })).toContain("공지사항으로");
+  });
+});
+
+describe("원래 자리로 돌아갈 곳 (originTargetOf)", () => {
+  it("공지 — 지금 레벨 목록에 있는 레벨만 남긴다 · 전체 공지는 전체로", () => {
+    expect(originTargetOf({ kind: "notice", levels: [650, 700], subjects: ["rc"] }, LEVELS)).toEqual({ target: { kind: "notice", levels: [650], subjects: ["rc"] } });
+    expect(originTargetOf({ kind: "notice", levels: [], subjects: [] }, LEVELS)).toEqual({ target: { kind: "notice", levels: [], subjects: [] } });
+  });
+  it("공지의 원래 레벨이 모두 없어졌으면 돌아가지 않는다 — 범위가 비면 전체 공지가 되어 더 넓게 보인다", () => {
+    expect(originTargetOf({ kind: "notice", levels: [700], subjects: [] }, LEVELS)).toEqual({ skip: "levelGone" });
+  });
+  it("회차 자료 — 과정 · 회차가 있어야 · 레벨이 목록에 있어야", () => {
+    expect(originTargetOf({ kind: "material", level: 750, subject: "lc", set: "B", seq: 4 }, LEVELS)).toEqual({
+      target: { kind: "material", level: 750, subject: "lc", set: "B", seq: 4 },
+    });
+    expect(originTargetOf({ kind: "material", level: 750, subject: "lc", set: null, seq: null }, LEVELS)).toEqual({ skip: "noRound" });
+    expect(originTargetOf({ kind: "material", level: 900, subject: "lc", set: "A", seq: 1 }, LEVELS)).toEqual({ skip: "levelGone" });
+  });
+});
+
+describe("글마다 옮길 곳 (bulkSteps)", () => {
+  const photo = post(2, { materialIssue: "photo" });
+  const empty = post(3, { materialIssue: "empty" });
+  const fromRound = post(4, { movedFrom: { kind: "material", level: 650, subject: "rc", set: "A", seq: 3 } });
+  const fromNotice = post(5, { movedFrom: { kind: "notice", levels: [750], subjects: ["lc"] } });
+  const fromRoundPhoto = post(6, { movedFrom: { kind: "material", level: 650, subject: "rc", set: "A", seq: 5 }, materialIssue: "photo" });
+
+  it("공지사항 — 사진 · 빈 글도 다 간다 (공지에는 사진을 넣을 수 있다)", () => {
+    const target = { kind: "notice", levels: [650], subjects: ["rc"] } as const;
+    const steps = bulkSteps([post(1), photo, empty], { ...target, levels: [...target.levels], subjects: [...target.subjects] }, LEVELS);
+    expect(steps.map((s) => s.skip)).toEqual([null, null, null]);
+    expect(steps.every((s) => s.target?.kind === "notice")).toBe(true);
+  });
+  it("회차 자료 — 같은 회차에 모두, 사진 · 빈 글은 건너뛰고 까닭을 짧게", () => {
+    const steps = bulkSteps([post(1), photo, empty], { kind: "material", level: 650, subject: "lc", set: "B", seq: 2 }, LEVELS);
+    expect(steps.map((s) => s.target && s.target.kind === "material" && s.target.seq)).toEqual([2, null, null]);
+    expect(steps.map((s) => s.skip)).toEqual([null, BULK_SKIP.photo, BULK_SKIP.empty]);
+  });
+  it("원래 자리로 — 글마다 옮겨 오기 전 자리, 직원 게시판에서 쓴 글은 건너뛴다, 원래 자리가 회차인데 사진이 생긴 글도", () => {
+    const steps = bulkSteps([post(1), fromRound, fromNotice, fromRoundPhoto], { kind: "origin" }, LEVELS);
+    expect(steps.map((s) => s.skip)).toEqual([BULK_SKIP.noOrigin, null, null, BULK_SKIP.photo]);
+    expect(steps[1].target).toEqual({ kind: "material", level: 650, subject: "rc", set: "A", seq: 3 });
+    expect(steps[2].target).toEqual({ kind: "notice", levels: [750], subjects: ["lc"] });
+  });
+  it("받은 순서 그대로 (서버가 오래된 글부터 준다 — 같은 회차에서 쓴 순서가 이어진다)", () => {
+    expect(bulkSteps([post(9), post(3), post(7)], { kind: "notice", levels: [], subjects: [] }, LEVELS).map((s) => s.id)).toEqual([9, 3, 7]);
+  });
+});
+
+describe("여러 개 옮기기 대화창이 처음 고를 값 (bulkDraftOf)", () => {
+  it("모두 수업자료실에서 옮겨 온 글이고 다 돌아갈 수 있으면 '원래 자리로'", () => {
+    const a = post(1, { movedFrom: { kind: "material", level: 650, subject: "rc", set: "A", seq: 3 } });
+    const b = post(2, { movedFrom: { kind: "notice", levels: [650], subjects: [] } });
+    expect(bulkDraftOf([a, b], 650, LEVELS).kind).toBe("origin");
+  });
+  it("하나라도 원래 자리가 없거나 돌아갈 수 없으면 공지사항", () => {
+    const a = post(1, { movedFrom: { kind: "material", level: 650, subject: "rc", set: "A", seq: 3 } });
+    expect(bulkDraftOf([a, post(2)], 650, LEVELS).kind).toBe("notice");
+    expect(bulkDraftOf([post(1, { movedFrom: { kind: "material", level: 650, subject: "rc", set: null, seq: null } })], 650, LEVELS).kind).toBe("notice");
+    expect(bulkDraftOf([], 650, LEVELS).kind).toBe("notice");
+  });
+  it("원래 자리가 모두 같은 회차면 회차 자료 칸도 그 회차로 미리 고른다", () => {
+    const at = { kind: "material", level: 750, subject: "lc", set: "B", seq: 7 } as const;
+    const d = bulkDraftOf([post(1, { levels: [750], movedFrom: { ...at } }), post(2, { levels: [750], movedFrom: { ...at } })], 650, LEVELS);
+    expect(d.material).toEqual({ level: 750, subject: "lc", set: "B", seq: 7 });
+    const mixed = bulkDraftOf([post(1, { levels: [750], movedFrom: { ...at } }), post(2, { levels: [750], movedFrom: { ...at, seq: 8 } })], 650, LEVELS);
+    expect(mixed.material).toEqual({ level: 750, subject: null, set: null, seq: null });
+  });
+  it("공지 범위 — 레벨이 모두 같으면 그 레벨(모두 '모든 레벨' 이면 전체), 다르면 보던 탭", () => {
+    expect(bulkDraftOf([post(1, { levels: [750] }), post(2, { levels: [750] })], 650, LEVELS).notice.levels).toEqual([750]);
+    expect(bulkDraftOf([post(1, { levels: [] }), post(2, { levels: [] })], 650, LEVELS).notice.levels).toEqual([]);
+    expect(bulkDraftOf([post(1, { levels: [750] }), post(2, { levels: [850] })], 650, LEVELS).notice.levels).toEqual([650]);
+    expect(bulkDraftOf([post(1, { levels: [750] }), post(2, { levels: [850] })], null, LEVELS).notice.levels).toEqual([]);
+  });
+  it("회차 자료 레벨 — 글의 레벨이 모두 같은 하나면 그것, 아니면 보던 탭 · 첫 레벨", () => {
+    expect(bulkDraftOf([post(1, { levels: [850] }), post(2, { levels: [850] })], 650, LEVELS).material.level).toBe(850);
+    expect(bulkDraftOf([post(1, { levels: [750] }), post(2, { levels: [850] })], 650, LEVELS).material.level).toBe(650);
+    expect(bulkDraftOf([post(1, { levels: [] })], null, LEVELS).material.level).toBe(650);
+  });
+});
+
+describe("끝난 뒤 한 줄 (bulkSummary)", () => {
+  it("다 옮김 · 일부 실패 · 건너뜀 · 멈춤", () => {
+    expect(bulkSummary({ moved: 5, failed: 0, skipped: 0, notRun: 0 })).toBe("5개를 옮겼어요.");
+    expect(bulkSummary({ moved: 3, failed: 1, skipped: 2, notRun: 0 })).toBe("3개를 옮겼어요. 1개는 옮기지 못했어요. 2개는 건너뛰었어요.");
+    expect(bulkSummary({ moved: 0, failed: 1, skipped: 0, notRun: 4 })).toBe("옮긴 것이 없어요. 1개는 옮기지 못했어요. 멈춰서 4개는 옮기지 않았어요.");
   });
 });

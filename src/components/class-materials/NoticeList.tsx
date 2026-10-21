@@ -22,25 +22,39 @@ export type NoticeListItem = {
  * 링크 안에 버튼을 넣으면 HTML 이 깨지므로 형제로 둔다.
  * 휴대폰에서는 제목 아래로 작성자 · 날짜를 내린다 (한 줄에 다 두면 제목이 잘린다).
  * 첨부 파일 · 링크가 붙은 공지는 `파일 2개 · 영상 1개` 를 적는다 (2026-10-13) — 휴대폰은 작성자 줄에, 넓은 화면은 제목 오른쪽에.
+ * `leading` 은 줄 왼쪽에 링크 밖으로 두는 조각(관리자의 여러 개 옮기기 고르기 칸, 2026-10-21), `header` 는 맨 위 줄(전체 선택) — 관리자 화면만 준다.
  */
 export function NoticeList({
   items,
   hrefOf,
   trailing,
+  leading,
+  header,
   className,
 }: {
   items: NoticeListItem[];
   hrefOf: (id: number) => string;
   trailing?: (item: NoticeListItem) => ReactNode;
+  leading?: (item: NoticeListItem) => ReactNode;
+  header?: ReactNode;
   className?: string;
 }) {
   return (
     <ul className={cn("divide-y divide-line overflow-hidden rounded-xl2 border border-line bg-white", className)}>
+      {header && <li className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-surface/70 py-2 pl-3 pr-3 sm:pl-4 sm:pr-4">{header}</li>}
       {items.map((n) => {
         const down = n.published === false;
         return (
-          <li key={n.id} className="flex items-center gap-2 pr-2 sm:pr-3">
-            <Link href={hrefOf(n.id)} className={cn("flex min-w-0 flex-1 items-center gap-3 px-3 py-3 transition hover:bg-brand-50/60 sm:px-4", down && "opacity-80")}>
+          <li key={n.id} className={cn("flex gap-2 pr-2 sm:pr-3", leading ? "items-stretch" : "items-center")}>
+            {leading?.(n)}
+            <Link
+              href={hrefOf(n.id)}
+              className={cn(
+                "flex min-w-0 flex-1 items-center gap-3 py-3 transition hover:bg-brand-50/60",
+                leading ? "pr-3 sm:pr-4" : "px-3 sm:px-4",
+                down && "opacity-80",
+              )}
+            >
               <span className={cn("shrink-0 rounded-md border px-2 py-0.5 text-xs font-bold", down ? "border-line bg-surface text-slate" : "border-brand-300 text-brand-600")}>
                 {down ? "내림" : "공지"}
               </span>
@@ -58,7 +72,7 @@ export function NoticeList({
               <span className="hidden w-20 shrink-0 truncate text-right text-sm text-ink-soft sm:inline">{n.author_name ?? "강사"}</span>
               <span className="hidden w-20 shrink-0 text-right text-sm tabular-nums text-mist sm:inline">{dateLabel(n.created_at)}</span>
             </Link>
-            {trailing?.(n)}
+            {trailing && <span className="flex shrink-0 items-center">{trailing(n)}</span>}
           </li>
         );
       })}

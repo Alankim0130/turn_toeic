@@ -12,6 +12,7 @@ import { FileOrderRows } from "./FileOrderRows";
 import { linkRowsOf, MaterialLinkEditor, type LinkRow } from "./MaterialLinkEditor";
 import { NoteTextarea } from "./NoteTextarea";
 import { MoveToBoardButton } from "@/components/admin/board/MoveToBoardButton";
+import { BulkCheck } from "@/components/admin/board/BulkSelect";
 import {
   CLASS_MATERIAL_BUCKET,
   CLASS_MATERIAL_FILES_MAX,
@@ -73,6 +74,7 @@ const SM_ROW = ["sm:row-start-2", "sm:row-start-3", "sm:row-start-4"] as const;
  * 옮기면 이 칸 목록에서 빠지고 옮긴 칸에 선다. 과정 · 회차가 없는 옛 자료는 수정에서 둘을 골라야 저장된다 (그래야 학생에게 열린다).
  * **자료(게시물) 자체도 같은 회차 안에서 위 · 아래로 옮긴다** (`position` — 회차 줄이 준다. 같은 날 Alan "게시물 순서를 조정할 수 있으면 좋겠어") — DB 함수 `move_class_material`.
  * `plain` = 회차 카드 안에 놓일 때 (카드 안에 카드를 겹치지 않게 테두리만).
+ * 제목 앞의 고르기 칸은 여러 개 옮기기(`ClassBulkMove` — 2026-10-21 "여러개를 한번에 선택해서 넘길수 있도록") 안에서만 선다.
  */
 export function ClassMaterialRow({
   item,
@@ -246,6 +248,7 @@ export function ClassMaterialRow({
       {/* 휴대폰: 제목 → 안내 → 파일 → 버튼. 넓은 화면: 제목 줄 오른쪽에 버튼, 안내 · 파일 목록은 그 아래 한 줄 전체 */}
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div className="flex min-w-0 items-start gap-3 sm:col-start-1 sm:row-start-1">
+          {mode === "view" && <BulkCheck itemKey={`material:${item.id}`} label={item.title} className="-mr-1 h-11" />}
           <span
             className={cn(
               "flex size-11 shrink-0 items-center justify-center rounded-xl text-[11px] font-black ring-1",

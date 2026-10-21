@@ -90,13 +90,26 @@ export const movedFromLabel = (m: MovedFrom) => `수업자료실 ${classPlaceLab
 
 /**
  * 회차 자료로 옮길 수 없는 까닭 — 없으면 null.
- *  - 본문에 사진이 있다: 회차 자료 안내에는 사진을 넣을 수 없다 (공지사항은 된다)
- *  - 본문 · 파일 · 링크가 다 없다: 회차 자료는 셋 중 하나가 있어야 한다 (`saveClassMaterial` 과 같은 규칙)
+ *  - `photo` 본문에 사진이 있다: 회차 자료 안내에는 사진을 넣을 수 없다 (공지사항은 된다)
+ *  - `empty` 본문 · 파일 · 링크가 다 없다: 회차 자료는 셋 중 하나가 있어야 한다 (`saveClassMaterial` 과 같은 규칙)
  */
-export function materialMoveBlock(post: { body: string; files: number; links: number }): string | null {
-  if (noteImagePaths(post.body).length > 0) return "본문에 사진이 있어 회차 자료로는 옮길 수 없어요 — 회차 자료 안내에는 사진을 넣을 수 없어요. 공지사항으로 옮겨 주세요.";
-  if (post.files + post.links === 0 && !noteHasText(post.body)) return "본문 · 파일 · 링크가 없는 글은 회차 자료로 옮길 수 없어요.";
+export type MaterialIssue = "photo" | "empty";
+
+export function materialMoveIssue(post: { body: string; files: number; links: number }): MaterialIssue | null {
+  if (noteImagePaths(post.body).length > 0) return "photo";
+  if (post.files + post.links === 0 && !noteHasText(post.body)) return "empty";
   return null;
+}
+
+const MATERIAL_BLOCK: Record<MaterialIssue, string> = {
+  photo: "본문에 사진이 있어 회차 자료로는 옮길 수 없어요 — 회차 자료 안내에는 사진을 넣을 수 없어요. 공지사항으로 옮겨 주세요.",
+  empty: "본문 · 파일 · 링크가 없는 글은 회차 자료로 옮길 수 없어요.",
+};
+
+/** 하나 옮기기 대화창 · 서버 액션의 말 (`materialMoveIssue` 의 긴 글) */
+export function materialMoveBlock(post: { body: string; files: number; links: number }): string | null {
+  const issue = materialMoveIssue(post);
+  return issue ? MATERIAL_BLOCK[issue] : null;
 }
 
 /** 옮기기 대화창이 처음 고를 값 — 원래 자리가 있으면 그것, 없으면 글의 레벨로 공지사항 (회차 자료는 레벨이 하나일 때만 미리 고른다) */
@@ -129,3 +142,115 @@ export type CopyStep = { from: string; to: string };
 
 /** 사진 경로를 새 경로로 바꾸는 표 — 글 속 그림 태그를 고칠 때 (`rewriteNoteImages`) */
 export const pathMap = (steps: readonly CopyStep[]) => new Map(steps.map((s) => [s.from, s.to]));
+
+/*
+ * ── 여러 개 한꺼번에 옮기기 (2026-10-21 Alan — "자료를 넘길때 여러개를 한번에 선택해서 넘길수 있도록 하면 좋겠어. 그리고 전체선택도 같이 만들어줘") ──
+ * 화면이 고른 것을 **하나씩 차례로** 옮긴다 — 하나 옮기기와 같은 서버 액션이라 규칙 · 되돌리기가 그대로고, 한 번에 하나라 서버 시간(60초)에 걸리지 않으며,
+ * 중간에 하나가 실패해도 나머지는 옮기고 실패한 것만 남는다. 직원 글 → 수업자료실은 옮길 곳을 한 번 고른다:
+ *  - 공지사항 — 고른 범위로 글마다 공지 하나씩
+ *  - 회차 자료 — 고른 회차에 모두 (그 회차의 끝에 차례로 선다)
+ *  - 원래 자리로 — 수업자료실에서 옮겨 온 글은 글마다 옮겨 오기 전 자리로 (직원 게시판에서 쓴 글은 건너뛴다)
+ * 회차 자료로 못 가는 글(사진 · 빈 글)은 건너뛰고 까닭을 적는다. 순서는 오래된 글부터 — 같은 회차에 들어가면 쓴 순서대로 선다.
+ */
+
+/** 직원 게시판에서 고른 글 — 일괄 옮기기 계획에 쓰는 것만 (본문은 서버가 읽어 `materialIssue` 로 줄인다) */
+export type BulkPost = {
+  id: number;
+  title: string;
+  levels: number[];
+  /** 수업자료실에서 옮겨 온 글의 원래 자리 */
+  movedFrom: MovedFrom | null;
+  /** 회차 자료로 못 가는 까닭 */
+  materialIssue: MaterialIssue | null;
+};
+
+/** 여러 개를 어디로 — 공지사항(같은 범위) · 회차 자료(같은 회차) · 원래 자리로(글마다) */
+export type BulkChoice = MoveTarget | { kind: "origin" };
+
+/** 글 하나의 옮길 곳 — `target` 이 null 이면 건너뛰고 `skip` 이 까닭이다 */
+export type BulkStep = { id: number; title: string; target: MoveTarget | null; skip: string | null };
+
+/** 건너뛰는 까닭 — 목록 한 줄에 들어가게 짧게 */
+export const BULK_SKIP = {
+  photo: "본문에 사진이 있어 회차 자료로는 못 가요 (공지사항으로는 돼요).",
+  empty: "본문 · 파일 · 링크가 없어 회차 자료로는 못 가요.",
+  noOrigin: "직원 게시판에서 쓴 글이라 원래 자리가 없어요.",
+  noRound: "원래 자리가 과정 · 회차를 정하기 전의 자료라 돌아갈 회차가 없어요.",
+  levelGone: "원래 자리의 레벨이 지금 레벨 목록에 없어요.",
+  gone: "이미 옮겨졌거나 지워진 글이에요.",
+} as const;
+
+/**
+ * 원래 자리 → 다시 옮길 곳. 돌아갈 수 없으면 까닭 (`BULK_SKIP` 의 열쇠).
+ * 공지는 지금 레벨 목록에 있는 레벨만 남긴다 — 원래 레벨이 **모두** 없어졌으면 돌아가지 않는다 (범위가 비면 전체 공지가 되어 더 넓게 보인다).
+ */
+export function originTargetOf(from: MovedFrom, knownLevels: readonly number[]): { target: MoveTarget } | { skip: keyof typeof BULK_SKIP } {
+  if (from.kind === "notice") {
+    const levels = from.levels.filter((l) => knownLevels.includes(l));
+    if (from.levels.length > 0 && levels.length === 0) return { skip: "levelGone" };
+    return { target: { kind: "notice", levels, subjects: from.subjects } };
+  }
+  if (!from.set || !from.seq) return { skip: "noRound" };
+  if (!knownLevels.includes(from.level)) return { skip: "levelGone" };
+  return { target: { kind: "material", level: from.level, subject: from.subject, set: from.set, seq: from.seq } };
+}
+
+/** 고른 글마다 옮길 곳 · 건너뛸 까닭 (순서는 받은 그대로 — 서버가 오래된 글부터 준다) */
+export function bulkSteps(posts: readonly BulkPost[], choice: BulkChoice, knownLevels: readonly number[]): BulkStep[] {
+  return posts.map((p) => {
+    const skip = (key: keyof typeof BULK_SKIP): BulkStep => ({ id: p.id, title: p.title, target: null, skip: BULK_SKIP[key] });
+    let target: MoveTarget;
+    if (choice.kind === "origin") {
+      if (!p.movedFrom) return skip("noOrigin");
+      const back = originTargetOf(p.movedFrom, knownLevels);
+      if ("skip" in back) return skip(back.skip);
+      target = back.target;
+    } else {
+      target = choice;
+    }
+    if (target.kind === "material" && p.materialIssue) return skip(p.materialIssue);
+    return { id: p.id, title: p.title, target, skip: null };
+  });
+}
+
+/** 여러 개 옮기기 대화창이 처음 고를 값 */
+export type BulkDraft = Omit<MoveDraft, "kind"> & { kind: "notice" | "material" | "origin" };
+
+const sameList = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((x, k) => x === b[k]);
+
+/**
+ * 처음 고를 값 — 모두 수업자료실에서 옮겨 온 글이고 다 돌아갈 수 있으면 `원래 자리로`, 아니면 공지사항.
+ * 공지 범위는 고른 글의 레벨이 모두 같으면 그 레벨(모두 `모든 레벨` 이면 전체), 다르면 보던 탭의 레벨.
+ * 회차 자료는 원래 자리가 모두 같은 회차면 그 회차, 아니면 레벨만 (글의 레벨이 모두 같은 하나면 그것, 아니면 보던 탭).
+ */
+export function bulkDraftOf(posts: readonly BulkPost[], tabLevel: number | null, knownLevels: readonly number[]): BulkDraft {
+  const levelSets = posts.map((p) => normalizeLevels(p.levels).filter((l) => knownLevels.includes(l)));
+  const tab = tabLevel !== null && knownLevels.includes(tabLevel) ? tabLevel : null;
+  const sameLevels = levelSets.length > 0 && levelSets.every((l) => sameList(l, levelSets[0]));
+  const single = sameLevels && levelSets[0].length === 1 ? levelSets[0][0] : null;
+  const draft: BulkDraft = {
+    kind: "notice",
+    notice: { levels: sameLevels ? levelSets[0] : tab !== null ? [tab] : [], subjects: [] },
+    material: { level: single ?? tab ?? knownLevels[0] ?? null, subject: null, set: null, seq: null },
+  };
+  const backs = posts.map((p) => (p.movedFrom ? originTargetOf(p.movedFrom, knownLevels) : null));
+  const targets = backs.map((b) => (b && "target" in b ? b.target : null));
+  const rounds = targets.filter((t): t is Extract<MoveTarget, { kind: "material" }> => t?.kind === "material");
+  if (rounds.length === posts.length && rounds.length > 0 && rounds.every((r) => r.level === rounds[0].level && r.subject === rounds[0].subject && r.set === rounds[0].set && r.seq === rounds[0].seq)) {
+    const r = rounds[0];
+    draft.material = { level: r.level, subject: r.subject, set: r.set, seq: r.seq };
+  }
+  if (posts.length > 0 && bulkSteps(posts, { kind: "origin" }, knownLevels).every((s) => s.target)) draft.kind = "origin";
+  return draft;
+}
+
+/** 끝난 뒤 한 줄 — `3개를 옮겼어요. 1개는 옮기지 못했어요. 2개는 건너뛰었어요.` */
+export function bulkSummary(r: { moved: number; failed: number; skipped: number; notRun: number }): string {
+  const parts = [
+    r.moved > 0 ? `${r.moved}개를 옮겼어요.` : "옮긴 것이 없어요.",
+    r.failed > 0 ? `${r.failed}개는 옮기지 못했어요.` : null,
+    r.skipped > 0 ? `${r.skipped}개는 건너뛰었어요.` : null,
+    r.notRun > 0 ? `멈춰서 ${r.notRun}개는 옮기지 않았어요.` : null,
+  ];
+  return parts.filter(Boolean).join(" ");
+}

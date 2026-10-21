@@ -17,7 +17,10 @@ import { requireStaff } from "@/lib/auth";
 import Link from "next/link";
 import { NoticeList } from "@/components/class-materials/NoticeList";
 import { NoticePublishToggle } from "@/components/admin/class-notices/NoticePublishToggle";
+import { ClassBulkMove, type ClassBulkItem } from "@/components/admin/board/ClassBulkMove";
+import { BulkCheck, BulkSelectAll } from "@/components/admin/board/BulkSelect";
 import { noticeAttachLabel, noticeCovers, partitionNotices, scopeLabel, scopeOf } from "@/lib/class-notices";
+import { levelsLabel, normalizeLevels } from "@/lib/staff-board";
 import { pickTerm, termLabel, TERM_COLUMNS } from "../_lib/queries";
 
 export const metadata: Metadata = { title: "수업자료실", robots: { index: false } };
@@ -36,6 +39,8 @@ const cellValue = (s: MaterialSubject, set: RoundSet) => `${s}-${set}`;
  * 위 달 칩은 "그 달엔 이 과정이 언제 어느 반에서 몇 회차까지인가" 를 미리 보는 것이다 — 자료를 달마다 따로 올리지 않는다.
  * 레벨은 교재 레벨 목록(lc_levels)에서 읽는다 (코드에 650 · 750 · 850 을 적지 않는다). 강사는 **자기 과목부터**(`profiles.subject`), 관리자는 RC 부터.
  * 강사·관리자만 — 조교 화면이 아니다 (관리자 화면 여섯 가지는 Alan 이 정했다).
+ * **여러 개를 골라 한꺼번에 직원 게시판으로** (2026-10-21 Alan "여러개를 한번에 선택해서 넘길수 있도록 … 전체선택도") — 공지 · 회차 자료 줄마다 고르기 칸,
+ * 목록마다 전체 선택, 아래 막대 (`ClassBulkMove`). 테스트 등급이면 칸이 없다 (옮기기가 막힌다).
  */
 export default async function ClassMaterialsAdminPage({ searchParams }: { searchParams: Promise<{ level?: string; cell?: string; subject?: string; term?: string }> }) {
   // 레이아웃이 조교를 통과시키므로 화면마다 막는다
@@ -137,6 +142,133 @@ export default async function ClassMaterialsAdminPage({ searchParams }: { search
   const cellLabel = `${level} ${MATERIAL_SUBJECT_LABEL[subject]} ${ROUND_SET_LABEL[set]}`;
   const keep = { level: String(level), cell: cellValue(subject, set), term: termKey };
 
+  // 여러 개 옮기기에서 고를 수 있는 것 — 화면에 선 순서(공지 → 내린 공지 → 과정 회차 미정 → 회차)대로 옮긴다
+  const boardLevelOf = (l: number) => (levels.includes(l) ? String(l) : "모든 레벨");
+  const noticeItem = (n: (typeof notices)[number], prefix: string): ClassBulkItem => ({
+    key: `notice:${n.id}`,
+    kind: "notice",
+    id: n.id,
+    title: n.title,
+    place: `${prefix} · ${n.scope}`,
+    boardLevels: levelsLabel(normalizeLevels(n.levels).filter((l) => levels.includes(l))),
+  });
+  const materialItem = (m: (typeof list)[number], place: string): ClassBulkItem => ({
+    key: `material:${m.id}`,
+    kind: "material",
+    id: m.id,
+    title: m.title,
+    place,
+    boardLevels: boardLevelOf(m.level),
+  });
+  const bulkItems: ClassBulkItem[] = testing
+    ? []
+    : [
+        ...notices.map((n) => noticeItem(n, "공지")),
+        ...downNotices.map((n) => noticeItem(n, "내린 공지")),
+        ...legacy.map((m) => materialItem(m, `${level} ${MATERIAL_SUBJECT_LABEL[subject]} 과정 · 회차 미정`)),
+        ...list.map((m) => materialItem(m, `${cellLabel} ${m.seq}회차`)),
+      ];
+  const keysOf = (rows: readonly { id: number }[], kind: "notice" | "material") => rows.map((r) => `${kind}:${r.id}`);
+  const noticeCheck = testing ? undefined : (n: { id: number; title: string }) => <BulkCheck itemKey={`notice:${n.id}`} label={n.title} className="pl-3 pr-1 sm:pl-4" />;
+
+  // 공지 · 회차 자료 — 강사 · 관리자에게는 여러 개 옮기기(고르기 칸 · 전체 선택 · 아래 막대)로 감싼다. 결과 창이 남게 목록이 비어도 그 안에 둔다
+  const region = (
+    <>
+      {/* 칸이 생기기 전에 올린 자료 — 과정 · 회차를 정해야 학생에게 열린다 */}
+      {legacy.length > 0 && (
+        <section className="space-y-3 rounded-xl2 border border-amber-200 bg-amber-50/60 p-4">
+          <p className="flex items-start gap-2 text-sm font-semibold text-amber-900">
+            <Icon name="warning" size={18} />
+            과정 · 회차가 정해지지 않은 {level} {MATERIAL_SUBJECT_LABEL[subject]} 자료 {legacy.length}개 — 학생에게 보이지 않아요. 수정에서 과정과 회차를 골라 주세요.
+          </p>
+          {!testing && <BulkSelectAll keys={keysOf(legacy, "material")} label="전체 선택" />}
+          <ul className="space-y-3">
+            {legacy.map((m) => (
+              <ClassMaterialRow key={`${m.id}-${m.updated_at}`} item={m} levels={levels} disabled={testing} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* 공지사항 — 1회차 앞 (2026-10-05 Alan "수업자료실에서 1회차 앞에 공지사항을 올릴 수 있는 곳 … 여러개") */}
+      <section aria-labelledby="notice-head" className="space-y-2">
+        <div className="flex items-center gap-2">
+          <h2 id="notice-head" className="text-base font-black text-ink">
+            공지사항
+          </h2>
+          <span className="text-xs text-mist">
+            {level} {MATERIAL_SUBJECT_LABEL[subject]} 학생에게 보이는 공지 {notices.length}개
+            {allLive.length > notices.length && <> · 다른 범위 {allLive.length - notices.length}개</>}
+          </span>
+          {!testing && (
+            <Link href={`/admin/class-materials/notices/new?${new URLSearchParams({ ...keep, term: termKey ?? "" }).toString()}`} className="btn-primary ml-auto !px-3 !py-1.5 text-sm">
+              공지 올리기
+            </Link>
+          )}
+        </div>
+        {notices.length > 0 ? (
+          <NoticeList
+            items={notices}
+            hrefOf={(id) => `/admin/class-materials/notices/${id}?${new URLSearchParams({ ...keep, term: termKey ?? "" }).toString()}`}
+            trailing={testing ? undefined : (n) => <NoticePublishToggle id={n.id} published title={n.title} />}
+            leading={noticeCheck}
+            header={testing ? undefined : <BulkSelectAll keys={keysOf(notices, "notice")} label="공지 전체 선택" />}
+          />
+        ) : (
+          <p className="rounded-xl2 border border-dashed border-line px-4 py-3 text-sm text-mist">올린 공지가 없어요. 공지는 범위(전체 · 레벨 · RC/LC)를 골라 올리고, 학생 수업자료실 맨 위에 보여요.</p>
+        )}
+        {/* 내린 공지 — 학생에게 안 보인다. 글·사진은 그대로라 "다시 올리기" 로 되살린다 (2026-10-06 Alan "공지가 달마다 바뀌는 경우") */}
+        {downNotices.length > 0 && (
+          <details className="group rounded-xl2 border border-dashed border-line bg-surface/60 px-3 py-2 sm:px-4">
+            <summary className="cursor-pointer select-none text-sm font-bold text-slate">
+              내린 공지 {downNotices.length}개 <span className="font-semibold text-mist">— 학생에게 보이지 않아요. 다시 올리면 그대로 보여요</span>
+            </summary>
+            <NoticeList
+              className="mt-2"
+              items={downNotices}
+              hrefOf={(id) => `/admin/class-materials/notices/${id}?${new URLSearchParams({ ...keep, term: termKey ?? "" }).toString()}`}
+              trailing={testing ? undefined : (n) => <NoticePublishToggle id={n.id} published={false} title={n.title} />}
+              leading={noticeCheck}
+              header={testing ? undefined : <BulkSelectAll keys={keysOf(downNotices, "notice")} label="내린 공지 전체 선택" />}
+            />
+          </details>
+        )}
+      </section>
+
+      {error ? (
+        <EmptyState icon="warning" title="자료를 불러오지 못했어요" description="잠시 뒤 새로고침해 주세요." />
+      ) : (
+        <>
+          {!testing && list.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl2 border border-line bg-white px-3 py-2 sm:px-4">
+              <BulkSelectAll keys={keysOf(list, "material")} label="회차 자료 전체 선택" />
+              <span className="text-xs text-mist">골라서 직원 게시판으로 한꺼번에 옮길 수 있어요</span>
+            </div>
+          )}
+          <ol className="space-y-3" aria-label={`${cellLabel} 회차`}>
+            {Array.from({ length: roundCount }, (_, k) => k + 1).map((seq) => {
+              const date = dateOfSeq.get(seq) ?? null;
+              return (
+                <ClassMaterialRound
+                  key={`${level}-${subject}-${set}-${seq}`}
+                  level={level}
+                  subject={subject}
+                  set={set}
+                  seq={seq}
+                  dateLabel={date ? `${shortDay(date)}${date <= today ? " 열림" : " 열림 예정"}` : term ? `${term.month}월엔 이 회차 수업이 없어요` : null}
+                  opened={!!date && date <= today}
+                  items={list.filter((m) => m.seq === seq)}
+                  levels={levels}
+                  disabled={testing}
+                />
+              );
+            })}
+          </ol>
+        </>
+      )}
+    </>
+  );
+
   return (
     <>
       {header}
@@ -191,84 +323,12 @@ export default async function ClassMaterialsAdminPage({ searchParams }: { search
           </p>
         )}
 
-        {/* 칸이 생기기 전에 올린 자료 — 과정 · 회차를 정해야 학생에게 열린다 */}
-        {legacy.length > 0 && (
-          <section className="space-y-3 rounded-xl2 border border-amber-200 bg-amber-50/60 p-4">
-            <p className="flex items-start gap-2 text-sm font-semibold text-amber-900">
-              <Icon name="warning" size={18} />
-              과정 · 회차가 정해지지 않은 {level} {MATERIAL_SUBJECT_LABEL[subject]} 자료 {legacy.length}개 — 학생에게 보이지 않아요. 수정에서 과정과 회차를 골라 주세요.
-            </p>
-            <ul className="space-y-3">
-              {legacy.map((m) => (
-                <ClassMaterialRow key={`${m.id}-${m.updated_at}`} item={m} levels={levels} disabled={testing} />
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {/* 공지사항 — 1회차 앞 (2026-10-05 Alan "수업자료실에서 1회차 앞에 공지사항을 올릴 수 있는 곳 … 여러개") */}
-        <section aria-labelledby="notice-head" className="space-y-2">
-          <div className="flex items-center gap-2">
-            <h2 id="notice-head" className="text-base font-black text-ink">
-              공지사항
-            </h2>
-            <span className="text-xs text-mist">
-              {level} {MATERIAL_SUBJECT_LABEL[subject]} 학생에게 보이는 공지 {notices.length}개
-              {allLive.length > notices.length && <> · 다른 범위 {allLive.length - notices.length}개</>}
-            </span>
-            {!testing && (
-              <Link href={`/admin/class-materials/notices/new?${new URLSearchParams({ ...keep, term: termKey ?? "" }).toString()}`} className="btn-primary ml-auto !px-3 !py-1.5 text-sm">
-                공지 올리기
-              </Link>
-            )}
-          </div>
-          {notices.length > 0 ? (
-            <NoticeList
-              items={notices}
-              hrefOf={(id) => `/admin/class-materials/notices/${id}?${new URLSearchParams({ ...keep, term: termKey ?? "" }).toString()}`}
-              trailing={testing ? undefined : (n) => <NoticePublishToggle id={n.id} published title={n.title} />}
-            />
-          ) : (
-            <p className="rounded-xl2 border border-dashed border-line px-4 py-3 text-sm text-mist">올린 공지가 없어요. 공지는 범위(전체 · 레벨 · RC/LC)를 골라 올리고, 학생 수업자료실 맨 위에 보여요.</p>
-          )}
-          {/* 내린 공지 — 학생에게 안 보인다. 글·사진은 그대로라 "다시 올리기" 로 되살린다 (2026-10-06 Alan "공지가 달마다 바뀌는 경우") */}
-          {downNotices.length > 0 && (
-            <details className="group rounded-xl2 border border-dashed border-line bg-surface/60 px-3 py-2 sm:px-4">
-              <summary className="cursor-pointer select-none text-sm font-bold text-slate">
-                내린 공지 {downNotices.length}개 <span className="font-semibold text-mist">— 학생에게 보이지 않아요. 다시 올리면 그대로 보여요</span>
-              </summary>
-              <NoticeList
-                className="mt-2"
-                items={downNotices}
-                hrefOf={(id) => `/admin/class-materials/notices/${id}?${new URLSearchParams({ ...keep, term: termKey ?? "" }).toString()}`}
-                trailing={testing ? undefined : (n) => <NoticePublishToggle id={n.id} published={false} title={n.title} />}
-              />
-            </details>
-          )}
-        </section>
-
-        {error ? (
-          <EmptyState icon="warning" title="자료를 불러오지 못했어요" description="잠시 뒤 새로고침해 주세요." />
+        {testing ? (
+          region
         ) : (
-          <ol className="space-y-3" aria-label={`${cellLabel} 회차`}>
-            {Array.from({ length: roundCount }, (_, k) => k + 1).map((seq) => {
-              const date = dateOfSeq.get(seq) ?? null;
-              return (
-                <ClassMaterialRound
-                  key={`${level}-${subject}-${set}-${seq}`}
-                  level={level}
-                  subject={subject}
-                  set={set}
-                  seq={seq}
-                  dateLabel={date ? `${shortDay(date)}${date <= today ? " 열림" : " 열림 예정"}` : term ? `${term.month}월엔 이 회차 수업이 없어요` : null}
-                  opened={!!date && date <= today}
-                  items={list.filter((m) => m.seq === seq)}
-                  levels={levels}
-                  disabled={testing}
-                />
-              );
-            })}
-          </ol>
+          <ClassBulkMove items={bulkItems} boardHref={`/admin/board?level=${level}`}>
+            {region}
+          </ClassBulkMove>
         )}
       </div>
     </>

@@ -3,7 +3,8 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { StaffBoardPager, StaffPostList, type StaffPostListItem } from "@/components/admin/board/StaffPostList";
-import { requireCrew } from "@/lib/auth";
+import { BoardBulkMove } from "@/components/admin/board/BoardBulkMove";
+import { isStaff, requireCrew } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { materialLinks } from "@/lib/class-materials";
 import {
@@ -26,11 +27,15 @@ export const metadata: Metadata = { title: "직원 게시판", robots: { index: 
  * **레벨 탭 650 · 750 · 850** (같은 날 Alan "직원게시판도 학습자료실처럼 650,750,850구분이 다 되어있으면 좋겠어") — 수업자료실처럼 레벨이 먼저다.
  * 레벨은 교재 레벨 목록(lc_levels)에서 읽고(코드에 적지 않는다), 탭 하나에는 그 레벨 글과 **모든 레벨 글**이 선다. 전체 탭은 없다 (수업자료실과 같다).
  * 목록은 최근 글부터 한 쪽에 20개. 누르면 그 글 화면(`/admin/board/{id}?level=`).
+ * **강사 · 관리자는 여러 개를 골라 한꺼번에 수업자료실로 옮긴다** (같은 날 Alan "여러개를 한번에 선택해서 넘길수 있도록 … 전체선택도") — 줄마다 고르기 칸 ·
+ * 맨 위 전체 선택(이 쪽 글) · 아래 막대 (`BoardBulkMove`). 목록이 비어도 그 안에 둔다 — 다 옮긴 뒤에도 결과 창이 남게.
  */
 export default async function StaffBoardPage({ searchParams }: { searchParams: Promise<{ page?: string; level?: string }> }) {
   // 레이아웃이 조교를 통과시키므로 화면마다 막는다 — 이 화면은 조교에게 열려 있다
   const { profile } = await requireCrew();
   const testing = profile.test_role != null;
+  // 여러 개 옮기기는 강사 · 관리자만 (수업자료실이 강사 · 관리자 화면이다 — 서버 액션도 requireStaff)
+  const staff = isStaff(profile.role);
   const sp = await searchParams;
   const page = boardPage(sp.page);
 
@@ -78,6 +83,34 @@ export default async function StaffBoardPage({ searchParams }: { searchParams: P
   const write = level !== null ? `/admin/board/new?level=${level}` : "/admin/board/new";
   const first = level !== null ? `/admin/board?level=${level}` : "/admin/board";
 
+  const body = error ? (
+    <p className="card p-5 text-sm text-red-700">글 목록을 불러오지 못했어요. 잠시 뒤 새로고침해 주세요.</p>
+  ) : items.length === 0 ? (
+    <div className="card flex flex-col items-start gap-3 p-6">
+      <p className="text-sm text-slate">
+        {total > 0 ? "이 쪽에는 글이 없어요." : level !== null ? `${level} 글이 아직 없어요. 첫 글을 올려 보세요.` : "아직 올린 글이 없어요. 첫 글을 올려 보세요."}
+      </p>
+      {total > 0 ? (
+        <Link href={first} className="btn-secondary">
+          첫 쪽으로
+        </Link>
+      ) : (
+        <Link href={write} className="btn-primary">
+          글쓰기
+        </Link>
+      )}
+    </div>
+  ) : (
+    <>
+      <p className="mb-2 text-sm text-slate">
+        {level !== null && <>{level} · </>}글 <strong className="tabular-nums text-ink">{total.toLocaleString("ko-KR")}</strong>개
+        {level !== null && <span className="text-mist"> — 모든 레벨 글도 함께 보여요</span>}
+      </p>
+      <StaffPostList items={items} level={level} selectAll={staff ? (pages > 1 ? "이 쪽 전체 선택" : "전체 선택") : undefined} />
+      <StaffBoardPager page={page} pages={pages} level={level} />
+    </>
+  );
+
   return (
     <>
       <PageHeader icon="offline" title="직원 게시판" description="강사 · 관리자 · 조교만 보는 게시판이에요. 학생에게는 보이지 않아요.">
@@ -93,32 +126,12 @@ export default async function StaffBoardPage({ searchParams }: { searchParams: P
           tabs={levels.map((l) => ({ value: String(l), label: `${l}`, count: byLevel.get(l) ?? 0 }))}
         />
       )}
-      {error ? (
-        <p className="card p-5 text-sm text-red-700">글 목록을 불러오지 못했어요. 잠시 뒤 새로고침해 주세요.</p>
-      ) : items.length === 0 ? (
-        <div className="card flex flex-col items-start gap-3 p-6">
-          <p className="text-sm text-slate">
-            {total > 0 ? "이 쪽에는 글이 없어요." : level !== null ? `${level} 글이 아직 없어요. 첫 글을 올려 보세요.` : "아직 올린 글이 없어요. 첫 글을 올려 보세요."}
-          </p>
-          {total > 0 ? (
-            <Link href={first} className="btn-secondary">
-              첫 쪽으로
-            </Link>
-          ) : (
-            <Link href={write} className="btn-primary">
-              글쓰기
-            </Link>
-          )}
-        </div>
+      {staff && !error && levels.length > 0 ? (
+        <BoardBulkMove items={items.map((p) => ({ key: `post:${p.id}`, id: p.id, title: p.title }))} levels={levels} tabLevel={level}>
+          {body}
+        </BoardBulkMove>
       ) : (
-        <>
-          <p className="mb-2 text-sm text-slate">
-            {level !== null && <>{level} · </>}글 <strong className="tabular-nums text-ink">{total.toLocaleString("ko-KR")}</strong>개
-            {level !== null && <span className="text-mist"> — 모든 레벨 글도 함께 보여요</span>}
-          </p>
-          <StaffPostList items={items} level={level} />
-          <StaffBoardPager page={page} pages={pages} level={level} />
-        </>
+        body
       )}
     </>
   );

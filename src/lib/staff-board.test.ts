@@ -285,16 +285,27 @@ describe("앱 — 화면 · 액션 · 파일 주소", () => {
     expect(src).not.toMatch(/author_(?:id|name):/);
   });
 
-  it("옮기기 액션 셋은 강사 · 관리자만 (requireStaff) · 테스트 등급이면 막고 · 서비스 롤 없이 세션으로", () => {
+  it("옮기기 액션은 강사 · 관리자만 (requireStaff) · 테스트 등급이면 막고 · 서비스 롤 없이 세션으로", () => {
     const src = read("src/app/admin/board/move-actions.ts");
     const actions = src.split(/export async function /).slice(1);
-    expect(actions.map((a) => a.slice(0, a.indexOf("(")))).toEqual(["moveStaffPostToClass", "moveClassNoticeToBoard", "moveClassMaterialToBoard"]);
+    // 하나 옮기기 셋 + 여러 개 옮기기의 계획 읽기 · 끝 정리 (2026-10-21)
+    expect(actions.map((a) => a.slice(0, a.indexOf("(")))).toEqual([
+      "moveStaffPostToClass",
+      "moveClassNoticeToBoard",
+      "moveClassMaterialToBoard",
+      "planStaffPostsMove",
+      "finishBoardMoves",
+    ]);
     for (const a of actions) {
       // 첫 줄이 가드다 — 그 앞에 아무것도 없다
-      expect(a).toMatch(/^\w+\([^)]*\): Promise<MoveResult> \{\s*const \{ [^}]*\} = await requireStaff\(\);/);
-      expect(a.indexOf("requireStaff(")).toBeLessThan(a.indexOf("createClient("));
-      expect(a).toContain("if (profile.test_role) return");
+      const body = a.slice(a.indexOf("> {\n") + 4).trimStart();
+      expect(body).toMatch(/^(?:const \{ [^}]*\} = )?await requireStaff\(\);/);
+      if (a.includes("createClient(")) expect(a.indexOf("requireStaff(")).toBeLessThan(a.indexOf("createClient("));
+      if (!a.startsWith("finishBoardMoves")) expect(a).toContain("if (profile.test_role) return");
     }
+    // 여러 개를 차례로 옮길 때는 하나마다 화면을 새로 그리지 않는다 (quiet) — 끝에 finishBoardMoves 가 한 번
+    expect(src.match(/revalidateAll\([^;]*, opts\);/g)?.length).toBe(4);
+    expect(src).toMatch(/function revalidateAll\(paths: string\[\], opts\?: MoveOptions\) \{\s*if \(opts\?\.quiet === true\) return;/);
     expect(src).not.toMatch(/createAdminClient|service_role|SUPABASE_SERVICE_ROLE/);
     // 직원 글을 넣을 때 글쓴이 칸은 보내지 않는다 (트리거가 옮긴 사람으로 적는다)
     const insert = src.slice(src.indexOf('.from("staff_posts")\n    .insert('));

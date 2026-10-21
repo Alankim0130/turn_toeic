@@ -22,6 +22,7 @@ import {
   type LinkInput,
 } from "@/lib/class-materials";
 import { isRoundSet, ROUND_MAX } from "@/lib/class-rounds";
+import { nextMaterialOrder } from "./_lib/next-order";
 
 export type ClassMaterialResult = { ok: boolean; error?: string };
 
@@ -134,6 +135,8 @@ export async function saveClassMaterial(input: {
         note: note || null,
         links,
         uploaded_by: user.id,
+        // 그 회차의 끝에 선다 (2026-10-21 — 0 으로 넣으면 순서를 매긴 회차에서 두 번째 자리에 끼어들었다)
+        sort_order: await nextMaterialOrder(supabase, { level, subject, set: bookSet, seq }),
       })
       .select("id")
       .single();
@@ -153,7 +156,7 @@ export async function saveClassMaterial(input: {
   const id = Number(input.id);
   if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "잘못된 요청이에요." };
   const [{ data: old }, { data: oldFiles, error: oldFilesError }] = await Promise.all([
-    supabase.from("class_materials").select("id, links").eq("id", id).maybeSingle(),
+    supabase.from("class_materials").select("id, links, level, subject, book_set, seq").eq("id", id).maybeSingle(),
     supabase.from("class_material_files").select("id, file_path, file_name, sort_order").eq("material_id", id),
   ]);
   if (!old) return { ok: false, error: "자료를 찾을 수 없어요. 새로고침해 주세요." };
@@ -181,7 +184,8 @@ export async function saveClassMaterial(input: {
     added = (data ?? []).map((r) => r.id);
   }
 
-  // 2) 자료 행 — 실패하면 방금 넣은 파일 행을 되돌린다
+  // 2) 자료 행 — 실패하면 방금 넣은 파일 행을 되돌린다. 다른 칸 · 회차로 옮기면 그 회차의 끝에 선다
+  const moved = old.level !== level || old.subject !== subject || old.book_set !== bookSet || old.seq !== seq;
   const { data, error } = await supabase
     .from("class_materials")
     .update({
@@ -189,6 +193,7 @@ export async function saveClassMaterial(input: {
       subject,
       book_set: bookSet,
       seq,
+      ...(moved ? { sort_order: await nextMaterialOrder(supabase, { level, subject, set: bookSet, seq }) } : {}),
       title: typed || defaultMaterialTitle([...staying.map((f) => f.file_name), ...files.map((f) => f.name)], note, links),
       note: note || null,
       // 링크를 보냈을 때만 갈아 끼운다 (안 보냈으면 칸을 건드리지 않는다)

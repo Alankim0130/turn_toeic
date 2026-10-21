@@ -6,11 +6,8 @@ import { Dialog } from "@/components/ui/Dialog";
 import { ChoiceChip } from "@/components/admin/ChoiceChip";
 import { moveStaffPostToClass } from "@/app/admin/board/move-actions";
 import { classPlaceLabel, type MoveDraft, type MoveTarget } from "@/lib/board-move";
-import { MATERIAL_SUBJECT_LABEL, MATERIAL_SUBJECTS, type MaterialSubject } from "@/lib/class-materials";
-import { scopeLabel } from "@/lib/class-notices";
-import { ROUND_MAX, ROUND_SET_LABEL, ROUND_SETS, type RoundSet } from "@/lib/class-rounds";
-
-const ROUNDS = Array.from({ length: ROUND_MAX }, (_, k) => k + 1);
+import type { MaterialSubject } from "@/lib/class-materials";
+import { NoticeScopeChips, noticeWho, RoundSelects, roundMissing, type RoundPick } from "./MoveFields";
 
 /**
  * 직원 글 → 수업자료실 옮기기 (2026-10-21 Alan — "이 게시물을 수업게시판으로 옮길 수 있으면 좋겠어"). 강사 · 관리자에게만 보인다.
@@ -39,21 +36,17 @@ export function MoveToClassButton({
   const [kind, setKind] = useState<"notice" | "material">(draft.kind === "material" && !materialBlock ? "material" : "notice");
   const [picked, setPicked] = useState<number[]>(draft.notice.levels);
   const [subject, setSubject] = useState<MaterialSubject | null>(draft.notice.subjects.length === 1 ? draft.notice.subjects[0] : null);
-  const [mLevel, setMLevel] = useState<number | null>(draft.material.level ?? levels[0] ?? null);
-  const [mSubject, setMSubject] = useState<MaterialSubject | null>(draft.material.subject);
-  const [mSet, setMSet] = useState<RoundSet | null>(draft.material.set);
-  const [mSeq, setMSeq] = useState<number | null>(draft.material.seq);
+  const [round, setRound] = useState<RoundPick>({ ...draft.material, level: draft.material.level ?? levels[0] ?? null });
 
   const noticeScope = { levels: picked, subjects: subject ? [subject] : [] };
-  const who = scopeLabel(noticeScope) === "전체" ? "수강 중인 모든 학생" : `${scopeLabel(noticeScope)} 수강생`;
+  const who = noticeWho(noticeScope);
   const target: MoveTarget | null =
     kind === "notice"
       ? { kind: "notice", ...noticeScope }
-      : mLevel !== null && mSubject && mSet && mSeq
-        ? { kind: "material", level: mLevel, subject: mSubject, set: mSet, seq: mSeq }
+      : round.level !== null && round.subject && round.set && round.seq
+        ? { kind: "material", level: round.level, subject: round.subject, set: round.set, seq: round.seq }
         : null;
-  const missing =
-    kind === "material" && !target ? (materialBlock ? null : !mSubject ? "과목을 골라 주세요." : !mSet ? "과정을 골라 주세요." : !mSeq ? "회차를 골라 주세요." : "레벨을 골라 주세요.") : null;
+  const missing = kind === "material" && !target && !materialBlock ? roundMissing(round) : null;
 
   async function move() {
     if (!target || busy) return;
@@ -98,33 +91,7 @@ export function MoveToClassButton({
           {kind === "notice" ? (
             <fieldset className="space-y-2">
               <legend className="mb-1.5 text-sm font-bold text-ink">누구에게 보일까요</legend>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="w-10 shrink-0 text-xs font-bold text-mist">레벨</span>
-                <ChoiceChip on={picked.length === 0} onClick={() => setPicked([])} disabled={busy}>
-                  모든 레벨
-                </ChoiceChip>
-                {levels.map((l) => (
-                  <ChoiceChip
-                    key={l}
-                    on={picked.includes(l)}
-                    onClick={() => setPicked((p) => (p.includes(l) ? p.filter((x) => x !== l) : [...p, l].sort((a, b) => a - b)))}
-                    disabled={busy}
-                  >
-                    {l}
-                  </ChoiceChip>
-                ))}
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="w-10 shrink-0 text-xs font-bold text-mist">과목</span>
-                <ChoiceChip on={subject === null} onClick={() => setSubject(null)} disabled={busy}>
-                  RC · LC 모두
-                </ChoiceChip>
-                {MATERIAL_SUBJECTS.map((s) => (
-                  <ChoiceChip key={s} on={subject === s} onClick={() => setSubject(s)} disabled={busy}>
-                    {MATERIAL_SUBJECT_LABEL[s]}만
-                  </ChoiceChip>
-                ))}
-              </div>
+              <NoticeScopeChips levels={levels} picked={picked} onPicked={setPicked} subject={subject} onSubject={setSubject} disabled={busy} />
               <p className="rounded-xl bg-brand-50 px-3 py-2 text-ink-soft">
                 옮기는 순간 <strong className="text-brand-700">{who}</strong>에게 공지로 보여요. 지금 수강 중(개강일~종강일)인 학생만 봐요.
               </p>
@@ -136,51 +103,7 @@ export function MoveToClassButton({
           ) : (
             <fieldset className="space-y-2">
               <legend className="mb-1.5 text-sm font-bold text-ink">어느 회차에 올릴까요</legend>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="space-y-1">
-                  <span className="text-xs font-bold text-mist">레벨</span>
-                  <select value={mLevel ?? ""} onChange={(e) => setMLevel(e.target.value ? Number(e.target.value) : null)} disabled={busy} className="input">
-                    {levels.map((l) => (
-                      <option key={l} value={l}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-bold text-mist">과목</span>
-                  <select value={mSubject ?? ""} onChange={(e) => setMSubject((e.target.value || null) as MaterialSubject | null)} disabled={busy} className="input">
-                    <option value="">고르기</option>
-                    {MATERIAL_SUBJECTS.map((s) => (
-                      <option key={s} value={s}>
-                        {MATERIAL_SUBJECT_LABEL[s]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-bold text-mist">과정</span>
-                  <select value={mSet ?? ""} onChange={(e) => setMSet((e.target.value || null) as RoundSet | null)} disabled={busy} className="input">
-                    <option value="">고르기</option>
-                    {ROUND_SETS.map((s) => (
-                      <option key={s} value={s}>
-                        {ROUND_SET_LABEL[s]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-bold text-mist">회차</span>
-                  <select value={mSeq ?? ""} onChange={(e) => setMSeq(e.target.value ? Number(e.target.value) : null)} disabled={busy} className="input">
-                    <option value="">고르기</option>
-                    {ROUNDS.map((n) => (
-                      <option key={n} value={n}>
-                        {n}회차
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+              <RoundSelects levels={levels} value={round} onChange={setRound} disabled={busy} />
               <p className="rounded-xl bg-brand-50 px-3 py-2 text-ink-soft">
                 {target?.kind === "material" ? (
                   <>

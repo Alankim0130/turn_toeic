@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { boardDateLabel } from "@/lib/staff-board";
+import { cn } from "@/lib/utils";
+import { BulkCheck, BulkSelectAll } from "./BulkSelect";
 
 export type StaffPostListItem = {
   id: number;
@@ -20,16 +22,29 @@ export const staffPostHref = (id: number, level: number | null) => `/admin/board
  * 모양은 수업자료실 공지 목록(`NoticeList`)과 같다 — 휴대폰에서는 제목 아래로 레벨 · 글쓴이 · 날짜를 내린다(한 줄에 다 두면 제목이 잘린다).
  * 레벨(`650` · `모든 레벨`)은 넓은 화면에서 글쓴이 앞 칩 — 레벨 탭 안에도 모든 레벨 글이 함께 서서 어느 쪽인지 보이게 한다.
  * 날짜는 오늘 올린 글이면 시각(`14:05`), 그 밖은 `25.10.21` (`boardDateLabel`).
+ * `selectAll` 을 주면(강사 · 관리자 — 여러 개 옮기기, `BoardBulkMove` 안) 줄마다 고르기 칸이 링크 **옆에**(링크 안에 칸을 넣으면 HTML 이 깨진다) 서고
+ * 맨 위 줄에 전체 선택(이 쪽 글)이 선다. 조교에게는 없다.
  */
-export function StaffPostList({ items, level }: { items: StaffPostListItem[]; level: number | null }) {
+export function StaffPostList({ items, level, selectAll }: { items: StaffPostListItem[]; level: number | null; selectAll?: string }) {
+  const selectable = selectAll !== undefined;
   return (
     <ul className="divide-y divide-line overflow-hidden rounded-xl2 border border-line bg-white">
+      {selectable && (
+        <li className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-surface/70 py-2 pl-3 pr-3 sm:pl-4 sm:pr-4">
+          <BulkSelectAll keys={items.map((p) => `post:${p.id}`)} label={selectAll} />
+          <span className="text-xs text-mist">골라서 수업자료실로 옮길 수 있어요</span>
+        </li>
+      )}
       {items.map((p) => {
         const author = p.author_name || "직원";
         const date = boardDateLabel(p.created_at);
         return (
-          <li key={p.id}>
-            <Link href={staffPostHref(p.id, level)} className="flex items-center gap-3 px-3 py-3 transition hover:bg-brand-50/60 sm:px-4">
+          <li key={p.id} className={cn(selectable && "flex items-stretch")}>
+            {selectable && <BulkCheck itemKey={`post:${p.id}`} label={p.title} className="pl-3 pr-1 sm:pl-4" />}
+            <Link
+              href={staffPostHref(p.id, level)}
+              className={cn("flex items-center gap-3 py-3 transition hover:bg-brand-50/60", selectable ? "min-w-0 flex-1 pl-2 pr-3 sm:pr-4" : "px-3 sm:px-4")}
+            >
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-bold text-ink sm:text-[15px]">{p.title}</span>
                 <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-mist sm:hidden">
