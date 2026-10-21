@@ -5,8 +5,6 @@ import { cn, formatDate } from "@/lib/utils";
 import { formatBytes } from "@/lib/study";
 import { shortDay } from "@/lib/study-rounds";
 import {
-  fileKindLabel,
-  isViewableKind,
   linkCountLabel,
   MATERIAL_SUBJECT_LABEL,
   MATERIAL_SUBJECTS,
@@ -31,9 +29,6 @@ export type MyClassMaterial = {
   links: MaterialLink[];
   created_at: string;
 };
-
-/** 넓은 화면의 줄 자리 — 제목 줄 다음부터 안내 · 파일 목록 · 링크 목록이 있는 것만 차례로 선다 */
-const SM_ROW = ["sm:row-start-2", "sm:row-start-3", "sm:row-start-4"] as const;
 
 /** 일정표 한 줄 — 내 수업일 하나 = 한 회차 (과정 A/B · 회차 · 그 과정을 쓰는 내 수업 시간) */
 export type MaterialRound = { key: string; date: string; set: RoundSet; seq: number; time: string | null };
@@ -201,57 +196,54 @@ export function ClassMaterialsView({
 }
 
 /**
- * 자료 한 장 — **파일 0 ~ 20개** (2026-10-06): 하나면 제목 줄 오른쪽에 `열기`(PDF · 그림) · `받기`, 여럿이면 안내 아래 파일 목록(파일마다),
- * 없으면 강사가 글(안내 · 스크립트)만 올린 것이라 버튼이 없다.
- * **링크 0 ~ 20개**(같은 날 Alan "유튜브 링크를 … 여러개")는 맨 아래 목록 — 유튜브 영상은 `보기` 를 누르면 그 자리에서 재생된다
+ * 자료 한 장 — **닫힌 채로 선다** (2026-10-21 Alan — "학생모드에서 수업자료실에 전부다 열려있는데, 닫힘으로 해주고 클릭하는것만 열리도록 부탁해").
+ * 제목 줄(종류 · 제목 · 올린 날 · 파일 수)만 보이고, 누르면 그 자료만 열린다 — 안내 · 파일 0 ~ 20개 · 링크 0 ~ 20개. 다른 자료는 그대로 닫혀 있고
+ * 여러 개를 함께 열어 둘 수 있다. `<details>` 라 자바스크립트 없이 열리고 이 카드는 서버 컴포넌트로 남는다.
+ * - **파일이 하나여도 목록으로 연다** — 2026-10-06 ~ 10-21 에는 제목 줄 오른쪽에 `열기` · `받기` 가 있었다 (제목 줄이 곧 여닫는 줄이 됐다).
+ * - 안쪽 안내의 `전체 보기` 접기(`MaterialNote`)는 그대로다. 안내는 이름 없는 `group` 을 쓰므로 카드는 **`group/card`** 로 따로 부른다 —
+ *   이름 없이 두면 카드가 열리는 순간 안내의 접힌 앞부분이 함께 숨는다.
+ * - 유튜브 영상을 틀어 둔 채 카드를 닫으면 멈춘다 (`MaterialLinkList` — 닫힌 카드 안의 플레이어는 안 보여도 소리가 계속 난다).
+ * - 링크 0 ~ 20개(2026-10-06 Alan "유튜브 링크를 … 여러개")는 맨 아래 목록 — 유튜브 영상은 `보기` 를 누르면 그 자리에서 재생된다
  */
-function MaterialCard({ m }: { m: MyClassMaterial }) {
+export function MaterialCard({ m }: { m: MyClassMaterial }) {
   const files = sortMaterialFiles(m.files);
   const links = m.links;
   const single = files.length === 1 ? files[0] : null;
-  const viewable = single ? isViewableKind(fileKindLabel(single.file_name, single.content_type)) : false;
-  const linksRow = SM_ROW[(m.note ? 1 : 0) + (files.length > 1 ? 1 : 0)];
   return (
-    // 휴대폰: 제목 → 안내 → 파일 · 버튼 → 링크. 넓은 화면: 제목 줄 오른쪽에 버튼, 안내 · 파일 목록 · 링크 목록은 그 아래 한 줄 전체 (버튼만 따로 한 줄을 먹지 않게)
-    <li className="card grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-5">
-      <div className="flex min-w-0 items-start gap-3 sm:col-start-1 sm:row-start-1">
-        <span
-          className={cn(
-            "flex size-11 shrink-0 items-center justify-center rounded-xl text-[11px] font-black ring-1",
-            files.length + links.length === 0 ? "bg-surface text-slate ring-line" : "bg-brand-50 text-brand-700 ring-brand-100",
-          )}
-        >
-          {materialBadge(files, links)}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="font-black leading-snug text-ink [overflow-wrap:anywhere]">{m.title}</p>
-          <p className="mt-0.5 text-xs text-slate">
-            {formatDate(new Date(m.created_at), { month: "long", day: "numeric" })} 올림
-            {single?.file_size != null && <> · {formatBytes(single.file_size)}</>}
-            {files.length > 1 && <> · 파일 {files.length}개</>}
-            {links.length > 0 && <> · {linkCountLabel(links)}</>}
-          </p>
+    <li className="card overflow-hidden">
+      <details className="group/card">
+        {/* 제목 줄 전체가 여닫는 곳 — 오른쪽 꺾쇠가 열렸는지 말해 준다. 키보드로 왔을 때의 테두리는 카드 안쪽에 그린다 (카드가 둥근 모서리를 자른다) */}
+        <summary className="flex cursor-pointer list-none items-center gap-3 p-4 transition hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-300 group-open/card:pb-3 sm:p-5 sm:group-open/card:pb-3 [&::-webkit-details-marker]:hidden">
+          <span
+            className={cn(
+              "flex size-11 shrink-0 items-center justify-center rounded-xl text-[11px] font-black ring-1",
+              files.length + links.length === 0 ? "bg-surface text-slate ring-line" : "bg-brand-50 text-brand-700 ring-brand-100",
+            )}
+          >
+            {materialBadge(files, links)}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-black leading-snug text-ink [overflow-wrap:anywhere]">{m.title}</span>
+            <span className="mt-0.5 block text-xs text-slate">
+              {formatDate(new Date(m.created_at), { month: "long", day: "numeric" })} 올림
+              {single?.file_size != null && <> · {formatBytes(single.file_size)}</>}
+              {files.length > 1 && <> · 파일 {files.length}개</>}
+              {links.length > 0 && <> · {linkCountLabel(links)}</>}
+            </span>
+          </span>
+          <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-full bg-paper text-slate ring-1 ring-line transition group-open/card:rotate-180">
+            <svg viewBox="0 0 24 24" className="size-4 fill-none stroke-current stroke-[2.5]">
+              <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+        </summary>
+        <div className="space-y-3 px-4 pb-4 sm:px-5 sm:pb-5">
+          {/* 강사가 적은 안내 · 스크립트 — 짧으면 펼쳐 두고, 길면 앞 네 줄 + 전체 보기 (2026-10-05) */}
+          {m.note && <MaterialNote note={m.note} className="bg-brand-50" />}
+          {files.length > 0 && <MaterialFileList files={files} />}
+          {links.length > 0 && <MaterialLinkList links={links} />}
         </div>
-      </div>
-      {/* 강사가 적은 안내 · 스크립트 — 짧으면 펼쳐 두고, 길면 앞 네 줄 + 전체 보기 (2026-10-05) */}
-      {m.note && <MaterialNote note={m.note} className="bg-brand-50 sm:col-span-2 sm:row-start-2" />}
-      {/* 안내가 없으면 둘째 줄로 올린다 — 빈 줄이 남으면 격자 간격이 두 번 들어간다 */}
-      {files.length > 1 && <MaterialFileList files={files} className={cn("sm:col-span-2", m.note ? "sm:row-start-3" : "sm:row-start-2")} />}
-      {single && (
-        <div className={cn("grid gap-2 sm:col-start-2 sm:row-start-1 sm:flex", viewable ? "grid-cols-2" : "grid-cols-1")}>
-          {viewable && (
-            <a href={`/files/class/${single.id}`} target="_blank" rel="noopener" className="btn-secondary !px-4 !py-2 text-sm">
-              열기
-            </a>
-          )}
-          <a href={`/files/class/${single.id}?download=1`} className="btn-primary !px-4 !py-2 text-sm">
-            <Icon name="download" size={18} className="brightness-0 invert" />
-            받기
-          </a>
-        </div>
-      )}
-      {/* 링크 — 휴대폰에서는 파일 버튼 다음, 넓은 화면에서는 안내 · 파일 목록 아래 한 줄 전체 */}
-      {links.length > 0 && <MaterialLinkList links={links} className={cn("sm:col-span-2", linksRow)} />}
+      </details>
     </li>
   );
 }

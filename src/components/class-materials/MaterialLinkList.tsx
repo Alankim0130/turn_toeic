@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { linkTitle, shortLinkUrl, type MaterialLink } from "@/lib/class-materials";
 import { linkKindLabel } from "@/lib/live-links";
 import { youtubeEmbedSrc, youtubeThumb, youtubeVideo } from "@/lib/youtube-video";
@@ -14,15 +14,28 @@ import { cn } from "@/lib/utils";
  *   `유튜브` 버튼은 유튜브 앱 · 새 창으로 — 강사가 퍼가기를 막아 둔 영상은 거기서 본다.
  * - 영상이 아닌 링크(재생목록 · 채널 · 블로그 · 구글 문서 …)는 `열기` 로 새 창.
  * - 주소는 `materialLinks` 를 거친 http(s) 뿐이다 (DB check 도 같다). 새 창은 `noopener noreferrer`.
+ * - **목록을 품은 `<details>` 가 닫히면 틀던 영상을 멈춘다** (2026-10-21 — 학생 수업자료실의 자료 카드가 닫힌 채로 서면서). 닫힌 칸 안의 플레이어는
+ *   안 보여도 소리가 계속 난다 — 그래서 플레이어를 내린다. 품은 `<details>` 가 없는 곳(공지 · 직원 게시판 글)에서는 아무것도 하지 않는다.
  */
 export function MaterialLinkList({ links, className }: { links: readonly MaterialLink[]; className?: string }) {
   const [playing, setPlaying] = useState<number | null>(null);
   // 그림을 못 받은 줄 — 영상이 지워졌거나 막혔다. 깨진 그림 대신 `유튜브` 글자 칩을 세운다
   const [noThumb, setNoThumb] = useState<ReadonlySet<number>>(() => new Set());
   const base = useId();
+  const listRef = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    // `toggle` 은 버블링하지 않는다 — 품은 `<details>` 에 직접 단다
+    const details = listRef.current?.closest("details");
+    if (!details) return;
+    const stop = () => {
+      if (!details.open) setPlaying(null);
+    };
+    details.addEventListener("toggle", stop);
+    return () => details.removeEventListener("toggle", stop);
+  }, []);
 
   return (
-    <ul aria-label="링크" className={cn("divide-y divide-line overflow-hidden rounded-xl border border-line bg-paper", className)}>
+    <ul ref={listRef} aria-label="링크" className={cn("divide-y divide-line overflow-hidden rounded-xl border border-line bg-paper", className)}>
       {links.map((link, k) => {
         const video = youtubeVideo(link.url);
         const title = linkTitle(link, k, links.length);
