@@ -7,8 +7,10 @@ import { ChoiceChip } from "@/components/admin/ChoiceChip";
 import { moveStaffPostToClass, planStaffPostsMove } from "@/app/admin/board/move-actions";
 import { BULK_SKIP, bulkDraftOf, bulkSteps, classPlaceLabel, type BulkChoice, type BulkPost } from "@/lib/board-move";
 import type { MaterialSubject } from "@/lib/class-materials";
+import { cellValue } from "@/lib/staff-board";
 import { BulkBar, BulkProgress, BulkProvider, BulkResult, useBulkRunner, useBulkSelection, type BulkNote } from "./BulkSelect";
 import { NoticeScopeChips, noticeWho, RoundSelects, roundMissing, type RoundPick } from "./MoveFields";
+import type { BoardTab } from "./StaffPostList";
 
 type Kind = "notice" | "material" | "origin";
 type Plan = { phase: "loading" } | { phase: "error"; error: string } | { phase: "ready"; posts: BulkPost[]; gone: BulkNote[] };
@@ -18,20 +20,20 @@ type Plan = { phase: "loading" } | { phase: "error"; error: string } | { phase: 
  * 강사 · 관리자의 목록 화면만 감싼다 (조교는 옮기지 않는다). 줄마다 고르기 칸 · 맨 위 `전체 선택`(이 쪽 글), 고르면 아래 막대의 `수업자료실로 옮기기`.
  * 대화창을 열 때 서버가 고른 글을 읽어(`planStaffPostsMove` — 본문을 목록에서 읽지 않으려고) 사진 · 빈 글 · 원래 자리를 알려 준다.
  * 옮길 곳을 **한 번** 고른다 — 공지사항(같은 범위로 글마다 공지 하나씩) · 회차 자료(같은 회차에 모두) · 원래 자리로(수업자료실에서 옮겨 온 글은 그 자리로).
- * 글마다 옮길 곳 · 건너뛸 까닭은 `bulkSteps`, 처음 고를 값은 `bulkDraftOf`. 오래된 글부터 하나씩 옮긴다 (`useBulkRunner`).
+ * 글마다 옮길 곳 · 건너뛸 까닭은 `bulkSteps`, 처음 고를 값은 `bulkDraftOf`(글의 레벨 · 과목 · 과정, 서로 다르면 보던 탭 · 칸). 오래된 글부터 하나씩 옮긴다 (`useBulkRunner`).
  */
 export function BoardBulkMove({
   items,
   levels,
-  tabLevel,
+  tab,
   children,
 }: {
   /** 이 쪽에 선 글 — 고를 수 있는 것 (열쇠 `post:id`) */
   items: { key: string; id: number; title: string }[];
   /** 교재 레벨 목록 (lc_levels) */
   levels: number[];
-  /** 보던 레벨 탭 */
-  tabLevel: number | null;
+  /** 보던 레벨 탭 · 칸(과목 × 과정) */
+  tab: BoardTab;
   children: ReactNode;
 }) {
   const keys = items.map((i) => i.key);
@@ -67,7 +69,7 @@ export function BoardBulkMove({
     if (!res.ok) return setPlan({ phase: "error", error: res.error });
     const found = new Set(res.posts.map((p) => p.id));
     const gone = items.filter((i) => ids.includes(i.id) && !found.has(i.id)).map((i) => ({ key: i.key, title: i.title, why: BULK_SKIP.gone }));
-    const draft = bulkDraftOf(res.posts, tabLevel, levels);
+    const draft = bulkDraftOf(res.posts, tab.level, levels, tab.cell);
     setKind(draft.kind);
     setPicked(draft.notice.levels);
     setSubject(draft.notice.subjects.length === 1 ? draft.notice.subjects[0] : null);
@@ -112,12 +114,14 @@ export function BoardBulkMove({
   }
 
   /** 끝난 뒤 가 볼 곳 — 옮긴 자리의 수업자료실 (원래 자리로는 글마다 달라 첫 화면) */
-  const noticeLevel = picked[0] ?? tabLevel;
+  const noticeLevel = picked[0] ?? tab.level;
+  // 공지는 그 과목 칸에서 보인다 (과목을 안 골랐으면 보던 칸 — 전체 공지는 어느 칸에나)
+  const noticeCell = subject ? `${subject}-${tab.cell?.set ?? "A"}` : tab.cell ? cellValue(tab.cell) : null;
   const doneHref =
     kind === "material" && round.level !== null && round.subject && round.set
       ? `/admin/class-materials?level=${round.level}&cell=${round.subject}-${round.set}`
       : kind === "notice" && noticeLevel !== null
-        ? `/admin/class-materials?level=${noticeLevel}`
+        ? `/admin/class-materials?level=${noticeLevel}${noticeCell ? `&cell=${noticeCell}` : ""}`
         : "/admin/class-materials";
 
   return (

@@ -1,5 +1,14 @@
-import { CLASS_MATERIAL_FILES_MAX, CLASS_MATERIAL_MAX_BYTES, charCount } from "./class-materials";
+import {
+  CLASS_MATERIAL_FILES_MAX,
+  CLASS_MATERIAL_MAX_BYTES,
+  charCount,
+  isMaterialSubject,
+  MATERIAL_SUBJECT_LABEL,
+  MATERIAL_SUBJECTS,
+  type MaterialSubject,
+} from "./class-materials";
 import { noticeAttachLabel } from "./class-notices";
+import { isRoundSet, ROUND_SET_LABEL, ROUND_SETS, type RoundSet } from "./class-rounds";
 import { noteImagePaths } from "./note-format";
 import { MB, objectName } from "./upload";
 
@@ -15,6 +24,8 @@ import { MB, objectName } from "./upload";
  *   사진은 버킷 `staff-board` 의 `images/`, 첨부 파일은 같은 버킷의 `files/` (행은 `staff_post_files`). 링크는 수업자료실 링크와 같은 규칙.
  * - 상한도 공지와 같다 — 제목 100자 · 본문 5만 자 · 사진 30장(장당 10MB) · 파일 20개(하나에 50MB) · 링크 20개.
  * - **레벨**(2026-10-21 Alan "학습자료실처럼 650,750,850구분") — 글마다 `levels`(비우면 모든 레벨), 화면은 레벨 탭이고 모든 레벨 글은 탭마다 선다 (아래 `postInLevel`).
+ * - **과목 · 과정**(같은 날 Alan — 수업자료실의 `RC A과정 · RC B과정 · LC A과정 · LC B과정` 줄을 보여 주며 "A, B과정 표시가 없어. 이렇게해줘") —
+ *   글마다 `subject` · `book_set`(비우면 둘 다), 화면은 레벨 탭 아래 둘째 줄이 칸이고 과목 · 과정을 비운 글은 칸마다 선다 (아래 `postInCell`).
  * - **수업자료실과 오고 간다**(같은 날 — "이 게시물을 수업게시판으로 옮길 수 있으면 … 반대로 … 다시 직원게시판으로") — 규칙은 `src/lib/board-move.ts`,
  *   서버 액션은 `src/app/admin/board/move-actions.ts`(강사 · 관리자만). 수업자료실에서 온 글은 원래 자리를 `moved_from` 에 남긴다 (다시 옮길 때 미리 골라진다).
  */
@@ -38,9 +49,13 @@ export const staffPostFilePath = (file: { name: string }) => `${STAFF_POST_FILE_
 
 /**
  * 저장 전 검사 — 서버 액션과 폼이 같은 말을 쓴다. 문제 없으면 null.
- * 레벨(2026-10-21)은 `knownLevels`(교재 레벨 목록 lc_levels)를 주면 그 안의 값인지 본다 — 공지(`noticeError`)와 같은 규칙
+ * 레벨(2026-10-21)은 `knownLevels`(교재 레벨 목록 lc_levels)를 주면 그 안의 값인지 본다 — 공지(`noticeError`)와 같은 규칙.
+ * 과목 · 과정(같은 날)은 비우거나(null) 아는 값(rc · lc / A · B)만 — DB check 와 같다
  */
-export function staffPostError(input: { title: string; body: string; levels?: readonly number[] }, knownLevels?: readonly number[]): string | null {
+export function staffPostError(
+  input: { title: string; body: string; levels?: readonly number[]; subject?: string | null; book_set?: string | null },
+  knownLevels?: readonly number[],
+): string | null {
   const title = input.title.trim();
   if (!title) return "제목을 적어 주세요.";
   if (charCount(title) > STAFF_POST_TITLE_MAX) return `제목은 ${STAFF_POST_TITLE_MAX}자 이내로 적어 주세요.`;
@@ -50,6 +65,8 @@ export function staffPostError(input: { title: string; body: string; levels?: re
   if (images.some((p) => !p.startsWith(STAFF_POST_IMAGE_FOLDER) || p.includes(".."))) return "사진 정보가 올바르지 않아요. 사진을 다시 넣어 주세요.";
   if (images.length > STAFF_POST_IMAGE_MAX_COUNT) return `사진은 한 글에 ${STAFF_POST_IMAGE_MAX_COUNT}장까지 넣을 수 있어요.`;
   if (knownLevels && (input.levels ?? []).some((l) => !knownLevels.includes(l))) return "레벨을 다시 골라 주세요.";
+  if (input.subject != null && !isMaterialSubject(input.subject)) return "과목을 다시 골라 주세요.";
+  if (input.book_set != null && !isRoundSet(input.book_set)) return "과정을 다시 골라 주세요.";
   return null;
 }
 
@@ -74,6 +91,102 @@ export const normalizeLevels = (raw: readonly unknown[] | null | undefined): num
 export function boardLevel(raw: string | string[] | undefined, levels: readonly number[]): number | null {
   const n = Number(Array.isArray(raw) ? raw[0] : raw);
   return levels.includes(n) ? n : (levels[0] ?? null);
+}
+
+/**
+ * 직원 게시판 과목 · 과정 (2026-10-21 Alan — 수업자료실의 `RC A과정 · RC B과정 · LC A과정 · LC B과정` 줄을 보여 주며 "그리고 A, B과정 표시가 없어. 이렇게해줘",
+ * 마이그레이션 20261021120000). 글마다 `subject`(rc | lc) · `book_set`(A | B) — **비우면 둘 다**(값이 둘뿐이라 "둘 다" 는 빈 값 하나다).
+ * 수업자료실 자료와 같은 이름 · 같은 값이다. 화면은 레벨 탭 아래 둘째 줄이 칸 넷(과목 × 과정 — 수업자료실과 같은 순서 · 같은 주소 꼴 `?cell=rc-A`)이고,
+ * 칸 하나에는 **그 칸 글과 과목 · 과정을 비운 글**이 선다 (`postInCell` = DB 조회 `subjectFilter` · `setFilter` — 레벨의 '모든 레벨' 글과 같은 규칙).
+ * 전체 칸은 없다 (수업자료실과 같다). 처음 여는 칸은 내 과목(강사)의 A과정, 과목이 없으면(관리자 · 조교) RC A과정 — 수업자료실과 같다.
+ */
+export type BoardCell = { subject: MaterialSubject; set: RoundSet };
+
+/** 칸 값 — 주소의 `?cell=rc-A` (수업자료실 둘째 줄과 같은 꼴) */
+export const cellValue = (c: BoardCell) => `${c.subject}-${c.set}`;
+
+/** 둘째 줄의 칸 넷 — RC A과정 · RC B과정 · LC A과정 · LC B과정 (수업자료실과 같은 순서) */
+export const BOARD_CELLS: readonly BoardCell[] = MATERIAL_SUBJECTS.flatMap((subject) => ROUND_SETS.map((set) => ({ subject, set })));
+
+/** 칸 이름 — `RC A과정` */
+export const cellLabel = (c: BoardCell) => `${MATERIAL_SUBJECT_LABEL[c.subject]} ${ROUND_SET_LABEL[c.set]}`;
+
+/** 주소의 `?cell=` → 칸 (과목을 모르면 null · 과정을 모르면 A과정 — 수업자료실과 같다) */
+export function cellOf(raw: string | string[] | undefined | null): BoardCell | null {
+  const [subject, set] = String((Array.isArray(raw) ? raw[0] : raw) ?? "").split("-");
+  return isMaterialSubject(subject) ? { subject, set: isRoundSet(set) ? set : "A" } : null;
+}
+
+/** 목록이 보여 줄 칸 — 주소의 칸, 없으면 내 과목(강사)의 A과정, 과목이 없으면 RC A과정. `defaulted` = 주소에 없어 내 과목을 골랐다 (화면이 말해 준다) */
+export function boardCell(raw: string | string[] | undefined, mySubject: string | null | undefined): BoardCell & { defaulted: boolean } {
+  const picked = cellOf(raw);
+  if (picked) return { ...picked, defaulted: false };
+  const mine = isMaterialSubject(mySubject) ? mySubject : null;
+  return { subject: mine ?? MATERIAL_SUBJECTS[0], set: "A", defaulted: !raw && mine !== null };
+}
+
+/** 저장할 과목 · 과정 — 아는 값만, 그 밖(빈 값 · 둘 다)은 null = 둘 다 */
+export const normalizeSubject = (raw: unknown): MaterialSubject | null => (isMaterialSubject(raw) ? raw : null);
+export const normalizeSet = (raw: unknown): RoundSet | null => (isRoundSet(raw) ? raw : null);
+
+/** 글이 그 칸에 서나 — 과목 · 과정을 비운 쪽은 어느 칸에나 (DB 조회 `subjectFilter` · `setFilter` 와 같은 뜻) */
+export const postInCell = (post: { subject: string | null; book_set: string | null }, c: BoardCell) =>
+  (post.subject == null || post.subject === c.subject) && (post.book_set == null || post.book_set === c.set);
+
+/** DB 조회의 과목 거르기 — 그 과목 글 · 과목을 비운 글 (`levelFilter` 와 함께 `.or()` 를 따로 걸면 모두 맞아야 한다) */
+export const subjectFilter = (subject: MaterialSubject) => `subject.is.null,subject.eq.${subject}`;
+/** DB 조회의 과정 거르기 — 그 과정 글 · 과정을 비운 글 */
+export const setFilter = (set: RoundSet) => `book_set.is.null,book_set.eq.${set}`;
+
+/** 글의 칸 이름표 — 과목 · 과정 둘 다면 `RC A과정`, 하나면 `RC` · `A과정`, 둘 다 비면 빈 글 (목록 · 글 화면의 둘째 칩) */
+export function cellTagLabel(subject: string | null | undefined, set: string | null | undefined): string {
+  return [isMaterialSubject(subject) ? MATERIAL_SUBJECT_LABEL[subject] : null, isRoundSet(set) ? ROUND_SET_LABEL[set] : null].filter(Boolean).join(" ");
+}
+
+/** 글이 서는 곳 한 줄 — `850 · RC A과정` · `모든 레벨` · `650 · 750 · RC` (옮기기 안내 · 목록 휴대폰 줄) */
+export function boardPlaceLabel(levels: readonly number[], subject: string | null | undefined, set: string | null | undefined): string {
+  const tag = cellTagLabel(subject, set);
+  return tag ? `${levelsLabel(levels)} · ${tag}` : levelsLabel(levels);
+}
+
+/** 글쓰기 폼의 한 줄 — 어느 탭 · 칸에 보이나 (`650 탭의 RC A과정 칸에 보여요.`) */
+export function boardWhereLabel(levels: readonly number[], allLevels: readonly number[], subject: string | null, set: string | null): string {
+  const where = levels.length > 0 ? `${levelsLabel(levels)} 탭` : allLevels.length > 0 ? `레벨 탭 모두(${allLevels.join(" · ")})` : "모든 레벨";
+  const cells = BOARD_CELLS.filter((c) => postInCell({ subject, book_set: set }, c));
+  return cells.length === BOARD_CELLS.length ? `${where}의 과목 · 과정 칸 모두에 보여요.` : `${where}의 ${cells.map(cellLabel).join(" · ")} 칸에 보여요.`;
+}
+
+/** 목록 주소 — 보던 레벨 탭 · 칸 · 쪽을 들고 다닌다 */
+export function boardListHref(tab: { level: number | null; cell?: BoardCell | null }, page = 1): string {
+  const q = new URLSearchParams();
+  if (tab.level !== null) q.set("level", String(tab.level));
+  if (tab.cell) q.set("cell", cellValue(tab.cell));
+  if (page > 1) q.set("page", String(page));
+  const s = q.toString();
+  return `/admin/board${s ? `?${s}` : ""}`;
+}
+
+/** 글 화면 주소 — 목록으로 돌아갈 때 쓰려고 보던 탭 · 칸을 붙여 둔다. `edit` 면 고치기 화면 (고친 뒤에도 같은 탭 · 칸으로 돌아간다) */
+export function staffPostHref(id: number, tab: { level: number | null; cell?: BoardCell | null }, page: "post" | "edit" = "post"): string {
+  const q = new URLSearchParams();
+  if (tab.level !== null) q.set("level", String(tab.level));
+  if (tab.cell) q.set("cell", cellValue(tab.cell));
+  const s = q.toString();
+  return `/admin/board/${id}${page === "edit" ? "/edit" : ""}${s ? `?${s}` : ""}`;
+}
+
+/**
+ * 저장한 글이 서는 탭 · 칸 — 저장한 뒤 글 화면의 `목록으로` 가 그 글이 보이는 곳으로 가게 한다 (750 LC B과정 칸에서 RC 글을 쓰면 그 칸에는 없다).
+ * 왔던 탭 · 칸에 서면 그대로 두고, 아니면 글의 첫 레벨 · 글의 과목 · 과정으로. 비운 축(모든 레벨 · 둘 다)은 어느 값에나 서므로 왔던 값을 그대로 쓴다
+ */
+export function boardTabFor(
+  post: { levels: readonly number[]; subject: MaterialSubject | null; set: RoundSet | null },
+  from: { level: number | null; cell?: BoardCell | null },
+): { level: number | null; cell: BoardCell | null } {
+  const fromCell = from.cell ?? null;
+  const level = post.levels.length === 0 || (from.level !== null && post.levels.includes(from.level)) ? from.level : post.levels[0];
+  if (post.subject === null && post.set === null) return { level, cell: fromCell };
+  return { level, cell: { subject: post.subject ?? fromCell?.subject ?? MATERIAL_SUBJECTS[0], set: post.set ?? fromCell?.set ?? ROUND_SETS[0] } };
 }
 
 /** 고칠 수 있나 — 글쓴이만 (DB 정책 `staff_posts: 글쓴이 고치기`). 글쓴이 계정이 지워진 글(author_id null)은 아무도 못 고친다 */
@@ -106,7 +219,7 @@ export function boardDateLabel(iso: string, now: Date = new Date()): string {
 }
 
 /**
- * 고친 글인가 — 올릴 때 트리거가 두 시각을 같은 값으로 적고, 제목 · 본문 · 링크 · 레벨이 바뀔 때만 고친 시각을 올린다.
+ * 고친 글인가 — 올릴 때 트리거가 두 시각을 같은 값으로 적고, 제목 · 본문 · 링크 · 레벨 · 과목 · 과정이 바뀔 때만 고친 시각을 올린다.
  * 파일만 더하거나 빼면 글은 그대로라 `고침` 이 붙지 않는다
  */
 export const isEditedPost = (post: { created_at: string; updated_at: string }) => new Date(post.updated_at).getTime() - new Date(post.created_at).getTime() > 1000;

@@ -114,6 +114,18 @@ describe("옮기기 대화창이 처음 고를 값 (moveDraftOf)", () => {
     expect(notice.kind).toBe("notice");
     expect(notice.notice).toEqual({ levels: [650, 750], subjects: ["rc"] });
   });
+  it("과목 · 과정이 있는 글 (2026-10-21) — 공지 과목 · 회차 자료 과목 · 과정을 미리 고른다, 비운 글 · 모르는 값은 고르지 않는다", () => {
+    expect(moveDraftOf({ levels: [850], subject: "rc", book_set: "A", moved_from: null }, LEVELS)).toEqual({
+      kind: "notice",
+      notice: { levels: [850], subjects: ["rc"] },
+      material: { level: 850, subject: "rc", set: "A", seq: null },
+    });
+    expect(moveDraftOf({ levels: [850], subject: null, book_set: "B", moved_from: null }, LEVELS).notice.subjects).toEqual([]);
+    expect(moveDraftOf({ levels: [850], subject: "xx", book_set: "C", moved_from: null }, LEVELS).material).toEqual({ level: 850, subject: null, set: null, seq: null });
+    // 원래 자리가 있으면 그것이 먼저다
+    const back = moveDraftOf({ levels: [650], subject: "rc", book_set: "A", moved_from: { kind: "material", level: 650, subject: "lc", set: "B", seq: 7 } }, LEVELS);
+    expect(back.material).toEqual({ level: 650, subject: "lc", set: "B", seq: 7 });
+  });
   it("지금 레벨 목록에 없는 레벨은 미리 고르지 않는다", () => {
     expect(moveDraftOf({ levels: [700], moved_from: null }, LEVELS).notice.levels).toEqual([]);
     expect(moveDraftOf({ levels: [650], moved_from: { kind: "material", level: 700, subject: "rc", set: "A", seq: 1 } }, LEVELS).material.level).toBe(650);
@@ -148,7 +160,16 @@ describe("사진 경로 바꾸기 (rewriteNoteImages) — 다른 버킷으로 �
  * 여러 개 한꺼번에 옮기기 (2026-10-21 Alan — "자료를 넘길때 여러개를 한번에 선택해서 넘길수 있도록 하면 좋겠어. 그리고 전체선택도 같이 만들어줘").
  * 옮길 곳을 한 번 고르면 글마다 옮길 곳 · 건너뛸 까닭이 정해진다 — 화면이 그대로 하나씩 옮긴다.
  */
-const post = (id: number, extra: Partial<BulkPost> = {}): BulkPost => ({ id, title: `글 ${id}`, levels: [650], movedFrom: null, materialIssue: null, ...extra });
+const post = (id: number, extra: Partial<BulkPost> = {}): BulkPost => ({
+  id,
+  title: `글 ${id}`,
+  levels: [650],
+  subject: null,
+  set: null,
+  movedFrom: null,
+  materialIssue: null,
+  ...extra,
+});
 
 describe("회차 자료로 못 가는 까닭 (materialMoveIssue) — 하나 옮기기와 같은 판정", () => {
   it("사진 · 빈 글 · 괜찮은 글", () => {
@@ -234,6 +255,19 @@ describe("여러 개 옮기기 대화창이 처음 고를 값 (bulkDraftOf)", ()
     expect(bulkDraftOf([post(1, { levels: [850] }), post(2, { levels: [850] })], 650, LEVELS).material.level).toBe(850);
     expect(bulkDraftOf([post(1, { levels: [750] }), post(2, { levels: [850] })], 650, LEVELS).material.level).toBe(650);
     expect(bulkDraftOf([post(1, { levels: [] })], null, LEVELS).material.level).toBe(650);
+  });
+  it("과목 · 과정 (2026-10-21) — 글의 것이 모두 같으면 그것, 다르면 보던 칸 · 공지는 모두 비운 글이면 RC · LC 둘 다", () => {
+    const cell = { subject: "lc", set: "B" } as const;
+    const same = bulkDraftOf([post(1, { subject: "rc", set: "A" }), post(2, { subject: "rc", set: "A" })], 650, LEVELS, cell);
+    expect(same.notice.subjects).toEqual(["rc"]);
+    expect(same.material).toMatchObject({ subject: "rc", set: "A" });
+    const mixed = bulkDraftOf([post(1, { subject: "rc", set: "A" }), post(2, { subject: "lc", set: "A" })], 650, LEVELS, cell);
+    expect(mixed.notice.subjects).toEqual(["lc"]);
+    expect(mixed.material).toMatchObject({ subject: "lc", set: "A" });
+    const blank = bulkDraftOf([post(1), post(2)], 650, LEVELS, cell);
+    expect(blank.notice.subjects).toEqual([]);
+    expect(blank.material).toMatchObject({ subject: "lc", set: "B" });
+    expect(bulkDraftOf([post(1), post(2)], 650, LEVELS).material).toMatchObject({ subject: null, set: null });
   });
 });
 

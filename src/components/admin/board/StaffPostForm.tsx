@@ -12,6 +12,8 @@ import { saveStaffPost } from "@/app/admin/board/actions";
 import {
   CLASS_MATERIAL_LINKS_MAX,
   fileOrderItems,
+  MATERIAL_SUBJECT_LABEL,
+  MATERIAL_SUBJECTS,
   moveItem,
   parseMaterialLinks,
   sortMaterialFiles,
@@ -19,8 +21,12 @@ import {
   type FileRef,
   type MaterialFile,
   type MaterialLink,
+  type MaterialSubject,
 } from "@/lib/class-materials";
+import { ROUND_SET_LABEL, ROUND_SETS, type RoundSet } from "@/lib/class-rounds";
 import {
+  boardTabFor,
+  boardWhereLabel,
   STAFF_BOARD_BUCKET,
   STAFF_POST_BODY_MAX,
   STAFF_POST_FILES_MAX,
@@ -28,35 +34,54 @@ import {
   STAFF_POST_IMAGE_MAX_BYTES,
   STAFF_POST_IMAGE_MAX_COUNT,
   STAFF_POST_TITLE_MAX,
-  levelsLabel,
   staffPostError,
   staffPostFilePath,
+  staffPostHref,
+  type BoardCell,
 } from "@/lib/staff-board";
 import type { UploadedFile } from "@/lib/upload";
 import { removeUploaded, uploadFile } from "@/lib/upload-client";
 
 /**
  * 직원 게시판 글쓰기 · 고치기 (2026-10-21 Alan — "게시물 올리는건 우리가 기존에 작업했던 워드처럼 쓸 수 있는 기능을 그대로 해줘").
- * 수업자료실 공지(`NoticeForm`)와 **같은 부품**이다 — 범위는 레벨만 (직원 게시판은 강사 · 관리자 · 조교 모두에게 보인다 · RC/LC 칸은 없다):
- *  - **레벨**(2026-10-21 Alan "직원게시판도 학습자료실처럼 650,750,850구분") — 공지 범위와 같은 칩. 비우면 모든 레벨 탭에, 고르면 그 레벨 탭에 선다.
+ * 수업자료실 공지(`NoticeForm`)와 **같은 부품**이다 — 직원 게시판은 강사 · 관리자 · 조교 모두에게 보이고, 고르는 것은 어느 탭 · 칸에 서는가뿐이다:
+ *  - **어디에 보일까요** — 레벨(2026-10-21 Alan "직원게시판도 학습자료실처럼 650,750,850구분" — 여럿 고르기) · 과목 · 과정(같은 날 "A, B과정 표시가 없어. 이렇게해줘" —
+ *    하나씩, `RC · LC 모두` · `A · B 모두` 가 비운 것). 공지 범위와 같은 칩 · 같은 말이다. 처음에는 보던 탭 · 칸이 골라져 있고(새 글),
+ *    아래 한 줄이 어느 탭의 어느 칸에 서는지 말한다(`boardWhereLabel`).
  *  - 본문은 `NoteEditor` — 굵게 · 밑줄 · 색 · 크기 · 줄 정렬 · 표 · 사진(크기 조절) · 워드 · 네이버 글 붙여 넣기. 사진은 `staff-board/images/` 에 바로 올라간다.
  *  - 첨부 파일은 여러 개를 한 번에 고르고(20개 · 하나에 50MB) 올려 둔 파일과 한 줄로 두고 위 · 아래로 순서를 바꾼다(`FileOrderRows`).
  *  - 링크는 주소 + 이름(선택) 줄(`MaterialLinkEditor` — 유튜브 영상은 글 화면에서 바로 재생).
- * 파일은 저장을 누를 때 하나씩 올리고, 저장이 실패하면 올린 것을 지운다. 저장하면 그 글 화면으로 간다.
+ * 파일은 저장을 누를 때 하나씩 올리고, 저장이 실패하면 올린 것을 지운다. 저장하면 그 글 화면으로 간다 — 그 글이 서는 탭 · 칸을 붙여서(`boardTabFor`)
+ * `목록으로` 가 방금 쓴 글이 보이는 곳으로 간다 (보던 칸에 서면 그 칸 그대로).
  * 보내기는 `onSubmit` 에서 직접 한다 — `<form action>` 이면 React 19 가 끝난 뒤 폼을 초기화해 고른 파일 · 편집기 값이 처음 모양으로 돌아간다.
  */
 export function StaffPostForm({
   post,
   levels,
   defaultLevels,
+  defaultCell,
+  from,
   imageUrls,
   back,
 }: {
-  post?: { id: number; title: string; body: string; levels: number[]; files: MaterialFile[]; links: MaterialLink[] } | null;
-  /** 레벨 목록 (lc_levels) — 비면 레벨 칸을 그리지 않는다 (모든 레벨 글로 저장된다) */
+  post?: {
+    id: number;
+    title: string;
+    body: string;
+    levels: number[];
+    subject: MaterialSubject | null;
+    set: RoundSet | null;
+    files: MaterialFile[];
+    links: MaterialLink[];
+  } | null;
+  /** 레벨 목록 (lc_levels) — 비면 레벨 줄을 그리지 않는다 (모든 레벨 글로 저장된다) */
   levels: number[];
   /** 새 글이 처음 고를 레벨 — 보던 탭의 레벨 */
   defaultLevels: number[];
+  /** 새 글이 처음 고를 과목 · 과정 — 보던 칸 (null = 모든 과목 · 모든 과정) */
+  defaultCell: { subject: MaterialSubject | null; set: RoundSet | null };
+  /** 이 화면을 연 목록의 탭 · 칸 — 저장한 뒤 그 글이 거기 서면 그대로 돌아간다 */
+  from: { level: number | null; cell: BoardCell | null };
   imageUrls: Record<string, string>;
   /** `목록으로` · 취소가 가는 곳 — 새 글은 게시판, 고칠 때는 그 글 */
   back: string;
@@ -65,6 +90,8 @@ export function StaffPostForm({
   const body = useRef<HTMLTextAreaElement>(null);
   const [title, setTitle] = useState(post?.title ?? "");
   const [picked, setPicked] = useState<number[]>(post ? post.levels : defaultLevels);
+  const [subject, setSubject] = useState<MaterialSubject | null>(post ? post.subject : defaultCell.subject);
+  const [set, setSet] = useState<RoundSet | null>(post ? post.set : defaultCell.set);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
@@ -98,7 +125,7 @@ export function StaffPostForm({
   async function save(e: React.FormEvent) {
     e.preventDefault();
     const text = body.current?.value ?? "";
-    const err = staffPostError({ title, body: text, levels: picked }, levels);
+    const err = staffPostError({ title, body: text, levels: picked, subject, book_set: set }, levels);
     if (err) return setError(err);
     const parsed = parseMaterialLinks(linkRows);
     if (!parsed.ok) {
@@ -122,6 +149,8 @@ export function StaffPostForm({
         title,
         body: text,
         levels: picked,
+        subject,
+        bookSet: set,
         files: uploaded,
         removeFileIds: [...removed],
         fileOrder: fileOrderItems(order, removed, pathByKey),
@@ -132,7 +161,7 @@ export function StaffPostForm({
         setError(res.error ?? "저장하지 못했어요.");
         return;
       }
-      router.push(`/admin/board/${res.id}`);
+      router.push(staffPostHref(res.id, boardTabFor({ levels: picked, subject, set }, from)));
       router.refresh();
     } catch (err) {
       if (uploaded.length) await removeUploaded(STAFF_BOARD_BUCKET, uploaded.map((u) => u.path));
@@ -160,10 +189,11 @@ export function StaffPostForm({
         />
       </div>
 
-      {levels.length > 0 && (
-        <fieldset className="space-y-2">
-          <legend className="mb-1.5 text-sm font-bold text-ink">레벨</legend>
+      <fieldset className="space-y-2">
+        <legend className="mb-1.5 text-sm font-bold text-ink">어디에 보일까요</legend>
+        {levels.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
+            <span className="w-10 shrink-0 text-xs font-bold text-mist">레벨</span>
             <ChoiceChip on={picked.length === 0} onClick={() => setPicked([])} disabled={busy}>
               모든 레벨
             </ChoiceChip>
@@ -178,11 +208,31 @@ export function StaffPostForm({
               </ChoiceChip>
             ))}
           </div>
-          <p className="text-xs text-mist">
-            {picked.length === 0 ? `레벨 탭 모두(${levels.join(" · ")})에 보여요.` : `${levelsLabel(picked)} 탭에 보여요.`}
-          </p>
-        </fieldset>
-      )}
+        )}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="w-10 shrink-0 text-xs font-bold text-mist">과목</span>
+          <ChoiceChip on={subject === null} onClick={() => setSubject(null)} disabled={busy}>
+            RC · LC 모두
+          </ChoiceChip>
+          {MATERIAL_SUBJECTS.map((s) => (
+            <ChoiceChip key={s} on={subject === s} onClick={() => setSubject(s)} disabled={busy}>
+              {MATERIAL_SUBJECT_LABEL[s]}만
+            </ChoiceChip>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="w-10 shrink-0 text-xs font-bold text-mist">과정</span>
+          <ChoiceChip on={set === null} onClick={() => setSet(null)} disabled={busy}>
+            A · B 모두
+          </ChoiceChip>
+          {ROUND_SETS.map((b) => (
+            <ChoiceChip key={b} on={set === b} onClick={() => setSet(b)} disabled={busy}>
+              {ROUND_SET_LABEL[b]}만
+            </ChoiceChip>
+          ))}
+        </div>
+        <p className="rounded-xl bg-brand-50 px-3 py-2 text-sm text-ink-soft">{boardWhereLabel(picked, levels, subject, set)}</p>
+      </fieldset>
 
       <div>
         <p className="mb-1.5 text-sm font-bold text-ink">본문</p>

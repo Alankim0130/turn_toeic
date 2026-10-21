@@ -13,13 +13,17 @@ import { parseDoc, trimDoc } from "@/lib/note-format";
 import { signNoteImages } from "@/lib/note-images";
 import { materialMoveBlock, moveDraftOf, movedFromLabel, movedFromOf } from "@/lib/board-move";
 import {
+  boardListHref,
   canDeleteStaffPost,
   canEditStaffPost,
+  cellOf,
+  cellTagLabel,
   isEditedPost,
   levelsLabel,
   normalizeLevels,
   STAFF_BOARD_BUCKET,
   STAFF_BOARD_TESTING_NOTE,
+  staffPostHref,
 } from "@/lib/staff-board";
 import { formatDate } from "@/lib/utils";
 
@@ -35,16 +39,19 @@ const when = (iso: string) => formatDate(iso, { year: "numeric", month: "long", 
  * 사진 주소는 보는 사람의 세션으로 만든다 (저장소 정책 `staff-board: 직원 조회`). 첨부 파일은 `/files/board/{파일 id}`.
  * `고치기` 는 글쓴이에게만, `글 지우기` 는 글쓴이와 강사 · 관리자에게만 보인다 — DB 정책과 같은 규칙(`canEditStaffPost` · `canDeleteStaffPost`).
  * `수업자료실로 옮기기` 는 강사 · 관리자에게만 (2026-10-21 Alan — 수업자료실은 강사 · 관리자 화면이다. 서버 액션이 `requireStaff` 로 다시 막는다).
- * 레벨(`650` · `모든 레벨`)과 수업자료실에서 옮겨 온 글이면 원래 자리를 제목 아래에 적는다. 보던 레벨 탭(`?level=`)으로 돌아간다.
+ * 레벨(`650` · `모든 레벨`) · 과목 · 과정(`RC A과정`, 비운 글은 칩 없음)과 수업자료실에서 옮겨 온 글이면 원래 자리를 제목 아래에 적는다.
+ * 보던 레벨 탭 · 칸(`?level=&cell=`)으로 돌아간다.
  */
-export default async function StaffPostPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ level?: string }> }) {
+export default async function StaffPostPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ level?: string; cell?: string }> }) {
   // 레이아웃이 조교를 통과시키므로 화면마다 막는다 — 이 화면은 조교에게 열려 있다
   const { user, profile } = await requireCrew();
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) notFound();
-  // 보던 레벨 탭 — 숫자만 들고 다닌다 (목록이 모르는 값이면 첫 레벨로 간다 — `boardLevel`)
-  const tab = Number((await searchParams).level);
-  const back = Number.isInteger(tab) && tab > 0 ? `/admin/board?level=${tab}` : "/admin/board";
+  // 보던 레벨 탭 · 칸 — 꼴이 맞는 것만 들고 다닌다 (목록이 모르는 레벨이면 첫 레벨로 간다 — `boardLevel`)
+  const sp = await searchParams;
+  const tabLevel = Number(sp.level);
+  const tab = { level: Number.isInteger(tabLevel) && tabLevel > 0 ? tabLevel : null, cell: cellOf(sp.cell) };
+  const back = boardListHref(tab);
   if (profile.test_role) {
     return <p className="card p-5 text-sm text-slate">{STAFF_BOARD_TESTING_NOTE}</p>;
   }
@@ -52,7 +59,7 @@ export default async function StaffPostPage({ params, searchParams }: { params: 
   const supabase = await createClient();
   const { data: post } = await supabase
     .from("staff_posts")
-    .select("id, title, body, links, levels, moved_from, author_id, author_name, created_at, updated_at, staff_post_files(id, file_name, file_size, content_type, sort_order)")
+    .select("id, title, body, links, levels, subject, book_set, moved_from, author_id, author_name, created_at, updated_at, staff_post_files(id, file_name, file_size, content_type, sort_order)")
     .eq("id", id)
     .maybeSingle();
   if (!post) notFound();
@@ -69,6 +76,7 @@ export default async function StaffPostPage({ params, searchParams }: { params: 
   const mine = canEditStaffPost(post, user.id);
   const canDelete = canDeleteStaffPost(post, user.id, staff);
   const movedFrom = movedFromOf(post.moved_from);
+  const cellTag = cellTagLabel(post.subject, post.book_set);
 
   return (
     <article className="space-y-4">
@@ -82,6 +90,7 @@ export default async function StaffPostPage({ params, searchParams }: { params: 
         <h1 className="text-xl font-black leading-snug text-ink [overflow-wrap:anywhere] sm:text-2xl">{post.title}</h1>
         <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-mist">
           <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-bold text-brand-700">{levelsLabel(normalizeLevels(post.levels))}</span>
+          {cellTag && <span className="rounded-full border border-line px-2 py-0.5 text-xs font-bold text-slate">{cellTag}</span>}
           <span>
             <span className="font-bold text-ink-soft">{post.author_name || "직원"}</span> · {when(post.created_at)}
             {isEditedPost(post) && <> · {when(post.updated_at)} 고침</>}
@@ -111,7 +120,7 @@ export default async function StaffPostPage({ params, searchParams }: { params: 
           목록으로
         </Link>
         {mine && (
-          <Link href={`/admin/board/${post.id}/edit`} className="btn-primary">
+          <Link href={staffPostHref(post.id, tab, "edit")} className="btn-primary">
             고치기
           </Link>
         )}
@@ -119,7 +128,7 @@ export default async function StaffPostPage({ params, searchParams }: { params: 
           <MoveToClassButton
             id={post.id}
             levels={levels}
-            draft={moveDraftOf({ levels: normalizeLevels(post.levels), moved_from: post.moved_from }, levels)}
+            draft={moveDraftOf({ levels: normalizeLevels(post.levels), subject: post.subject, book_set: post.book_set, moved_from: post.moved_from }, levels)}
             materialBlock={materialMoveBlock({ body: post.body, files: files.length, links: links.length })}
           />
         )}

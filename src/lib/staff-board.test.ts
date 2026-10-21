@@ -4,17 +4,31 @@ import { describe, expect, it } from "vitest";
 import { isNoteImagePath } from "./note-images";
 import { isSafeObjectPath, MB } from "./upload";
 import {
+  BOARD_CELLS,
+  boardCell,
   boardDateLabel,
   boardLevel,
+  boardListHref,
   boardPage,
   boardPageCount,
+  boardPlaceLabel,
+  boardTabFor,
+  boardWhereLabel,
   canDeleteStaffPost,
   canEditStaffPost,
+  cellLabel,
+  cellOf,
+  cellTagLabel,
+  cellValue,
   isEditedPost,
   levelFilter,
   levelsLabel,
   normalizeLevels,
+  normalizeSet,
+  normalizeSubject,
+  postInCell,
   postInLevel,
+  setFilter,
   STAFF_BOARD_BUCKET,
   STAFF_BOARD_PAGE_SIZE,
   STAFF_POST_BODY_MAX,
@@ -27,6 +41,8 @@ import {
   staffPostAttachLabel,
   staffPostError,
   staffPostFilePath,
+  staffPostHref,
+  subjectFilter,
 } from "./staff-board";
 
 /**
@@ -44,6 +60,7 @@ const sqlOf = (f: string) =>
 const flat = (s: string) => s.replace(/\s+/g, " ").trim();
 const BOARD_SQL = flat(sqlOf("20261021100000_staff_board.sql"));
 const LEVELS_SQL = flat(sqlOf("20261021110000_staff_board_levels.sql"));
+const CELLS_SQL = flat(sqlOf("20261021120000_staff_board_cells.sql"));
 /** 마이그레이션을 순서대로 읽어 마지막에 남는 문장 — 같은 꼴의 문장이 뒤에 또 오면 그것이 산다 */
 const lastOf = (re: RegExp) => FILES.flatMap((f) => [...flat(sqlOf(f)).matchAll(re)].map((m) => m[0])).at(-1);
 
@@ -117,6 +134,101 @@ describe("레벨 — 650 · 750 · 850 탭 (2026-10-21 Alan \"직원게시판도
     expect(boardLevel("700", levels)).toBe(650);
     expect(boardLevel(undefined, levels)).toBe(650);
     expect(boardLevel("650", [])).toBeNull();
+  });
+});
+
+describe("과목 · 과정 — RC A과정 · RC B과정 · LC A과정 · LC B과정 칸 (2026-10-21 Alan \"A, B과정 표시가 없어. 이렇게해줘\")", () => {
+  it("칸 넷은 수업자료실 둘째 줄과 같은 순서 · 같은 이름 · 같은 주소 꼴", () => {
+    expect(BOARD_CELLS.map(cellLabel)).toEqual(["RC A과정", "RC B과정", "LC A과정", "LC B과정"]);
+    expect(BOARD_CELLS.map(cellValue)).toEqual(["rc-A", "rc-B", "lc-A", "lc-B"]);
+  });
+  it("칸 하나에는 그 칸 글과 과목 · 과정을 비운 글이 선다", () => {
+    const rcA = { subject: "rc", set: "A" } as const;
+    expect(postInCell({ subject: "rc", book_set: "A" }, rcA)).toBe(true);
+    expect(postInCell({ subject: null, book_set: null }, rcA)).toBe(true);
+    expect(postInCell({ subject: "rc", book_set: null }, rcA)).toBe(true);
+    expect(postInCell({ subject: null, book_set: "A" }, rcA)).toBe(true);
+    expect(postInCell({ subject: "lc", book_set: "A" }, rcA)).toBe(false);
+    expect(postInCell({ subject: "rc", book_set: "B" }, rcA)).toBe(false);
+  });
+  it("DB 조회의 거르기가 같은 뜻이다 — 비운 값 · 그 값", () => {
+    expect(subjectFilter("lc")).toBe("subject.is.null,subject.eq.lc");
+    expect(setFilter("B")).toBe("book_set.is.null,book_set.eq.B");
+  });
+  it("주소의 ?cell= — 과목을 모르면 null, 과정을 모르면 A과정 (수업자료실과 같다)", () => {
+    expect(cellOf("lc-B")).toEqual({ subject: "lc", set: "B" });
+    expect(cellOf("rc")).toEqual({ subject: "rc", set: "A" });
+    expect(cellOf("rc-Z")).toEqual({ subject: "rc", set: "A" });
+    expect(cellOf("xx-A")).toBeNull();
+    expect(cellOf(undefined)).toBeNull();
+    expect(cellOf(["lc-A", "rc-B"])).toEqual({ subject: "lc", set: "A" });
+  });
+  it("처음 칸 — 주소가 없으면 강사는 자기 과목의 A과정(말해 준다), 관리자 · 조교는 RC A과정", () => {
+    expect(boardCell(undefined, "lc")).toEqual({ subject: "lc", set: "A", defaulted: true });
+    expect(boardCell(undefined, null)).toEqual({ subject: "rc", set: "A", defaulted: false });
+    expect(boardCell("rc-B", "lc")).toEqual({ subject: "rc", set: "B", defaulted: false });
+    expect(boardCell("엉뚱", "lc")).toEqual({ subject: "lc", set: "A", defaulted: false });
+  });
+  it("저장할 값 — 아는 값만, 그 밖은 비운다(둘 다)", () => {
+    expect(normalizeSubject("rc")).toBe("rc");
+    expect(normalizeSubject("")).toBeNull();
+    expect(normalizeSubject("RC")).toBeNull();
+    expect(normalizeSet("B")).toBe("B");
+    expect(normalizeSet("b")).toBeNull();
+    expect(normalizeSet(null)).toBeNull();
+  });
+  it("글 검사 — 비우거나 아는 값만 (DB check 와 같다)", () => {
+    const ok = { title: "제목", body: "" };
+    expect(staffPostError({ ...ok, subject: "rc", book_set: "A" })).toBeNull();
+    expect(staffPostError({ ...ok, subject: null, book_set: null })).toBeNull();
+    expect(staffPostError({ ...ok, subject: "xx" })).toBe("과목을 다시 골라 주세요.");
+    expect(staffPostError({ ...ok, book_set: "C" })).toBe("과정을 다시 골라 주세요.");
+  });
+  it("이름표 — 목록 · 글 화면의 칩, 옮기기 안내의 한 줄", () => {
+    expect(cellTagLabel("rc", "A")).toBe("RC A과정");
+    expect(cellTagLabel("lc", null)).toBe("LC");
+    expect(cellTagLabel(null, "B")).toBe("B과정");
+    expect(cellTagLabel(null, null)).toBe("");
+    expect(boardPlaceLabel([850], "rc", "A")).toBe("850 · RC A과정");
+    expect(boardPlaceLabel([], null, null)).toBe("모든 레벨");
+    expect(boardPlaceLabel([650, 750], "lc", null)).toBe("650 · 750 · LC");
+  });
+  it("글쓰기 폼의 한 줄 — 어느 탭의 어느 칸에 보이나", () => {
+    expect(boardWhereLabel([650], [650, 750, 850], "rc", "A")).toBe("650 탭의 RC A과정 칸에 보여요.");
+    expect(boardWhereLabel([650], [650, 750, 850], "rc", null)).toBe("650 탭의 RC A과정 · RC B과정 칸에 보여요.");
+    expect(boardWhereLabel([], [650, 750, 850], null, "B")).toBe("레벨 탭 모두(650 · 750 · 850)의 RC B과정 · LC B과정 칸에 보여요.");
+    expect(boardWhereLabel([], [650, 750, 850], null, null)).toBe("레벨 탭 모두(650 · 750 · 850)의 과목 · 과정 칸 모두에 보여요.");
+  });
+  it("주소 — 목록 · 글 화면이 보던 탭 · 칸 · 쪽을 들고 다닌다", () => {
+    const tab = { level: 850, cell: { subject: "lc", set: "B" } } as const;
+    expect(boardListHref(tab)).toBe("/admin/board?level=850&cell=lc-B");
+    expect(boardListHref(tab, 3)).toBe("/admin/board?level=850&cell=lc-B&page=3");
+    expect(boardListHref({ level: null, cell: null })).toBe("/admin/board");
+    expect(staffPostHref(7, tab)).toBe("/admin/board/7?level=850&cell=lc-B");
+    expect(staffPostHref(7, { level: null })).toBe("/admin/board/7");
+    expect(staffPostHref(7, tab, "edit")).toBe("/admin/board/7/edit?level=850&cell=lc-B");
+    expect(staffPostHref(7, { level: null }, "edit")).toBe("/admin/board/7/edit");
+  });
+  it("저장한 뒤 — 그 글이 서는 탭 · 칸 (왔던 곳에 서면 그대로, 아니면 글의 첫 레벨 · 글의 과목 · 과정)", () => {
+    const from = { level: 750, cell: { subject: "lc", set: "B" } } as const;
+    // 왔던 칸에 선다 — 그대로
+    expect(boardTabFor({ levels: [750], subject: "lc", set: "B" }, from)).toEqual(from);
+    expect(boardTabFor({ levels: [650, 750], subject: null, set: "B" }, from)).toEqual(from);
+    expect(boardTabFor({ levels: [], subject: null, set: null }, from)).toEqual(from);
+    // 레벨이 다르면 글의 첫 레벨, 과목이 다르면 글의 과목 (과정은 비웠으니 왔던 값)
+    expect(boardTabFor({ levels: [850, 650], subject: "rc", set: null }, from)).toEqual({ level: 850, cell: { subject: "rc", set: "B" } });
+    // 왔던 탭이 없으면(고치기 화면을 주소로 바로 열었을 때) — 글의 첫 레벨 · 과목 · 과정, 비운 축은 RC · A과정 (어느 칸에나 선다)
+    expect(boardTabFor({ levels: [750], subject: null, set: "B" }, { level: null, cell: null })).toEqual({ level: 750, cell: { subject: "rc", set: "B" } });
+    expect(boardTabFor({ levels: [], subject: null, set: null }, { level: null })).toEqual({ level: null, cell: null });
+    // 고른 대로 저장한 글은 늘 그 탭 · 칸에 선다
+    for (const levels of [[], [650], [750, 850]] as const)
+      for (const subject of ["rc", "lc", null] as const)
+        for (const set of ["A", "B", null] as const)
+          for (const f of [from, { level: null, cell: null }, { level: 650, cell: { subject: "rc", set: "A" } }] as const) {
+            const tab = boardTabFor({ levels, subject, set }, f);
+            if (tab.level !== null) expect(levels.length === 0 || (levels as readonly number[]).includes(tab.level)).toBe(true);
+            if (tab.cell) expect(postInCell({ subject, book_set: set }, tab.cell)).toBe(true);
+          }
   });
 });
 
@@ -248,19 +360,40 @@ describe("DB 정책 — 마이그레이션을 순서대로 재생한 마지막 �
     expect(LEVELS_SQL).toContain("add column if not exists moved_from jsonb");
     expect(LEVELS_SQL).toContain("check (cardinality(levels) <= 20 and array_position(levels, null) is null)");
     expect(LEVELS_SQL).toContain("moved_from ->> 'kind' in ('notice', 'material')");
-    // 마지막에 남는 칸 단위 grant — 글쓴이 · 시각 칸은 여전히 없다
-    expect(lastOf(/grant insert \([^)]*\), update \([^)]*\) on public\.staff_posts to authenticated;/g)).toBe(
+    expect(LEVELS_SQL).toContain(
       "grant insert (title, body, links, levels, moved_from), update (title, body, links, levels) on public.staff_posts to authenticated;",
     );
   });
 
-  it("고친 시각은 레벨이 바뀔 때도 오르고, 글쓴이 · 시각은 여전히 트리거가 채운다 (마지막 함수 정의)", () => {
+  it("과목 · 과정 (20261021120000) — 비우면 둘 다 · 아는 값만 · 넣을 때 · 고칠 때 둘 다 (옮겨 온 자리는 여전히 넣을 때만)", () => {
+    expect(CELLS_SQL).toContain("add column if not exists subject text;");
+    expect(CELLS_SQL).toContain("add column if not exists book_set text;");
+    expect(CELLS_SQL).toContain("check (subject is null or subject in ('rc', 'lc'))");
+    expect(CELLS_SQL).toContain("check (book_set is null or book_set in ('A', 'B'))");
+    // 마지막에 남는 칸 단위 grant — 글쓴이 · 시각 칸은 여전히 없다
+    expect(lastOf(/grant insert \([^)]*\), update \([^)]*\) on public\.staff_posts to authenticated;/g)).toBe(
+      "grant insert (title, body, links, levels, moved_from, subject, book_set), update (title, body, links, levels, subject, book_set) on public.staff_posts to authenticated;",
+    );
+  });
+
+  it("옮겨 온 글은 원래 자리로 채운다 — 빈 칸만 · 고친 시각 트리거를 바꾸기 전에 (지금 트리거는 두 칸을 보지 않아 '고침' 이 붙지 않는다)", () => {
+    const fill = CELLS_SQL.indexOf("update public.staff_posts set subject = moved_from ->> 'subject'");
+    expect(fill).toBeGreaterThan(0);
+    expect(CELLS_SQL).toContain("update public.staff_posts set book_set = moved_from ->> 'set' where book_set is null and moved_from ->> 'kind' = 'material'");
+    expect(CELLS_SQL).toContain("jsonb_array_length(moved_from -> 'subjects') = 1");
+    expect(fill).toBeLessThan(CELLS_SQL.indexOf("create or replace function private.tg_staff_posts_stamp()"));
+  });
+
+  it("고친 시각은 레벨 · 과목 · 과정이 바뀔 때도 오르고, 글쓴이 · 시각은 여전히 트리거가 채운다 (마지막 함수 정의)", () => {
     const fn = lastOf(/create or replace function private\.tg_staff_posts_stamp\(\).*?\$\$;/g) ?? "";
     expect(fn).toContain("new.author_id := auth.uid();");
     expect(fn).toContain("new.author_name := left(private.my_profile_name(), 40);");
-    expect(fn).toContain("or new.levels is distinct from old.levels then new.updated_at := now();");
+    expect(fn).toContain(
+      "or new.levels is distinct from old.levels or new.subject is distinct from old.subject or new.book_set is distinct from old.book_set then new.updated_at := now();",
+    );
     expect(fn).not.toContain("moved_from is distinct");
     expect(LEVELS_SQL).toContain("revoke execute on function private.tg_staff_posts_stamp() from public, anon, authenticated;");
+    expect(CELLS_SQL).toContain("revoke execute on function private.tg_staff_posts_stamp() from public, anon, authenticated;");
   });
 
   it("두 표 모두 RLS 가 켜져 있다", () => {
@@ -310,6 +443,18 @@ describe("앱 — 화면 · 액션 · 파일 주소", () => {
     // 직원 글을 넣을 때 글쓴이 칸은 보내지 않는다 (트리거가 옮긴 사람으로 적는다)
     const insert = src.slice(src.indexOf('.from("staff_posts")\n    .insert('));
     expect(insert.slice(0, insert.indexOf(")"))).not.toMatch(/author_/);
+  });
+
+  it("목록은 레벨 탭 아래 칸 줄(RC A과정 …)이 있고, 글 · 숫자 모두 레벨 · 과목 · 과정으로 거른다 (2026-10-21)", () => {
+    const src = read("src/app/admin/board/page.tsx");
+    expect(src).toContain('paramKey="cell"');
+    expect(src).toContain("tabs={BOARD_CELLS.map(");
+    expect(src).toContain("list = list.or(subjectFilter(cell.subject)).or(setFilter(cell.set));");
+    expect(src).toContain("return (await q.or(subjectFilter(c.subject)).or(setFilter(c.set))).count ?? 0;");
+    expect(src).toContain("Promise.all(BOARD_CELLS.map(async (c) => [cellValue(c), await countIn(level, c)] as const))");
+    // 저장 · 옮기기도 두 칸을 쓴다
+    expect(read("src/app/admin/board/actions.ts")).toContain("...cell");
+    expect(read("src/app/admin/board/move-actions.ts")).toContain("subject: post.subject, book_set: post.book_set, moved_from: post.moved_from");
   });
 
   it("글 화면의 '수업자료실로 옮기기' 는 강사 · 관리자에게만 그린다", () => {

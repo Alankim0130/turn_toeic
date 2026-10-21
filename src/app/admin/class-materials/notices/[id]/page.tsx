@@ -9,7 +9,7 @@ import { MoveToBoardButton } from "@/components/admin/board/MoveToBoardButton";
 import { CLASS_NOTICE_BUCKET, scopeOf } from "@/lib/class-notices";
 import { materialLinks, sortMaterialFiles } from "@/lib/class-materials";
 import { signNoteImages } from "@/lib/note-images";
-import { levelsLabel } from "@/lib/staff-board";
+import { boardPlaceLabel } from "@/lib/staff-board";
 import { formatDate } from "@/lib/utils";
 import { backTo } from "../_back";
 
@@ -59,8 +59,14 @@ export default async function EditClassNoticePage({
           {notice.published ? "학생 수업자료실 맨 위에 보이는 중이에요. 내리면 글·사진·파일은 그대로 두고 학생에게만 안 보여요." : "내려 둔 공지예요 — 학생에게 보이지 않아요. 다시 올리면 그대로 보여요."}
         </span>
         <span className="ml-auto flex flex-wrap items-start justify-end gap-2">
-          {/* 직원 게시판으로 옮기기 (2026-10-21 Alan) — 학생 화면에서 바로 빠지고 직원 게시판의 그 레벨 글이 된다 */}
-          <MoveToBoardButton kind="notice" id={notice.id} title={notice.title} levels={levelsLabel(scope.levels.filter((l) => levels.includes(l)))} variant="bar" />
+          {/* 직원 게시판으로 옮기기 (2026-10-21 Alan) — 학생 화면에서 바로 빠지고 직원 게시판의 그 레벨(과목이 하나면 그 과목) 글이 된다 */}
+          <MoveToBoardButton
+            kind="notice"
+            id={notice.id}
+            title={notice.title}
+            place={boardPlaceLabel(scope.levels.filter((l) => levels.includes(l)), scope.subjects.length === 1 ? scope.subjects[0] : null, null)}
+            variant="bar"
+          />
           <NoticePublishToggle id={notice.id} published={notice.published} title={notice.title} />
         </span>
       </div>

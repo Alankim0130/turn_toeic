@@ -20,7 +20,7 @@ import { NoticePublishToggle } from "@/components/admin/class-notices/NoticePubl
 import { ClassBulkMove, type ClassBulkItem } from "@/components/admin/board/ClassBulkMove";
 import { BulkCheck, BulkSelectAll } from "@/components/admin/board/BulkSelect";
 import { noticeAttachLabel, noticeCovers, partitionNotices, scopeLabel, scopeOf } from "@/lib/class-notices";
-import { levelsLabel, normalizeLevels } from "@/lib/staff-board";
+import { boardListHref, boardPlaceLabel, normalizeLevels } from "@/lib/staff-board";
 import { pickTerm, termLabel, TERM_COLUMNS } from "../_lib/queries";
 
 export const metadata: Metadata = { title: "수업자료실", robots: { index: false } };
@@ -143,22 +143,25 @@ export default async function ClassMaterialsAdminPage({ searchParams }: { search
   const keep = { level: String(level), cell: cellValue(subject, set), term: termKey };
 
   // 여러 개 옮기기에서 고를 수 있는 것 — 화면에 선 순서(공지 → 내린 공지 → 과정 회차 미정 → 회차)대로 옮긴다
-  const boardLevelOf = (l: number) => (levels.includes(l) ? String(l) : "모든 레벨");
-  const noticeItem = (n: (typeof notices)[number], prefix: string): ClassBulkItem => ({
-    key: `notice:${n.id}`,
-    kind: "notice",
-    id: n.id,
-    title: n.title,
-    place: `${prefix} · ${n.scope}`,
-    boardLevels: levelsLabel(normalizeLevels(n.levels).filter((l) => levels.includes(l))),
-  });
+  // 직원 게시판에서 설 곳 — 옮기기 서버 액션과 같은 규칙 (공지는 레벨 · 과목이 하나면 그 과목, 자료는 레벨 · 과목 · 과정)
+  const noticeItem = (n: (typeof notices)[number], prefix: string): ClassBulkItem => {
+    const subjects = (n.subjects ?? []).filter(isMaterialSubject);
+    return {
+      key: `notice:${n.id}`,
+      kind: "notice",
+      id: n.id,
+      title: n.title,
+      place: `${prefix} · ${n.scope}`,
+      boardPlace: boardPlaceLabel(normalizeLevels(n.levels).filter((l) => levels.includes(l)), subjects.length === 1 ? subjects[0] : null, null),
+    };
+  };
   const materialItem = (m: (typeof list)[number], place: string): ClassBulkItem => ({
     key: `material:${m.id}`,
     kind: "material",
     id: m.id,
     title: m.title,
     place,
-    boardLevels: boardLevelOf(m.level),
+    boardPlace: boardPlaceLabel(levels.includes(m.level) ? [m.level] : [], m.subject, m.book_set),
   });
   const bulkItems: ClassBulkItem[] = testing
     ? []
@@ -326,7 +329,7 @@ export default async function ClassMaterialsAdminPage({ searchParams }: { search
         {testing ? (
           region
         ) : (
-          <ClassBulkMove items={bulkItems} boardHref={`/admin/board?level=${level}`}>
+          <ClassBulkMove items={bulkItems} boardHref={boardListHref({ level, cell: { subject, set } })}>
             {region}
           </ClassBulkMove>
         )}

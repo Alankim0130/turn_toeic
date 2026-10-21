@@ -13,11 +13,23 @@ import {
   noteTooLong,
   sortMaterialFiles,
   type MaterialLink,
+  type MaterialSubject,
 } from "@/lib/class-materials";
+import type { RoundSet } from "@/lib/class-rounds";
 import { CLASS_NOTICE_BUCKET, CLASS_NOTICE_FILE_BUCKET, CLASS_NOTICE_IMAGE_FOLDER, noticeError, noticeFilePath } from "@/lib/class-notices";
 import { noteImagePaths, rewriteNoteImages } from "@/lib/note-format";
 import { isNoteImagePath } from "@/lib/note-images";
-import { normalizeLevels, STAFF_BOARD_BUCKET, STAFF_POST_IMAGE_FOLDER, staffPostError, staffPostFilePath } from "@/lib/staff-board";
+import {
+  boardTabFor,
+  normalizeLevels,
+  normalizeSet,
+  normalizeSubject,
+  STAFF_BOARD_BUCKET,
+  STAFF_POST_IMAGE_FOLDER,
+  staffPostError,
+  staffPostFilePath,
+  staffPostHref,
+} from "@/lib/staff-board";
 import { objectName } from "@/lib/upload";
 import { nextMaterialOrder } from "@/app/admin/class-materials/_lib/next-order";
 
@@ -245,14 +257,14 @@ export async function moveStaffPostToClass(input: { id: number; target: unknown 
  */
 async function insertBoardPost(
   supabase: SupabaseClient,
-  post: { title: string; body: string; links: MaterialLink[]; levels: number[]; moved_from: MovedFrom },
+  post: { title: string; body: string; links: MaterialLink[]; levels: number[]; subject: MaterialSubject | null; book_set: RoundSet | null; moved_from: MovedFrom },
   files: readonly FileLike[],
   fileSteps: readonly CopyStep[],
   copied: Copied[],
 ): Promise<{ id: number; undo: () => Promise<void> } | { fail: MoveResult }> {
   const { data, error } = await supabase
     .from("staff_posts")
-    .insert({ title: post.title, body: post.body, links: post.links, levels: post.levels, moved_from: post.moved_from })
+    .insert({ title: post.title, body: post.body, links: post.links, levels: post.levels, subject: post.subject, book_set: post.book_set, moved_from: post.moved_from })
     .select("id")
     .single();
   if (error || !data) {
@@ -276,7 +288,8 @@ async function insertBoardPost(
 const SOURCE_GONE = "수업자료실에서 빼지 못해 옮기지 않았어요. 이미 지워졌거나 옮겨졌을 수 있어요 — 새로고침해 주세요.";
 
 /**
- * 수업자료실 공지 → 직원 게시판. 학생 화면에서 바로 빠진다. 레벨은 공지 범위의 레벨 그대로(RC/LC 는 직원 게시판에 없다 — 원래 자리에 적어 둔다).
+ * 수업자료실 공지 → 직원 게시판. 학생 화면에서 바로 빠진다. 레벨은 공지 범위의 레벨 그대로, 과목은 공지가 한 과목(RC · LC)이면 그 과목이고 과정은 비운다
+ * (공지는 과정을 가리지 않는다 — 2026-10-21 직원 게시판 과목 · 과정). 원래 범위는 원래 자리에 적어 둔다.
  * 사진은 직원 게시판 images/ 로, 첨부 파일은 files/ 로 새 이름으로 복사한다
  */
 export async function moveClassNoticeToBoard(id: number, opts?: MoveOptions): Promise<MoveResult> {
@@ -308,6 +321,7 @@ export async function moveClassNoticeToBoard(id: number, opts?: MoveOptions): Pr
     return { ok: false, error: COPY_FAIL };
   }
   const subjects = (notice.subjects ?? []).filter((s): s is "rc" | "lc" => s === "rc" || s === "lc");
+  const subject = subjects.length === 1 ? subjects[0] : null;
   const made = await insertBoardPost(
     supabase,
     {
@@ -315,6 +329,8 @@ export async function moveClassNoticeToBoard(id: number, opts?: MoveOptions): Pr
       body: rewriteNoteImages(notice.body, pathMap(imageSteps)),
       links: materialLinks(notice.links),
       levels,
+      subject,
+      book_set: null,
       moved_from: { kind: "notice", levels, subjects },
     },
     files,
@@ -329,11 +345,12 @@ export async function moveClassNoticeToBoard(id: number, opts?: MoveOptions): Pr
   if (images.length) await supabase.storage.from(CLASS_NOTICE_BUCKET).remove(images);
   if (files.length) await supabase.storage.from(CLASS_NOTICE_FILE_BUCKET).remove(files.map((f) => f.file_path));
   revalidateAll([`/my/materials/notices/${id}`, `/admin/class-materials/notices/${id}`, `/admin/board/${made.id}`], opts);
-  return { ok: true, href: `/admin/board/${made.id}` };
+  // 옮겨 간 글 화면 — 그 글이 서는 레벨 탭 · 칸을 붙여 `목록으로` 가 그 글이 보이는 곳으로 간다
+  return { ok: true, href: staffPostHref(made.id, boardTabFor({ levels, subject, set: null }, { level: null })) };
 }
 
 /**
- * 수업자료실 회차 자료 → 직원 게시판. 학생 화면에서 바로 빠진다. 레벨은 자료의 레벨, 과목 · 과정 · 회차는 원래 자리에 적어 두어
+ * 수업자료실 회차 자료 → 직원 게시판. 학생 화면에서 바로 빠진다. 레벨 · 과목 · 과정은 자료의 것(직원 게시판의 그 칸에 선다 — 과정이 없던 옛 자료는 두 과정), 회차까지 원래 자리에 적어 두어
  * 다시 옮길 때 그 회차가 미리 골라진다. 안내 · 스크립트는 본문이 되고 첨부 파일은 files/ 로 새 이름으로 복사한다
  */
 export async function moveClassMaterialToBoard(id: number, opts?: MoveOptions): Promise<MoveResult> {
@@ -372,6 +389,8 @@ export async function moveClassMaterialToBoard(id: number, opts?: MoveOptions): 
       body,
       links: materialLinks(material.links),
       levels,
+      subject,
+      book_set: set,
       moved_from: { kind: "material", level: material.level, subject, set, seq: set ? material.seq : null },
     },
     files,
@@ -385,7 +404,7 @@ export async function moveClassMaterialToBoard(id: number, opts?: MoveOptions): 
   }
   if (files.length) await supabase.storage.from(CLASS_MATERIAL_BUCKET).remove(files.map((f) => f.file_path));
   revalidateAll([`/admin/board/${made.id}`], opts);
-  return { ok: true, href: `/admin/board/${made.id}` };
+  return { ok: true, href: staffPostHref(made.id, boardTabFor({ levels, subject, set }, { level: null })) };
 }
 
 /** 한 번에 고를 수 있는 직원 글 수 — 목록 한 쪽(20개)보다 넉넉히 */
@@ -405,7 +424,7 @@ export async function planStaffPostsMove(ids: unknown): Promise<{ ok: true; post
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("staff_posts")
-    .select("id, title, body, links, levels, moved_from, staff_post_files(count)")
+    .select("id, title, body, links, levels, subject, book_set, moved_from, staff_post_files(count)")
     .in("id", list)
     .order("created_at")
     .order("id");
@@ -414,6 +433,8 @@ export async function planStaffPostsMove(ids: unknown): Promise<{ ok: true; post
     id: p.id,
     title: p.title,
     levels: normalizeLevels(p.levels),
+    subject: normalizeSubject(p.subject),
+    set: normalizeSet(p.book_set),
     movedFrom: movedFromOf(p.moved_from),
     materialIssue: materialMoveIssue({ body: p.body, files: p.staff_post_files[0]?.count ?? 0, links: materialLinks(p.links).length }),
   }));

@@ -14,8 +14,8 @@ export type ClassBulkItem = {
   title: string;
   /** 지금 자리 — `공지 · 650 RC` · `3회차` · `과정 · 회차 미정` */
   place: string;
-  /** 직원 게시판에서 설 레벨 — `650` · `모든 레벨` */
-  boardLevels: string;
+  /** 직원 게시판에서 설 곳 — `650 · RC A과정` · `모든 레벨` (`boardPlaceLabel`) */
+  boardPlace: string;
 };
 
 /**
@@ -86,7 +86,7 @@ export function ClassBulkMove({ items, boardHref, children }: { items: ClassBulk
           <div className="space-y-3">
             <ul className="list-disc space-y-1 pl-5 text-ink-soft">
               <li>
-                학생 수업자료실에서 <strong className="text-ink">바로 빠져요</strong>. 강사 · 관리자 · 조교만 보는 직원 게시판의 글이 되고, 레벨은 공지 · 자료의 레벨 그대로예요.
+                학생 수업자료실에서 <strong className="text-ink">바로 빠져요</strong>. 강사 · 관리자 · 조교만 보는 직원 게시판의 글이 되고, 레벨 · 과목 · 과정은 공지 · 자료의 것 그대로예요.
               </li>
               <li>본문 · 사진 · 첨부 파일 · 링크는 그대로 옮겨 가고, 글쓴이는 옮기는 사람이 돼요.</li>
               <li>나중에 직원 게시판에서 골라 &lsquo;원래 자리로&rsquo; 를 고르면 지금 자리(공지 범위 · 회차)로 한꺼번에 돌아와요.</li>
@@ -99,7 +99,7 @@ export function ClassBulkMove({ items, boardHref, children }: { items: ClassBulk
                 <li key={i.key} className="min-w-0">
                   <p className="truncate text-sm font-bold text-ink">{i.title}</p>
                   <p className="text-xs text-slate">
-                    {i.place} → 직원 게시판 {i.boardLevels}
+                    {i.place} → 직원 게시판 {i.boardPlace}
                   </p>
                 </li>
               ))}

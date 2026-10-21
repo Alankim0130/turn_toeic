@@ -2,7 +2,7 @@ import { isMaterialSubject, MATERIAL_SUBJECT_LABEL, MATERIAL_SUBJECTS, noteHasTe
 import { scopeLabel } from "./class-notices";
 import { isRoundSet, ROUND_MAX, ROUND_SET_LABEL, type RoundSet } from "./class-rounds";
 import { noteImagePaths } from "./note-format";
-import { normalizeLevels } from "./staff-board";
+import { normalizeLevels, normalizeSet, normalizeSubject, type BoardCell } from "./staff-board";
 
 /**
  * 직원 게시판 ↔ 수업자료실 옮기기 (2026-10-21 Alan — "이 게시물을 수업게시판으로 옮길 수 있으면 좋겠어. 반대로 수업게시물에 있는 내용을
@@ -112,21 +112,28 @@ export function materialMoveBlock(post: { body: string; files: number; links: nu
   return issue ? MATERIAL_BLOCK[issue] : null;
 }
 
-/** 옮기기 대화창이 처음 고를 값 — 원래 자리가 있으면 그것, 없으면 글의 레벨로 공지사항 (회차 자료는 레벨이 하나일 때만 미리 고른다) */
+/**
+ * 옮기기 대화창이 처음 고를 값 — 원래 자리가 있으면 그것, 없으면 글의 레벨 · 과목으로 공지사항 (회차 자료는 레벨이 하나일 때만 레벨을 미리 고르고,
+ * 과목 · 과정은 글의 것 — 2026-10-21 직원 게시판 과목 · 과정)
+ */
 export type MoveDraft = {
   kind: "notice" | "material";
   notice: { levels: number[]; subjects: MaterialSubject[] };
   material: { level: number | null; subject: MaterialSubject | null; set: RoundSet | null; seq: number | null };
 };
 
-export function moveDraftOf(post: { levels: readonly number[]; moved_from: unknown }, knownLevels: readonly number[]): MoveDraft {
+export function moveDraftOf(
+  post: { levels: readonly number[]; moved_from: unknown; subject?: string | null; book_set?: string | null },
+  knownLevels: readonly number[],
+): MoveDraft {
   const levels = normalizeLevels(post.levels).filter((l) => knownLevels.includes(l));
   const from = movedFromOf(post.moved_from);
   const single = levels.length === 1 ? levels[0] : null;
+  const subject = normalizeSubject(post.subject);
   const draft: MoveDraft = {
     kind: "notice",
-    notice: { levels, subjects: [] },
-    material: { level: single, subject: null, set: null, seq: null },
+    notice: { levels, subjects: subject ? [subject] : [] },
+    material: { level: single, subject, set: normalizeSet(post.book_set), seq: null },
   };
   if (from?.kind === "notice") {
     draft.notice = { levels: from.levels.filter((l) => knownLevels.includes(l)), subjects: from.subjects };
@@ -158,6 +165,9 @@ export type BulkPost = {
   id: number;
   title: string;
   levels: number[];
+  /** 글의 과목 · 과정 (비우면 둘 다 — 2026-10-21) */
+  subject: MaterialSubject | null;
+  set: RoundSet | null;
   /** 수업자료실에서 옮겨 온 글의 원래 자리 */
   movedFrom: MovedFrom | null;
   /** 회차 자료로 못 가는 까닭 */
@@ -221,17 +231,24 @@ const sameList = (a: readonly number[], b: readonly number[]) => a.length === b.
 /**
  * 처음 고를 값 — 모두 수업자료실에서 옮겨 온 글이고 다 돌아갈 수 있으면 `원래 자리로`, 아니면 공지사항.
  * 공지 범위는 고른 글의 레벨이 모두 같으면 그 레벨(모두 `모든 레벨` 이면 전체), 다르면 보던 탭의 레벨.
- * 회차 자료는 원래 자리가 모두 같은 회차면 그 회차, 아니면 레벨만 (글의 레벨이 모두 같은 하나면 그것, 아니면 보던 탭).
+ * 과목도 같다 — 글의 과목이 모두 같으면 그것(모두 비웠으면 RC · LC 둘 다), 다르면 보던 칸의 과목 (2026-10-21 과목 · 과정).
+ * 회차 자료는 원래 자리가 모두 같은 회차면 그 회차, 아니면 레벨 (글의 레벨이 모두 같은 하나면 그것, 아니면 보던 탭) · 과목 · 과정
+ * (글의 것이 모두 같은 하나면 그것, 아니면 보던 칸의 것 — 회차 자료는 과목 · 과정을 꼭 골라야 해서 비운 글도 보던 칸으로).
  */
-export function bulkDraftOf(posts: readonly BulkPost[], tabLevel: number | null, knownLevels: readonly number[]): BulkDraft {
+export function bulkDraftOf(posts: readonly BulkPost[], tabLevel: number | null, knownLevels: readonly number[], tabCell?: BoardCell | null): BulkDraft {
   const levelSets = posts.map((p) => normalizeLevels(p.levels).filter((l) => knownLevels.includes(l)));
   const tab = tabLevel !== null && knownLevels.includes(tabLevel) ? tabLevel : null;
   const sameLevels = levelSets.length > 0 && levelSets.every((l) => sameList(l, levelSets[0]));
   const single = sameLevels && levelSets[0].length === 1 ? levelSets[0][0] : null;
+  /** 글의 값이 모두 같으면 그 값(비운 것도 하나의 값), 다르면 undefined */
+  const shared = <T,>(values: readonly T[]): T | undefined => (values.length > 0 && values.every((v) => v === values[0]) ? values[0] : undefined);
+  const subjects = shared(posts.map((p) => p.subject));
+  const sets = shared(posts.map((p) => p.set));
+  const noticeSubject = subjects !== undefined ? subjects : (tabCell?.subject ?? null);
   const draft: BulkDraft = {
     kind: "notice",
-    notice: { levels: sameLevels ? levelSets[0] : tab !== null ? [tab] : [], subjects: [] },
-    material: { level: single ?? tab ?? knownLevels[0] ?? null, subject: null, set: null, seq: null },
+    notice: { levels: sameLevels ? levelSets[0] : tab !== null ? [tab] : [], subjects: noticeSubject ? [noticeSubject] : [] },
+    material: { level: single ?? tab ?? knownLevels[0] ?? null, subject: subjects ?? tabCell?.subject ?? null, set: sets ?? tabCell?.set ?? null, seq: null },
   };
   const backs = posts.map((p) => (p.movedFrom ? originTargetOf(p.movedFrom, knownLevels) : null));
   const targets = backs.map((b) => (b && "target" in b ? b.target : null));

@@ -2018,11 +2018,13 @@ export type Database = {
           author_id: string | null
           author_name: string | null
           body: string
+          book_set: string | null
           created_at: string
           id: number
           levels: number[]
           links: Json
           moved_from: Json | null
+          subject: string | null
           title: string
           updated_at: string
         }
@@ -2030,11 +2032,13 @@ export type Database = {
           author_id?: string | null
           author_name?: string | null
           body?: string
+          book_set?: string | null
           created_at?: string
           id?: number
           levels?: number[]
           links?: Json
           moved_from?: Json | null
+          subject?: string | null
           title: string
           updated_at?: string
         }
@@ -2042,11 +2046,13 @@ export type Database = {
           author_id?: string | null
           author_name?: string | null
           body?: string
+          book_set?: string | null
           created_at?: string
           id?: number
           levels?: number[]
           links?: Json
           moved_from?: Json | null
+          subject?: string | null
           title?: string
           updated_at?: string
         }

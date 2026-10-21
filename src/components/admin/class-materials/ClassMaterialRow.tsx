@@ -39,6 +39,7 @@ import {
   type MaterialSubject,
 } from "@/lib/class-materials";
 import { isRoundSet, ROUND_MAX, ROUND_SET_LABEL, ROUND_SETS } from "@/lib/class-rounds";
+import { boardPlaceLabel } from "@/lib/staff-board";
 import { formatBytes, shortDateTimeKST } from "@/lib/study";
 import type { UploadedFile } from "@/lib/upload";
 import { removeUploaded, uploadFile } from "@/lib/upload-client";
@@ -286,8 +287,13 @@ export function ClassMaterialRow({
                 <button type="button" onClick={startEdit} className="btn-ghost !px-3 !py-1.5 text-xs">
                   수정
                 </button>
-                {/* 직원 게시판으로 옮기기 (2026-10-21 Alan) — 학생 화면에서 바로 빠지고 직원 게시판의 이 레벨 글이 된다 */}
-                <MoveToBoardButton kind="material" id={item.id} title={item.title} levels={levels.includes(item.level) ? String(item.level) : "모든 레벨"} />
+                {/* 직원 게시판으로 옮기기 (2026-10-21 Alan) — 학생 화면에서 바로 빠지고 직원 게시판의 이 레벨 · 과목 · 과정 글이 된다 */}
+                <MoveToBoardButton
+                  kind="material"
+                  id={item.id}
+                  title={item.title}
+                  place={boardPlaceLabel(levels.includes(item.level) ? [item.level] : [], item.subject, item.book_set)}
+                />
                 <button type="button" onClick={() => { setError(null); setMode("confirm"); }} className="btn-ghost !px-3 !py-1.5 text-xs text-red-600 hover:!bg-red-50">
                   삭제
                 </button>
