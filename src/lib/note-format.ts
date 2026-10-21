@@ -262,6 +262,21 @@ export function noteImagePaths(note: string): string[] {
   return [...new Set(parseNote(note).flatMap((r) => (r.style.img ? [r.style.img.path] : [])))];
 }
 
+/**
+ * 글 속 그림 경로를 바꾼다 (2026-10-21 — 직원 게시판 ↔ 수업자료실 옮기기: 사진을 다른 버킷으로 복사하면 경로가 새로 생긴다).
+ * **그림 태그만** 바꾸고 나머지 글자는 한 자도 건드리지 않는다 (너비 `w=` 도 그대로). `parseNote` 와 같은 토큰으로 훑어서
+ * 표 안의 `[img=…]` 꼴 글자(칸 글자 — 그림이 아니다)는 그대로 둔다. `paths` 에 없는 그림도 그대로
+ */
+export function rewriteNoteImages(note: string, paths: ReadonlyMap<string, string>): string {
+  if (paths.size === 0) return note;
+  return note.replace(TOKEN, (match: string, ...groups: (string | undefined)[]) => {
+    // TOKEN = 표 덩어리(1) | 태그 — 닫음(2) · 이름(3) · 값(4) · 그림 경로(5) · 그림 너비(6)
+    const [, , , , path, width] = groups;
+    const to = path !== undefined ? paths.get(path) : undefined;
+    return to ? `[img=${to}${width !== undefined ? ` w=${width}` : ""}]` : match;
+  });
+}
+
 /** 앞뒤 빈칸 · 빈 줄을 걷어 낸 글 — 걷어 낸 줄만큼 정렬도 뺀다 */
 export function trimDoc(doc: NoteDoc): NoteDoc {
   const plain = runsText(doc.runs);

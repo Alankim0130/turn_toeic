@@ -5,13 +5,18 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { NoticeForm } from "@/components/admin/class-notices/NoticeForm";
 import { NoticePublishToggle } from "@/components/admin/class-notices/NoticePublishToggle";
+import { MoveToBoardButton } from "@/components/admin/board/MoveToBoardButton";
 import { CLASS_NOTICE_BUCKET, scopeOf } from "@/lib/class-notices";
 import { materialLinks, sortMaterialFiles } from "@/lib/class-materials";
 import { signNoteImages } from "@/lib/note-images";
+import { levelsLabel } from "@/lib/staff-board";
 import { formatDate } from "@/lib/utils";
 import { backTo } from "../_back";
 
 export const metadata: Metadata = { title: "공지 고치기 · 수업자료실", robots: { index: false } };
+
+/** 직원 게시판으로 옮기기(서버 액션)가 사진 · 파일을 복사하는 동안 — 넉넉히 (직원 게시판 글 화면과 같은 값) */
+export const maxDuration = 60;
 
 /** 수업자료실 공지 고치기 (2026-10-05) — 편집기가 곧 학생 공지 페이지 모양이라 따로 보기 화면을 두지 않는다 */
 export default async function EditClassNoticePage({
@@ -36,6 +41,7 @@ export default async function EditClassNoticePage({
   if (!notice) notFound();
   const imageUrls = await signNoteImages(supabase, CLASS_NOTICE_BUCKET, notice.body);
   const scope = scopeOf(notice);
+  const levels = (levelRows ?? []).map((l) => l.level);
   return (
     <>
       <PageHeader
@@ -48,10 +54,15 @@ export default async function EditClassNoticePage({
         <span className={notice.published ? "rounded-md border border-brand-300 px-2 py-0.5 text-xs font-bold text-brand-600" : "rounded-md border border-line bg-surface px-2 py-0.5 text-xs font-bold text-slate"}>
           {notice.published ? "공지" : "내림"}
         </span>
-        <span className="min-w-0 flex-1 text-sm text-slate">
+        {/* 글이 12rem 보다 좁아지면 단추 둘이 다음 줄 오른쪽으로 내려간다 — 휴대폰에서 글이 한 글자씩 쪼개지지 않게 */}
+        <span className="min-w-[12rem] flex-1 text-sm text-slate">
           {notice.published ? "학생 수업자료실 맨 위에 보이는 중이에요. 내리면 글·사진·파일은 그대로 두고 학생에게만 안 보여요." : "내려 둔 공지예요 — 학생에게 보이지 않아요. 다시 올리면 그대로 보여요."}
         </span>
-        <NoticePublishToggle id={notice.id} published={notice.published} title={notice.title} />
+        <span className="ml-auto flex flex-wrap items-start justify-end gap-2">
+          {/* 직원 게시판으로 옮기기 (2026-10-21 Alan) — 학생 화면에서 바로 빠지고 직원 게시판의 그 레벨 글이 된다 */}
+          <MoveToBoardButton kind="notice" id={notice.id} title={notice.title} levels={levelsLabel(scope.levels.filter((l) => levels.includes(l)))} variant="bar" />
+          <NoticePublishToggle id={notice.id} published={notice.published} title={notice.title} />
+        </span>
       </div>
       <NoticeForm
         notice={{
@@ -64,7 +75,7 @@ export default async function EditClassNoticePage({
           files: sortMaterialFiles(notice.class_notice_files),
           links: materialLinks(notice.links),
         }}
-        levels={(levelRows ?? []).map((l) => l.level)}
+        levels={levels}
         imageUrls={imageUrls}
         defaultLevels={[]}
         back={backTo(sp)}

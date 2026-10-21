@@ -9,6 +9,7 @@ import { isNoteImagePath } from "@/lib/note-images";
 import {
   canDeleteStaffPost,
   canEditStaffPost,
+  normalizeLevels,
   STAFF_BOARD_BUCKET,
   STAFF_POST_FILE_FOLDER,
   STAFF_POST_FILE_MAX_BYTES,
@@ -48,12 +49,14 @@ const TESTING = "테스트 등급을 켠 동안에는 게시판을 쓸 수 없�
  * 첨부 파일은 브라우저가 `staff-board/files/` 에 올리고 여기서는 파일 행만 만든다/고친다 (경로가 그 폴더인지 · 50MB · 20개를 다시 본다),
  * 링크는 `parseMaterialLinks` 로 다시 읽는다 (화면이 보낸 값을 믿지 않는다).
  *  - `fileOrder`(남긴 파일은 id, 새 파일은 경로 — 보이는 순서) · 고칠 때 `removeFileIds`(그 글의 파일만 — 저장소에서도 지운다) · `links`(안 보내면 그대로)
+ *  - `levels`(2026-10-21 — 비우면 모든 레벨. 레벨 목록 lc_levels 에 있는 값만 받는다 · 안 보내면 새 글은 모든 레벨, 고칠 때는 그대로)
  * 실패하면 이 액션이 만든 행은 되돌린다. 브라우저가 올린 파일은 브라우저가 지운다(`removeUploaded`).
  */
 export async function saveStaffPost(input: {
   id?: number | null;
   title: string;
   body: string;
+  levels?: number[] | null;
   files?: UploadedFile[] | null;
   removeFileIds?: number[] | null;
   fileOrder?: FileOrderItem[] | null;
@@ -64,7 +67,11 @@ export async function saveStaffPost(input: {
 
   const title = String(input.title ?? "").trim();
   const body = String(input.body ?? "").trim();
-  const err = staffPostError({ title, body });
+  const supabase = await createClient();
+  // 레벨 — 안 보냈으면(옛 화면) 새 글은 모든 레벨, 고칠 때는 건드리지 않는다
+  const levels = input.levels == null ? null : normalizeLevels(input.levels);
+  const { data: levelRows } = levels?.length ? await supabase.from("lc_levels").select("level") : { data: null };
+  const err = staffPostError({ title, body, levels: levels ?? [] }, levelRows ? levelRows.map((l) => l.level) : undefined);
   if (err) return { ok: false, error: err };
 
   // 링크 — 안 보냈으면(undefined) null: 새 글은 링크 없음, 고칠 때는 그대로
@@ -81,11 +88,9 @@ export async function saveStaffPost(input: {
     if (f.size > STAFF_POST_FILE_MAX_BYTES) return { ok: false, error: `${f.name}: 파일은 50MB 이하만 올릴 수 있어요.` };
   }
 
-  const supabase = await createClient();
-
   if (!input.id) {
     if (files.length > STAFF_POST_FILES_MAX) return { ok: false, error: `파일은 한 글에 ${STAFF_POST_FILES_MAX}개까지 올릴 수 있어요.` };
-    const { data, error } = await supabase.from("staff_posts").insert({ title, body, links: newLinks ?? [] }).select("id").single();
+    const { data, error } = await supabase.from("staff_posts").insert({ title, body, links: newLinks ?? [], levels: levels ?? [] }).select("id").single();
     if (error || !data) return { ok: false, error: denied(error) };
     if (files.length > 0) {
       // 새 글도 화면에서 옮긴 순서대로 (폼은 고른 순서로 올리고 순서는 fileOrder 로 따로 보낸다)
@@ -133,7 +138,7 @@ export async function saveStaffPost(input: {
   // 2) 글 행 — 실패하면 방금 넣은 파일 행을 되돌린다. 고친 시각은 트리거가 (제목 · 본문 · 링크가 바뀌었을 때만)
   const { data, error } = await supabase
     .from("staff_posts")
-    .update({ title, body, ...(newLinks ? { links: newLinks } : {}) })
+    .update({ title, body, ...(newLinks ? { links: newLinks } : {}), ...(levels ? { levels } : {}) })
     .eq("id", id)
     .select("id");
   if (error || !data?.length) {

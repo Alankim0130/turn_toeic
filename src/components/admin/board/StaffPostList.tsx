@@ -4,18 +4,24 @@ import { boardDateLabel } from "@/lib/staff-board";
 export type StaffPostListItem = {
   id: number;
   title: string;
+  /** 레벨 이름 — `650` · `650 · 750` · `모든 레벨` (2026-10-21) */
+  levels: string;
   author_name: string | null;
   created_at: string;
   /** 붙은 것 — `파일 2개 · 링크 1개`. 비면 그리지 않는다 */
   attach: string;
 };
 
+/** 글 화면 주소 — 보던 레벨 탭을 들고 간다 (돌아올 때 그 탭으로) */
+export const staffPostHref = (id: number, level: number | null) => `/admin/board/${id}${level !== null ? `?level=${level}` : ""}`;
+
 /**
  * 직원 게시판 목록 (2026-10-21) — 게시판처럼 "제목 · 글쓴이 · 날짜" 한 줄, 누르면 그 글 화면. 최근 글이 위.
- * 모양은 수업자료실 공지 목록(`NoticeList`)과 같다 — 휴대폰에서는 제목 아래로 글쓴이 · 날짜를 내린다(한 줄에 다 두면 제목이 잘린다).
+ * 모양은 수업자료실 공지 목록(`NoticeList`)과 같다 — 휴대폰에서는 제목 아래로 레벨 · 글쓴이 · 날짜를 내린다(한 줄에 다 두면 제목이 잘린다).
+ * 레벨(`650` · `모든 레벨`)은 넓은 화면에서 글쓴이 앞 칩 — 레벨 탭 안에도 모든 레벨 글이 함께 서서 어느 쪽인지 보이게 한다.
  * 날짜는 오늘 올린 글이면 시각(`14:05`), 그 밖은 `25.10.21` (`boardDateLabel`).
  */
-export function StaffPostList({ items }: { items: StaffPostListItem[] }) {
+export function StaffPostList({ items, level }: { items: StaffPostListItem[]; level: number | null }) {
   return (
     <ul className="divide-y divide-line overflow-hidden rounded-xl2 border border-line bg-white">
       {items.map((p) => {
@@ -23,16 +29,18 @@ export function StaffPostList({ items }: { items: StaffPostListItem[] }) {
         const date = boardDateLabel(p.created_at);
         return (
           <li key={p.id}>
-            <Link href={`/admin/board/${p.id}`} className="flex items-center gap-3 px-3 py-3 transition hover:bg-brand-50/60 sm:px-4">
+            <Link href={staffPostHref(p.id, level)} className="flex items-center gap-3 px-3 py-3 transition hover:bg-brand-50/60 sm:px-4">
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-bold text-ink sm:text-[15px]">{p.title}</span>
                 <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-mist sm:hidden">
+                  <span className="font-bold text-ink-soft">{p.levels}</span>
                   <span className="text-ink-soft">{author}</span>
                   <span className="tabular-nums">{date}</span>
                   {p.attach && <span className="font-bold text-ink-soft">{p.attach}</span>}
                 </span>
               </span>
               {p.attach && <span className="hidden shrink-0 text-xs font-bold text-slate sm:inline">{p.attach}</span>}
+              <span className="hidden shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-bold text-brand-700 sm:inline">{p.levels}</span>
               <span className="hidden w-24 shrink-0 truncate text-right text-sm text-ink-soft sm:inline">{author}</span>
               <span className="hidden w-20 shrink-0 text-right text-sm tabular-nums text-mist sm:inline">{date}</span>
             </Link>
@@ -43,10 +51,16 @@ export function StaffPostList({ items }: { items: StaffPostListItem[] }) {
   );
 }
 
-/** 쪽 넘기기 — 글이 한 쪽(20개)을 넘을 때만 그린다 */
-export function StaffBoardPager({ page, pages }: { page: number; pages: number }) {
+/** 쪽 넘기기 — 글이 한 쪽(20개)을 넘을 때만 그린다. 보던 레벨 탭을 그대로 들고 다닌다 */
+export function StaffBoardPager({ page, pages, level }: { page: number; pages: number; level: number | null }) {
   if (pages <= 1) return null;
-  const href = (p: number) => (p <= 1 ? "/admin/board" : `/admin/board?page=${p}`);
+  const href = (p: number) => {
+    const q = new URLSearchParams();
+    if (level !== null) q.set("level", String(level));
+    if (p > 1) q.set("page", String(p));
+    const s = q.toString();
+    return `/admin/board${s ? `?${s}` : ""}`;
+  };
   return (
     <nav aria-label="쪽 넘기기" className="mt-4 flex items-center justify-center gap-2">
       {page > 1 ? (

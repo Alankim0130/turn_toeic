@@ -2020,7 +2020,9 @@ export type Database = {
           body: string
           created_at: string
           id: number
+          levels: number[]
           links: Json
+          moved_from: Json | null
           title: string
           updated_at: string
         }
@@ -2030,7 +2032,9 @@ export type Database = {
           body?: string
           created_at?: string
           id?: number
+          levels?: number[]
           links?: Json
+          moved_from?: Json | null
           title: string
           updated_at?: string
         }
@@ -2040,7 +2044,9 @@ export type Database = {
           body?: string
           created_at?: string
           id?: number
+          levels?: number[]
           links?: Json
+          moved_from?: Json | null
           title?: string
           updated_at?: string
         }

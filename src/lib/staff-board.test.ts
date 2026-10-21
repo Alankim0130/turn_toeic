@@ -5,11 +5,16 @@ import { isNoteImagePath } from "./note-images";
 import { isSafeObjectPath, MB } from "./upload";
 import {
   boardDateLabel,
+  boardLevel,
   boardPage,
   boardPageCount,
   canDeleteStaffPost,
   canEditStaffPost,
   isEditedPost,
+  levelFilter,
+  levelsLabel,
+  normalizeLevels,
+  postInLevel,
   STAFF_BOARD_BUCKET,
   STAFF_BOARD_PAGE_SIZE,
   STAFF_POST_BODY_MAX,
@@ -38,6 +43,9 @@ const sqlOf = (f: string) =>
     .join("\n");
 const flat = (s: string) => s.replace(/\s+/g, " ").trim();
 const BOARD_SQL = flat(sqlOf("20261021100000_staff_board.sql"));
+const LEVELS_SQL = flat(sqlOf("20261021110000_staff_board_levels.sql"));
+/** 마이그레이션을 순서대로 읽어 마지막에 남는 문장 — 같은 꼴의 문장이 뒤에 또 오면 그것이 산다 */
+const lastOf = (re: RegExp) => FILES.flatMap((f) => [...flat(sqlOf(f)).matchAll(re)].map((m) => m[0])).at(-1);
 
 /** 마지막에 살아 있는 정책 — 표 · 이름 → 본문 */
 const live = new Map<string, string>();
@@ -73,6 +81,42 @@ describe("글 검사 — staffPostError (폼과 서버 액션이 같은 말)", (
   });
   it("사진 폴더는 글 사진 서명(signNoteImages)이 받는 꼴이다", () => {
     expect(isNoteImagePath(`${STAFF_POST_IMAGE_FOLDER}0f1e2d3c.webp`)).toBe(true);
+  });
+  it("레벨 — 레벨 목록(lc_levels)을 주면 그 안의 값만 (비우면 모든 레벨)", () => {
+    expect(staffPostError({ ...ok, levels: [] }, [650, 750, 850])).toBeNull();
+    expect(staffPostError({ ...ok, levels: [650, 850] }, [650, 750, 850])).toBeNull();
+    expect(staffPostError({ ...ok, levels: [700] }, [650, 750, 850])).toBe("레벨을 다시 골라 주세요.");
+    // 목록을 안 주면 레벨은 보지 않는다 (예전 호출 그대로)
+    expect(staffPostError({ ...ok, levels: [700] })).toBeNull();
+  });
+});
+
+describe("레벨 — 650 · 750 · 850 탭 (2026-10-21 Alan \"직원게시판도 학습자료실처럼 650,750,850구분\")", () => {
+  it("탭 하나에는 그 레벨 글과 모든 레벨 글이 선다", () => {
+    expect(postInLevel([], 650)).toBe(true);
+    expect(postInLevel([650], 650)).toBe(true);
+    expect(postInLevel([650, 750], 750)).toBe(true);
+    expect(postInLevel([750], 650)).toBe(false);
+  });
+  it("DB 조회의 거르기가 같은 뜻이다 — 빈 배열 · 그 레벨을 품은 배열 (정수로만)", () => {
+    expect(levelFilter(650)).toBe("levels.eq.{},levels.cs.{650}");
+    expect(levelFilter(750.9)).toBe("levels.eq.{},levels.cs.{750}");
+  });
+  it("레벨 이름 — 비우면 모든 레벨, 아니면 작은 것부터", () => {
+    expect(levelsLabel([])).toBe("모든 레벨");
+    expect(levelsLabel([850, 650])).toBe("650 · 850");
+  });
+  it("저장할 레벨 — 정수만 · 한 번씩 · 작은 것부터", () => {
+    expect(normalizeLevels([850, "650", 650, 1.5, null, "x"])).toEqual([650, 850]);
+    expect(normalizeLevels(null)).toEqual([]);
+  });
+  it("주소의 ?level= — 목록에 있으면 그것, 아니면 첫 레벨 (수업자료실과 같다), 목록이 비면 null", () => {
+    const levels = [650, 750, 850];
+    expect(boardLevel("750", levels)).toBe(750);
+    expect(boardLevel(["850", "650"], levels)).toBe(850);
+    expect(boardLevel("700", levels)).toBe(650);
+    expect(boardLevel(undefined, levels)).toBe(650);
+    expect(boardLevel("650", [])).toBeNull();
   });
 });
 
@@ -199,6 +243,26 @@ describe("DB 정책 — 마이그레이션을 순서대로 재생한 마지막 �
     expect(del?.[1]).toContain("((select private.is_staff()) or owner_id = (select auth.uid())::text)");
   });
 
+  it("레벨 · 옮겨 온 자리 (20261021110000) — 넣을 때 둘 다, 고칠 때는 레벨만 (옮겨 온 자리는 한 번 넣고 그대로)", () => {
+    expect(LEVELS_SQL).toContain("add column if not exists levels int[] not null default '{}'");
+    expect(LEVELS_SQL).toContain("add column if not exists moved_from jsonb");
+    expect(LEVELS_SQL).toContain("check (cardinality(levels) <= 20 and array_position(levels, null) is null)");
+    expect(LEVELS_SQL).toContain("moved_from ->> 'kind' in ('notice', 'material')");
+    // 마지막에 남는 칸 단위 grant — 글쓴이 · 시각 칸은 여전히 없다
+    expect(lastOf(/grant insert \([^)]*\), update \([^)]*\) on public\.staff_posts to authenticated;/g)).toBe(
+      "grant insert (title, body, links, levels, moved_from), update (title, body, links, levels) on public.staff_posts to authenticated;",
+    );
+  });
+
+  it("고친 시각은 레벨이 바뀔 때도 오르고, 글쓴이 · 시각은 여전히 트리거가 채운다 (마지막 함수 정의)", () => {
+    const fn = lastOf(/create or replace function private\.tg_staff_posts_stamp\(\).*?\$\$;/g) ?? "";
+    expect(fn).toContain("new.author_id := auth.uid();");
+    expect(fn).toContain("new.author_name := left(private.my_profile_name(), 40);");
+    expect(fn).toContain("or new.levels is distinct from old.levels then new.updated_at := now();");
+    expect(fn).not.toContain("moved_from is distinct");
+    expect(LEVELS_SQL).toContain("revoke execute on function private.tg_staff_posts_stamp() from public, anon, authenticated;");
+  });
+
   it("두 표 모두 RLS 가 켜져 있다", () => {
     expect(BOARD_SQL).toContain("alter table public.staff_posts enable row level security;");
     expect(BOARD_SQL).toContain("alter table public.staff_post_files enable row level security;");
@@ -219,6 +283,28 @@ describe("앱 — 화면 · 액션 · 파일 주소", () => {
     expect(src).not.toMatch(/createAdminClient|service_role|SUPABASE_SERVICE_ROLE/);
     // 글쓴이 칸은 보내지 않는다 — grant 도 없다
     expect(src).not.toMatch(/author_(?:id|name):/);
+  });
+
+  it("옮기기 액션 셋은 강사 · 관리자만 (requireStaff) · 테스트 등급이면 막고 · 서비스 롤 없이 세션으로", () => {
+    const src = read("src/app/admin/board/move-actions.ts");
+    const actions = src.split(/export async function /).slice(1);
+    expect(actions.map((a) => a.slice(0, a.indexOf("(")))).toEqual(["moveStaffPostToClass", "moveClassNoticeToBoard", "moveClassMaterialToBoard"]);
+    for (const a of actions) {
+      // 첫 줄이 가드다 — 그 앞에 아무것도 없다
+      expect(a).toMatch(/^\w+\([^)]*\): Promise<MoveResult> \{\s*const \{ [^}]*\} = await requireStaff\(\);/);
+      expect(a.indexOf("requireStaff(")).toBeLessThan(a.indexOf("createClient("));
+      expect(a).toContain("if (profile.test_role) return");
+    }
+    expect(src).not.toMatch(/createAdminClient|service_role|SUPABASE_SERVICE_ROLE/);
+    // 직원 글을 넣을 때 글쓴이 칸은 보내지 않는다 (트리거가 옮긴 사람으로 적는다)
+    const insert = src.slice(src.indexOf('.from("staff_posts")\n    .insert('));
+    expect(insert.slice(0, insert.indexOf(")"))).not.toMatch(/author_/);
+  });
+
+  it("글 화면의 '수업자료실로 옮기기' 는 강사 · 관리자에게만 그린다", () => {
+    const src = read("src/app/admin/board/[id]/page.tsx");
+    expect(src).toMatch(/\{staff && levels\.length > 0 && \(\s*<MoveToClassButton/);
+    expect(src).toContain("const staff = isStaff(profile.role);");
   });
 
   it("화면 넷(목록 · 글 · 글쓰기 · 고치기)이 모두 requireCrew 로 연다", () => {

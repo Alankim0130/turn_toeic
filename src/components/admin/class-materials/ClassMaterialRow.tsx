@@ -11,6 +11,7 @@ import { MaterialFilePicker, MoveButtons, type PickedFile } from "./MaterialFile
 import { FileOrderRows } from "./FileOrderRows";
 import { linkRowsOf, MaterialLinkEditor, type LinkRow } from "./MaterialLinkEditor";
 import { NoteTextarea } from "./NoteTextarea";
+import { MoveToBoardButton } from "@/components/admin/board/MoveToBoardButton";
 import {
   CLASS_MATERIAL_BUCKET,
   CLASS_MATERIAL_FILES_MAX,
@@ -282,6 +283,8 @@ export function ClassMaterialRow({
                 <button type="button" onClick={startEdit} className="btn-ghost !px-3 !py-1.5 text-xs">
                   수정
                 </button>
+                {/* 직원 게시판으로 옮기기 (2026-10-21 Alan) — 학생 화면에서 바로 빠지고 직원 게시판의 이 레벨 글이 된다 */}
+                <MoveToBoardButton kind="material" id={item.id} title={item.title} levels={levels.includes(item.level) ? String(item.level) : "모든 레벨"} />
                 <button type="button" onClick={() => { setError(null); setMode("confirm"); }} className="btn-ghost !px-3 !py-1.5 text-xs text-red-600 hover:!bg-red-50">
                   삭제
                 </button>

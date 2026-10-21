@@ -37,7 +37,7 @@ import {
 } from "@/lib/class-materials";
 import type { UploadedFile } from "@/lib/upload";
 import { removeUploaded, uploadFile } from "@/lib/upload-client";
-import { cn } from "@/lib/utils";
+import { ChoiceChip } from "@/components/admin/ChoiceChip";
 
 /**
  * 수업자료실 공지 쓰기 · 고치기 (2026-10-05 Alan — "안내글에서 쓰는 글 편집기능이 다 들어가면 좋겠어. 추가적으로 이미지도 중간에 추가 … 블로그랑 같다고 생각하면" ·
@@ -178,29 +178,29 @@ export function NoticeForm({
         <legend className="mb-1.5 text-sm font-bold text-ink">누구에게 보일까요</legend>
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="w-10 shrink-0 text-xs font-bold text-mist">레벨</span>
-          <Chip on={picked.length === 0} onClick={() => setPicked([])} disabled={busy}>
+          <ChoiceChip on={picked.length === 0} onClick={() => setPicked([])} disabled={busy}>
             모든 레벨
-          </Chip>
+          </ChoiceChip>
           {levels.map((l) => (
-            <Chip
+            <ChoiceChip
               key={l}
               on={picked.includes(l)}
               onClick={() => setPicked((p) => (p.includes(l) ? p.filter((x) => x !== l) : [...p, l].sort((a, b) => a - b)))}
               disabled={busy}
             >
               {l}
-            </Chip>
+            </ChoiceChip>
           ))}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="w-10 shrink-0 text-xs font-bold text-mist">과목</span>
-          <Chip on={subject === null} onClick={() => setSubject(null)} disabled={busy}>
+          <ChoiceChip on={subject === null} onClick={() => setSubject(null)} disabled={busy}>
             RC · LC 모두
-          </Chip>
+          </ChoiceChip>
           {MATERIAL_SUBJECTS.map((s) => (
-            <Chip key={s} on={subject === s} onClick={() => setSubject(s)} disabled={busy}>
+            <ChoiceChip key={s} on={subject === s} onClick={() => setSubject(s)} disabled={busy}>
               {MATERIAL_SUBJECT_LABEL[s]}만
-            </Chip>
+            </ChoiceChip>
           ))}
         </div>
         <p className="rounded-xl bg-brand-50 px-3 py-2 text-sm text-ink-soft">
@@ -290,22 +290,5 @@ export function NoticeForm({
         )}
       </div>
     </form>
-  );
-}
-
-function Chip({ on, onClick, disabled, children }: { on: boolean; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onClick}
-      disabled={disabled}
-      className={cn(
-        "rounded-full border px-3 py-1.5 text-sm font-bold transition disabled:opacity-50",
-        on ? "border-brand-600 bg-brand-600 text-white" : "border-line bg-white text-ink-soft hover:border-brand-300",
-      )}
-    >
-      {children}
-    </button>
   );
 }

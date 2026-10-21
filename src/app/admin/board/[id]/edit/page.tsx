@@ -7,7 +7,7 @@ import { requireCrew } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { materialLinks, sortMaterialFiles } from "@/lib/class-materials";
 import { signNoteImages } from "@/lib/note-images";
-import { canEditStaffPost, STAFF_BOARD_BUCKET, STAFF_BOARD_TESTING_NOTE } from "@/lib/staff-board";
+import { canEditStaffPost, normalizeLevels, STAFF_BOARD_BUCKET, STAFF_BOARD_TESTING_NOTE } from "@/lib/staff-board";
 
 export const metadata: Metadata = { title: "글 고치기 · 직원 게시판", robots: { index: false } };
 
@@ -33,7 +33,7 @@ export default async function EditStaffPostPage({ params }: { params: Promise<{ 
   const supabase = await createClient();
   const { data: post } = await supabase
     .from("staff_posts")
-    .select("id, title, body, links, author_id, staff_post_files(id, file_name, file_size, content_type, sort_order)")
+    .select("id, title, body, links, levels, author_id, staff_post_files(id, file_name, file_size, content_type, sort_order)")
     .eq("id", id)
     .maybeSingle();
   if (!post) notFound();
@@ -50,12 +50,17 @@ export default async function EditStaffPostPage({ params }: { params: Promise<{ 
       </>
     );
   }
-  const imageUrls = await signNoteImages(supabase, STAFF_BOARD_BUCKET, post.body);
+  const [imageUrls, { data: levelRows }] = await Promise.all([
+    signNoteImages(supabase, STAFF_BOARD_BUCKET, post.body),
+    supabase.from("lc_levels").select("level").order("sort_order").order("level"),
+  ]);
   return (
     <>
       {header}
       <StaffPostForm
-        post={{ id: post.id, title: post.title, body: post.body, files: sortMaterialFiles(post.staff_post_files), links: materialLinks(post.links) }}
+        post={{ id: post.id, title: post.title, body: post.body, levels: normalizeLevels(post.levels), files: sortMaterialFiles(post.staff_post_files), links: materialLinks(post.links) }}
+        levels={(levelRows ?? []).map((l) => l.level)}
+        defaultLevels={[]}
         imageUrls={imageUrls}
         back={`/admin/board/${post.id}`}
       />

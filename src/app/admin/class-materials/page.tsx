@@ -22,6 +22,9 @@ import { pickTerm, termLabel, TERM_COLUMNS } from "../_lib/queries";
 
 export const metadata: Metadata = { title: "수업자료실", robots: { index: false } };
 
+/** 회차 자료를 직원 게시판으로 옮기기(서버 액션)가 첨부 파일을 복사하는 동안 — 넉넉히 (직원 게시판 글 화면과 같은 값) */
+export const maxDuration = 60;
+
 /** 둘째 줄 칸 = 과목 × 과정 (RC A과정 · RC B과정 · LC A과정 · LC B과정) — 버튼 줄을 셋 쌓지 않으려고 한 줄로 묶었다 (디자인 원칙) */
 const cellValue = (s: MaterialSubject, set: RoundSet) => `${s}-${set}`;
 

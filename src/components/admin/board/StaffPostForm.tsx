@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { NoteEditor } from "@/components/note/NoteEditor";
+import { ChoiceChip } from "@/components/admin/ChoiceChip";
 import { FileOrderRows } from "@/components/admin/class-materials/FileOrderRows";
 import { MaterialFilePicker, type PickedFile } from "@/components/admin/class-materials/MaterialFilePicker";
 import { linkRowsOf, MaterialLinkEditor, type LinkRow } from "@/components/admin/class-materials/MaterialLinkEditor";
@@ -27,6 +28,7 @@ import {
   STAFF_POST_IMAGE_MAX_BYTES,
   STAFF_POST_IMAGE_MAX_COUNT,
   STAFF_POST_TITLE_MAX,
+  levelsLabel,
   staffPostError,
   staffPostFilePath,
 } from "@/lib/staff-board";
@@ -35,7 +37,8 @@ import { removeUploaded, uploadFile } from "@/lib/upload-client";
 
 /**
  * 직원 게시판 글쓰기 · 고치기 (2026-10-21 Alan — "게시물 올리는건 우리가 기존에 작업했던 워드처럼 쓸 수 있는 기능을 그대로 해줘").
- * 수업자료실 공지(`NoticeForm`)와 **같은 부품**이다 — 범위(레벨 · RC/LC) 칸만 없다 (직원 게시판은 강사 · 관리자 · 조교 모두에게 보인다):
+ * 수업자료실 공지(`NoticeForm`)와 **같은 부품**이다 — 범위는 레벨만 (직원 게시판은 강사 · 관리자 · 조교 모두에게 보인다 · RC/LC 칸은 없다):
+ *  - **레벨**(2026-10-21 Alan "직원게시판도 학습자료실처럼 650,750,850구분") — 공지 범위와 같은 칩. 비우면 모든 레벨 탭에, 고르면 그 레벨 탭에 선다.
  *  - 본문은 `NoteEditor` — 굵게 · 밑줄 · 색 · 크기 · 줄 정렬 · 표 · 사진(크기 조절) · 워드 · 네이버 글 붙여 넣기. 사진은 `staff-board/images/` 에 바로 올라간다.
  *  - 첨부 파일은 여러 개를 한 번에 고르고(20개 · 하나에 50MB) 올려 둔 파일과 한 줄로 두고 위 · 아래로 순서를 바꾼다(`FileOrderRows`).
  *  - 링크는 주소 + 이름(선택) 줄(`MaterialLinkEditor` — 유튜브 영상은 글 화면에서 바로 재생).
@@ -44,10 +47,16 @@ import { removeUploaded, uploadFile } from "@/lib/upload-client";
  */
 export function StaffPostForm({
   post,
+  levels,
+  defaultLevels,
   imageUrls,
   back,
 }: {
-  post?: { id: number; title: string; body: string; files: MaterialFile[]; links: MaterialLink[] } | null;
+  post?: { id: number; title: string; body: string; levels: number[]; files: MaterialFile[]; links: MaterialLink[] } | null;
+  /** 레벨 목록 (lc_levels) — 비면 레벨 칸을 그리지 않는다 (모든 레벨 글로 저장된다) */
+  levels: number[];
+  /** 새 글이 처음 고를 레벨 — 보던 탭의 레벨 */
+  defaultLevels: number[];
   imageUrls: Record<string, string>;
   /** `목록으로` · 취소가 가는 곳 — 새 글은 게시판, 고칠 때는 그 글 */
   back: string;
@@ -55,6 +64,7 @@ export function StaffPostForm({
   const router = useRouter();
   const body = useRef<HTMLTextAreaElement>(null);
   const [title, setTitle] = useState(post?.title ?? "");
+  const [picked, setPicked] = useState<number[]>(post ? post.levels : defaultLevels);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
@@ -88,7 +98,7 @@ export function StaffPostForm({
   async function save(e: React.FormEvent) {
     e.preventDefault();
     const text = body.current?.value ?? "";
-    const err = staffPostError({ title, body: text });
+    const err = staffPostError({ title, body: text, levels: picked }, levels);
     if (err) return setError(err);
     const parsed = parseMaterialLinks(linkRows);
     if (!parsed.ok) {
@@ -111,6 +121,7 @@ export function StaffPostForm({
         id: post?.id ?? null,
         title,
         body: text,
+        levels: picked,
         files: uploaded,
         removeFileIds: [...removed],
         fileOrder: fileOrderItems(order, removed, pathByKey),
@@ -148,6 +159,30 @@ export function StaffPostForm({
           className="input text-base font-bold"
         />
       </div>
+
+      {levels.length > 0 && (
+        <fieldset className="space-y-2">
+          <legend className="mb-1.5 text-sm font-bold text-ink">레벨</legend>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ChoiceChip on={picked.length === 0} onClick={() => setPicked([])} disabled={busy}>
+              모든 레벨
+            </ChoiceChip>
+            {levels.map((l) => (
+              <ChoiceChip
+                key={l}
+                on={picked.includes(l)}
+                onClick={() => setPicked((p) => (p.includes(l) ? p.filter((x) => x !== l) : [...p, l].sort((a, b) => a - b)))}
+                disabled={busy}
+              >
+                {l}
+              </ChoiceChip>
+            ))}
+          </div>
+          <p className="text-xs text-mist">
+            {picked.length === 0 ? `레벨 탭 모두(${levels.join(" · ")})에 보여요.` : `${levelsLabel(picked)} 탭에 보여요.`}
+          </p>
+        </fieldset>
+      )}
 
       <div>
         <p className="mb-1.5 text-sm font-bold text-ink">본문</p>
