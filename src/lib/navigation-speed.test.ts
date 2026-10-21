@@ -24,6 +24,8 @@ describe("① 누르자마자 화면 틀 (loading.tsx)", () => {
     "src/app/admin/students",
     "src/app/admin/verifications",
     "src/app/admin/homework",
+    // 직원 게시판 (2026-10-21) — 목록 ↔ 글 · 글쓰기 · 고치기
+    "src/app/admin/board",
   ])("%s 에 빈 화면 틀(PageSkeleton)이 있다", (dir) => {
     const file = `${dir}/loading.tsx`;
     expect(existsSync(file), `${file} 가 없다 — 같은 구역 안에서 옮길 때 서버가 답할 때까지 화면이 멈춘다`).toBe(true);

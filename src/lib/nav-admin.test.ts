@@ -7,8 +7,8 @@ import { activeAdminHref, adminHomeFor, NAV_ADMIN, NAV_ADMIN_SECTIONS, navAdminF
  * 햄버거 서랍 · 사이드바가 같은 묶음을 그리고, 평평한 목록(NAV_ADMIN)은 묶음에서 만든다 — 어긋날 수 없다.
  */
 describe("관리자 메뉴 묶음 (NAV_ADMIN_SECTIONS)", () => {
-  it("다섯 묶음 — 운영 · 학생 · 수업 편성 · 수업 자료 · 학습 — 이고 대시보드가 맨 앞이다", () => {
-    expect(NAV_ADMIN_SECTIONS.map((s) => s.label)).toEqual(["운영", "학생", "수업 편성", "수업 자료", "학습"]);
+  it("여섯 묶음 — 운영 · 학생 · 수업 편성 · 수업 자료 · 학습 · 직원(2026-10-21) — 이고 대시보드가 맨 앞이다", () => {
+    expect(NAV_ADMIN_SECTIONS.map((s) => s.label)).toEqual(["운영", "학생", "수업 편성", "수업 자료", "학습", "직원"]);
     expect(NAV_ADMIN[0].href).toBe("/admin");
     for (const s of NAV_ADMIN_SECTIONS) expect(s.items.length, s.label).toBeGreaterThan(0);
   });
@@ -29,27 +29,29 @@ describe("관리자 메뉴 묶음 (NAV_ADMIN_SECTIONS)", () => {
   it("조교는 crew 항목만 보고 빈 묶음은 사라진다 — 첫 화면은 출석", () => {
     const crew = navAdminSectionsFor("assistant");
     for (const s of crew) for (const i of s.items) expect(i.crew, i.href).toBe(true);
-    expect(crew.map((s) => s.label)).toEqual(["학생", "수업 자료", "학습"]);
+    expect(crew.map((s) => s.label)).toEqual(["학생", "수업 자료", "학습", "직원"]);
     expect(navAdminFor("assistant").map((i) => i.href)).toEqual(crew.flatMap((s) => s.items.map((i) => i.href)));
     expect(adminHomeFor("assistant")).toBe("/admin/attendance");
     expect(navAdminSectionsFor("instructor")).toEqual(NAV_ADMIN_SECTIONS);
   });
 
   /**
-   * 조교가 쓰는 화면은 아홉 (2026-10-03 Alan — "조교의 권한 1. 수동등업 수락 2. 불라방 교재주문 3. 스터디 신청자
+   * 조교가 쓰는 화면은 열 (2026-10-03 Alan — "조교의 권한 1. 수동등업 수락 2. 불라방 교재주문 3. 스터디 신청자
    * 4. 불라방 링크 올리기 5. 숙제점검 6. 출석확인 / 없는 권한 1. 학생명단(개인정보) 2. 반배정 3. 이하 다른 관리자페이지"
    * → 2026-10-07 Alan "비대면자료를 조교들이 올릴 수 있으면 좋겠어" 로 비대면 자료가 일곱째
    * → 2026-10-08 Alan "비대면스터디 인증 카테고리 하나 만들어줘. 별도의 페이지" 로 스터디 신청자 화면의 인증 현황 · 독촉이 제 화면이 됐다 — 여덟째.
    *    스터디는 조교가 운영하고 인증 현황 · 독촉은 그 전부터 조교 일이었다
    * → 같은 날 Alan "응 메뉴에 넣어줘" 로 숙제 미제출 알림이 메뉴 한 줄이 됐다 — 아홉째.
    *    숙제점검 아래 화면이라 조교는 그 전부터 썼다 — 메뉴 줄만 생겼다 ("조교도 보낸다").
+   * → 2026-10-21 Alan "관리자모드에서 직원들만 사용할 수 있는 게시판" → 물음에 "조교도 읽고 쓰기" 로 직원 게시판이 열째.
    * 여기에 하나를 더하면 proxy 입구(canEnterAdminPath)와 화면 가드까지 같이 열린다 — Alan 에게 확인하고 더할 것.
-   * DB 쪽 같은 집합은 마이그레이션 20261003100000 · 20261007100000 · 20261008140000 · 20261008150000.
+   * DB 쪽 같은 집합은 마이그레이션 20261003100000 · 20261007100000 · 20261008140000 · 20261008150000 · 20261021100000.
    */
-  it("조교 화면은 Alan 이 정한 아홉 개뿐이다 — 학생명단은 없다", () => {
+  it("조교 화면은 Alan 이 정한 열 개뿐이다 — 학생명단은 없다", () => {
     expect(navAdminFor("assistant").map((i) => i.href).sort()).toEqual(
       [
         "/admin/attendance",
+        "/admin/board",
         "/admin/homework",
         "/admin/homework/missing",
         "/admin/live",
