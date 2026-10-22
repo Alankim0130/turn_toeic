@@ -5,6 +5,7 @@ import { collapseWeek5, week5SectionIds } from "@/lib/week5";
 import { sectionChip, type DB, type TermLite } from "../../_lib/queries";
 import { getProfileNames, type PersonName } from "../../_lib/profile-names";
 import { hiddenFromRoster, isAssistantAccount } from "@/lib/roster-accounts";
+import { readAll } from "@/lib/read-all";
 
 /**
  * 숙제 미제출 알림(`/admin/homework/missing`)이 읽는 것 — 그 기수의 반 · 회차 · 품는 관계 · 배정 · 낸 숙제 · 이름 · 보낸 시각,
@@ -15,10 +16,8 @@ import { hiddenFromRoster, isAssistantAccount } from "@/lib/roster-accounts";
  * 반 · 회차 · 배정 · 숙제는 조교에게 열린 표다 (회차는 2026-10-03 불라방 링크 때문에, 숙제는 숙제점검 때문에).
  * 품는 관계는 DB `term_section_includes` 가 정한다 — 앱에서 따로 계산하지 않는다.
  *
- * PostgREST 는 한 번에 1,000줄까지만 준다 — 방학에 600명이면 배정 · 숙제가 넘는다. 개수를 먼저 받고 나머지 쪽은 함께 읽는다.
+ * PostgREST 는 한 번에 1,000줄까지만 준다 — 방학에 600명이면 배정 · 숙제가 넘는다. 개수를 먼저 받고 나머지 쪽은 함께 읽는다 (`readAll`).
  */
-
-const PAGE = 1000;
 
 /** 반 이름 · 정렬에 쓰는 것 */
 export type SectionMeta = {
@@ -47,20 +46,8 @@ export type MissingData = {
 /** KST 날짜 (배정한 날) */
 const kstDate = (iso: string) => new Date(iso).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
 
-type Page<T> = { data: T[] | null; error: unknown; count?: number | null };
-
-/** 1,000줄씩 — 첫 쪽에서 개수를 받고 남은 쪽은 함께 읽는다. 읽다 실패하면 거기까지 (빈 칸이 '안 냄' 으로 보이지 않게 호출하는 쪽이 판단한다) */
-export async function readAll<T>(page: (from: number, to: number, count: boolean) => PromiseLike<Page<T>>): Promise<{ rows: T[]; ok: boolean }> {
-  const first = await page(0, PAGE - 1, true);
-  if (first.error) return { rows: [], ok: false };
-  const rows = [...(first.data ?? [])];
-  const total = first.count ?? rows.length;
-  if (rows.length < PAGE || total <= PAGE) return { rows, ok: true };
-  const rest = await Promise.all(Array.from({ length: Math.ceil(total / PAGE) - 1 }, (_, i) => page((i + 1) * PAGE, (i + 2) * PAGE - 1, false)));
-  if (rest.some((r) => r.error)) return { rows, ok: false };
-  for (const r of rest) rows.push(...(r.data ?? []));
-  return { rows, ok: true };
-}
+/** 1,000줄씩 나눠 읽기 — 공용 (`src/lib/read-all.ts`). 이 파일을 거쳐 쓰는 곳(자동 알림 · 미제출 화면)이 있어 다시 내보낸다 */
+export { readAll };
 
 /**
  * 그 기수의 데이터. `students` 를 주면 그 학생들 것만 남긴다 (보내기 직전 서버가 다시 셀 때 — 낸 숙제도 그 학생들 것만 읽는다).

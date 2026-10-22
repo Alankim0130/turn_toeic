@@ -201,6 +201,10 @@ describe("끝난 수업 — 학생 불라방 화면", () => {
     const cards = queries.slice(queries.indexOf("export async function getMyLiveCards"), queries.indexOf("export async function getNextSessionBySection"));
     expect(cards).toContain('=== "past") return false;');
     expect(cards).not.toContain("l.session!.date < today");
+    // 지난 회차 · 끝난 반의 링크는 읽지 않는다 — 쌓여서 1,000줄을 넘으면 내 반의 오늘 링크가 빠질 수 있었다 (2026-10-22 오류 점검)
+    expect(cards).toContain('session:session_dates!inner(');
+    expect(cards).toContain('.gte("session.date", today)');
+    expect(cards).toContain('section:class_sections!inner(${SECTION_COLS})`).gte("section.closes_at", today)');
     const next = queries.slice(queries.indexOf("export async function getNextSessionBySection"));
     expect(next.slice(0, next.indexOf("\n}\n"))).toContain("sessionStarted(");
     const page = readFileSync("src/app/my/live/page.tsx", "utf8");

@@ -405,14 +405,20 @@ describe("DB — 설정 · 실행 기록 · 하루 한 번 · 보낸 이름", ()
   it("켜는 순간 첫 실행일 0시부터 본다 · 켜기 · 시각을 바꾸면 그 뒤의 시각부터", () => {
     const touch = lastFn("private.tg_homework_missing_auto_touch");
     expect(touch).toContain("if new.enabled is distinct from old.enabled or new.send_time is distinct from old.send_time then new.schedule_changed_at := now();");
-    expect(touch).toContain("if new.enabled and not old.enabled then new.covered_until := case");
+    expect(touch).toContain("if new.enabled and not old.enabled then new.covered_until := v_first;");
     expect(touch).toContain("new.updated_by := auth.uid();");
+    // 첫 실행 날 = 오늘 시각이 아직이면 오늘, 지났으면 내일 (그 날 0시)
+    expect(touch).toContain("when (v_today + new.send_time) at time zone 'Asia/Seoul' > now() then v_today::timestamp at time zone 'Asia/Seoul' else (v_today + 1)::timestamp at time zone 'Asia/Seoul'");
+    // 켠 뒤 아직 한 번도 안 돈 채 시각을 바꿔도 다시 정한다 (2026-10-22 오류 점검 — 오늘 시각이 지난 뒤 켜고 시각을 오늘 더 늦게 옮기면 그날 알림이 빠졌다)
+    expect(touch).toContain("elsif new.enabled and new.covered_until is not null and new.covered_until > now() then new.covered_until := v_first;");
   });
 
   it("하루 한 번 — 오늘 실행 한 줄을 가져간다 (멈춘 실행은 15분 뒤), 서버만 부른다", () => {
     const claim = lastFn("public.claim_homework_missing_auto");
     expect(claim).toContain("select * into a from public.homework_missing_auto where id for update;");
     expect(claim).toContain("if v_at > now() or v_at <= a.schedule_changed_at then return;");
+    // 창의 시작은 오늘 0시보다 늦지 않다 — 앞으로 오는 창의 시작으로 오늘 기한을 건너뛰지 않는다 (2026-10-22)
+    expect(claim).toContain("v_from := least(coalesce(a.covered_until, v_day0), v_day0);");
     expect(claim).toContain("on conflict on constraint homework_missing_auto_runs_pkey do update");
     expect(claim).toContain("where r.finished_at is null and r.started_at < now() - interval '15 minutes'");
     expect(sql).toContain("revoke all on function public.claim_homework_missing_auto() from public, anon, authenticated");
@@ -459,6 +465,20 @@ describe("서버 — 크론 API · 실행 · 설정 저장", () => {
     expect(run).toContain('kind: "homework_missing"');
     expect(run).toContain("autoNoticeRelated(term.id, n)");
     expect(run).toContain('.eq("kind", "homework_missing")');
+  });
+
+  it("손으로 보내기 — 화면을 연 뒤 이미 알림을 받은 학생은 뺀다 (자동 알림 · 다른 선생님과 겹치지 않게, 2026-10-22 오류 점검)", () => {
+    const fn = actions.slice(actions.indexOf("export async function sendHomeworkMissingNotice"), actions.indexOf("export type MissingAutoResult"));
+    expect(fn).toContain('.rpc("homework_missing_notices", { p_term_id: term.id }).eq("level", level).gt("sent_at", loadedAt)');
+    expect(fn).toContain("const fresh = rows.filter((r) => !received.has(r.id));");
+    expect(fn).toContain("fresh.map((r) => ({");
+    expect(fn).toContain("already: rows.length - fresh.length");
+    const page = readFileSync("src/app/admin/homework/missing/page.tsx", "utf8");
+    // 읽기 전에 잰다 — 그 사이 간 알림은 화면에도 보이고 보내기에서도 빠진다 (겹칠 틈이 없다)
+    expect(page.indexOf("const loadedAt = renderedAt();")).toBeGreaterThan(0);
+    expect(page.indexOf("const loadedAt = renderedAt();")).toBeLessThan(page.indexOf("loadMissingData(supabase, term),"));
+    expect(page).toContain("loadedAt={loadedAt}");
+    expect(readFileSync("src/components/admin/homework/MissingBoard.tsx", "utf8")).toContain("userIds: toSend.map((r) => r.id), title, loadedAt })");
   });
 
   it("설정 저장은 강사 · 관리자만 (첫 줄), 세션으로", () => {

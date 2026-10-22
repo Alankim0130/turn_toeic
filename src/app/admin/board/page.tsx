@@ -29,6 +29,8 @@ import {
 } from "@/lib/staff-board";
 
 export const metadata: Metadata = { title: "직원 게시판", robots: { index: false } };
+// 여러 개 옮기기(서버 액션)가 이 화면의 시간으로 돈다 — 파일 20개 · 50MB 복사가 기본 10초에 끊기지 않게 (글 화면 · 수업자료실과 같다)
+export const maxDuration = 60;
 
 /**
  * 직원 게시판 (2026-10-21 Alan — "관리자모드에서 직원들만 사용할 수 있는 게시판을 하나 만들어주면 좋겠어" → 물음에 "조교도 읽고 쓰기" · "글만 올리기").
@@ -91,7 +93,11 @@ export default async function StaffBoardPage({ searchParams }: { searchParams: P
   ]);
   const byLevel = new Map(levelCounts);
   const byCell = new Map(cellCounts);
-  const total = listCount ?? 0;
+  // 글 수보다 뒤 쪽을 열면(옮기거나 지워 쪽이 줄었다) PostgREST 가 416(PGRST103)으로 답하고 수를 주지 않는다 — 오류가 아니라 빈 쪽이다
+  // (2026-10-22 오류 점검 — 예전에는 "글 목록을 불러오지 못했어요" 가 떠 첫 쪽으로 갈 길이 없었다). 수는 같은 거르기로 센 칸 숫자를 쓴다
+  const outOfRange = error?.code === "PGRST103";
+  const listError = outOfRange ? null : error;
+  const total = listCount ?? (outOfRange ? (byCell.get(cellValue(cell)) ?? 0) : 0);
   const pages = boardPageCount(total);
   const items: StaffPostListItem[] = (data ?? []).map((p) => ({
     id: p.id,
@@ -106,7 +112,7 @@ export default async function StaffBoardPage({ searchParams }: { searchParams: P
   const write = `/admin/board/new?${new URLSearchParams({ ...(level !== null ? { level: String(level) } : {}), cell: cellValue(cell) })}`;
   const first = boardListHref(tab);
 
-  const body = error ? (
+  const body = listError ? (
     <p className="card p-5 text-sm text-red-700">글 목록을 불러오지 못했어요. 잠시 뒤 새로고침해 주세요.</p>
   ) : items.length === 0 ? (
     <div className="card flex flex-col items-start gap-3 p-6">
@@ -163,7 +169,7 @@ export default async function StaffBoardPage({ searchParams }: { searchParams: P
       {cell.defaulted && (
         <p className="-mt-1 mb-3 text-xs text-mist">내 과목({MATERIAL_SUBJECT_LABEL[cell.subject]}) 글부터 보여 주고 있어요. 위에서 레벨 · 과목 · 과정을 바꿀 수 있어요.</p>
       )}
-      {staff && !error && levels.length > 0 ? (
+      {staff && !listError && levels.length > 0 ? (
         <BoardBulkMove items={items.map((p) => ({ key: `post:${p.id}`, id: p.id, title: p.title }))} levels={levels} tab={tab}>
           {body}
         </BoardBulkMove>

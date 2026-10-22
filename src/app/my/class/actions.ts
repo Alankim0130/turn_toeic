@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { isSnsFollow, LECTURE_SUBJECT_ERROR, lectureCondition, parseReviewLink, reviewLinkError, snsFollowError } from "@/lib/lecture";
+import { isSnsFollow, LECTURE_AFTER_TERM_ERROR, LECTURE_SUBJECT_ERROR, lectureCondition, parseReviewLink, reviewLinkError, snsFollowError } from "@/lib/lecture";
 import { isLectureWay } from "@/lib/utils";
 
 export type LectureSignupState = { ok?: boolean; error?: string };
@@ -67,6 +67,7 @@ export async function signupLecture(_prev: LectureSignupState, formData: FormDat
     if (error.message === "lecture_already_signed") return { error: "이미 신청한 특강이에요. 방식을 바꾸려면 신청을 취소하고 다시 신청해 주세요." };
     if (error.message === "lecture_signup_closed") return { error: "지금은 이 방식으로 신청을 받지 않아요. 새로고침해 주세요." };
     if (error.message === "lecture_subject_mismatch") return { error: LECTURE_SUBJECT_ERROR };
+    if (error.message === "lecture_after_my_term") return { error: LECTURE_AFTER_TERM_ERROR };
     // 신청 조건 — 후기 링크 없음(review_link_required) · 다른 학생이 쓴 링크(review_link_taken) · 다른 달에 쓴 내 링크(review_link_reused, 2026-10-08) ·
     // 유튜브 구독 · 인스타그램 팔로우 안 함(sns_follow_required, 2026-10-15)
     const reviewError = reviewLinkError(error.message) ?? snsFollowError(error.message);

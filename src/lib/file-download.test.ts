@@ -221,7 +221,7 @@ describe("PDF · Word 를 받는 곳은 FileDownloadButton 으로", () => {
     // 지금 주소를 담아 넘기는 이름 — 학생명단 화면이 ClassRosterView 에 넘기는 둘 (이것이 비면 아래 검사가 아무것도 안 보는 것이다)
     expect([...fileRouteCarriers(sources)].sort()).toEqual(["docxHref", "pdfHref"]);
     expect(bareFileLinks(sources)).toEqual([]);
-  });
+  }, 30_000);
 
   it("그 검사가 실제로 잡는다 — 주소를 변수 · 속성에 담아 넘기거나, 태그 안에 > 가 있어도 (2026-10-16 — 예전 정규식은 둘 다 못 봤다)", () => {
     const one = (source: string) => bareFileLinks([{ file: "x.tsx", source }]);
@@ -243,8 +243,17 @@ function walkNodes(node: ts.Node, fn: (n: ts.Node) => void) {
   ts.forEachChild(node, (child) => walkNodes(child, fn));
 }
 
-const parse = ({ file, source }: { file: string; source: string }) =>
-  ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+// 한 파일은 한 번만 읽는다 — 아래 두 검사가 같은 파일들을 세 번 돌아서, src 가 커지며 5초 제한에 걸렸다 (2026-10-22)
+const parsed = new Map<string, ts.SourceFile>();
+const parse = ({ file, source }: { file: string; source: string }) => {
+  const key = `${file}\u0000${source}`;
+  let sf = parsed.get(key);
+  if (!sf) {
+    sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+    parsed.set(key, sf);
+  }
+  return sf;
+};
 
 /**
  * 파일 라우트 주소를 담는 이름 — 그 주소로 값을 정하는 변수 · 함수, 그리고 href 가 아닌 속성(`<ClassRosterView pdfHref={…}>`).

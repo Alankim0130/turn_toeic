@@ -133,7 +133,9 @@ describe("줄 정렬 · 그림 (2026-10-05 공지)", () => {
     const d = parseDoc("[center]제목\n본문 [right]끝\n[right]서명");
     expect(d.aligns).toEqual(["center", "left", "right"]);
     expect(runsText(d.runs)).toBe("제목\n본문 [right]끝\n서명");
-    expect(docToNote(d)).toBe("[center]제목\n본문 [right]끝\n[right]서명");
+    // 줄 가운데의 글자 [right] 는 저장할 때 보이지 않는 표시를 붙인다 (2026-10-22 — 글자로 적은 [ 는 다시 읽어도 글자)
+    expect(docToNote(d)).toBe("[center]제목\n본문 [\u2060right]끝\n[right]서명");
+    expect(parseDoc(docToNote(d))).toEqual(d);
   });
 
   it("그림은 한 글자, 너비와 함께 다시 읽힌다", () => {
@@ -573,5 +575,100 @@ describe("표에 닿은 선택 (2026-10-19 — 표 윗줄을 줄바꿈까지 지
     expect(tableNear(runs, 8, 10)).toBe(false); // 표 바로 뒤부터
     expect(tableNear(runs, 9, 11)).toBe(false); // 아랫줄
     expect(tableNear(parseDoc("가나다\n라마").runs, 0, 6)).toBe(false);
+  });
+});
+
+import { rewriteNoteImages, type NoteAlign, type NoteRun as LiteralRun } from "./note-format";
+
+describe("글자로 적은 [ — 다시 읽어도 글자 (2026-10-22 오류 점검)", () => {
+  const MARK = "\u2060";
+  const docOf = (runs: LiteralRun[]): NoteDoc => ({ runs, aligns: Array<NoteAlign>(runsText(runs).split("\n").length).fill("left") });
+  const plainDoc = (text: string) => docOf([{ text, style: {} }]);
+  /** 글자마다 서식 — 줄바꿈 글자는 뺀다 (줄바꿈에는 서식이 없다 — 저장할 때 줄로 나눈다) */
+  const charStyles = (runs: readonly LiteralRun[]) =>
+    runs.flatMap((r) =>
+      Array.from(r.text)
+        .filter((c) => c !== "\n")
+        .map((c) => `${c}|${r.style.table ? tableToNote(r.style.table) : JSON.stringify(Object.entries(r.style).sort())}`),
+    );
+  /** 저장 → 다시 읽기 — 글자 · 글자마다 서식 · 줄 정렬이 그대로여야 한다 */
+  const roundTrip = (doc: NoteDoc) => {
+    const note = docToNote(doc);
+    const back = parseDoc(note);
+    expect(runsText(back.runs)).toBe(runsText(doc.runs));
+    expect(charStyles(back.runs)).toEqual(charStyles(doc.runs));
+    expect(back.aligns).toEqual(doc.aligns.slice(0, back.aligns.length));
+    return note;
+  };
+
+  it("발음 기호 [b] · [i] · [u] 는 굵게 · 기울임 · 밑줄이 되지 않는다", () => {
+    for (const t of ["[b]와 [v] 발음을 구분하세요. 다음 줄도 확인", "[i] 소리와 [u] 소리", "[mark] [size=lg] [color=red] [/b] [/i]"]) {
+      const note = roundTrip(plainDoc(t));
+      expect(note).toContain(`[${MARK}`);
+      // 보는 화면 · 고치는 칸에는 표시가 없다
+      expect(runsText(parseDoc(note).runs)).toBe(t);
+    }
+    // 고치기 전에는 저장하면 굵게로 바뀌었다
+    expect(parseDoc("[b]와 [v] 발음").runs[0].style.bold).toBe(true);
+  });
+
+  it("줄 맨 앞의 글자 [center] · 글자 [img=…] 는 정렬 · 그림이 되지 않는다", () => {
+    const doc: NoteDoc = { runs: [{ text: "[center] 가운데라고 적은 글\n[img=images/x.png] 라고 적음", style: {} }], aligns: ["left", "right"] };
+    const note = roundTrip(doc);
+    expect(parseDoc(note).aligns).toEqual(["left", "right"]);
+    expect(noteImagePaths(note)).toEqual([]);
+    // 경로 바꾸기(옮기기)도 글자는 건드리지 않는다
+    expect(rewriteNoteImages(note, new Map([["images/x.png", "images/y.png"]]))).toBe(note);
+  });
+
+  it("글자로 적은 [table] 이 같은 줄의 진짜 표를 글자로 풀지 않는다", () => {
+    const table = parseDoc("[table][tr][td]가[/td][/tr][/table]").runs[0];
+    const doc = docOf([{ text: "[table] 예시: ", style: {} }, table, { text: " 끝[/table]", style: {} }]);
+    const note = roundTrip(doc);
+    expect(parseDoc(note).runs.filter((r) => r.style.table)).toHaveLength(1);
+  });
+
+  it("서식이 붙은 글자 속 [/b] · 여러 조각에 걸친 [b] 도 그대로", () => {
+    roundTrip(docOf([{ text: "정답 [/b] 끝", style: { bold: true } }, { text: " 뒤", style: {} }]));
+    roundTrip(docOf([{ text: "[", style: {} }, { text: "b]", style: { italic: true } }, { text: "[b", style: {} }, { text: "]", style: { color: "red" } }]));
+    // 같은 서식인데 나뉘어 들어온 조각 (`[b` + `]`) — 이어서 보면 태그다
+    roundTrip({ runs: [{ text: "[b", style: {} }, { text: "] 굵게 아님", style: {} }], aligns: ["left"] });
+  });
+
+  it("예전 글은 그대로 읽힌다 — `\\` 바로 뒤의 진짜 태그(₩ 를 \\ 로 친 값) · [ 가 없는 글 · 모르는 태그", () => {
+    expect(parseDoc("가격 \\[b]15,000원[/b]").runs).toEqual([
+      { text: "가격 \\", style: {} },
+      { text: "15,000원", style: { bold: true } },
+    ]);
+    for (const old of ["[center]제목\n[b]굵게[/b] 보통", "[v] [ə] [x] 모르는 태그", "C:\\temp\\[b]x[/b]"]) {
+      const d = parseDoc(old);
+      expect(docToNote(d)).toBe(old);
+    }
+  });
+
+  it("아무렇게나 만든 글도 저장 → 다시 읽기가 같다 (3,000번)", () => {
+    let seed = 20261022;
+    const rnd = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % n;
+    };
+    const bits = ["[", "]", "/", "b", "i", "u", "=", "\\", "table", "img=images/a.png", "center", "right", "mark", "color=red", "size=lg", "가", " ", "\n", "tr", "td", "w=50"];
+    const styles = [{}, { bold: true }, { italic: true, underline: true }, { mark: true }, { color: "red" as const }, { size: "lg" as const, bold: true }];
+    const objs = [parseDoc("[table][tr][td]칸 [b]굵게[/b] \\[x][/td][/tr][/table]").runs[0], imageRun("images/a.png", 50)];
+    for (let n = 0; n < 3000; n++) {
+      const runs: LiteralRun[] = [];
+      for (let k = rnd(6); k >= 0; k--) {
+        if (rnd(8) === 0) {
+          runs.push(objs[rnd(objs.length)]);
+          continue;
+        }
+        let text = "";
+        for (let c = rnd(8) + 1; c > 0; c--) text += bits[rnd(bits.length)];
+        runs.push({ text, style: styles[rnd(styles.length)] });
+      }
+      const lines = runsText(runs).split("\n").length;
+      const aligns = Array.from({ length: lines }, () => (["left", "center", "right"] as const)[rnd(3)]);
+      roundTrip({ runs, aligns });
+    }
   });
 });

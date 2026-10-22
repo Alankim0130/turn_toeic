@@ -321,7 +321,17 @@ export function NoteEditor({
   useEffect(() => {
     tableInput.current = (e) => {
       const el = editor.current;
-      if (!el || disabled || e.isComposing || !MODEL_INPUTS.has(e.inputType)) return;
+      if (!el || disabled) return;
+      // 브라우저가 스스로 거는 서식 — 아이폰 사파리 글자 메뉴의 B · I · U, 사파리 서식 메뉴, 한글을 조합하는 중의 Ctrl+B (2026-10-22 오류 점검 —
+      // 칸에는 <b> 로 감싸 굵게 보였지만 저장하는 글(data-note 조각)에는 없어 학생에게는 보통 글자로 갔다). 막고, 굵게 · 기울임 · 밑줄은 도구줄과 같은 길로 건다.
+      // 조합 중이면 막기만 한다 — 그 자리에서 칸을 다시 그리면 조합하던 글자가 깨진다 (한 번 더 누르면 걸린다)
+      if (e.inputType.startsWith("format")) {
+        e.preventDefault();
+        const flag = NATIVE_FORMAT[e.inputType];
+        if (flag && !e.isComposing) change({ kind: "flag", flag });
+        return;
+      }
+      if (e.isComposing || !MODEL_INPUTS.has(e.inputType)) return;
       if (window.getSelection()?.isCollapsed !== false) return;
       if (endsInCell(readCellSelection(el))) {
         e.preventDefault();
@@ -1056,6 +1066,8 @@ const MODEL_INPUTS = new Set([
   "insertParagraph",
 ]);
 const CELL_EDIT_HINT = "표 칸의 글자는 표를 누르고 ‘표 고치기’에서 고쳐요. 표 안 글자를 골라서는 굵게 · 색 같은 서식과 정렬만 바꿀 수 있어요.";
+/** 브라우저가 거는 서식 중 도구줄에 있는 것 — 그 밖의 서식(취소선 · 위첨자 · 글꼴 색 · 들여쓰기 …)은 막기만 한다 (저장하는 글에 그 서식이 없다) */
+const NATIVE_FORMAT: Partial<Record<string, "bold" | "italic" | "underline">> = { formatBold: "bold", formatItalic: "italic", formatUnderline: "underline" };
 
 /** 줄마다 `<div>` — 서식은 data-note 로 적어 두어 다시 읽을 때 쓴다 (클래스는 보이는 모양만) */
 function paint(root: HTMLElement, doc: NoteDoc, urls: Record<string, string>, selected: number | null) {

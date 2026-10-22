@@ -38,9 +38,17 @@ export function contentTypeOf(file: { name: string; type: string }) {
   return file.type || EXT_TYPES[fileExt(file.name)] || "application/octet-stream";
 }
 
-/** 저장소 객체 이름. 한글 원본 이름은 DB 에 따로 두고, 경로에는 무작위 ASCII 만 쓴다 */
+/** 경로에 붙여도 되는 확장자 — 영문 · 숫자 1~8자. 비대면 자료 안내의 사진 경로 검사(`study-note.ts`)와 같은 꼴이다 */
+const SAFE_EXT = /^\.[a-z0-9]{1,8}$/;
+
+/**
+ * 저장소 객체 이름. 한글 원본 이름은 DB 에 따로 두고, 경로에는 무작위 ASCII 만 쓴다.
+ * 확장자는 `SAFE_EXT` 꼴일 때만 붙인다 (2026-10-22 오류 점검 — `사진.` · `사진.한글` 은 `.` 만, `사진.jpeg_large` 는 `.jpeglarge` 가 남아
+ * 비대면 자료 안내에 넣은 사진이 "사진 정보가 올바르지 않아요" 로 저장되지 않았다). 형식은 경로가 아니라 파일 이름으로 정하므로(`contentTypeOf`) 빼도 된다
+ */
 export function objectName(file: { name: string }) {
-  return `${crypto.randomUUID()}${fileExt(file.name)}`;
+  const ext = fileExt(file.name);
+  return `${crypto.randomUUID()}${SAFE_EXT.test(ext) ? ext : ""}`;
 }
 
 /** 서버로 넘기는 업로드 결과 */

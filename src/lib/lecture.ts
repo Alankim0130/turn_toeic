@@ -1,7 +1,7 @@
 import { CLASS_MATERIAL_LINK_URL_MAX, normalizeLinkUrl } from "@/lib/class-materials";
 import { isSubject, SUBJECT_LABEL, type Subject } from "@/lib/instructor-subject";
 import { isContainerProgram } from "@/lib/two-week";
-import { lectureKindRank, lectureKindSubject, lectureKindLabel, sortLectureKinds } from "@/lib/utils";
+import { formatDate, lectureKindRank, lectureKindSubject, lectureKindLabel, sortLectureKinds } from "@/lib/utils";
 
 /** 특강의 신청 방식 줄 (`special_lecture_ways` — 2026-10-16). 받기 · 조건 · 정원은 강사가 특강 신청 → 특강 설정에서 고른다 */
 export type LectureWayRow = {
@@ -264,6 +264,19 @@ export function lectureSubjectNote(blocked: readonly Subject[], mine: ReadonlySe
   const kinds = (["rc", "lc"] as const).filter((s) => blocked.includes(s)).map((s) => `${SUBJECT_LABEL[s]}특강`).join(" · ");
   return `${me} 단과 수강생은 ${kinds}을 신청할 수 없어요.`;
 }
+
+/**
+ * **내 수업이 끝난 뒤의 특강인가** (2026-10-22 오류 점검 — 2주완성 학생은 앞 절반 동안 수강 중이라 그 달 뒤 절반의 특강까지 신청됐다).
+ * `until` = 그 달 지금 수강 중인 내 반 중 가장 늦은 종강일 (`getMyStudyEligibility().untilByTerm`). 모르면(그 달 수강 중이 아니다) 여기서 가르지 않는다 — 신청 자격이 따로 막는다.
+ * DB `private.lecture_in_my_term` 과 같은 규칙이다 — 바꾸면 둘 다 (`lecture.test.ts`)
+ */
+export const lectureAfterMyTerm = (date: string, until: string | undefined): boolean => until !== undefined && date > until;
+
+/** 그 카드에 적는 말 — "내 수업은 10월 17일 (토)에 끝나서 그 뒤 특강은 신청할 수 없어요." */
+export const lectureAfterTermNote = (until: string): string => `내 수업은 ${formatDate(until)}에 끝나서 그 뒤 특강은 신청할 수 없어요.`;
+
+/** 신청을 넣을 때 DB 트리거가 낸 `lecture_after_my_term` → 학생에게 보일 말 */
+export const LECTURE_AFTER_TERM_ERROR = "내 수업이 특강 날 전에 끝나서 신청할 수 없어요. 2주완성은 앞 절반 수업 기간의 특강만 신청할 수 있어요.";
 
 /** 신청을 넣을 때 DB 트리거가 낸 `lecture_subject_mismatch` → 학생에게 보일 말 (주소를 직접 불러 넣는 길도 같은 규칙이다) */
 export const LECTURE_SUBJECT_ERROR = "내 수업 과목이 아닌 특강이에요. RC 단과는 RC 특강, LC 단과는 LC 특강만 신청할 수 있어요.";

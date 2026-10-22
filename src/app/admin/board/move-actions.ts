@@ -18,7 +18,7 @@ import {
 import type { RoundSet } from "@/lib/class-rounds";
 import { CLASS_NOTICE_BUCKET, CLASS_NOTICE_FILE_BUCKET, CLASS_NOTICE_IMAGE_FOLDER, noticeError, noticeFilePath } from "@/lib/class-notices";
 import { noteImagePaths, rewriteNoteImages } from "@/lib/note-format";
-import { isNoteImagePath } from "@/lib/note-images";
+import { isNoteImagePath, removeNoteImagesIfUnused } from "@/lib/note-images";
 import {
   boardTabFor,
   normalizeLevels,
@@ -192,8 +192,9 @@ export async function moveStaffPostToClass(input: { id: number; target: unknown 
       await undo();
       return { ok: false, error: "직원 게시판에서 글을 빼지 못해 옮기지 않았어요. 이미 지워졌거나 옮겨졌을 수 있어요 — 새로고침해 주세요." };
     }
-    const leftovers = [...images, ...files.map((f) => f.file_path)];
-    if (leftovers.length) await supabase.storage.from(STAFF_BOARD_BUCKET).remove(leftovers);
+    // 원래 사진 · 파일 — 사진은 다른 직원 글이 아직 가리키면 남긴다 (`removeNoteImagesIfUnused`)
+    if (images.length) await removeNoteImagesIfUnused(supabase, { bucket: STAFF_BOARD_BUCKET, table: "staff_posts" }, images);
+    if (files.length) await supabase.storage.from(STAFF_BOARD_BUCKET).remove(files.map((f) => f.file_path));
     revalidateAll([`/admin/board/${id}`, `/my/materials/notices/${notice.id}`], opts);
     const level = target.levels[0];
     return { ok: true, href: `/admin/class-materials/notices/${notice.id}${level ? `?level=${level}` : ""}` };
@@ -342,7 +343,7 @@ export async function moveClassNoticeToBoard(id: number, opts?: MoveOptions): Pr
     await made.undo();
     return { ok: false, error: SOURCE_GONE };
   }
-  if (images.length) await supabase.storage.from(CLASS_NOTICE_BUCKET).remove(images);
+  if (images.length) await removeNoteImagesIfUnused(supabase, { bucket: CLASS_NOTICE_BUCKET, table: "class_notices" }, images);
   if (files.length) await supabase.storage.from(CLASS_NOTICE_FILE_BUCKET).remove(files.map((f) => f.file_path));
   revalidateAll([`/my/materials/notices/${id}`, `/admin/class-materials/notices/${id}`, `/admin/board/${made.id}`], opts);
   // 옮겨 간 글 화면 — 그 글이 서는 레벨 탭 · 칸을 붙여 `목록으로` 가 그 글이 보이는 곳으로 간다

@@ -33,7 +33,12 @@ export function PwaRegister() {
       if (!data || data.type !== OPEN_MESSAGE || typeof data.url !== "string") return;
       const move = notificationMove(data.url, window.location.href, isStandalone());
       if (move.action === "refresh") router.refresh();
-      else if (move.action === "go") router.push(move.path);
+      else if (move.action === "go") {
+        // 30초 기억(staleTimes)을 먼저 비우고 옮긴다 (2026-10-22 오류 점검) — 30초 안에 본 불라방 화면이 남아 있으면 알림이 알린 새 링크 없이
+        // 그 화면이 떴다. refresh 가 기억해 둔 모든 화면을 비우고(Next 16 — 리듀서가 그 자리에서), 곧이은 push 가 그 refresh 를 대신해 새로 받아 온다
+        router.refresh();
+        router.push(move.path);
+      }
       event.ports[0]?.postMessage({ ok: move.action !== "stay" });
     };
     sw.addEventListener("message", onMessage);

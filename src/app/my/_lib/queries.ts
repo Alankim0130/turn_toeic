@@ -288,10 +288,15 @@ export async function getMyLiveCards(): Promise<MyLiveCard[]> {
   const supabase = await createClient();
   const now = nowKst();
   const today = now.date;
+  // 링크는 **종강 전 반의 상시 링크 · 오늘부터의 회차 링크만** 읽는다 (2026-10-22 오류 점검) — 지난 회차 링크는 달마다 쌓이고(반 38개 × 회차 18)
+  // 강사 · 관리자에게는 모든 반이 열려 있어 1,000줄(PostgREST 상한)을 넘으면 내 반의 오늘 링크가 조용히 빠질 수 있었다
   const [{ data: ids, error: idsError }, { data: standing }, { data: perSession }, orders] = await Promise.all([
     supabase.rpc("my_section_ids"),
-    supabase.from("section_live_links").select(`section_id, live_url, updated_at, section:class_sections(${SECTION_COLS})`),
-    supabase.from("session_live_links").select(`session_date_id, live_url, session:session_dates(id, seq, date, section_id, section:class_sections(${SECTION_COLS}))`),
+    supabase.from("section_live_links").select(`section_id, live_url, updated_at, section:class_sections!inner(${SECTION_COLS})`).gte("section.closes_at", today),
+    supabase
+      .from("session_live_links")
+      .select(`session_date_id, live_url, session:session_dates!inner(id, seq, date, section_id, section:class_sections(${SECTION_COLS}))`)
+      .gte("session.date", today),
     getMyOrders(),
   ]);
   // **내 반만** — 링크 정책도 스태프에게 전부 열려 있다 (머리말). 조회가 실패하면 예전처럼 둔다
@@ -477,6 +482,8 @@ export async function getMyStudyEligibility(orders?: MyOrder[]) {
   const signupTerms = new Set<number>();
   const accessTerms = new Set<number>();
   const opensOn = new Map<number, string>(); // 예비등록생: 기수별 개강일
+  // 기수마다 지금 수강 중인 내 반의 가장 늦은 종강일 — 그 뒤의 특강은 신청할 수 없다 (2주완성은 앞 절반, 2026-10-22 · DB private.lecture_in_my_term)
+  const untilByTerm = new Map<number, string>();
   // 기수마다 내가 듣는 과목 — 단과 학생은 제 과목 특강만 신청한다 (2026-10-12 Alan, DB private.lecture_subjects_of 와 같은 반 · 같은 규칙)
   const subjectsByTerm = new Map<number, Set<Subject>>();
   for (const o of list) {
@@ -486,13 +493,15 @@ export async function getMyStudyEligibility(orders?: MyOrder[]) {
       if (e.section.enrollment_opens_at <= today) {
         signupTerms.add(e.section.term_id);
         accessTerms.add(e.section.term_id);
+        const until = untilByTerm.get(e.section.term_id);
+        if (!until || e.section.closes_at > until) untilByTerm.set(e.section.term_id, e.section.closes_at);
         const subjects = subjectsByTerm.get(e.section.term_id) ?? new Set<Subject>();
         for (const s of sectionSubjects(e.section)) subjects.add(s);
         subjectsByTerm.set(e.section.term_id, subjects);
       } else opensOn.set(e.section.term_id, e.section.enrollment_opens_at);
     }
   }
-  return { signupTerms, accessTerms, opensOn, subjectsByTerm };
+  return { signupTerms, accessTerms, opensOn, subjectsByTerm, untilByTerm };
 }
 
 /** 내 스터디 신청 (기수·유형·시간대 포함) */

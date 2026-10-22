@@ -6,6 +6,9 @@ import {
   ddayLabel,
   isSnsFollow,
   isYbmReviewUrl,
+  LECTURE_AFTER_TERM_ERROR,
+  lectureAfterMyTerm,
+  lectureAfterTermNote,
   lectureCameo,
   lectureCondition,
   LECTURE_CONDITION_NOTICE,
@@ -100,6 +103,59 @@ describe("lectureState — 강사가 신청 받기를 누른 특강만, 당일�
     expect(wayOpen).toContain("private.lecture_signup_open(p_lecture_id)");
     expect(wayOpen).toContain("w.enabled");
     expect(WAYS_MIGRATION).toMatch(/create policy "lecture_signups: 수강생 신청"[\s\S]*?private\.lecture_way_open\(lecture_signups\.lecture_id, lecture_signups\.way\)/);
+  });
+});
+
+/**
+ * 내 수업 기간 안의 특강만 (2026-10-22 오류 점검) — 2주완성 학생(앞 절반만 듣는다)은 앞 절반 동안 '그 달 수강생' 이라
+ * 그 달 뒤 절반의 특강까지 신청됐다 (CLAUDE.md 는 "뒤 절반의 특강은 신청할 수 없다" 고 적어 두었는데 열려 있었다).
+ * DB private.lecture_in_my_term(신청 정책 · 트리거)과 앱 lectureAfterMyTerm(학생 화면 · 내 시간표)이 같은 규칙이다
+ */
+describe("내 수업이 끝난 뒤의 특강은 신청할 수 없다 (2주완성 앞 절반)", () => {
+  it("특강 날이 내 반 종강일 뒤면 막는다 — 종강일 당일은 된다 · 종강일을 모르면 막지 않는다", () => {
+    expect(lectureAfterMyTerm("2026-10-24", "2026-10-17")).toBe(true);
+    expect(lectureAfterMyTerm("2026-10-18", "2026-10-17")).toBe(true);
+    expect(lectureAfterMyTerm("2026-10-17", "2026-10-17")).toBe(false);
+    expect(lectureAfterMyTerm("2026-10-10", "2026-10-17")).toBe(false);
+    expect(lectureAfterMyTerm("2026-10-24", undefined)).toBe(false); // 그 달 수강생이 아니면 다른 안내(잠금 · 닫힘)가 맡는다
+  });
+  it("안내는 내 수업이 끝나는 날을 적고, DB 오류는 학생 말로 바뀐다", () => {
+    expect(lectureAfterTermNote("2026-10-17")).toContain("10월 17일");
+    expect(LECTURE_AFTER_TERM_ERROR).toContain("2주완성");
+    expect(readFileSync("src/app/my/class/actions.ts", "utf8")).toContain('if (error.message === "lecture_after_my_term") return { error: LECTURE_AFTER_TERM_ERROR };');
+  });
+  it("DB — 지금 수강 중인 내 반의 종강일이 특강 날 이후일 때만 (is_term_enrollee 와 같은 반)", () => {
+    const inTerm = lastFn("private.lecture_in_my_term");
+    expect(inTerm).toContain("e.student_id = (select auth.uid())");
+    expect(inTerm).toContain("e.status = 'active'");
+    expect(inTerm).toContain("o.status = 'active'");
+    expect(inTerm).toContain("private.today_kst() between s.enrollment_opens_at and s.closes_at");
+    expect(inTerm).toContain("l.date <= s.closes_at");
+    // 신청 정책이 부르는 lecture_way_open 이 함께 본다
+    const wayOpen = lastFn("private.lecture_way_open");
+    expect(wayOpen).toContain("private.lecture_signup_open(p_lecture_id)");
+    expect(wayOpen).toContain("private.lecture_in_my_term(p_lecture_id)");
+    // 트리거는 닫힌 특강보다 먼저 '내 수업이 끝난 뒤' 를 따로 말한다 · 시험 신청 표시는 그대로
+    const check = lastFn("private.lecture_signups_check_way");
+    const after = check.indexOf("'lecture_after_my_term'");
+    expect(after).toBeGreaterThan(0);
+    expect(after).toBeLessThan(check.indexOf("'lecture_signup_closed'"));
+    expect(check).toContain("new.staff_test := exists");
+  });
+  it("취소는 그대로 — 받는 동안 이미 신청한 학생은 스스로 취소한다 (본인 취소 정책은 lecture_signup_open)", () => {
+    const file = SQLS.filter((t) => t.includes('create policy "lecture_signups: 본인 취소·스태프 정리"')).at(-1) ?? "";
+    const start = file.indexOf('create policy "lecture_signups: 본인 취소·스태프 정리"');
+    const policy = file.slice(start, file.indexOf(";", start));
+    expect(policy).toContain("private.lecture_signup_open(lecture_signups.lecture_id)");
+    expect(policy).not.toContain("lecture_in_my_term");
+  });
+  it("학생 화면 · 내 시간표 — 같은 날짜(지금 수강 중인 반의 가장 늦은 종강일)로 가른다", () => {
+    const queries = readFileSync("src/app/my/_lib/queries.ts", "utf8");
+    expect(queries).toContain("if (!until || e.section.closes_at > until) untilByTerm.set(e.section.term_id, e.section.closes_at);");
+    expect(readFileSync("src/app/my/_lib/schedule.ts", "utf8")).toContain("!lectureAfterMyTerm(l.date, untilByTerm.get(l.term_id))");
+    const page = readFileSync("src/app/my/lecture/page.tsx", "utf8");
+    expect(page).toContain("lectureAfterMyTerm(l.date, until)");
+    expect(page).toContain("lectureAfterTermNote(afterTerm)");
   });
 });
 
@@ -379,7 +435,11 @@ describe("강사 · 관리자 시험 신청 — 신청 수 · 정원에 세지 �
     expect(page).toContain("<StaffTestSignups ");
     expect(page).toMatch(/function StaffTestSignups[\s\S]*?<CancelLectureSignupButton /);
     // 칸을 못 읽으면(배포 사이) 칸 없이 다시 읽는다 — 명단이 비지 않게
-    expect(page).toContain("return (data ?? []).map((s) => ({ ...s, staff_test: false }));");
+    expect(page).toContain("if (withTest.ok || withTest.rows.length > 0) return withTest;");
+    expect(page).toContain("return { rows: old.rows.map((s) => ({ ...s, staff_test: false })), ok: old.ok };");
+    // 신청이 1,000줄을 넘어도 빠지지 않게 쪽을 나눠 읽는다 (2026-10-22 오류 점검) — 쪽이 겹치지 않게 id 까지 줄을 세운다
+    expect(page).toMatch(/readAll<T>\(\(from, to, count\) =>[\s\S]*?\.order\("created_at"\)\s*\.order\("id"\)\s*\.range\(from, to\)/);
+    expect(page).toContain("신청 명단을 다 읽지 못했어요");
     const queries = readFileSync("src/app/my/_lib/queries.ts", "utf8");
     expect(queries).toContain('.select("lecture_id, way, review_url, sns_follow, staff_test").eq("user_id", user.id)');
     expect(readFileSync("src/app/my/lecture/page.tsx", "utf8")).toContain("m.staffTest &&");

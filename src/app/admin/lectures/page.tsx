@@ -25,6 +25,7 @@ import {
 } from "@/lib/lecture";
 import { termParam } from "@/lib/study";
 import { pickTerm } from "../_lib/queries";
+import { readAll } from "@/lib/read-all";
 import {
   getLectureTerms,
   getTermLectures,
@@ -76,9 +77,10 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
 
   const termKey = termParam(term.year, term.month);
   const { lectures, error } = await getTermLectures(supabase, term.id);
-  const [allSignups, termLevels] = lectures.length
+  const [signupRead, termLevels] = lectures.length
     ? await Promise.all([getSignups(supabase, lectures.map((l) => l.id)), getTermLevels(supabase, term.id)])
-    : [[], null];
+    : [{ rows: [], ok: true }, null];
+  const allSignups = signupRead.rows;
   // 강사 · 관리자 시험 신청은 숫자 · 명단에 넣지 않고 특강마다 따로 적는다 (2026-10-16 Alan — "강사가 테스트로 특강신청을 눌러본거는 집계에서 빼줘").
   // 방식 칩 · 신청 받기 취소의 수(applied_count)는 DB 가 이미 학생만 센다 — 여기 탭 숫자도 같은 집합이어야 한다
   const signups = allSignups.filter((s) => !s.staff_test);
@@ -113,6 +115,12 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
       {error && (
         <Alert kind="warning" title="특강을 읽지 못했어요" className="mb-4">
           <p>데이터베이스 업데이트가 아직 적용되지 않았거나 잠깐 연결이 끊겼어요. 잠시 뒤 새로고침해 주세요.</p>
+        </Alert>
+      )}
+
+      {!signupRead.ok && (
+        <Alert kind="warning" className="mb-4">
+          신청 명단을 다 읽지 못했어요. 아래 숫자 · 명단이 모자랄 수 있어요 — 잠시 뒤 새로고침해 주세요.
         </Alert>
       )}
 
@@ -226,20 +234,36 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
 /**
  * 신청 명단 — 방식 · 후기 링크 · 인스타그램 팔로우 · 시험 신청 표시와 함께. 전화번호는 읽지 않는다 (2026-10-16 — 줄에는 레벨을 적는다).
  * 시험 신청 칸(`staff_test`)은 마이그레이션 20261016130000 에서 생겼다 — 못 읽으면(배포 사이) 그 칸 없이 읽고 모두 학생 신청으로 본다 (명단이 비지 않게)
+ * **1,000줄씩 나눠 읽는다** (2026-10-22 오류 점검 — 한 달 특강 넷에 300명씩 신청하면 1,200줄이라 넘친 신청이 명단 · 숫자에서 조용히 빠졌다).
+ * 쪽을 나누므로 신청 시각이 같아도 순서가 하나로 정해지게 `id` 까지 건다. 다 읽지 못하면 `ok` 가 거짓 — 화면이 알린다
  */
 async function getSignups(supabase: Awaited<ReturnType<typeof createClient>>, ids: number[]) {
-  const withTest = await supabase
-    .from("lecture_signups")
-    .select("id, lecture_id, user_id, way, created_at, review_url, sns_follow, staff_test, student:profiles(name)")
-    .in("lecture_id", ids)
-    .order("created_at");
-  if (!withTest.error) return withTest.data ?? [];
-  const { data } = await supabase
-    .from("lecture_signups")
-    .select("id, lecture_id, user_id, way, created_at, review_url, sns_follow, student:profiles(name)")
-    .in("lecture_id", ids)
-    .order("created_at");
-  return (data ?? []).map((s) => ({ ...s, staff_test: false }));
+  const read = <T,>(columns: string) =>
+    readAll<T>((from, to, count) =>
+      supabase
+        .from("lecture_signups")
+        .select(columns, count ? { count: "exact" } : undefined)
+        .in("lecture_id", ids)
+        .order("created_at")
+        .order("id")
+        .range(from, to)
+        .overrideTypes<T[], { merge: false }>(),
+    );
+  type Row = {
+    id: number;
+    lecture_id: number;
+    user_id: string;
+    way: string;
+    created_at: string;
+    review_url: string | null;
+    sns_follow: string | null;
+    student: { name: string } | null;
+  };
+  const withTest = await read<Row & { staff_test: boolean }>("id, lecture_id, user_id, way, created_at, review_url, sns_follow, staff_test, student:profiles(name)");
+  // 칸 없이 다시 읽는 것은 첫 쪽부터 못 읽었을 때만(배포 사이 — 칸이 없다) — 뒤 쪽만 실패했으면 읽은 데까지와 경고 (시험 신청을 학생으로 세지 않게)
+  if (withTest.ok || withTest.rows.length > 0) return withTest;
+  const old = await read<Row>("id, lecture_id, user_id, way, created_at, review_url, sns_follow, student:profiles(name)");
+  return { rows: old.rows.map((s) => ({ ...s, staff_test: false })), ok: old.ok };
 }
 
 /**

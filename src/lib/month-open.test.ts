@@ -11,6 +11,7 @@ import {
   autoOpenMessage,
   autoOpensMonth,
   autoOpenStateOf,
+  duplicateCourseKeys,
   sectionInsertOf,
   type AutoOpenFailure,
   type OpenCourse,
@@ -105,6 +106,23 @@ describe("autoOpenCells — 강좌마다 '전체 선택' 과 같은 칸", () => 
   });
 });
 
+describe("같은 레벨 · 과정 강좌가 둘이면 저절로 열지 않는다 (2026-10-22 오류 점검)", () => {
+  it("시간표에 그 레벨 · 과정 줄이 있는 강좌 둘만 걸린다 — 과정이 다르거나 시간표 줄이 없으면 아니다", () => {
+    expect(duplicateCourseKeys(COURSES, OCT)).toEqual([]);
+    // 반 편성의 '강좌 추가' 는 과정을 고르지 않아(점수보장반) 레벨만 같은 강좌가 하나 더 생긴다
+    expect(duplicateCourseKeys([...COURSES, { id: 7, program: "score", target_score: 650 }], OCT)).toEqual(["650:score"]);
+    expect(duplicateCourseKeys([...COURSES, { id: 7, program: "sparta", target_score: 750 }], OCT)).toEqual(["750:sparta"]);
+    expect(duplicateCourseKeys([...COURSES, { id: 7, program: "score", target_score: 900 }, { id: 8, program: "score", target_score: 900 }], OCT)).toEqual([]);
+    expect(duplicateCourseKeys([...COURSES, { id: 7, program: "score", target_score: null }, { id: 8, program: "score", target_score: null }], OCT)).toEqual([]);
+  });
+
+  it("까닭은 할 일을 적는다 — 새 반 개설에서 강좌를 골라 연다 (누르라는 말 없이)", () => {
+    expect(AUTO_OPEN_STATE_MESSAGE.duplicate_course).toContain("새 반 개설에서 강좌를 골라 직접 열어 주세요");
+    expect(autoOpenMessage({ kind: "failed", month: 11, reason: "duplicate_course" })).toContain("11월 반은 아직 열지 못했어요 — 같은 레벨 · 과정의 강좌가 둘 이상");
+    expect(autoOpenStateOf({ kind: "failed", month: 11, reason: "duplicate_course" })).toEqual({ error: "duplicate_course", sections: 0 });
+  });
+});
+
 describe("반 한 줄 — 새 반 개설과 같은 값", () => {
   const inserts = autoOpenInserts({ term: TERM, courses: COURSES, slots: OCT, taken: new Set(), sessions: { mwf: 9, ttf: 9 } });
   const find = (courseId: number, label: string, track: string) => inserts.find((r) => r.course_id === courseId && r.time_block === label && r.track === track)!;
@@ -164,7 +182,7 @@ describe("저장 뒤 한 줄 · 10분 확인의 결과", () => {
 
   it("누르라는 말이 없다 — 못 열었어도 10분마다 저절로 다시 해 본다 (2026-10-22 Alan '버튼을 안눌러도 자동으로')", () => {
     for (const msg of Object.values(AUTO_OPEN_STATE_MESSAGE)) expect(msg).not.toMatch(/눌러|누르|버튼/);
-    for (const reason of ["no_timetable", "timetable_error", "sections_error", "forbidden"] as AutoOpenFailure[]) {
+    for (const reason of ["no_timetable", "timetable_error", "sections_error", "forbidden", "duplicate_course"] as AutoOpenFailure[]) {
       expect(autoOpenMessage({ kind: "failed", month: 11, reason })).not.toMatch(/눌러|누르|버튼/);
     }
     expect(AUTO_OPEN_STATE_MESSAGE.sections_error).toContain("10분 안에 저절로 다시");
@@ -191,7 +209,9 @@ describe("모든 길이 같은 규칙을 쓴다", () => {
     expect(route).toContain("if (!(await authorizedAppCall(req))) return NextResponse.json({ ok: false }, { status: 401 });");
     expect(route).toContain("const admin = createAdminClient();");
     expect(route).toContain("if (!autoOpensMonth(term.month)) continue;");
-    expect(route).toContain("autoOpenStateOf(await autoOpenMonth(admin, { y: term.year, m: term.month }, today))");
+    expect(route).toContain("autoOpenStateOf(await autoOpenMonth(admin, { y: term.year, m: term.month }, today, { rematch: false }))");
+    // 받아 둔 수강증 다시 맞추기는 여러 달을 돌고 끝에 한 번만 (2026-10-22 오류 점검 — 두 달이 함께 열리면 둘이 겹쳐 돌아 알림이 두 번 갔다)
+    expect(route).toContain("if (opened > 0) after(() => rematchHeldVerifications(admin, { notify: true }));");
     expect(route).toContain('.from("month_auto_open_state")');
   });
 
@@ -222,7 +242,12 @@ describe("모든 길이 같은 규칙을 쓴다", () => {
     expect(core).toContain('import "server-only"');
     expect(core).toMatch(/if \(\(sectionCount \?\? 0\) > 0\) return null;/);
     expect(core).toMatch(/if \(!autoOpensMonth\(ym\.m\)\) return \{ kind: "vacation"/);
-    expect(core).toContain("if (opened > 0) after(() => rematchHeldVerifications(createAdminClient()");
+    expect(core).toContain("if (opened > 0 && opts.rematch !== false) after(() => rematchHeldVerifications(createAdminClient()");
+    // 읽다 실패하면 짐작으로 만들지 않는다 · 같은 레벨 · 과정 강좌가 둘이면 열지 않는다 (2026-10-22 오류 점검 — 동작은 auto-open-month.test.ts)
+    expect(core).toContain("if (dated.error || templates.error || existing.error) return { exists: false, source, rows: [], readError: true };");
+    expect(core).toContain('if (draft.readError) return { kind: "failed", month: ym.m, reason: "timetable_error" };');
+    expect(core).toContain('if (duplicateCourseKeys(courses, slots).length > 0) return { kind: "failed", month: ym.m, reason: "duplicate_course" };');
+    expect(read("src/app/admin/timetable/actions.ts")).toContain('if (draft.readError) done(month, { error: "시간표를 읽지 못했어요. 잠시 뒤 다시 시도해 주세요." });');
     // 시간표 · 반 쓰기는 부른 쪽의 클라이언트 — 강사 · 관리자 세션이면 정책이 한 번 더 막는다. 여기서 서비스 롤을 만들어 쓰지 않는다
     expect(core).not.toMatch(/createAdminClient\(\)\.(from|rpc)\(/);
   });
@@ -284,7 +309,10 @@ describe("DB — 반 넣기는 기수마다 잠금 · 10분마다 반이 없는 
     expect(migration).toContain("revoke all on public.month_auto_open_state from anon, authenticated;");
     expect(migration).toContain("grant select on public.month_auto_open_state to authenticated;");
     expect(migration).not.toMatch(/grant (insert|update|delete)[^;]*month_auto_open_state to authenticated/);
-    const listed = migration.match(/error is null or error in \(([^)]*)\)/)?.[1].split(",").map((x) => x.trim().replace(/'/g, ""));
+    // 까닭 목록은 마지막 정의로 — 2026-10-22 오류 점검에서 duplicate_course 를 더했다 (20261022110000)
+    const lastCheck = flat(sqlOf(FILES.filter((f) => sqlOf(f).includes("month_auto_open_state_error_check")).at(-1)!));
+    const defs = [...lastCheck.matchAll(/month_auto_open_state_error_check check \(error is null or error in \(([^)]*)\)\)/g)];
+    const listed = defs.at(-1)?.[1].split(",").map((x) => x.trim().replace(/'/g, ""));
     expect(listed).toEqual([...AUTO_OPEN_STATE_ERRORS]);
   });
 });

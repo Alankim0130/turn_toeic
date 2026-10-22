@@ -62,6 +62,23 @@ export function autoOpenCells(courses: readonly OpenCourse[], slots: readonly Op
   return out;
 }
 
+/**
+ * **같은 레벨 · 과정의 '사용 중' 강좌가 둘 이상**이고 그 달 시간표에 그 레벨 · 과정 줄이 있으면 — 어느 강좌로 열지 모른다 (2026-10-22 오류 점검).
+ * `autoOpenCells` 는 강좌마다 연다 — 그대로 두면 그 레벨 반이 강좌 둘에 한 벌씩 생기고, 수강증은 같은 시간 · 트랙 반이 둘이라 자동 등업이 멈춘다.
+ * 그래서 그 달은 저절로 열지 않고(`duplicate_course`) 강사가 새 반 개설에서 강좌를 골라 연다. 반 편성의 '강좌 추가' 는 과정을 고르지 않아(점수보장반)
+ * 레벨만 같은 강좌를 하나 더 만들면 여기 걸린다. 시간표 줄이 없는 레벨 · 과정은 어차피 열지 않으니 세지 않는다. 걸린 것 `레벨:과정` 을 돌려준다
+ */
+export function duplicateCourseKeys(courses: readonly OpenCourse[], slots: readonly OpenSlot[]): string[] {
+  const count = new Map<string, number>();
+  for (const c of courses) {
+    if (c.target_score == null) continue;
+    if (!slots.some((s) => s.level === c.target_score && s.program === c.program)) continue;
+    const key = `${c.target_score}:${c.program}`;
+    count.set(key, (count.get(key) ?? 0) + 1);
+  }
+  return [...count].filter(([, n]) => n > 1).map(([key]) => key);
+}
+
 type SectionInsert = Database["public"]["Tables"]["class_sections"]["Insert"];
 
 /**
@@ -138,7 +155,7 @@ export type AutoOpenSummary =
   /** 열지 못했다 — 까닭 */
   | { kind: "failed"; month: number; reason: AutoOpenFailure };
 
-export type AutoOpenFailure = "no_timetable" | "timetable_error" | "sections_error" | "forbidden";
+export type AutoOpenFailure = "no_timetable" | "timetable_error" | "sections_error" | "forbidden" | "duplicate_course";
 
 /**
  * 못 연 까닭 — 저장 · 시간표 만들기 뒤 한 줄과 반 편성 카드가 쓴다. **누르라는 말을 적지 않는다** (2026-10-22 Alan "버튼을 안눌러도 자동으로 세팅되도록") —
@@ -149,11 +166,12 @@ export const AUTO_OPEN_FAILURE: Record<AutoOpenFailure, string> = {
   timetable_error: "시간표를 만들지 못했어요. 10분 안에 저절로 다시 해 봐요.",
   sections_error: "반을 열지 못했어요. 10분 안에 저절로 다시 해 봐요.",
   forbidden: "이 계정(테스트 등급)으로는 열 수 없었어요. 10분 안에 저절로 다시 해 봐요.",
+  duplicate_course: "같은 레벨 · 과정의 강좌가 둘 이상 '사용 중' 이라 어느 강좌로 열지 몰라 저절로 열지 않았어요. 새 반 개설에서 강좌를 골라 직접 열어 주세요.",
 };
 
 /** 10분 확인의 마지막 결과 (DB month_auto_open_state.error — 그 check 와 같은 목록, `month-open.test.ts`). no_sections = 시간표에 이 달 강좌의 시간대가 없다 */
 export type AutoOpenStateError = AutoOpenFailure | "no_sections";
-export const AUTO_OPEN_STATE_ERRORS: readonly AutoOpenStateError[] = ["no_timetable", "timetable_error", "sections_error", "forbidden", "no_sections"];
+export const AUTO_OPEN_STATE_ERRORS: readonly AutoOpenStateError[] = ["no_timetable", "timetable_error", "sections_error", "forbidden", "no_sections", "duplicate_course"];
 export const AUTO_OPEN_STATE_MESSAGE: Record<AutoOpenStateError, string> = {
   ...AUTO_OPEN_FAILURE,
   no_sections: "시간표에 이 달 강좌의 시간대가 없어요. 시간표 설정에서 시간대를 넣으면 10분 안에 반이 저절로 열려요.",

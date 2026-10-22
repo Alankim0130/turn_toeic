@@ -116,6 +116,8 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
   // 보낸 알림 기록은 격자 데이터를 기다릴 까닭이 없다 — 함께 묻는다 (2026-10-09 "숙제미제출 알림 페이지를 클릭하면 로딩시간이 오래걸려").
   // 학생 × 레벨마다 한 줄이라 방학달에 1,000줄(API 한 번에 주는 끝)을 넘을 수 있다 — 넘친 학생은 '알림 받은 적 없음' 으로 보여
   // 미제출 전체선택에 다시 골라졌다 (2026-10-16 점검). 그래서 쪽으로 나눠 읽는다
+  // 이 화면을 그린 시각 — 읽기 전에 잰다. 보내기가 이 뒤에 받은 알림을 가려 같은 알림이 두 번 가지 않게 한다 (2026-10-22 오류 점검)
+  const loadedAt = renderedAt();
   const [data, { rows: sentRows }] = await Promise.all([
     loadMissingData(supabase, term),
     readAll<{ user_id: string; level: number | null; sent_at: string }>((from, to, count) =>
@@ -266,11 +268,14 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
         />
       ) : (
         // 기수 · 레벨이 바뀌면 고른 것을 비운다 (보기를 바꾸는 것은 그대로 둔다 — 날짜별에서 고르고 학생별에서 확인할 수 있게)
-        <MissingBoard key={`${term.id}-${level}`} termId={term.id} level={level!} view={view} groups={groups} days={days} picks={defaultPicks(full, lastSent)} />
+        <MissingBoard key={`${term.id}-${level}`} termId={term.id} level={level!} view={view} groups={groups} days={days} picks={defaultPicks(full, lastSent)} loadedAt={loadedAt} />
       )}
     </>
   );
 }
+
+/** 지금 (ISO) — 화면을 그린 시각을 보내기에 넘긴다 */
+const renderedAt = () => new Date().toISOString();
 
 /** "21:00" — 한국 시각 */
 const kstHm = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false });

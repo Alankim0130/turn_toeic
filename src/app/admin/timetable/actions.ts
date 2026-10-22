@@ -209,6 +209,7 @@ export async function createMonthTimetable(formData: FormData) {
 
   const supabase = await createClient();
   const draft = await draftMonthTimetable(supabase, ym);
+  if (draft.readError) done(month, { error: "시간표를 읽지 못했어요. 잠시 뒤 다시 시도해 주세요." });
   if (draft.exists) done(month, { error: `${ym.m}월 시간표는 이미 있어요.` });
   if (draft.rows.length === 0) done(month, { error: "가져올 시간표가 없어요. 카드에서 시간대를 하나씩 더해 주세요." });
 

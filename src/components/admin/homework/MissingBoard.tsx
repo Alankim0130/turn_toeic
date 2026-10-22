@@ -115,6 +115,7 @@ export function MissingBoard({
   groups,
   days = [],
   picks,
+  loadedAt,
 }: {
   termId: number;
   level: number;
@@ -122,6 +123,8 @@ export function MissingBoard({
   groups: MissingGroupView[];
   days?: MissingDayView[];
   picks: string[];
+  /** 이 화면을 그린 시각 — 그 뒤에 이미 알림을 받은 학생은 서버가 뺀다 (같은 알림이 두 번 가지 않게, 2026-10-22) */
+  loadedAt: string;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -177,7 +180,7 @@ export function MissingBoard({
   async function send() {
     if (busy || toSend.length === 0) return;
     setBusy(true);
-    const res = await sendHomeworkMissingNotice({ termId, level, userIds: toSend.map((r) => r.id), title }).catch(
+    const res = await sendHomeworkMissingNotice({ termId, level, userIds: toSend.map((r) => r.id), title, loadedAt }).catch(
       () => ({ ok: false, error: "보내지 못했어요. 잠시 뒤 다시 해 주세요." }) as const,
     );
     setBusy(false);
@@ -187,7 +190,8 @@ export function MissingBoard({
       text:
         `${res.sent}명에게 숙제 알림을 보냈어요. 학생 알림함(마이페이지 → 알림)에서 볼 수 있어요.` +
         (res.skipped > 0 ? ` 그 사이 숙제를 다 낸 ${res.skipped}명은 뺐어요.` : "") +
-        (res.unsubscribed > 0 ? ` 그 사이 '알림 안 받기' 를 누른 ${res.unsubscribed}명은 뺐어요.` : ""),
+        (res.unsubscribed > 0 ? ` 그 사이 '알림 안 받기' 를 누른 ${res.unsubscribed}명은 뺐어요.` : "") +
+        (res.already > 0 ? ` 화면을 연 뒤 이미 알림을 받은 ${res.already}명은 뺐어요.` : ""),
     });
     setCompose(false);
     setSelected(new Set());

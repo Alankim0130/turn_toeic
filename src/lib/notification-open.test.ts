@@ -186,6 +186,10 @@ describe("PwaRegister — 서비스 워커의 물음을 받는 쪽", () => {
     expect(src).toContain("controller.postMessage({ type: PENDING_MESSAGE }");
     expect(src).toContain("sw.startMessages()");
   });
+  it("다른 화면으로 옮길 때는 30초 기억을 먼저 비운다 — 방금 본 불라방 화면이 새 링크 없이 뜨지 않게 (2026-10-22 오류 점검)", () => {
+    // Next 16 의 refresh 리듀서가 그 자리에서 기억(BFCache)을 비우고, 곧이은 push 가 그 refresh 를 대신해 새로 받아 온다
+    expect(src).toMatch(/else if \(move\.action === "go"\) \{[\s\S]*?router\.refresh\(\);\s*router\.push\(move\.path\);/);
+  });
   it("답을 기다리는 시간은 1초 아래 — 파이어폭스는 누른 뒤 1초 안에만 새 창을 열어 준다", () => {
     const ms = Number(readFileSync("public/sw.js", "utf8").match(/const ASK_TIMEOUT_MS = (\d+);/)?.[1]);
     expect(ms).toBeGreaterThan(0);

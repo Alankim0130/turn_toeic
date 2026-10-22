@@ -14,7 +14,7 @@ import {
   type LinkInput,
 } from "@/lib/class-materials";
 import { noteImagePaths } from "@/lib/note-format";
-import { isNoteImagePath } from "@/lib/note-images";
+import { isNoteImagePath, removeNoteImagesIfUnused } from "@/lib/note-images";
 import { isSafeObjectPath, type UploadedFile } from "@/lib/upload";
 
 export type NoticeResult = { ok: boolean; error?: string; id?: number };
@@ -158,7 +158,7 @@ export async function saveClassNotice(input: {
   // 고치면서 본문에서 빠진 사진은 저장소에서 지운다
   const kept = new Set(noteImagePaths(body));
   const gone = noteImagePaths(old.body).filter((p) => !kept.has(p) && isNoteImagePath(p));
-  if (gone.length) await supabase.storage.from(CLASS_NOTICE_BUCKET).remove(gone);
+  if (gone.length) await removeNoteImagesIfUnused(supabase, { bucket: CLASS_NOTICE_BUCKET, table: "class_notices" }, gone);
 
   // 3) 뺀 첨부 파일 — 행을 지운 뒤 저장소에서도 지운다 (파일마다 경로가 달라 다른 공지 · 자료가 같은 파일을 쓰지 않는다)
   if (removing.length > 0) {
@@ -225,8 +225,9 @@ export async function deleteClassNotice(id: number): Promise<NoticeResult> {
   const { data, error } = await supabase.from("class_notices").delete().eq("id", id).select("body");
   if (error) return { ok: false, error: "삭제하지 못했어요." };
   if (!data?.length) return { ok: false, error: "공지를 찾을 수 없어요. 새로고침해 주세요." };
+  // 사진은 다른 공지가 아직 가리키면 남긴다 (공지를 지운 뒤에 센다)
   const paths = data.flatMap((d) => noteImagePaths(d.body));
-  if (paths.length) await supabase.storage.from(CLASS_NOTICE_BUCKET).remove(paths);
+  if (paths.length) await removeNoteImagesIfUnused(supabase, { bucket: CLASS_NOTICE_BUCKET, table: "class_notices" }, paths);
   if (files?.length) await supabase.storage.from(CLASS_NOTICE_FILE_BUCKET).remove(files.map((f) => f.file_path));
   revalidateNotices(id);
   return { ok: true };

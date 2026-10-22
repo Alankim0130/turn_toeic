@@ -12,7 +12,7 @@ import { loadMissingData, sectionSortKey } from "../_lib/missing";
 /** 한 번에 보내는 학생 수 — 한 레벨의 한 달 학생이 이 안에 든다 (방학 600명도 레벨마다 나뉜다) */
 const MAX_RECIPIENTS = 300;
 
-export type MissingNoticeResult = { ok: true; sent: number; skipped: number; unsubscribed: number } | { ok: false; error: string };
+export type MissingNoticeResult = { ok: true; sent: number; skipped: number; unsubscribed: number; already: number } | { ok: false; error: string };
 
 /**
  * 숙제 미제출 알림 보내기 (2026-10-08 Alan — "안한사람은 일괄선택해서 알림메시지도 보낼 수 있으면 좋겠어" · "조교도 보낸다").
@@ -28,8 +28,10 @@ export type MissingNoticeResult = { ok: true; sent: number; skipped: number; uns
  * **강사가 아닌 사람(조교 · 관리자)이 보내도 학생에게는 안 낸 과목의 선생님 이름으로 간다** — DB 트리거(`private.student_messages_homework_missing_sender`)가 바꾼다
  * (2026-10-08 저녁부터 관리자도 — 20261008160000). 여기서는 보내는 사람의 이름을 그대로 넣는다 (강사는 그 이름이 남는다). 조교 정책은 그 기수 반에 배정된 학생만 받는다.
  * 로그인한 세션으로 넣어 정책이 한 번 더 본다.
+ * **화면을 연 뒤(`loadedAt`) 이 레벨 미제출 알림을 이미 받은 학생은 뺀다**(`already`, 2026-10-22 오류 점검) — 화면을 열어 둔 사이 자동 알림 · 다른 선생님 · 다른 창이
+ * 보냈으면 같은 알림이 두 번 갔다. 다시 보내려면 새로고침해서 그 알림이 화면에 보인 뒤 고른다.
  */
-export async function sendHomeworkMissingNotice(input: { termId: number; level: number; userIds: string[]; title: string }): Promise<MissingNoticeResult> {
+export async function sendHomeworkMissingNotice(input: { termId: number; level: number; userIds: string[]; title: string; loadedAt?: string }): Promise<MissingNoticeResult> {
   const { user, profile } = await requireCrew();
   const title = String(input.title ?? "").trim();
   if (!title) return { ok: false, error: "알림 제목을 적어 주세요." };
@@ -61,9 +63,19 @@ export async function sendHomeworkMissingNotice(input: { termId: number; level: 
           : "고른 학생은 지금 기한이 지난 숙제가 없어요. 새로고침해 주세요.",
     };
   }
+  // 화면을 연 뒤 받은 알림 — 그 기수 · 이 레벨에서 그 시각 뒤에 간 것만 (학생 × 레벨마다 한 줄이라 몇 줄 안 된다). 시각이 없으면(배포 사이 옛 화면) 예전처럼 보낸다
+  const loadedAt = typeof input.loadedAt === "string" && Number.isFinite(Date.parse(input.loadedAt)) ? new Date(input.loadedAt).toISOString() : null;
+  let received = new Set<string>();
+  if (loadedAt) {
+    const { data: recent, error: recentError } = await supabase.rpc("homework_missing_notices", { p_term_id: term.id }).eq("level", level).gt("sent_at", loadedAt);
+    if (recentError) return { ok: false, error: "보낸 알림 기록을 읽지 못했어요. 잠시 뒤 다시 해 주세요." };
+    received = new Set((recent ?? []).map((r) => r.user_id));
+  }
+  const fresh = rows.filter((r) => !received.has(r.id));
+  if (fresh.length === 0) return { ok: false, error: "고른 학생은 화면을 연 뒤 이미 미제출 알림을 받았어요. 새로고침해서 확인해 주세요." };
 
   const { error } = await supabase.from("student_messages").insert(
-    rows.map((r) => ({
+    fresh.map((r) => ({
       user_id: r.id,
       sender_id: user.id, // 누가 보냈는지는 기록에 남는다 (학생은 이 id 로 이름을 못 읽는다)
       sender_name: profile.name || "", // 강사가 아니면(조교 · 관리자) DB 트리거가 안 낸 과목의 선생님 이름으로 바꾼다
@@ -77,7 +89,7 @@ export async function sendHomeworkMissingNotice(input: { termId: number; level: 
 
   revalidatePath("/admin/homework/missing");
   revalidatePath("/my", "layout"); // 학생 알림함 배지
-  return { ok: true, sent: rows.length, skipped: ids.length - rows.length - unsubscribed, unsubscribed };
+  return { ok: true, sent: fresh.length, skipped: ids.length - rows.length - unsubscribed, unsubscribed, already: rows.length - fresh.length };
 }
 
 export type MissingAutoResult = { ok: true; message: string } | { ok: false; error: string };

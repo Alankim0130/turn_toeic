@@ -1,7 +1,7 @@
 import { type CalendarMark } from "@/components/my/MonthCalendar";
 import { type DayRow, type LectureRow } from "@/components/my/MonthSchedule";
 import { formatTime, formatTimeRange, todayKST, TRACK_LABEL } from "@/lib/utils";
-import { lectureListed, lectureTitle } from "@/lib/lecture";
+import { lectureAfterMyTerm, lectureListed, lectureTitle } from "@/lib/lecture";
 import { classHours, toClassHours, type ClassHour } from "@/lib/class-hours";
 import { initialDay } from "@/lib/class-day";
 import { studentTrackLabel, week5SectionIds } from "@/lib/week5";
@@ -43,7 +43,7 @@ export async function getMySchedule() {
     earlyTermsP,
     earlyIncludesP,
   ]);
-  const { signupTerms } = await getMyStudyEligibility(orders);
+  const { signupTerms, untilByTerm } = await getMyStudyEligibility(orders);
 
   // 학생에게는 월수금·화목금 대신 "주5일" 로 보여 준다 (2026-09-16 Alan) — 판정은 lib/week5.ts.
   // **내가 등록한 반**으로 본다 — 스태프는 RLS 가 모든 반을 내려 줘서 남의 반까지 짝으로 잡힌다
@@ -99,8 +99,13 @@ export async function getMySchedule() {
 
   // 신청을 받는 특강은 위로 따로 모아 보여 준다 — 강사가 '신청 받기' 를 누른 특강만(2026-10-16) · 내가 신청한 특강.
   // 개강 전 기수의 특강은 날짜만 보이고 여기엔 안 든다 — 신청은 개강일부터
+  // 내 수업이 끝난 뒤의 특강(2주완성의 뒤 절반)은 신청할 수 없어 세지 않는다 (2026-10-22, `lectureAfterMyTerm`)
   const signupLectures = lectures
-    .filter((l) => signupTerms.has(l.term_id) && (mySignups.has(l.id) || lectureListed(l, today)))
+    .filter(
+      (l) =>
+        signupTerms.has(l.term_id) &&
+        (mySignups.has(l.id) || (lectureListed(l, today) && !lectureAfterMyTerm(l.date, untilByTerm.get(l.term_id)))),
+    )
     .sort((a, b) => a.date.localeCompare(b.date));
 
   // 월별 그룹 — 수업일과 특강을 같은 달력에 함께 보여 준다

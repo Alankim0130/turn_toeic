@@ -1,6 +1,7 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { authorizedAppCall } from "@/lib/cron-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { rematchHeldVerifications } from "@/lib/rematch-held";
 import { todayKST } from "@/lib/utils";
 import { autoOpenStateOf, autoOpensMonth } from "@/lib/month-open";
 import { autoOpenMonth } from "@/app/admin/sections/_lib/open-month";
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
     if (!autoOpensMonth(term.month)) continue;
     let state: ReturnType<typeof autoOpenStateOf> = null;
     try {
-      state = autoOpenStateOf(await autoOpenMonth(admin, { y: term.year, m: term.month }, today));
+      state = autoOpenStateOf(await autoOpenMonth(admin, { y: term.year, m: term.month }, today, { rematch: false }));
     } catch (e) {
       console.error("[month-auto-open] open", term.year, term.month, e);
       state = { error: "sections_error", sections: 0 };
@@ -61,6 +62,9 @@ export async function POST(req: NextRequest) {
       .upsert({ term_id: term.id, tried_at: new Date().toISOString(), error: state.error, sections: state.sections }, { onConflict: "term_id" });
     if (saveError) console.error("[month-auto-open] state", saveError.message);
   }
+
+  // 받아 둔 수강증 다시 맞추기는 끝에 한 번만 — 두 달을 함께 열어도 같은 수강증을 두 번 보지 않는다 (2026-10-22 오류 점검)
+  if (opened > 0) after(() => rematchHeldVerifications(admin, { notify: true }));
 
   return NextResponse.json({ ok: true, opened, failed });
 }

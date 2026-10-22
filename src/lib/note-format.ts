@@ -87,6 +87,17 @@ const TAG = /\[(\/?)(b|i|u|mark|color|size|center|right)(?:=([a-z]+))?\]|\[img=(
  */
 const TABLE_BLOCK = /\[table\]((?:\\.|[^\\[\n]|\[(?!\/table\]))*)\[\/table\]/;
 const TOKEN = new RegExp(`${TABLE_BLOCK.source}|${TAG.source}`, "g");
+/** 그 자리의 `[` 가 태그로 읽히나 (글자를 적을 때 — `lineNote`) */
+const TAG_AT = new RegExp(TAG.source, "y");
+/**
+ * **글자로 적은 `[`** — 저장할 때 그 바로 뒤에 보이지 않는 글자(WORD JOINER, U+2060)를 붙여 태그 · 표로 읽히지 않게 하고, 읽을 때 뗀다
+ * (2026-10-22 오류 점검 — 발음 기호 `[b]` · `[i]` · `[u]` 나 글자로 적은 `[center]` · `[img=…]` · `[table]` 이 저장한 뒤 다시 읽으면
+ * 서식 태그로 읽혀 굵게 · 기울임 · 정렬로 바뀌거나 그 줄의 표가 글자로 풀렸다. 편집기는 다시 열 때까지 글자로 보여 줘 쓴 사람은 몰랐다).
+ * `\[` 로 이스케이프하지 않은 것은 **예전 글 때문**이다 — 예전 글에는 `\` 바로 뒤에 진짜 태그가 오는 글(₩ 를 `\` 로 친 `\[b]15,000[/b]`)이 있을 수 있어
+ * `\[` 를 글자로 읽기 시작하면 그 글의 서식이 풀린다. U+2060 은 예전 글에 없고 화면에도 안 보인다 (보이지 않는 글자 — 혹시 남아도 모양은 같다)
+ */
+const LITERAL_MARK = "⁠";
+const LITERAL_BRACKET = `[${LITERAL_MARK}`;
 
 type Open = { tag: string; style: NoteStyle };
 
@@ -160,7 +171,9 @@ export function parseDoc(note: string): NoteDoc {
   const aligns: NoteAlign[] = ["left"];
   const stack: Open[] = [];
   let lineEmpty = true;
-  const emit = (text: string, style: NoteStyle) => {
+  const emit = (raw: string, style: NoteStyle) => {
+    // 글자로 적은 `[` 의 보이지 않는 표시는 뗀다 (`LITERAL_MARK`)
+    const text = raw.includes(LITERAL_BRACKET) ? raw.replaceAll(LITERAL_BRACKET, "[") : raw;
     if (!text) return;
     push(runs, text, style);
     const parts = text.split("\n");
@@ -321,32 +334,60 @@ function wrapText(s: NoteStyle, text: string): string {
   return wraps.map((w) => w.open).join("") + text + wraps.reverse().map((w) => w.close).join("");
 }
 
-/** 조각 → 저장할 글. 조각마다 여는 · 닫는 태그를 따로 붙인다 (겹침이 없어 다시 읽으면 같은 조각이 나온다) */
-export function runsToNote(runs: NoteRun[]): string {
-  let out = "";
-  for (const r of runs) {
+/**
+ * 한 줄 → 저장할 글. 정렬 표시 · 서식 태그 · 그림 · 표는 그대로 적고, 글자의 `[` 는 **다시 읽을 때 태그 · 표로 읽힐 자리만**
+ * 바로 뒤에 `LITERAL_MARK` 를 붙인다 (2026-10-22 오류 점검) — 그 자리에서 태그(`TAG`)나 `[table]` 로 시작하는 `[` 다.
+ * 태그는 줄 · 조각을 넘지 않고(이름 · 값에 `[` 가 없다) 서식이 다른 조각 사이에는 늘 태그가 끼므로 한 번 훑으면 된다.
+ * 그래서 `[b]와 [v] 발음`(발음 기호) · 글자로 적은 `[center]` · `[img=…]` · `[table]` 이 다시 읽어도 글자이고, 그런 글자가 없는 글은 예전과 같다
+ */
+function lineNote(line: readonly NoteRun[], align: NoteAlign): string {
+  const parts: { s: string; text: boolean }[] = [];
+  if (align !== "left") parts.push({ s: `[${align}]`, text: false });
+  for (const r of line) {
     if (!r.text) continue;
     const s = r.style;
-    if (s.img) {
-      out += `[img=${s.img.path}${s.img.w === 100 ? "" : ` w=${s.img.w}`}]`;
+    if (s.img) parts.push({ s: `[img=${s.img.path}${s.img.w === 100 ? "" : ` w=${s.img.w}`}]`, text: false });
+    else if (s.table) parts.push({ s: tableToNote(s.table), text: false });
+    else {
+      // 조각마다 여는 · 닫는 태그를 따로 붙인다 (겹침이 없어 다시 읽으면 같은 조각이 나온다)
+      const wraps = wrapsOf(s);
+      for (const w of wraps) parts.push({ s: w.open, text: false });
+      parts.push({ s: r.text, text: true });
+      for (const w of wraps.reverse()) parts.push({ s: w.close, text: false });
+    }
+  }
+  const raw = parts.map((p) => p.s).join("");
+  if (!parts.some((p) => p.text && p.s.includes("["))) return raw;
+  let out = "";
+  let at = 0;
+  for (const p of parts) {
+    if (!p.text) {
+      out += p.s;
+      at += p.s.length;
       continue;
     }
-    if (s.table) {
-      out += tableToNote(s.table);
-      continue;
+    for (let k = 0; k < p.s.length; k++, at++) {
+      const c = p.s[k];
+      if (c !== "[") {
+        out += c;
+        continue;
+      }
+      TAG_AT.lastIndex = at;
+      out += raw.startsWith("[table]", at) || TAG_AT.test(raw) ? LITERAL_BRACKET : "[";
     }
-    out += wrapText(s, r.text);
   }
   return out;
+}
+
+/** 조각 → 저장할 글 (정렬 표시 없이 — 줄이 여럿이어도 한 덩어리로) */
+export function runsToNote(runs: NoteRun[]): string {
+  return lineNote(runs, "left");
 }
 
 /** 글 한 편 → 저장할 글. 줄마다 정렬 표시를 맨 앞에 */
 export function docToNote(doc: NoteDoc): string {
   return splitLines(doc.runs)
-    .map((line, i) => {
-      const a = doc.aligns[i] ?? "left";
-      return (a === "left" ? "" : `[${a}]`) + runsToNote(line);
-    })
+    .map((line, i) => lineNote(line, doc.aligns[i] ?? "left"))
     .join("\n");
 }
 

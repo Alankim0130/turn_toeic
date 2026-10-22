@@ -6,7 +6,7 @@ import type { Database, Json } from "@/lib/supabase/database.types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rematchHeldVerifications } from "@/lib/rematch-held";
 import { heldCountable } from "@/lib/month-setup";
-import { autoOpenInserts, autoOpensMonth, type AutoOpenSummary } from "@/lib/month-open";
+import { autoOpenInserts, autoOpensMonth, duplicateCourseKeys, type AutoOpenSummary } from "@/lib/month-open";
 import { chooseMonthSource, draftMonth, madeMonths, ymLabel, type MonthSource, type SlotValues, type YM } from "@/lib/timetable-month";
 
 /** 강사 · 관리자의 세션(달력 저장 · 시간표 만들기) 또는 서버(10분 확인 `/api/cron/month-auto-open`) */
@@ -19,25 +19,24 @@ const SLOT_COLUMNS = "id, year, month, level, program, start_time, end_time, ttf
  * 그 달 시간표 초안 — 시간표 설정의 'N월 시간표 만들기'(`createMonthTimetable`)와 평달 자동 세팅(`autoOpenMonth`)이 같이 쓴다.
  * 출발점은 `chooseMonthSource`(앞선 같은 계절 달 · 없으면 기본 줄), 줄은 `draftMonth`(과정은 달 수만큼 뒤집기 · 과목 그대로, 끊긴 방학달은 시간만).
  * 만든 달 목록은 **최근 달부터** 읽는다 — 시간표가 쌓여 1,000줄(PostgREST 상한)을 넘어도 가까운 달이 빠지지 않게.
+ * **하나라도 읽다 실패하면 초안을 만들지 않는다**(`readError`, 2026-10-22 오류 점검) — 만든 달 목록이 비어 보이면 앞선 달이 아니라 기본 줄에서 시간만
+ * 가져와 과정 A/B · 과목이 빈 시간표가 생기고, 그 달 반이 그대로 열린다 (그 뒤에는 반이 있어 저절로 고쳐지지 않는다).
  */
-export async function draftMonthTimetable(supabase: Client, ym: YM): Promise<{ exists: boolean; source: MonthSource; rows: DraftRow[] }> {
-  const [{ data: dated }, { data: templates }, { count }] = await Promise.all([
+export async function draftMonthTimetable(supabase: Client, ym: YM): Promise<{ exists: boolean; source: MonthSource; rows: DraftRow[]; readError: boolean }> {
+  const [dated, templates, existing] = await Promise.all([
     supabase.from("timetable_slots").select("year, month").not("year", "is", null).order("year", { ascending: false }).order("month", { ascending: false }).limit(1000),
     supabase.from("timetable_slots").select("season").is("year", null),
     supabase.from("timetable_slots").select("id", { count: "exact", head: true }).eq("year", ym.y).eq("month", ym.m),
   ]);
-  const source = chooseMonthSource(ym, madeMonths(dated ?? []), (s) => (templates ?? []).some((r) => r.season === s));
-  if ((count ?? 0) > 0) return { exists: true, source, rows: [] };
+  const source = chooseMonthSource(ym, madeMonths(dated.data ?? []), (s) => (templates.data ?? []).some((r) => r.season === s));
+  if (dated.error || templates.error || existing.error) return { exists: false, source, rows: [], readError: true };
+  if ((existing.count ?? 0) > 0) return { exists: true, source, rows: [], readError: false };
 
-  let rows: SlotValues[] = [];
-  if (source.kind === "month") {
-    const { data } = await supabase.from("timetable_slots").select(SLOT_COLUMNS).eq("year", source.from.y).eq("month", source.from.m);
-    rows = data ?? [];
-  } else if (source.kind === "template") {
-    const { data } = await supabase.from("timetable_slots").select(SLOT_COLUMNS).is("year", null).eq("season", source.season);
-    rows = data ?? [];
-  }
-  return { exists: false, source, rows: draftMonth(source, rows).map((r) => ({ ...r, year: ym.y, month: ym.m })) };
+  let read: { data: SlotValues[] | null; error: unknown } = { data: [], error: null };
+  if (source.kind === "month") read = await supabase.from("timetable_slots").select(SLOT_COLUMNS).eq("year", source.from.y).eq("month", source.from.m);
+  else if (source.kind === "template") read = await supabase.from("timetable_slots").select(SLOT_COLUMNS).is("year", null).eq("season", source.season);
+  if (read.error) return { exists: false, source, rows: [], readError: true };
+  return { exists: false, source, rows: draftMonth(source, read.data ?? []).map((r) => ({ ...r, year: ym.y, month: ym.m })), readError: false };
 }
 
 type SectionInsert = Database["public"]["Tables"]["class_sections"]["Insert"];
@@ -79,8 +78,10 @@ export async function insertSections(
  *
  * 돌려주는 것: 할 일이 없으면 null · 방학달이면 vacation(강사가 연다) · 열었으면 opened · 못 열었으면 failed(까닭).
  * 실패해도 던지지 않는다 — 달력 저장 · 시간표 만들기는 그대로 성공이다.
+ * `rematch: false` 면 받아 둔 수강증 다시 맞추기를 부른 쪽에 맡긴다 — 10분 확인은 여러 달을 돌고 끝에 한 번만 부른다 (2026-10-22 오류 점검:
+ * 두 달이 한 번에 열리면 다시 맞추기가 둘 겹쳐 돌아 같은 수강증을 두 번 보고 스태프 알림 · '확인 필요' 가 두 번 갔다).
  */
-export async function autoOpenMonth(supabase: Client, ym: YM, today: string): Promise<AutoOpenSummary | null> {
+export async function autoOpenMonth(supabase: Client, ym: YM, today: string, opts: { rematch?: boolean } = {}): Promise<AutoOpenSummary | null> {
   const { data: term } = await supabase.from("terms").select("id, enrollment_opens_at, closes_at").eq("year", ym.y).eq("month", ym.m).maybeSingle();
   if (!term?.enrollment_opens_at || !term.closes_at) return null;
   if (term.closes_at < today) return null;
@@ -88,12 +89,18 @@ export async function autoOpenMonth(supabase: Client, ym: YM, today: string): Pr
   if ((sectionCount ?? 0) > 0) return null;
   if (!autoOpensMonth(ym.m)) return { kind: "vacation", month: ym.m };
 
-  const readSlots = async () => (await supabase.from("timetable_slots").select(SLOT_COLUMNS).eq("year", ym.y).eq("month", ym.m)).data ?? [];
+  // 읽다 실패하면(null) 못 연 것으로 — 빈 시간표로 보고 새로 만들지 않는다 (10분 확인이 다시 해 본다)
+  const readSlots = async () => {
+    const { data, error } = await supabase.from("timetable_slots").select(SLOT_COLUMNS).eq("year", ym.y).eq("month", ym.m);
+    return error ? null : (data ?? []);
+  };
   let slots = await readSlots();
+  if (!slots) return { kind: "failed", month: ym.m, reason: "timetable_error" };
   let timetableMade = false;
   let from: string | null = null;
   if (slots.length === 0) {
     const draft = await draftMonthTimetable(supabase, ym);
+    if (draft.readError) return { kind: "failed", month: ym.m, reason: "timetable_error" };
     if (!draft.exists) {
       if (draft.rows.length === 0) return { kind: "failed", month: ym.m, reason: "no_timetable" };
       const { error } = await supabase.from("timetable_slots").insert(draft.rows);
@@ -105,17 +112,22 @@ export async function autoOpenMonth(supabase: Client, ym: YM, today: string): Pr
       }
     }
     slots = await readSlots();
+    if (!slots) return { kind: "failed", month: ym.m, reason: "timetable_error" };
     if (slots.length === 0) return { kind: "failed", month: ym.m, reason: "no_timetable" };
   }
 
-  const [{ data: courses }, { data: classDates }] = await Promise.all([
+  const [{ data: courses, error: coursesError }, { data: classDates }] = await Promise.all([
     supabase.from("courses").select("id, program, target_score").eq("is_active", true),
     supabase.from("term_class_dates").select("track").eq("term_id", term.id),
   ]);
+  // 강좌를 못 읽으면 열 반이 0 으로 보여 '시간표에 이 달 강좌의 시간대가 없어요' 로 잘못 말한다
+  if (coursesError || !courses) return { kind: "failed", month: ym.m, reason: "sections_error" };
+  // 같은 레벨 · 과정 강좌가 둘이면 어느 쪽으로 열지 모른다 — 강사가 새 반 개설에서 고른다 (`duplicateCourseKeys`)
+  if (duplicateCourseKeys(courses, slots).length > 0) return { kind: "failed", month: ym.m, reason: "duplicate_course" };
   const sessionsOf = (track: string) => (classDates ?? []).filter((d) => d.track === track).length;
   const inserts = autoOpenInserts({
     term: { id: term.id, enrollment_opens_at: term.enrollment_opens_at, closes_at: term.closes_at },
-    courses: courses ?? [],
+    courses,
     slots,
     taken: new Set(),
     sessions: { mwf: sessionsOf("mwf"), ttf: sessionsOf("ttf") },
@@ -135,7 +147,7 @@ export async function autoOpenMonth(supabase: Client, ym: YM, today: string): Pr
       ? await supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).eq("hold_month", ym.m)
       : { count: 0 };
   // 모집 중인 반이 열렸다 — 받아 둔 다음 달 수강증을 올릴 때와 같은 조건으로 다시 맞춘다 (새 반 개설과 같은 길)
-  if (opened > 0) after(() => rematchHeldVerifications(createAdminClient(), { notify: true }));
+  if (opened > 0 && opts.rematch !== false) after(() => rematchHeldVerifications(createAdminClient(), { notify: true }));
 
   revalidatePath("/admin/sections", "layout");
   revalidatePath("/admin/timetable");

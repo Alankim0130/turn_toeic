@@ -9,6 +9,8 @@ import {
   LECTURE_STATE_CLASS,
   LECTURE_STATE_LABEL,
   lectureCameo,
+  lectureAfterMyTerm,
+  lectureAfterTermNote,
   lectureCondition,
   lectureConditionOf,
   lectureListed,
@@ -36,10 +38,15 @@ export default async function MyLecturePage() {
   // 잠금 판정과 데이터를 함께 받는다 (loadGated)
   const g = await loadGated("lecture", () => Promise.all([getMyLectures(), getMyLectureSignups(), getMyStudyEligibility()]));
   if (g.locked) return g.locked;
-  const [lectures, mySignups, { subjectsByTerm }] = g.data;
+  const [lectures, mySignups, { subjectsByTerm, untilByTerm }] = g.data;
   const today = todayKST();
   // 단과 학생은 제 과목 특강만 (2026-10-12 Alan — "RC 단과반은 LC특강신청이 안되고, LC단과는 RC특강신청이 안되도록"). 막는 것은 DB 트리거이고 여기서는 버튼을 그리지 않는다
   const blockedFor = (l: (typeof lectures)[number]) => (mySignups.has(l.id) ? [] : lectureSubjectBlock(l.kinds, subjectsByTerm.get(l.term_id) ?? new Set<string>()));
+  // 내 수업이 끝난 뒤의 특강 — 2주완성은 앞 절반 수업 기간의 특강만 (2026-10-22 오류 점검, DB private.lecture_in_my_term). 버튼 대신 까닭을 적는다
+  const afterTermOf = (l: (typeof lectures)[number]) => {
+    const until = untilByTerm.get(l.term_id);
+    return !mySignups.has(l.id) && until && lectureAfterMyTerm(l.date, until) ? until : null;
+  };
 
   // **강사가 '신청 받기' 를 누른 특강만** 선다 (2026-10-16 Alan — "일정표에는 특강이 표시되도록 하는데, 실제 신청받는곳에서는 전부 안보이도록해줘 …
   // 강사가 직접 '신청받기' 버튼을 누르면 바로 오픈"). 신청 받기 전 · 지난 특강은 내가 신청한 것만 기록으로 남긴다. 같은 날은 RC · LC · 1차 · 2차 순 (sortLectures)
@@ -50,6 +57,7 @@ export default async function MyLecturePage() {
       !mySignups.has(l.id) &&
       lectureListed(l, today) &&
       blockedFor(l).length === 0 &&
+      !afterTermOf(l) &&
       l.ways.some((w) => w.enabled && !wayFull(w) && lectureCondition(w.signup_condition) === "review"),
   );
   // 방식을 고르면 뜨는 조건 상자 — 조건마다 한 번 그려 신청 칸(클라이언트)에 넘긴다
@@ -97,6 +105,7 @@ export default async function MyLecturePage() {
             // 강사 캐리커처 + 한마디 (2026-10-02 Alan)
             const cameo = lectureCameo(l.lecturer?.name, l.kinds);
             const blocked = blockedFor(l);
+            const afterTerm = blocked.length === 0 ? afterTermOf(l) : null;
             const mySubjects = subjectsByTerm.get(l.term_id) ?? new Set<string>();
             const canCancel = state === "open" || state === "full";
             return (
@@ -113,10 +122,10 @@ export default async function MyLecturePage() {
                     <span
                       className={cn(
                         "shrink-0 rounded-full px-2.5 py-1 text-xs font-bold",
-                        applied ? "bg-brand-500 text-white" : blocked.length > 0 ? "bg-line text-slate" : LECTURE_STATE_CLASS[state],
+                        applied ? "bg-brand-500 text-white" : blocked.length > 0 || afterTerm ? "bg-line text-slate" : LECTURE_STATE_CLASS[state],
                       )}
                     >
-                      {applied ? "신청 완료" : blocked.length > 0 ? "내 과목 아님" : LECTURE_STATE_LABEL[state]}
+                      {applied ? "신청 완료" : blocked.length > 0 ? "내 과목 아님" : afterTerm ? "수업 기간 밖" : LECTURE_STATE_LABEL[state]}
                     </span>
                   </div>
 
@@ -155,6 +164,8 @@ export default async function MyLecturePage() {
                     <p className="rounded-xl bg-line/60 px-3 py-2.5 text-xs font-semibold text-slate">
                       {lectureSubjectNote(blocked, mySubjects)} <span className="font-normal text-mist">내 수업 과목의 특강과 모의고사는 신청할 수 있어요.</span>
                     </p>
+                  ) : afterTerm ? (
+                    <p className="rounded-xl bg-line/60 px-3 py-2.5 text-xs font-semibold text-slate">{lectureAfterTermNote(afterTerm)}</p>
                   ) : applied ? (
                     <div className="mt-auto space-y-2">
                       {mine.map((m) => (
