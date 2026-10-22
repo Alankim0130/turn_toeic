@@ -20,8 +20,11 @@
  * `visualViewport.offsetTop` 이 0 ~ 키보드 높이 사이를 오가고, **고정 · 붙박이 요소가 전부 offsetTop 만큼 위로** 그려진다.
  * Alan 의 화면은 하단 메뉴 · 저장 막대가 345px(키보드 높이) 위에 떠 있었고 머리줄은 화면 위로 사라져 있었다.
  * 표시는 "글자를 치는 중이 아닌데 `visualViewport.height` 가 창 높이(`innerHeight` — 키보드와 상관없다)보다 키보드만큼 짧다" 이다.
- * 그때 실제로 보이는 화면의 맨 위는 비주얼 뷰포트의 맨 위라서, 고정 요소를 `offsetTop + 창 높이 − 고정 요소 바닥` 만큼 **내리면** 제자리다
- * (`viewportShift`). 재는 일 · 나눠 주는 일은 `components/layout/visible-viewport.ts`.
+ * 그때 실제로 보이는 화면의 맨 위는 비주얼 뷰포트의 맨 위이고, 고정 요소가 서는 칸(레이아웃 뷰포트)의 맨 위는 그보다 `offsetTop` 위다.
+ * 그래서 위에 붙는 것(머리줄 · 팝업)은 `offsetTop` 만큼, 바닥에 붙는 것(하단 메뉴 · 저장 막대)은 `offsetTop + 창 높이 − 고정 칸 높이` 만큼
+ * **내리면** 제자리다 (`viewportShift`). 고정 칸 높이는 `position: fixed; top: 0; bottom: 0` 탐침의 **높이**로 잰다 — 높이라서
+ * 아이폰이 화면 좌표(getBoundingClientRect)를 레이아웃 · 비주얼 뷰포트 어느 쪽 기준으로 주든 같은 값이다 (실기기로 확인하지 못해 기준에 기대지 않는다).
+ * 재는 일 · 나눠 주는 일은 `components/layout/visible-viewport.ts`.
  */
 
 /** 이만큼 넘게 어긋나면 도구막대가 아니라 **키보드**다 — 그때는 건드리지 않는다 */
@@ -60,8 +63,11 @@ export type ViewportMetrics = {
   offsetTop: number;
   /** `visualViewport.scale` — 손가락으로 확대한 배율 */
   scale: number;
-  /** `position: fixed; bottom: 0` 상자의 바닥 (getBoundingClientRect) — 브라우저가 고정 요소의 바닥을 실제로 둔 곳 */
-  boxBottom: number;
+  /**
+   * `position: fixed; top: 0; bottom: 0` 상자의 높이 — 고정 요소가 서는 칸(레이아웃 뷰포트)의 높이.
+   * 바닥 위치가 아니라 높이라서 화면 좌표의 기준(레이아웃 · 비주얼 뷰포트)과 상관없다
+   */
+  boxHeight: number;
   /** 글자를 치는 중 — 키보드가 진짜로 올라와 있을 수 있다 (`isTypingTarget`) */
   typing: boolean;
 };
@@ -78,22 +84,23 @@ export type ViewportShift = {
  *
  * - 글자를 치는 중이면 손대지 않는다 (진짜 키보드 — 바는 지금처럼 자판 뒤에 둔다).
  * - **유령 키보드** (확대하지 않았고 · 보이는 화면이 창 높이보다 `GHOST_MIN` 넘게 짧다): 보이는 화면의 맨 위가 비주얼 뷰포트의 맨 위,
- *   높이는 창 높이다. 고정 요소 바닥이 그 화면 바닥(`offsetTop + 창 높이`)에 오도록 **내린다**. 페이지를 위로 넘겨 offsetTop 이 0 이면
- *   고정 요소가 이미 제자리라 0 이다. 머리줄 · 팝업도 같은 양을 내린다 (`ghost`).
+ *   높이는 창 높이다. 고정 칸의 맨 위는 그보다 `offsetTop` 위, 바닥은 거기서 고정 칸 높이만큼 아래다.
+ *   - 머리줄 · 팝업(`ghost`)은 칸 맨 위가 화면 맨 위에 오도록 `offsetTop` 만큼 내린다.
+ *   - 바닥 막대(`pin`)는 칸 바닥이 화면 바닥(창 높이)에 오도록 `offsetTop + 창 높이 − 고정 칸 높이` 만큼 내린다.
+ *   고정 칸이 창 높이 그대로면 둘 다 `offsetTop` 이고, 페이지를 위로 넘겨 offsetTop 이 0 이면 둘 다 이미 제자리다.
  * - 그 밖에는 예전 그대로 — 도구막대 · 확대로 보이는 바닥이 레이아웃 바닥보다 조금(≤ MAX_LIFT) 위면 바닥 막대만 그만큼 올린다.
  */
 export function viewportShift(m: ViewportMetrics): ViewportShift {
   const none: ViewportShift = { pin: 0, ghost: 0 };
   if (m.typing) return none;
-  const values = [m.innerHeight, m.layoutHeight, m.viewportHeight, m.offsetTop, m.scale, m.boxBottom];
+  const values = [m.innerHeight, m.layoutHeight, m.viewportHeight, m.offsetTop, m.scale, m.boxHeight];
   if (!values.every(Number.isFinite)) return none;
   const zoomed = Math.abs(m.scale - 1) > 0.01;
   const full = Math.max(m.innerHeight, m.layoutHeight);
   if (!zoomed && full - m.viewportHeight >= GHOST_MIN) {
-    const drop = Math.round(m.offsetTop + full - m.boxBottom);
     // 내리는 쪽만 — 그 밖의 값은 잰 것이 어긋난 것이다 (그대로 둔다)
-    const ghost = drop > 0 && drop < full ? drop : 0;
-    return { pin: ghost, ghost };
+    const down = (n: number) => (n > 0 && n < full ? n : 0);
+    return { pin: down(Math.round(m.offsetTop + full - m.boxHeight)), ghost: down(Math.round(m.offsetTop)) };
   }
   const lift = bottomNavLift(m.layoutHeight, m.viewportHeight, m.offsetTop);
   return { pin: lift ? -lift : 0, ghost: 0 };

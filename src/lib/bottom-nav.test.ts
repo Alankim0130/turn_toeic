@@ -47,7 +47,7 @@ const phone = (over: Partial<ViewportMetrics> = {}): ViewportMetrics => ({
   viewportHeight: 873,
   offsetTop: 0,
   scale: 1,
-  boxBottom: 873,
+  boxHeight: 873,
   typing: false,
   ...over,
 });
@@ -71,8 +71,16 @@ describe("viewportShift — 키보드를 닫은 뒤 남는 유령 키보드 (202
     expect(viewportShift(ghost({ offsetTop: 0 }))).toEqual({ pin: 0, ghost: 0 });
   });
 
-  it("고정 요소의 바닥이 짧은 화면에 맞춰 섰으면(레이아웃 뷰포트가 짧다) 그 차이만큼 내린다", () => {
-    expect(viewportShift(ghost({ boxBottom: 528 }))).toEqual({ pin: 345, ghost: 345 });
+  it("고정 칸이 짧은 화면만큼 줄었으면(레이아웃 뷰포트가 짧다) 바닥 막대만 그 차이만큼 내리고 머리줄은 그대로 — 칸 맨 위는 이미 화면 맨 위다", () => {
+    expect(viewportShift(ghost({ boxHeight: 528 }))).toEqual({ pin: 345, ghost: 0 });
+  });
+
+  it("짧은 칸이 위로 밀리기까지 했으면 바닥 막대는 둘을 더한 만큼, 머리줄은 밀린 만큼 내린다", () => {
+    expect(viewportShift(ghost({ boxHeight: 528, offsetTop: 100 }))).toEqual({ pin: 445, ghost: 100 });
+  });
+
+  it("고정 칸이 창 높이 그대로면 바닥 막대 · 머리줄 모두 offsetTop 만큼 — 캡처의 모양 (머리줄이 화면 위로 사라졌다)", () => {
+    for (const offsetTop of [1, 60, 200, 345]) expect(viewportShift(ghost({ offsetTop }))).toEqual({ pin: offsetTop, ghost: offsetTop });
   });
 
   it("창 높이가 늘 기준이다 — 처음 레이아웃 높이가 더 크면 그쪽", () => {
@@ -84,26 +92,26 @@ describe("viewportShift — 키보드를 닫은 뒤 남는 유령 키보드 (202
   });
 
   it("손가락으로 확대한 동안은 유령 키보드로 보지 않고 예전 보정만 한다 (바닥 막대만 조금 올린다)", () => {
-    expect(viewportShift(phone({ layoutHeight: 844, innerHeight: 844, viewportHeight: 700, offsetTop: 44, scale: 1.2, boxBottom: 844 }))).toEqual({ pin: -100, ghost: 0 });
+    expect(viewportShift(phone({ layoutHeight: 844, innerHeight: 844, viewportHeight: 700, offsetTop: 44, scale: 1.2, boxHeight: 844 }))).toEqual({ pin: -100, ghost: 0 });
     expect(viewportShift(phone({ viewportHeight: 400, offsetTop: 200, scale: 2 }))).toEqual({ pin: 0, ghost: 0 });
   });
 
   it("도구막대만큼(GHOST_MIN 보다 작게) 짧으면 예전 그대로 — 바닥 막대만 올린다", () => {
-    expect(viewportShift(phone({ layoutHeight: 844, innerHeight: 844, viewportHeight: 756, boxBottom: 844 }))).toEqual({ pin: -88, ghost: 0 });
+    expect(viewportShift(phone({ layoutHeight: 844, innerHeight: 844, viewportHeight: 756, boxHeight: 844 }))).toEqual({ pin: -88, ghost: 0 });
     expect(viewportShift(phone({ viewportHeight: 873 - GHOST_MIN + 1 }))).toEqual({ pin: -(GHOST_MIN - 1), ghost: 0 });
   });
 
   it("사파리 도구막대를 접어 창이 처음 레이아웃보다 커져도 그대로다", () => {
-    expect(viewportShift({ innerHeight: 750, layoutHeight: 660, viewportHeight: 750, offsetTop: 0, scale: 1, boxBottom: 750, typing: false })).toEqual({ pin: 0, ghost: 0 });
+    expect(viewportShift({ innerHeight: 750, layoutHeight: 660, viewportHeight: 750, offsetTop: 0, scale: 1, boxHeight: 750, typing: false })).toEqual({ pin: 0, ghost: 0 });
   });
 
   it("PC 의 가로 스크롤 막대(17px)는 유령 키보드가 아니다", () => {
-    expect(viewportShift({ innerHeight: 900, layoutHeight: 883, viewportHeight: 883, offsetTop: 0, scale: 1, boxBottom: 883, typing: false })).toEqual({ pin: 0, ghost: 0 });
+    expect(viewportShift({ innerHeight: 900, layoutHeight: 883, viewportHeight: 883, offsetTop: 0, scale: 1, boxHeight: 883, typing: false })).toEqual({ pin: 0, ghost: 0 });
   });
 
   it("잰 값이 어긋나면(위로 올리라거나 창보다 더 내리라면) 옮기지 않는다", () => {
-    expect(viewportShift(ghost({ boxBottom: 1200 }))).toEqual({ pin: 0, ghost: 0 });
-    expect(viewportShift(ghost({ offsetTop: 873, boxBottom: 0 }))).toEqual({ pin: 0, ghost: 0 });
+    expect(viewportShift(ghost({ boxHeight: 1200 }))).toEqual({ pin: 0, ghost: 0 });
+    expect(viewportShift(ghost({ offsetTop: 873, boxHeight: 0 }))).toEqual({ pin: 0, ghost: 0 });
   });
 
   it("잴 수 없는 값이면 0 — -0 도 내지 않는다", () => {

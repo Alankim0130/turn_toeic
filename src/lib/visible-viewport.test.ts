@@ -26,14 +26,20 @@ class FakeViewport extends EventTarget {
 }
 
 let vv: FakeViewport;
-/** `position: fixed; bottom: 0` 탐침이 서는 바닥 (레이아웃 뷰포트 바닥) */
+/** `position: fixed; top: 0; bottom: 0` 탐침의 높이 (고정 칸 = 레이아웃 뷰포트 높이) */
 let box = 873;
+/**
+ * 탐침의 맨 위가 화면 좌표로 어디에 오나 — 화면 좌표가 레이아웃 뷰포트 기준이면 0,
+ * 비주얼 뷰포트 기준이면 −offsetTop 이다. 어느 쪽이든 같은 값이 나와야 한다
+ */
+let visualFrame = false;
 const define = (target: object, key: string, value: unknown) => Object.defineProperty(target, key, { value, configurable: true, writable: true });
 
 beforeEach(() => {
   vi.useFakeTimers();
   vv = new FakeViewport();
   box = 873;
+  visualFrame = false;
   define(window, "visualViewport", vv);
   define(window, "innerHeight", 873);
   Object.defineProperty(document.documentElement, "clientHeight", { configurable: true, get: () => 873 });
@@ -41,8 +47,10 @@ beforeEach(() => {
   define(window, "requestAnimationFrame", (cb: FrameRequestCallback) => setTimeout(() => cb(0), 16) as unknown as number);
   define(window, "cancelAnimationFrame", (id: number) => clearTimeout(id));
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-    const bottom = this.dataset.viewportProbe !== undefined ? box : 0;
-    return { top: bottom, bottom, left: 0, right: 0, width: 0, height: 0, x: 0, y: bottom, toJSON: () => ({}) } as DOMRect;
+    const probe = this.dataset.viewportProbe !== undefined;
+    const top = probe && visualFrame ? -vv.offsetTop : 0;
+    const height = probe ? box : 0;
+    return { top, bottom: top + height, left: 0, right: 0, width: 0, height, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
   });
 });
 
@@ -78,6 +86,30 @@ describe("subscribeViewportShift — 한곳에서 재고 나눠 준다", () => {
     vv.dispatchEvent(new Event("scroll"));
     frame();
     expect(seen.at(-1)).toEqual({ pin: 0, ghost: 0 });
+    stop();
+  });
+
+  it("화면 좌표가 비주얼 뷰포트 기준이어도(탐침의 맨 위가 −offsetTop) 같은 값이다 — 좌표 기준에 기대지 않는다", () => {
+    visualFrame = true;
+    const seen: ViewportShift[] = [];
+    const stop = subscribeViewportShift((s) => seen.push(s));
+    for (const offsetTop of [345, 120, 0]) {
+      ghost(offsetTop);
+      vv.dispatchEvent(new Event("scroll"));
+      frame();
+      expect(seen.at(-1)).toEqual({ pin: offsetTop, ghost: offsetTop });
+    }
+    stop();
+  });
+
+  it("고정 칸이 짧은 화면만큼 줄었으면(레이아웃 뷰포트가 짧다) 바닥 막대만 내리고 머리줄 · 팝업은 그대로다", () => {
+    const seen: ViewportShift[] = [];
+    const stop = subscribeViewportShift((s) => seen.push(s));
+    ghost(0);
+    box = 528;
+    vv.dispatchEvent(new Event("resize"));
+    frame();
+    expect(seen.at(-1)).toEqual({ pin: 345, ghost: 0 });
     stop();
   });
 

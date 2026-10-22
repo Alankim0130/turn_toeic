@@ -581,7 +581,11 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
     까닭은 iOS 26 · 27 의 WebKit 버그다 (Apple 개발자 포럼 800125 · 800154, FB19889436 — 26.1 에서 고쳐졌다가 27 베타에서 다시 보고됐다): 글자를 치고 키보드를 닫아도
     iOS 가 **보이는 화면(`visualViewport.height`)을 키보드 높이만큼 짧게 붙잡아 두고**, 페이지를 넘기는 방향에 따라 `visualViewport.offsetTop` 이 0 ~ 키보드 높이 사이를 오가며
     **고정 · 붙박이 요소가 전부 offsetTop 만큼 위로** 그려진다. 표시는 "글자를 치는 중이 아니고 확대하지 않았는데 `visualViewport.height` 가 창 높이(`innerHeight` — 키보드와 상관없다)보다
-    120px(`GHOST_MIN`) 넘게 짧다" 이고, 그때 고정 요소를 `offsetTop + 창 높이 − 고정 요소 바닥` 만큼 **내린다** (`viewportShift` — 고정 요소 바닥은 `position: fixed; bottom: 0` 탐침으로 잰다).
+    120px(`GHOST_MIN`) 넘게 짧다" 이고, 그때 **바닥 막대는 `offsetTop + 창 높이 − 고정 칸 높이`, 머리줄 · 팝업은 `offsetTop` 만큼 내린다** (`viewportShift`).
+    고정 칸 높이는 `position: fixed; top: 0; bottom: 0` 탐침의 **높이**로 잰다 — 같은 날 처음 올린 판은 `bottom: 0` 탐침의 **바닥 위치**를 썼는데, 그 값은 iOS 가 화면 좌표(getBoundingClientRect)를
+    레이아웃 뷰포트 기준으로 줄 때만 맞고 비주얼 뷰포트 기준이면 두 배로 내려 하단 메뉴가 화면 밖으로 나간다(실기기로 어느 쪽인지 확인하지 못했다). 높이는 어느 기준이든 같다.
+    또 고정 칸 자체가 짧아진 모양(레이아웃 뷰포트가 짧다 · offsetTop 0)이면 머리줄은 이미 화면 맨 위라 내리지 않는다 — 처음 판은 머리줄까지 같은 양을 내렸다.
+    **두 값을 하나로 합치지 말 것** — 캡처의 모양(고정 칸은 창 높이 그대로 · 위로 밀림)에서는 같은 값이지만 다른 모양에서 갈린다.
     - 재는 일은 `src/components/layout/visible-viewport.ts` 한곳 — **손가락 기기에서만**(PC 는 늘 0) visualViewport `resize` · `scroll` · 창 `resize` · `pageshow` · 앱으로 돌아오기 · 포커스가 바뀔 때
       (키보드가 닫히는 동안 0.12 · 0.4 · 0.9초 뒤 한 번씩 더 — 유령 키보드는 이벤트 없이 남기도 한다) 한 프레임에 한 번 잰다. 하단 메뉴 둘(학생 `BottomNav` · 관리자 `AdminBottomNav`)은
       `usePinnedBottom` 으로 `transform` 을 쓰고, 나머지는 `VisibleViewportVars`(루트 레이아웃)가 `<html>` 에 적는 변수 둘을 쓴다 — `--vv-shift`(바닥 막대) · `--vv-ghost`(머리줄 · 화면 전체).
@@ -593,7 +597,8 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
       (앱 스플래시만 예외 — 켤 때 한 번 덮고 사라진다). `visible-viewport.test.ts` 가 소스를 읽어 막대 넷 · `fixed inset-0` 전부 · 머리줄 · 사이드바를 못박고, 가짜 visualViewport 로 값이 오가는 것을 본다.
     - 평소(유령 키보드가 아닐 때)는 두 값이 0 이고 예전 보정(도구막대가 접혔다 펴질 때 바닥 막대를 150px 안에서 올리기)이 그대로 돈다. 글자를 치는 중(진짜 키보드)에는 손대지 않는다 — 바는 예전처럼 자판 뒤에 있다.
     - 크로미움 흉내로 확인(2026-10-22 — 재생 DB · 393 · 320px 손가락 화면에서 visualViewport 높이 528 · offsetTop 345 를 꾸며 넣음): 관리자 · 학생 하단 메뉴 · 저장 막대 · 머리줄 · 서랍이 모두 345px 내려가고,
-      offsetTop 0 · 120 · 원래대로 · 글 칸에 포커스(0) · 포커스가 풀린 뒤 다시 잼 · 1180px 손가락 화면(사이드바 80 → 280px) · PC(변수 없음)이 맞았다. **실제 아이폰으로는 못 해 봤다** —
+      offsetTop 0 · 120 · 원래대로 · 글 칸에 포커스(0) · 포커스가 풀린 뒤 다시 잼 · 1180px 손가락 화면(사이드바 80 → 280px) · PC(변수 없음)이 맞았다.
+      높이 탐침으로 바꾼 뒤에도 같은 흉내를 다시 돌렸다 (크로미움은 화면 좌표가 레이아웃 뷰포트 기준이라 두 판의 값이 같다 — 비주얼 기준 · 짧은 칸 모양은 `visible-viewport.test.ts` 가 가짜 좌표로 본다). **실제 아이폰으로는 못 해 봤다** —
       그래도 다시 보이면 앱을 완전히 닫았다 켜 보라고 안내했다 (새로 켜면 iOS 가 화면 높이를 처음부터 잡는다 — 이것도 실기기로는 못 봤다).
 - **홈 화면 앱(PWA)** (2026-09-16 Alan 요청): `app/manifest.ts`(시작 `/my`, standalone, 바로가기 = 불라방·다시보기·숙제업로드·LC음원),
   홈 화면 아이콘은 `public/pwa/`(핫핑크 바탕 흰 화살표, maskable 별도)·`app/apple-icon.png`(iOS 는 투명을 검게 칠하므로 불투명). 탭 아이콘 `app/icon.png` 은 그대로.

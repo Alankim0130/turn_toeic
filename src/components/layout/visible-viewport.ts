@@ -8,7 +8,8 @@ import { isTypingTarget, viewportShift, type ViewportShift } from "@/lib/bottom-
  *   다시 쓴다 (2026-09-19 — 다시 써 주는 것 자체가 iOS 의 늦은 그림을 제자리로 되돌린다).
  * - 저장 · 선택 막대 · 머리줄 · 팝업 · 서랍은 `<html>` 의 CSS 변수(`--vv-shift` · `--vv-ghost`, `VisibleViewportVars`)를 쓴다 (globals.css).
  *
- * 고정 요소의 바닥이 실제로 어디에 섰는지는 `position: fixed; bottom: 0` 탐침의 바닥으로 잰다.
+ * 고정 요소가 서는 칸의 높이는 `position: fixed; top: 0; bottom: 0` 탐침의 **높이**로 잰다 — 바닥 위치로 재면 iOS 가 화면 좌표를
+ * 레이아웃 · 비주얼 뷰포트 어느 쪽 기준으로 주는지에 따라 값이 두 배로 어긋날 수 있다 (실기기로 확인하지 못했다). 높이는 기준과 상관없다.
  * 유령 키보드는 visualViewport 이벤트 없이 남기도 해서 포커스가 바뀔 때(키보드가 닫힐 때) · 페이지를 넘길 때 · 앱으로 돌아올 때도 다시 잰다.
  * **손가락으로 쓰는 기기에서만 돈다** — 키보드 · 도구막대가 없는 PC 에서는 늘 0 이라 재지 않는다.
  */
@@ -33,13 +34,13 @@ function touchDevice(): boolean {
   return typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
 }
 
-/** 브라우저가 `position: fixed; bottom: 0` 을 실제로 세우는 자리를 재는 보이지 않는 상자 */
-function fixedBottomProbe(): HTMLElement {
+/** 고정 요소가 서는 칸(레이아웃 뷰포트)을 위에서 아래까지 채우는 보이지 않는 상자 — 높이를 잰다 */
+function fixedBoxProbe(): HTMLElement {
   if (probe?.isConnected) return probe;
   probe = document.createElement("div");
   probe.setAttribute("aria-hidden", "true");
   probe.dataset.viewportProbe = "";
-  probe.style.cssText = "position:fixed;left:0;bottom:0;width:0;height:0;visibility:hidden;pointer-events:none";
+  probe.style.cssText = "position:fixed;left:0;top:0;bottom:0;width:0;visibility:hidden;pointer-events:none";
   document.body.appendChild(probe);
   return probe;
 }
@@ -54,7 +55,7 @@ export function readViewportShift(): ViewportShift {
     viewportHeight: vv.height,
     offsetTop: vv.offsetTop,
     scale: vv.scale,
-    boxBottom: fixedBottomProbe().getBoundingClientRect().bottom,
+    boxHeight: fixedBoxProbe().getBoundingClientRect().height,
     typing: isTypingTarget(document.activeElement as (Element & { type?: string; isContentEditable?: boolean }) | null),
   });
 }
