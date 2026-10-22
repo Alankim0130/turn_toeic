@@ -25,7 +25,7 @@ export function AdminSidebar({ name, roleLabel, role }: { name: string; roleLabe
   const sections = navAdminSectionsFor(role);
   const activeHref = activeAdminHref(navAdminFor(role), pathname);
   return (
-    <aside className="sticky top-20 hidden max-h-[calc(100dvh-6rem)] self-start overflow-y-auto overscroll-contain md:block">
+    <aside className="sticky top-[calc(5rem+var(--vv-ghost,0px))] hidden max-h-[calc(100dvh-6rem)] self-start overflow-y-auto overscroll-contain md:block">
       <div className="card p-3">
         <div className="mb-2 flex items-center gap-3 rounded-xl bg-brand-50 px-3 py-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-paper ring-1 ring-brand-100">

@@ -17,7 +17,7 @@ export function SiteHeader({ profile, signedIn, access }: { profile: Profile | n
   const name = profile?.name?.trim() || null;
 
   return (
-    <header className="sticky top-0 z-40 border-b border-line/70 glass">
+    <header className="sticky top-[var(--vv-ghost,0px)] z-40 border-b border-line/70 glass">
       <div className="container-x flex h-16 items-center justify-between gap-3 lg:gap-4">
         {/* 왼쪽: 햄버거(lg 미만) + 로고 (2026-09-18 Alan — "햄버거바를 첫토익처럼 왼쪽으로") */}
         <div className="flex min-w-0 shrink-0 items-center gap-1">

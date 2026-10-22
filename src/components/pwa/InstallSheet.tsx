@@ -126,7 +126,7 @@ export function InstallSheet() {
   const atTop = pointer?.startsWith("bottom") ?? false;
 
   return createPortal(
-    <div className="fixed inset-0 z-[70]">
+    <div className="follow-screen fixed inset-0 z-[70]">
       <div aria-hidden onClick={closeInstallSheet} className="absolute inset-0 bg-ink/45" />
       {/* 화살표 쪽 가장자리는 진하게 덮어 사이트의 하단·상단 메뉴를 브라우저 버튼으로 착각하지 않게 한다 */}
       {pointer && (

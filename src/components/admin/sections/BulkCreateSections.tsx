@@ -324,7 +324,7 @@ export function BulkCreateSections({
 
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
 
-      <div className="sticky bottom-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl2 border border-line glass px-4 py-3">
+      <div className="bar-above-nav z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl2 border border-line glass px-4 py-3">
         <p className="text-sm font-semibold text-slate">
           고른 반 <span className={cn("text-xl font-black tabular-nums", total ? "text-brand-600" : "text-mist")}>{total}</span>개
           {fiveDay > 0 && <span className="ml-1 text-xs font-bold text-brand-700">(주5일 {fiveDay}묶음)</span>}

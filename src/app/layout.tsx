@@ -7,6 +7,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { TestModeBanner } from "@/components/layout/TestModeBanner";
 import { PwaRegister } from "@/components/pwa/PwaRegister";
 import { PullToRefresh } from "@/components/pwa/PullToRefresh";
+import { VisibleViewportVars } from "@/components/layout/VisibleViewportVars";
 import { AppSplash } from "@/components/pwa/AppSplash";
 import { IOS_STARTUP_IMAGES } from "@/lib/ios-startup";
 import { getSessionProfile, getStudentAccess } from "@/lib/auth";
@@ -88,6 +89,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Footer />
         <BottomNav access={{ active: access.active, enrollee: access.enrollee }} />
         <PwaRegister />
+        {/* 아이폰 홈 화면 앱에서 키보드를 닫은 뒤 화면이 짧게 남을 때 막대 · 머리줄 · 팝업을 보이는 화면에 맞춘다 (2026-10-22, src/lib/bottom-nav.ts) */}
+        <VisibleViewportVars />
       </body>
     </html>
   );

@@ -201,7 +201,7 @@ function Lightbox({ reviews, index, onClose, onMove }: { reviews: (typeof site.r
   if (!mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-6">
+    <div className="follow-screen fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-6">
       <div aria-hidden onClick={onClose} className="absolute inset-0 bg-ink/70 backdrop-blur-sm" />
 
       <div role="dialog" aria-modal="true" aria-label={`${r.title} 후기 전체`} className="relative flex max-h-full w-full max-w-lg flex-col">

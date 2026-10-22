@@ -575,6 +575,26 @@ npx tsc --noEmit && npx eslint src && npx vitest run && npm run build
   올리면 바가 자판 위에 올라타 입력칸을 가린다 (글자를 치는 중일 때도 마찬가지). `visualViewport` 가 없으면 아무것도 하지 않는다.
   **훅은 `/admin` early return 보다 위에 둘 것** — 아래에 두면 관리자 화면을 드나들 때 훅 개수가 달라져 React 가 깨진다.
   한 프레임에 한 번만(`requestAnimationFrame`) 고쳐 쓴다 — 스크롤 중에는 이벤트가 픽셀마다 온다
+  - **★ 유령 키보드 — 키보드를 닫은 뒤 화면이 짧게 남는 아이폰 버그** (2026-10-22 Alan — 홈 화면 앱 관리자 반 편성 캡처와 함께 "모바일모드에서 반편성페이지에서
+    위로 스크롤을 올리니 하단네비게이션바가 위로 올라가고 있어"). 캡처에서 **관리자 하단 메뉴와 저장 막대가 345px(키보드 높이) 위에 떠 있고 머리줄은 화면 위로 사라져 있었다.**
+    관리자 하단 메뉴(`AdminBottomNav`)에는 2026-09-19 의 보정이 없었고(학생 바에만 있었다), 그 보정도 이 상태는 못 고친다 — 어긋남이 150px 를 넘으면 키보드로 보고 손을 뗀다.
+    까닭은 iOS 26 · 27 의 WebKit 버그다 (Apple 개발자 포럼 800125 · 800154, FB19889436 — 26.1 에서 고쳐졌다가 27 베타에서 다시 보고됐다): 글자를 치고 키보드를 닫아도
+    iOS 가 **보이는 화면(`visualViewport.height`)을 키보드 높이만큼 짧게 붙잡아 두고**, 페이지를 넘기는 방향에 따라 `visualViewport.offsetTop` 이 0 ~ 키보드 높이 사이를 오가며
+    **고정 · 붙박이 요소가 전부 offsetTop 만큼 위로** 그려진다. 표시는 "글자를 치는 중이 아니고 확대하지 않았는데 `visualViewport.height` 가 창 높이(`innerHeight` — 키보드와 상관없다)보다
+    120px(`GHOST_MIN`) 넘게 짧다" 이고, 그때 고정 요소를 `offsetTop + 창 높이 − 고정 요소 바닥` 만큼 **내린다** (`viewportShift` — 고정 요소 바닥은 `position: fixed; bottom: 0` 탐침으로 잰다).
+    - 재는 일은 `src/components/layout/visible-viewport.ts` 한곳 — **손가락 기기에서만**(PC 는 늘 0) visualViewport `resize` · `scroll` · 창 `resize` · `pageshow` · 앱으로 돌아오기 · 포커스가 바뀔 때
+      (키보드가 닫히는 동안 0.12 · 0.4 · 0.9초 뒤 한 번씩 더 — 유령 키보드는 이벤트 없이 남기도 한다) 한 프레임에 한 번 잰다. 하단 메뉴 둘(학생 `BottomNav` · 관리자 `AdminBottomNav`)은
+      `usePinnedBottom` 으로 `transform` 을 쓰고, 나머지는 `VisibleViewportVars`(루트 레이아웃)가 `<html>` 에 적는 변수 둘을 쓴다 — `--vv-shift`(바닥 막대) · `--vv-ghost`(머리줄 · 화면 전체).
+    - **바닥에 붙는 저장 · 선택 막대는 `bar-above-nav` 클래스**(globals.css — 휴대폰은 하단 메뉴 위, md 부터 화면 바닥 1rem, 둘 다 `--vv-shift` 만큼 따라간다): 반 편성 달력 저장 막대(`TermCalendar`) ·
+      새 반 개설 막대(`BulkCreateSections` — 그전 `bottom-2` 라 휴대폰에서 하단 메뉴 뒤에 숨어 있었다. 이번에 메뉴 위로) · 숙제 미제출 보내기 막대(`MissingBoard`) · 여러 개 옮기기 막대(`BulkSelect`).
+      **새 막대에 `sticky bottom-…` 을 손으로 쓰지 말 것** — 유령 키보드에서 혼자 떠 있다.
+    - **화면 전체를 덮는 팝업 · 서랍은 `follow-screen` 클래스**(CSS `translate: 0 var(--vv-ghost)`): `Dialog` · 등업 판별 중 카드 · 숙제 상세 · 비대면 인증 상세 · 앱 설치 시트 · 수강후기 팝업 · 햄버거 서랍.
+      머리줄(`SiteHeader` — `top-[var(--vv-ghost,0px)]`) · 관리자 사이드바(`AdminNav` — `top-[calc(5rem+var(--vv-ghost,0px))]`)도 같은 변수를 쓴다. **새 `fixed inset-0` 팝업에도 `follow-screen` 을 붙인다**
+      (앱 스플래시만 예외 — 켤 때 한 번 덮고 사라진다). `visible-viewport.test.ts` 가 소스를 읽어 막대 넷 · `fixed inset-0` 전부 · 머리줄 · 사이드바를 못박고, 가짜 visualViewport 로 값이 오가는 것을 본다.
+    - 평소(유령 키보드가 아닐 때)는 두 값이 0 이고 예전 보정(도구막대가 접혔다 펴질 때 바닥 막대를 150px 안에서 올리기)이 그대로 돈다. 글자를 치는 중(진짜 키보드)에는 손대지 않는다 — 바는 예전처럼 자판 뒤에 있다.
+    - 크로미움 흉내로 확인(2026-10-22 — 재생 DB · 393 · 320px 손가락 화면에서 visualViewport 높이 528 · offsetTop 345 를 꾸며 넣음): 관리자 · 학생 하단 메뉴 · 저장 막대 · 머리줄 · 서랍이 모두 345px 내려가고,
+      offsetTop 0 · 120 · 원래대로 · 글 칸에 포커스(0) · 포커스가 풀린 뒤 다시 잼 · 1180px 손가락 화면(사이드바 80 → 280px) · PC(변수 없음)이 맞았다. **실제 아이폰으로는 못 해 봤다** —
+      그래도 다시 보이면 앱을 완전히 닫았다 켜 보라고 안내했다 (새로 켜면 iOS 가 화면 높이를 처음부터 잡는다 — 이것도 실기기로는 못 봤다).
 - **홈 화면 앱(PWA)** (2026-09-16 Alan 요청): `app/manifest.ts`(시작 `/my`, standalone, 바로가기 = 불라방·다시보기·숙제업로드·LC음원),
   홈 화면 아이콘은 `public/pwa/`(핫핑크 바탕 흰 화살표, maskable 별도)·`app/apple-icon.png`(iOS 는 투명을 검게 칠하므로 불투명). 탭 아이콘 `app/icon.png` 은 그대로.
   `public/sw.js` 는 푸시(관리자 · 학생 불라방 시작 · 숙제 미제출 — 누르면 열린 앱 창을 그 화면으로 옮긴다, 8-1) + **페이지 이동 실패 시에만** `offline.html` 을 보여 준다 — 페이지·데이터는 캐시하지 않는다(로그인별 화면).

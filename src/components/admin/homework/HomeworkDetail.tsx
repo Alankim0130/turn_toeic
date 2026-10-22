@@ -52,7 +52,7 @@ export function HomeworkDetail({ row, onClose }: { row: HomeworkRow; onClose: ()
   if (!mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-5">
+    <div className="follow-screen fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-5">
       <div aria-hidden onClick={onClose} className="absolute inset-0 bg-ink/70 backdrop-blur-sm" />
 
       <div

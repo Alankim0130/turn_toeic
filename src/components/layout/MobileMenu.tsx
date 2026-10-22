@@ -102,7 +102,7 @@ export function MobileMenu({
         : null;
 
   const drawer = (
-    <div className={cn("fixed inset-0 z-50 lg:hidden", open ? "pointer-events-auto" : "pointer-events-none")} inert={!open}>
+    <div className={cn("follow-screen fixed inset-0 z-50 lg:hidden", open ? "pointer-events-auto" : "pointer-events-none")} inert={!open}>
       {/* 뒤 화면은 살짝만 어둡게. 누르면 닫힌다 */}
       <div
         aria-hidden

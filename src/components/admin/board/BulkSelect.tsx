@@ -111,7 +111,7 @@ export function BulkSelectAll({ keys, label = "전체 선택", className }: { ke
 export function BulkBar({ count, onClear, children }: { count: number; onClear: () => void; children: ReactNode }) {
   if (count === 0) return null;
   return (
-    <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] z-20 mt-4 flex items-center gap-2 rounded-xl2 border border-line bg-paper/95 p-2.5 shadow-soft backdrop-blur sm:p-3 md:bottom-4">
+    <div className="bar-above-nav z-20 mt-4 flex items-center gap-2 rounded-xl2 border border-line bg-paper/95 p-2.5 shadow-soft backdrop-blur sm:p-3">
       <button type="button" onClick={onClear} aria-label="선택 해제" title="선택 해제" className="flex size-9 shrink-0 items-center justify-center rounded-full text-slate hover:bg-surface">
         <svg viewBox="0 0 16 16" className="size-4" aria-hidden>
           <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />

@@ -42,7 +42,7 @@ export function VerifyProgress({ stage, manual, preview, since }: { stage: Verif
   const judging = stage === "judge";
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+    <div className="follow-screen fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div aria-hidden className="absolute inset-0 bg-ink/60 backdrop-blur-sm" />
       <div
         role="dialog"

@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useRef } from "react";
 import { navAdminFor } from "@/lib/site";
 import { cn } from "@/lib/utils";
 import { isAdminActive } from "./AdminNav";
 import { NavTabIcon } from "@/components/layout/NavPending";
+import { usePinnedBottom } from "@/components/layout/visible-viewport";
 
 const BOTTOM_HREFS = ["/admin", "/admin/students", "/admin/sections", "/admin/verifications", "/admin/textbook-orders"];
 /**
@@ -21,9 +23,14 @@ export function AdminBottomNav({ role }: { role?: string | null }) {
   const allowed = navAdminFor(role);
   const hrefs = role === "assistant" ? ASSISTANT_BOTTOM_HREFS : BOTTOM_HREFS;
   const items = hrefs.map((h) => allowed.find((n) => n.href === h)).filter((n) => !!n);
+  const ref = useRef<HTMLElement>(null);
+  // 보이는 화면 바닥에 붙인다 — 학생 하단 바와 같은 값 (2026-10-22 Alan — 반 편성 화면에서 이 바가 화면 가운데로 떠올랐다.
+  // 아이폰 홈 화면 앱에서 키보드를 닫은 뒤 남는 유령 키보드 — src/lib/bottom-nav.ts)
+  usePinnedBottom(ref);
 
   return (
     <nav
+      ref={ref}
       aria-label="관리자 하단 메뉴"
       className="fixed inset-x-0 bottom-0 z-40 border-t border-line/80 glass md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}

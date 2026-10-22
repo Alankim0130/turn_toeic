@@ -285,7 +285,7 @@ export function MissingBoard({
 
       {/* 고르면 아래에 선다 — 휴대폰은 하단 메뉴 위 (반 편성 달력의 저장 막대와 같은 자리) */}
       {selected.size > 0 && (
-        <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] z-20 mt-5 flex items-center gap-2 rounded-xl2 border border-line bg-paper/95 p-2.5 shadow-soft backdrop-blur sm:p-3 md:bottom-4">
+        <div className="bar-above-nav z-20 mt-5 flex items-center gap-2 rounded-xl2 border border-line bg-paper/95 p-2.5 shadow-soft backdrop-blur sm:p-3">
           <button type="button" onClick={() => setSelected(new Set())} aria-label="선택 해제" title="선택 해제" className="flex size-9 items-center justify-center rounded-full text-slate hover:bg-surface">
             <svg viewBox="0 0 16 16" className="size-4" aria-hidden>
               <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />

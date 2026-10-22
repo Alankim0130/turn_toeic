@@ -49,7 +49,7 @@ export function Dialog({
   const bar = tone === "success" ? "bg-brand-500" : tone === "warning" ? "bg-amber-500" : "bg-ink";
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+    <div className="follow-screen fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div aria-hidden onClick={dismissible ? onClose : undefined} className="absolute inset-0 bg-ink/60 backdrop-blur-sm" />
       {/* 화면보다 길면 팝업 안에서 스크롤한다 — 뒤 화면은 잠겨 있어 잘린 아래쪽(버튼)에 닿을 길이 없다 (교재비 안내가 붙은 등업 팝업, 2026-10-02) */}
       <div

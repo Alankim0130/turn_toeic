@@ -158,6 +158,22 @@ body {
   .has-bottom-nav { padding-bottom: 0; }
 }
 
+/* ─── 보이는 화면에 붙이기 (2026-10-22 Alan — 관리자 반 편성 화면에서 하단 메뉴 · 저장 막대가 화면 가운데로 떠올랐다) ───
+   아이폰 홈 화면 앱에서 키보드를 닫은 뒤 iOS 가 화면을 키보드 높이만큼 짧게 붙잡아 두면(유령 키보드) 고정 · 붙박이 요소가
+   전부 위로 밀려 그려진다. src/components/layout/visible-viewport.ts 가 그 양을 재서 <html> 에 적는다 — 평소에는 둘 다 0 이다.
+   --vv-shift : 바닥에 붙는 막대 (하단 메뉴와 같은 값 — 유령 키보드 + 예전 도구막대 · 확대 보정)
+   --vv-ghost : 위에 붙거나 화면 전체를 덮는 것 (머리줄 · 팝업 · 서랍 — 유령 키보드일 때만)
+   하단 메뉴 자체는 transform 으로 옮긴다 (usePinnedBottom). 새 막대 · 팝업도 이 둘을 쓸 것 — 안 쓰면 그것만 떠오른다 */
+.bar-above-nav {
+  position: sticky;
+  /* 휴대폰은 하단 메뉴(4.25rem) 위 0.5rem */
+  bottom: calc(4.75rem + var(--safe-bottom) - var(--vv-shift, 0px));
+}
+@media (min-width: 768px) {
+  .bar-above-nav { bottom: calc(1rem - var(--vv-shift, 0px)); }
+}
+.follow-screen { translate: 0 var(--vv-ghost, 0px); }
+
 /* ─── 컴포넌트 유틸 ───────────────────────────────────────────────────────── */
 @utility container-x {
   @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;

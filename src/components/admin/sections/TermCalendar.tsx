@@ -641,7 +641,7 @@ export function TermCalendar({
       )}
 
       {/* 요약 + 전체 저장 */}
-      <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] z-10 flex items-center justify-between gap-3 rounded-xl2 border border-line bg-paper/95 p-2.5 shadow-soft backdrop-blur sm:p-3 md:bottom-4">
+      <div className="bar-above-nav z-10 flex items-center justify-between gap-3 rounded-xl2 border border-line bg-paper/95 p-2.5 shadow-soft backdrop-blur sm:p-3">
         <dl className="flex min-w-0 flex-wrap gap-x-3 gap-y-0.5 text-xs sm:gap-x-4 sm:text-sm">
           <div className="flex gap-1.5">
             <dt className="font-semibold text-slate">개강</dt>
