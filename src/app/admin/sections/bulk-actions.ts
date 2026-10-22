@@ -8,8 +8,8 @@ import { rematchHeldVerifications } from "@/lib/rematch-held";
 import { requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import { sectionKeyOf, timeBlockOf } from "@/components/admin/sections/bulk";
-import { fieldsFor, slotKinds } from "@/lib/timetable-month";
-import { isContainerProgram } from "@/lib/two-week";
+import { slotKinds } from "@/lib/timetable-month";
+import { sectionInsertOf } from "@/lib/month-open";
 
 /**
  * 반 일괄 개설: **그 달 시간표**(레벨·시간대) × 강좌 × 트랙 조합에서 고른 것만 한 번에 만든다.
@@ -62,7 +62,7 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
   const kinds = slotKinds(slots ?? []);
   const courseById = new Map((courses ?? []).map((c) => [c.id, c]));
   const taken = new Set((existing ?? []).map((s) => sectionKeyOf(s.course_id, s.track, s.time_block)));
-  const sessionsOf = (t: string) => (classDates ?? []).filter((d) => d.track === t).length || 1;
+  const sessionsOf = (t: string) => (classDates ?? []).filter((d) => d.track === t).length;
   /**
    * 담당 강사는 DB 가 저절로 정한다 (2026-09-18 Alan "앞으로도 반편성과 달에 따라서 자동으로 매칭").
    * 반이 들어가면 `class_sections` 트리거가 과목 칸(subject)으로 LC 이혜영 · RC 이영수를 넣고
@@ -91,10 +91,8 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
       return { ok: false, error: "강좌와 맞지 않는 시간대예요. 새로고침한 뒤 다시 시도해 주세요." };
     }
     // 과정·과목은 시간표 줄의 것 — 한달완성(묶음)·스파르타 줄은 비어 있다 (안에 든 · 함께 듣는 시간 단위 반의 것을 쓴다).
-    // 비어 있으면 담당 강사를 정하지 않는다 (짐작하지 않는다)
+    // 비어 있으면 담당 강사를 정하지 않는다 (짐작하지 않는다). 반 한 줄은 평달 자동 세팅과 같은 `sectionInsertOf` 가 만든다
     const kind = slot ? kinds.get(slot.id)! : null;
-    const plan = slot && kind ? fieldsFor(kind, slot) : { book_set: null, subject_mwf: null, subject_ttf: null };
-    const isPackage = kind === "package";
     const timeBlock = slot ? timeBlockOf(slot.start_time, slot.end_time) : null;
 
     const key = sectionKeyOf(courseId, r.track, timeBlock);
@@ -104,26 +102,19 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
     }
     taken.add(key);
 
-    inserts.push({
-      term_id: termId,
-      course_id: courseId,
-      track: r.track,
-      time_block: timeBlock,
-      enrollment_opens_at: term.enrollment_opens_at,
-      closes_at: term.closes_at,
-      target_sessions: sessionsOf(r.track),
-      // 그릇 반(묶음 · 스파르타 · 2주완성)은 담당이 한 명이 아니다 — 비운다 (DB section_instructor_plan 과 같은 규칙)
-      instructor_id: isPackage || isContainerProgram(course.program) ? null : pickedInstructor,
-      capacity,
-      status: r.status,
-      book_set: plan.book_set,
-      subject: r.track === "mwf" ? plan.subject_mwf : plan.subject_ttf,
-      // 저녁반 화목금은 인강 — 시간표가 정한다 (2026-09-17 Alan). 월수금은 그대로 현장
-      recorded: !!slot?.ttf_recorded && r.track === "ttf",
-      // 저녁 줄(화목금 인강이 켜진 시간대)의 불라방은 라이브만 — 오전반만 수업 뒤 다시보기로 연결한다 (2026-09-18 Alan)
-      live_to_replay: !slot?.ttf_recorded,
-      bundle_id: null,
-    });
+    inserts.push(
+      sectionInsertOf({
+        term: { id: termId, enrollment_opens_at: term.enrollment_opens_at, closes_at: term.closes_at },
+        course,
+        slot: slot ?? null,
+        kind,
+        track: r.track,
+        sessions: sessionsOf(r.track),
+        capacity,
+        status: r.status,
+        instructorId: pickedInstructor,
+      }),
+    );
   }
 
   if (inserts.length > 0) {

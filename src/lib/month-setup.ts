@@ -1,4 +1,5 @@
 import { HOLD_MONTHS_AHEAD } from "./verify-decision";
+import { autoOpensMonth } from "./month-open";
 
 /**
  * 반 편성 달력을 저장했는데 그 달 반이 아직 없을 때 — 무엇을 더 해야 학생이 잡히나 (2026-10-22 Alan — 11월 달력 캡처와 함께
@@ -9,6 +10,9 @@ import { HOLD_MONTHS_AHEAD } from "./verify-decision";
  * 등업 로그 `반 개설 대기` 에 머물고, 학생 시간표 · 숙제 · 출석에도 그 달이 서지 않는다. 그래서 달력 화면 맨 위에 그 두 단계를 띄운다.
  * - 달력을 아직 저장하지 않았거나(개강일 · 종강일이 없다) 반이 하나라도 있으면 띄우지 않는다.
  * - 종강일이 지난 달도 띄우지 않는다 — 할 일이 아니다.
+ * **평달은 달력을 저장하면 시간표 · 반이 저절로 생긴다** (2026-10-22 Alan "방학달 1,2,7,8월만 강사가 직접 반을 열어야하고 나머지는 자동으로",
+ * `src/lib/month-open.ts`) — 그래도 이 카드가 서는 평달(그 전에 저장해 둔 달 · 그때 못 연 달)은 '한 번에 만들기' 버튼 하나다 (`auto`).
+ * 방학달은 예전처럼 두 단계(시간표 만들기 → 새 반 개설)다.
  * 순수 함수 (`month-setup.test.ts`).
  */
 export type MonthSetup = {
@@ -16,9 +20,13 @@ export type MonthSetup = {
   timetableReady: boolean;
   /** 받아 둔 그 달 수강증 수 — 반이 열리면 저절로 배정된다 */
   held: number;
+  /** 평달 — 한 번에 만들기 버튼 하나 (방학달은 강사가 직접 두 단계) */
+  auto: boolean;
 };
 
 export function monthSetup(input: {
+  /** 그 달 (1~12) — 평달인지 방학달인지 */
+  month: number;
   /** 달력에 개강일 · 종강일을 저장했나 */
   hasSaved: boolean;
   /** 그 달 종강일 (`YYYY-MM-DD`) */
@@ -33,7 +41,7 @@ export function monthSetup(input: {
 }): MonthSetup | null {
   if (!input.hasSaved || input.sections > 0) return null;
   if (input.closes != null && input.closes < input.today) return null;
-  return { timetableReady: input.slots > 0, held: Math.max(0, input.held) };
+  return { timetableReady: input.slots > 0, held: Math.max(0, input.held), auto: autoOpensMonth(input.month) };
 }
 
 /**

@@ -9,10 +9,12 @@ import { rematchHeldVerifications } from "@/lib/rematch-held";
 import { requireCrew, requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import { isYmd, labelKo } from "@/components/admin/sections/dates";
-import { isLectureKind, sortLectureKinds } from "@/lib/utils";
+import { isLectureKind, sortLectureKinds, todayKST } from "@/lib/utils";
 import { restoreLectureIds } from "@/lib/lecture";
 import { SUBJECT_LABEL } from "@/lib/instructor-subject";
 import { timetableRowOf } from "@/lib/timetable-row";
+import type { AutoOpenSummary } from "@/lib/month-open";
+import { autoOpenMonth } from "./_lib/open-month";
 
 type SectionInsert = Database["public"]["Tables"]["class_sections"]["Insert"];
 type SectionUpdate = Database["public"]["Tables"]["class_sections"]["Update"];
@@ -58,7 +60,8 @@ export type TermScheduleInput = {
   parts?: TermPart[];
 };
 export type TermScheduleResult =
-  | { ok: true; mwf: number; ttf: number; lectures: number; sections: number; parts: TermPart[] }
+  /** auto = 평달 자동 세팅의 결과 (그 달 반이 없을 때만 — `autoOpenMonth`). 할 일이 없었으면 null */
+  | { ok: true; mwf: number; ttf: number; lectures: number; sections: number; parts: TermPart[]; auto: AutoOpenSummary | null }
   | { ok: false; error: string };
 
 const RPC_ERROR: Record<string, string> = {
@@ -218,7 +221,39 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
 
   revalidateSchedule();
   const res = (data ?? {}) as { mwf?: number; ttf?: number; lectures?: number; sections?: number };
-  return { ok: true, mwf: res.mwf ?? 0, ttf: res.ttf ?? 0, lectures: res.lectures ?? 0, sections: res.sections ?? 0, parts };
+  // 평달은 반이 저절로 열린다 (2026-10-22 Alan "방학달 1,2,7,8월만 강사가 직접 반을 열어야하고 나머지는 자동으로") — 그 달 반이 하나도 없을 때만.
+  // 시간표가 없으면 시간표 설정과 같은 규칙으로 만들고, 새 반 개설의 강좌마다 '전체 선택' 과 같은 반을 연다. 못 열어도 달력 저장은 그대로 성공이다
+  const auto = await autoOpenMonth(supabase, { y: year, m: month }, todayKST());
+  return { ok: true, mwf: res.mwf ?? 0, ttf: res.ttf ?? 0, lectures: res.lectures ?? 0, sections: res.sections ?? 0, parts, auto };
+}
+
+/* ─── 평달 반 한 번에 열기 (반 편성 맨 위 카드) ─────────────────────────────
+   달력은 이 기능 전에 저장해 두었거나(2026-10-22 의 11월) 그때 저절로 열지 못한 평달 — 달력을 다시 저장하지 않아도 한 번에 연다 */
+export async function openMonthClasses(formData: FormData) {
+  await requireStaff();
+  const key = str(formData, "term");
+  const match = key.match(/^(\d{4})-(\d{2})$/);
+  const y = match ? Number(match[1]) : NaN;
+  const m = match ? Number(match[2]) : NaN;
+  if (!match || y < 2020 || y > 2100 || m < 1 || m > 12) redirect("/admin/sections");
+
+  const supabase = await createClient();
+  const auto = await autoOpenMonth(supabase, { y, m }, todayKST());
+  revalidateSchedule();
+  const q = new URLSearchParams({ term: key });
+  if (auto?.kind === "opened") {
+    q.set("opened", String(auto.sections));
+    if (auto.timetableMade) q.set("made", "1");
+    if (auto.held > 0) q.set("held", String(auto.held));
+  } else if (auto?.kind === "failed") {
+    q.set("openError", auto.reason);
+  } else if (auto?.kind === "vacation") {
+    q.set("openError", "vacation");
+  } else {
+    // 할 일이 없었다 — 그 사이 반이 생겼거나 달력(개강일 · 종강일)이 없거나 끝난 달
+    q.set("openError", "nothing");
+  }
+  redirect(`/admin/sections?${q.toString()}`);
 }
 
 /* ─── 강좌 마스터 추가 ──────────────────────────────────────────────────── */

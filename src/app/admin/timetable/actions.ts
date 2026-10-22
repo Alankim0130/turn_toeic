@@ -8,11 +8,8 @@ import type { Database } from "@/lib/supabase/database.types";
 import { duplicateSlot, joinTime, parseSlotInput } from "@/lib/timetable-admin";
 import {
   bundleCandidates,
-  chooseMonthSource,
-  draftMonth,
   fieldsFor,
   kindOf,
-  madeMonths,
   orphanTwoWeekRows,
   parseYm,
   slotKinds,
@@ -20,6 +17,9 @@ import {
   sourceNote,
 } from "@/lib/timetable-month";
 import { blockContains } from "@/lib/time-blocks";
+import { todayKST } from "@/lib/utils";
+import { autoOpenMessage } from "@/lib/month-open";
+import { autoOpenMonth, draftMonthTimetable } from "@/app/admin/sections/_lib/open-month";
 
 /**
  * 시간표 설정 — **달마다 한 벌** (2026-09-29 Alan "월별로 디테일하게 … 1월 시간표를 정확하게 세팅하고, 2월 시간표까지 미리").
@@ -196,7 +196,11 @@ export async function deleteTimetableSlot(formData: FormData) {
   done(month, { ok: "지웠어요." });
 }
 
-/** 새 달 시간표 만들기 — 앞선 달에서 가져온다 (이어지면 과정 뒤집기 · 과목 그대로, 계절이 끊겼으면 시간만) */
+/**
+ * 새 달 시간표 만들기 — 앞선 달에서 가져온다 (이어지면 과정 뒤집기 · 과목 그대로, 방학달이 끊겼으면 시간만 — `draftMonthTimetable`).
+ * **평달이면 반도 함께 연다** (2026-10-22 Alan — "방학달 1,2,7,8월만 강사가 직접 반을 열어야하고 나머지는 자동으로") — 그 달 달력(개강일 · 종강일)이
+ * 저장돼 있고 반이 하나도 없을 때만 (`autoOpenMonth`). 방학달은 시간표만 만들고 반은 새 반 개설에서 강사가 연다
+ */
 export async function createMonthTimetable(formData: FormData) {
   await requireStaff();
   const month = str(formData, "month");
@@ -204,25 +208,15 @@ export async function createMonthTimetable(formData: FormData) {
   if (ym.y === 0) done(month, { error: "어느 달인지 다시 골라 주세요." });
 
   const supabase = await createClient();
-  const { data: index } = await supabase.from("timetable_slots").select("year, month, season");
-  const all = index ?? [];
-  if (all.some((r) => r.year === ym.y && r.month === ym.m)) done(month, { error: `${ym.m}월 시간표는 이미 있어요.` });
+  const draft = await draftMonthTimetable(supabase, ym);
+  if (draft.exists) done(month, { error: `${ym.m}월 시간표는 이미 있어요.` });
+  if (draft.rows.length === 0) done(month, { error: "가져올 시간표가 없어요. 카드에서 시간대를 하나씩 더해 주세요." });
 
-  const source = chooseMonthSource(ym, madeMonths(all), (s) => all.some((r) => r.year == null && r.season === s));
-  let rows: { level: number; program: string; start_time: string; end_time: string; ttf_recorded: boolean; book_set: string | null; subject_mwf: string | null; subject_ttf: string | null }[] = [];
-  if (source.kind === "month") {
-    const { data } = await supabase.from("timetable_slots").select(SLOT_COLUMNS).eq("year", source.from.y).eq("month", source.from.m);
-    rows = data ?? [];
-  } else if (source.kind === "template") {
-    const { data } = await supabase.from("timetable_slots").select(SLOT_COLUMNS).is("year", null).eq("season", source.season);
-    rows = data ?? [];
-  }
-  if (rows.length === 0) done(month, { error: "가져올 시간표가 없어요. 카드에서 시간대를 하나씩 더해 주세요." });
-
-  const draft = draftMonth(source, rows).map((r) => ({ ...r, year: ym.y, month: ym.m }));
-  const { error } = await supabase.from("timetable_slots").insert(draft);
+  const { error } = await supabase.from("timetable_slots").insert(draft.rows);
   if (error) done(month, { error: slotError(error, "시간표를 만들지 못했어요. 다시 시도해 주세요.") });
-  done(month, { ok: `${ym.m}월 시간표를 만들었어요. ${sourceNote(ym, source)}` });
+  const auto = await autoOpenMonth(supabase, ym, todayKST());
+  const opened = auto?.kind === "opened" && auto.sections > 0 ? ` ${autoOpenMessage(auto)}` : auto?.kind === "failed" ? ` ${autoOpenMessage(auto)}` : "";
+  done(month, { ok: `${ym.m}월 시간표를 만들었어요. ${sourceNote(ym, draft.source)}${opened}` });
 }
 
 /** 이어지는 두 시간을 한달완성으로 묶기 — 한달완성 수강증(수강시간 10:00~12:10)이 이 반을 찾는다 */

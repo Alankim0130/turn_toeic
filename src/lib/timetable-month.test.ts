@@ -71,9 +71,14 @@ describe("새 달의 출발점 — 기존의 매달 변경규칙 (2026-09-29 Ala
     expect(chooseMonthSource({ y: 2027, m: 2 }, [...made, { y: 2027, m: 1 }], tpl)).toEqual({ kind: "month", from: { y: 2027, m: 1 }, carry: true, flips: 1 });
   });
 
-  it("3월 ← 12월: 방학달(1·2월)이 끼었으니 시간만 — 과정·과목은 직접 (2026-09-23 Alan)", () => {
+  it("3월 ← 12월: 평달은 방학(1·2월)을 건너 이어진다 — 과정은 달 수(3)만큼 뒤집고 과목은 그대로 (2026-10-22 Alan '나머지는 자동으로')", () => {
     const s = chooseMonthSource({ y: 2027, m: 3 }, [...made, { y: 2026, m: 12 }, { y: 2027, m: 1 }, { y: 2027, m: 2 }], tpl);
-    expect(s).toMatchObject({ kind: "month", from: { y: 2026, m: 12 }, carry: false });
+    expect(s).toEqual({ kind: "month", from: { y: 2026, m: 12 }, carry: true, flips: 3 });
+  });
+
+  it("9월 ← 6월: 여름 방학(7·8월)을 건너도 같다", () => {
+    const s = chooseMonthSource({ y: 2027, m: 9 }, [{ y: 2027, m: 6 }, { y: 2027, m: 7 }, { y: 2027, m: 8 }], tpl);
+    expect(s).toEqual({ kind: "month", from: { y: 2027, m: 6 }, carry: true, flips: 3 });
   });
 
   it("7월 ← 2월: 평달이 끼었으니 방학달 시간만 가져온다", () => {
@@ -104,8 +109,8 @@ describe("draftMonth — 새 달 줄 만들기", () => {
     expect(draftMonth({ kind: "month", from: { y: 2026, m: 10 }, carry: true, flips: 2 }, oct)[0].book_set).toBe("B");
   });
 
-  it("계절이 끊겼거나 기본 줄이면 시간·인강만 — 과정·과목은 비운다", () => {
-    for (const src of [{ kind: "month" as const, from: { y: 2026, m: 12 }, carry: false, flips: 3 }, { kind: "template" as const, season: "vacation" as const }]) {
+  it("방학달이 끊겼거나 기본 줄이면 시간·인강만 — 과정·과목은 비운다", () => {
+    for (const src of [{ kind: "month" as const, from: { y: 2027, m: 2 }, carry: false, flips: 5 }, { kind: "template" as const, season: "vacation" as const }]) {
       const d = draftMonth(src, oct);
       expect(d[2]).toMatchObject({ start_time: "18:30:00", ttf_recorded: true, book_set: null, subject_mwf: null, subject_ttf: null });
     }
@@ -118,7 +123,10 @@ describe("draftMonth — 새 달 줄 만들기", () => {
 
   it("안내 한 줄이 무엇을 가져오는지 말한다", () => {
     expect(sourceNote({ y: 2026, m: 11 }, { kind: "month", from: { y: 2026, m: 10 }, carry: true, flips: 1 })).toMatch(/2026년 10월 시간표를 가져와 과정 A\/B 는 뒤집고/);
-    expect(sourceNote({ y: 2027, m: 3 }, { kind: "month", from: { y: 2026, m: 12 }, carry: false, flips: 3 })).toMatch(/시간만 가져와요. 3월은 평달/);
+    expect(sourceNote({ y: 2027, m: 7 }, { kind: "month", from: { y: 2027, m: 2 }, carry: false, flips: 5 })).toMatch(/시간만 가져와요. 7월은 방학달/);
+    expect(sourceNote({ y: 2027, m: 3 }, { kind: "month", from: { y: 2026, m: 12 }, carry: true, flips: 3 })).toMatch(
+      /방학 다음 달이라 방학 전 2026년 12월 시간표를 가져와 과정 A\/B 는 뒤집고/,
+    );
     expect(sourceNote({ y: 2027, m: 1 }, { kind: "template", season: "vacation" })).toMatch(/방학달 기본 시간표에서 시간만/);
   });
 });
@@ -290,6 +298,17 @@ describe("짝수달 · 홀수달 종이 그대로 (2026-10-22 Alan — 10월 종
     for (const [k, want] of even) {
       expect(decFromNov.get(k), k).toEqual(want);
       expect(decFromOct.get(k), k).toEqual(want);
+    }
+  });
+
+  it("3월 ← 12월(짝수달 종이), 9월 ← 6월(짝수달 종이): 방학을 건너도 홀수달 종이 — 9월 종이가 바로 그 모양이다", () => {
+    const odd = byKey(sheet(ODD));
+    const dec = draftMonth(chooseMonthSource({ y: 2026, m: 12 }, madeSepOct, () => true), sheet(EVEN));
+    const mar = byKey(draftMonth(chooseMonthSource({ y: 2027, m: 3 }, [...madeSepOct, { y: 2026, m: 12 }, { y: 2027, m: 1 }, { y: 2027, m: 2 }], () => true), dec));
+    const sep = byKey(draftMonth(chooseMonthSource({ y: 2027, m: 9 }, [{ y: 2027, m: 6 }, { y: 2027, m: 7 }, { y: 2027, m: 8 }], () => true), sheet(EVEN)));
+    for (const [k, want] of odd) {
+      expect(mar.get(k), k).toEqual(want);
+      expect(sep.get(k), k).toEqual(want);
     }
   });
 

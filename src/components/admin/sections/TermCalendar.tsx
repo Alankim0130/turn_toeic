@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveTermSchedule, type TermPart } from "@/app/admin/sections/actions";
+import { autoOpenMessage } from "@/lib/month-open";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { Dialog } from "@/components/ui/Dialog";
@@ -330,16 +331,19 @@ export function TermCalendar({
         onDone?.(false);
         return;
       }
-      // 반이 아직 없는 달 — 달력만으로는 반이 생기지 않는다 (2026-10-22 Alan "11월 시간표 다 넣어놨는데 왜 안잡히는거야?").
-      // 다음 할 일은 화면 맨 위 카드(MonthSetupCard)가 말한다
-      const applied = res.sections
-        ? ` · 이 달 반 ${res.sections}개의 수업일에 반영`
-        : sectionCount === 0
-          ? ` · 이 달 반은 아직 없어요 — 맨 위 '다음 할 일' 대로 ${month}월 시간표를 만들고 반을 열어 주세요`
-          : "";
+      // 반이 아직 없던 달 — 평달은 서버가 그 자리에서 시간표를 만들고 반을 연다(res.auto, 2026-10-22 Alan "방학달 1,2,7,8월만 강사가 직접
+      // 반을 열어야하고 나머지는 자동으로"). 방학달 · 못 연 달의 다음 할 일은 화면 맨 위 카드(MonthSetupCard)가 말한다
+      const applied = res.auto
+        ? ` · ${autoOpenMessage(res.auto)}`
+        : res.sections
+          ? ` · 이 달 반 ${res.sections}개의 수업일에 반영`
+          : sectionCount === 0
+            ? ` · 이 달 반은 아직 없어요 — 맨 위 '다음 할 일' 대로 ${month}월 시간표를 만들고 반을 열어 주세요`
+            : "";
       setNotice(null);
       setResult({
-        kind: "success",
+        // 저절로 열지 못한 평달은 눈에 띄게 — 달력은 저장됐지만 반이 없다
+        kind: res.auto?.kind === "failed" ? "warning" : "success",
         text: whole
           ? `${month}월 일정을 ${hasSaved ? "저장" : "생성"}했어요. 월수금 ${res.mwf}회 · 화목금 ${res.ttf}회 · 특강 ${res.lectures}개${applied}`
           : `${parts.map((x) => PART_LABEL[x]).join(" · ")}만 저장했어요. 월수금 ${res.mwf}회 · 화목금 ${res.ttf}회 · 특강 ${res.lectures}개${applied}`,

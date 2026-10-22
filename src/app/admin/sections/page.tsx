@@ -11,16 +11,28 @@ import { SectionsTabs } from "@/components/admin/sections/SectionsTabs";
 import { MonthSetupCard } from "@/components/admin/sections/MonthSetupCard";
 import { shiftMonth, ymd, daysInMonth } from "@/components/admin/sections/dates";
 import { heldCountable, monthSetup } from "@/lib/month-setup";
+import { AUTO_OPEN_FAILURE, autoOpenMessage } from "@/lib/month-open";
 import { chooseMonthSource, madeMonths, sourceNote } from "@/lib/timetable-month";
 import { loadTermData, parseTerm } from "./_lib/term-data";
 
 export const metadata: Metadata = { title: "반 편성", robots: { index: false } };
 
+/** '한 번에 만들기' 가 반을 못 열었을 때 (openMonthClasses 의 openError 값) */
+const OPEN_NOTICE: Record<string, string> = {
+  ...AUTO_OPEN_FAILURE,
+  vacation: "방학달은 반을 직접 열어요 — 카드의 두 단계대로 시간표를 만들고 새 반 개설에서 열어 주세요.",
+  nothing: "열 반이 없었어요 — 이미 반이 있거나, 달력에 개강일 · 종강일이 없거나, 끝난 달이에요.",
+};
+
 /**
  * 반 편성 — **달력(일정표 편성)만** (2026-10-02 Alan — "반 편성에서 일정표에 관련된 편성만 딱 이뤄지면 좋겠어. 아래로 스크롤을
  * 내리면 너무 많은 정보가 있어"). 개설 반 목록 · 새 반 개설 · 담당 강사 · 스터디 시간은 위 탭(`SectionsTabs`)의 제 화면으로 갔다.
  */
-export default async function AdminSectionsPage({ searchParams }: { searchParams: Promise<{ term?: string }> }) {
+export default async function AdminSectionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ term?: string; opened?: string; made?: string; held?: string; openError?: string }>;
+}) {
   await requireStaff();
   const sp = await searchParams;
   const { y, m } = parseTerm(sp.term);
@@ -52,6 +64,7 @@ export default async function AdminSectionsPage({ searchParams }: { searchParams
   // 달력만 저장하고 반이 없는 달 — 맨 위에 '다음 할 일' (2026-10-22 Alan "11월 시간표 다 넣어놨는데 왜 안잡히는거야?").
   // 달력은 날짜만 정한다. 그 달 시간표(시간 · 과정 · 과목)를 만들고 반을 열어야 받아 둔 수강증이 배정되고 학생 화면에 그 달이 선다
   const setupBase = monthSetup({
+    month: m,
     hasSaved: data.hasSaved,
     closes: term?.closes_at ?? null,
     today,
@@ -74,6 +87,21 @@ export default async function AdminSectionsPage({ searchParams }: { searchParams
         chooseMonthSource({ y, m }, madeMonths(timetableIndex), (season) => timetableIndex.some((r) => r.year == null && r.season === season)),
       )
     : null;
+
+  // 카드의 '한 번에 만들기' 결과 (openMonthClasses 가 돌려보낸 주소) — 반이 생기면 카드는 사라지므로 맨 위에 한 줄로 알린다
+  const openedNow = sp.opened != null && /^\d{1,3}$/.test(sp.opened) ? Number(sp.opened) : null;
+  const openedNotice =
+    openedNow != null
+      ? autoOpenMessage({
+          kind: "opened",
+          month: m,
+          sections: openedNow,
+          timetableMade: sp.made === "1",
+          from: null,
+          held: sp.held && /^\d{1,4}$/.test(sp.held) ? Number(sp.held) : 0,
+        }, { byButton: true })
+      : null;
+  const openError = sp.openError && Object.hasOwn(OPEN_NOTICE, sp.openError) ? OPEN_NOTICE[sp.openError] : null;
 
   const saved: TermSchedule = {
     opens: term?.enrollment_opens_at ?? null,
@@ -120,6 +148,9 @@ export default async function AdminSectionsPage({ searchParams }: { searchParams
 
       {/* 달력은 자기 ‹ › 로 달을 넘기므로 탭에는 달 넘기기를 그리지 않는다 */}
       <SectionsTabs current="calendar" year={y} month={m} counts={{ classes: sections.length }} monthNav={false} />
+
+      {openedNotice && <Alert kind="success">{openedNotice}</Alert>}
+      {openError && <Alert kind="warning">{openError}</Alert>}
 
       {setup && <MonthSetupCard month={m} termKey={key} setup={setup} source={setupSource} />}
 

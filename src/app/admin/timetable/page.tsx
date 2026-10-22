@@ -26,6 +26,7 @@ import {
   type SlotKind,
   type YM,
 } from "@/lib/timetable-month";
+import { autoOpensMonth } from "@/lib/month-open";
 import { bundleHours, createMonthTimetable, deleteTimetableSlot, saveTimetableLevelNote, saveTimetableSlot } from "./actions";
 
 export const metadata: Metadata = { title: "시간표 설정", robots: { index: false } };
@@ -174,13 +175,16 @@ export default async function AdminTimetablePage({ searchParams }: { searchParam
           <strong className="text-ink">{ymLabel(ym)}</strong> 시간표예요 ({SEASON_LABEL[season]} — 방학달은 {vacationMonths}월).
           {term ? (
             <> 이 달 반 <strong className="text-ink">{sectionRows?.length ?? 0}개</strong>가 이 표를 따라요.</>
+          ) : autoOpensMonth(ym.m) ? (
+            <> 아직 이 달 달력이 없어요 — 반 편성 달력(개강일 · 종강일)을 저장하면 이 표대로 반이 저절로 열려요.</>
           ) : (
             <> 아직 이 달 반이 없어요 — 반 편성에서 일괄 개설하면 이 표대로 만들어져요.</>
           )}
         </p>
         <ul className="mt-2 space-y-0.5 text-xs text-slate">
           <li>· <strong className="text-ink-soft">과정 A/B · 과목 LC/RC</strong>를 여기서 정해요. 고치면 이 달 반에 바로 적용돼요 — 담당 강사 · 학생의 LC 교재 · 저녁 반 다시보기 짝 · 불라방 · 출석 시간이 함께 맞춰져요.</li>
-          <li>· 새 달은 지난달 시간표를 가져와 <strong className="text-ink-soft">과정 A/B 만 뒤집어</strong> 미리 채워요 (과목은 그대로). 방학달로 넘어가거나 평달로 돌아오는 달은 시간표가 달라 시간만 가져와요.</li>
+          <li>· 새 달은 지난달 시간표를 가져와 <strong className="text-ink-soft">과정 A/B 만 뒤집어</strong> 미리 채워요 (과목은 그대로). 3월 · 9월은 방학 전 마지막 평달에서 이어 받고, 방학달은 시간표가 달라 시간만 가져와요.</li>
+          <li>· <strong className="text-ink-soft">평달은 반이 저절로 열려요</strong> — 반 편성 달력을 저장하면 이 표대로 반이 만들어져요. 방학달(1 · 2 · 7 · 8월)은 과정 · 과목을 고른 뒤 새 반 개설에서 직접 열어요.</li>
           <li>· <strong className="text-ink-soft">한달완성</strong> 줄은 두 시간을 이어 듣는 반이에요. 한달완성 수강증의 수강시간(예: 10:00~12:10)이 이 반을 찾고, 두 시간 권한이 저절로 열려요. 두 시간의 시각을 바꾸면 따라 바뀌어요.</li>
           <li>· <strong className="text-ink-soft">화목금 인강</strong>을 켠 줄이 저녁 줄이에요 — 그 줄 화목금 반은 인강, 불라방은 라이브만 하고 다시보기는 오전 반 것을 봐요.</li>
           <li>· 이 달 반이 쓰는 시간대는 지울 수 없어요. 반 편성에서 반을 먼저 정리해 주세요.</li>
@@ -193,14 +197,28 @@ export default async function AdminTimetablePage({ searchParams }: { searchParam
         </Alert>
       )}
 
-      {/* 시간표는 있는데 이 달 반이 없다 — 다음은 반 개설 (2026-10-22 Alan "11월 시간표 다 넣어놨는데 왜 안잡히는거야?") */}
+      {/* 시간표는 있는데 이 달 반이 없다 — 다음은 반 개설 (2026-10-22 Alan "11월 시간표 다 넣어놨는데 왜 안잡히는거야?").
+          평달은 반 편성 맨 위 '한 번에 만들기'(달력을 저장해도 저절로), 방학달은 새 반 개설에서 직접 (같은 날 Alan "방학달 1,2,7,8월만 강사가 직접") */}
       {term && !empty && missingRows === 0 && (sectionRows?.length ?? 0) === 0 && (
         <Alert kind="warning" title={`${ym.m}월 반이 아직 없어요`} className="mb-5">
-          시간표를 확인했으면{" "}
-          <Link href={`/admin/sections/new?term=${key}`} className="font-bold text-brand-700 underline decoration-brand-200 underline-offset-2 hover:decoration-brand-500">
-            새 반 개설
-          </Link>
-          에서 강좌마다 &lsquo;전체 선택&rsquo; 으로 반을 열어 주세요. 반을 열어야 받아 둔 {ym.m}월 수강증이 그 반에 배정되고 학생 화면에 {ym.m}월이 서요.
+          {autoOpensMonth(ym.m) ? (
+            <>
+              평달은 반이 저절로 열려요 —{" "}
+              <Link href={`/admin/sections?term=${key}`} className="font-bold text-brand-700 underline decoration-brand-200 underline-offset-2 hover:decoration-brand-500">
+                반 편성
+              </Link>
+              {" "}맨 위 &lsquo;{ym.m}월 시간표 · 반 한 번에 만들기&rsquo; 를 한 번 누르세요 (달력에 개강일 · 종강일이 있어야 해요).
+            </>
+          ) : (
+            <>
+              시간표를 확인했으면{" "}
+              <Link href={`/admin/sections/new?term=${key}`} className="font-bold text-brand-700 underline decoration-brand-200 underline-offset-2 hover:decoration-brand-500">
+                새 반 개설
+              </Link>
+              에서 강좌마다 &lsquo;전체 선택&rsquo; 으로 반을 열어 주세요.
+            </>
+          )}{" "}
+          반을 열어야 받아 둔 {ym.m}월 수강증이 그 반에 배정되고 학생 화면에 {ym.m}월이 서요.
         </Alert>
       )}
 

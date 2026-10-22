@@ -12,6 +12,7 @@ import { sectionKeyOf, timeBlockOf } from "@/components/admin/sections/bulk";
 import { SectionsTabs } from "@/components/admin/sections/SectionsTabs";
 import { SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
 import { chooseMonthSource, madeMonths, sourceNote } from "@/lib/timetable-month";
+import { autoOpensMonth } from "@/lib/month-open";
 import { loadTermData, parseTerm } from "../_lib/term-data";
 
 export const metadata: Metadata = { title: "새 반 개설", robots: { index: false } };
@@ -87,6 +88,17 @@ export default async function AdminSectionNewPage({ searchParams }: { searchPara
                 시간표에서 정한 값으로 만들어져요.
               </p>
               {/* 2026-10-22 Alan 이 11월 달력을 저장하고 이 경고를 보며 "11월 시간표 다 넣어놨는데 왜 안잡히는거야?" — 달력과 시간표가 따로라고 말한다 */}
+              {/* 평달은 달력을 저장하면 반이 저절로 열린다 (2026-10-22 Alan "방학달 1,2,7,8월만 강사가 직접 반을 열어야하고 나머지는 자동으로") */}
+              {autoOpensMonth(m) && sections.length === 0 && (
+                <p className="mt-2 rounded-xl bg-brand-50/60 px-4 py-3 text-sm text-slate">
+                  <strong className="text-ink">{m}월은 평달이라 반이 저절로 열려요</strong> — 반 편성 달력을 저장하면 시간표대로 강좌마다 모든 반이 만들어져요. 그 전에 저장해
+                  둔 달은{" "}
+                  <Link href={`/admin/sections?term=${key}`} className="font-bold text-brand-600 underline-offset-2 hover:underline">
+                    반 편성
+                  </Link>{" "}
+                  맨 위 &lsquo;한 번에 만들기&rsquo; 를 누르세요. 여기서는 빠진 반을 하나씩 더할 수 있어요.
+                </p>
+              )}
               {monthHasNoSlots && (
                 <div className="mt-3">
                   <Alert kind="warning" title={`${m}월 시간표가 아직 없어요`}>

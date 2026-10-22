@@ -8,9 +8,12 @@
  * 다시보기 짝 · 불라방 · 출석 · 권한)이 따라온다 (마이그레이션 20260929160000).
  *
  * **새 달은 앞선 달에서 가져온다** — "기존의 매달 변경규칙은 그대로 가져가서 미리 세팅이 되어있으면 편할 것 같아":
- *   * 같은 계절이 끊기지 않고 이어지면(9월 → 10월, 1월 → 2월) **시간 · 과목은 그대로, 과정 A/B 는 달 수만큼 뒤집어서**.
- *   * 계절이 한 번 끊겼으면(평달 ↔ 방학달 1·2·7·8월) **시간만** — 방학달은 시간표가 달라 과정·과목을 짐작하지 않는다 (2026-09-23 Alan).
- *     같은 계절의 가장 가까운 달에서 가져오고, 그런 달이 없으면(처음 여는 방학) 예전 두 벌(기본 줄)에서 가져온다.
+ *   * 같은 계절의 가장 가까운 앞선 달에서 **시간 · 과목은 그대로, 과정 A/B 는 달 수만큼 뒤집어서** (9월 → 10월, 1월 → 2월).
+ *   * **평달은 방학을 건너 이어진다** — 3월 ← 12월(1 · 2월 건너), 9월 ← 6월(7 · 8월 건너)도 과정 · 과목까지 (2026-10-22 Alan "방학달 1,2,7,8월만
+ *     강사가 직접 반을 열어야하고 나머지는 자동으로" — 평달 반이 저절로 열리려면 과정 · 과목이 채워져 있어야 한다). 뒤집는 횟수는 달 수라
+ *     종이 시간표의 짝수달 · 홀수달과 같다 (12월 짝수달 → 3월 홀수달). 2026-09-22 ~ 10-22 에는 방학 다음 달도 시간만 가져왔다.
+ *   * **방학달은 평달이 끼면 시간만** — 방학마다 시간표가 달라 과정 · 과목을 짐작하지 않는다 (2026-09-23 Alan "1,2,7,8은 방학달이라서 시간표가 변경될테니").
+ *     그런 달이 없으면(처음 여는 방학) 예전 두 벌(기본 줄)에서 가져온다.
  *
  * 화면(`/admin/timetable`)과 서버(`actions.ts`)가 이 파일 하나를 쓴다. DB 가 따로 지키는 것: 같은 달 같은 시간 한 줄 · 반이 쓰는 줄은 못 지움.
  */
@@ -55,16 +58,23 @@ export function madeMonths(rows: { year: number | null; month: number | null }[]
 /* ─── 새 달을 무엇으로 시작하나 ───────────────────────────────────────────── */
 
 export type MonthSource =
-  /** 앞선 같은 계절 달. carry = 계절이 끊기지 않고 이어졌나 (이어졌으면 과정·과목까지, 끊겼으면 시간만) */
+  /** 앞선 같은 계절 달. carry = 과정 · 과목까지 가져오나 (평달은 늘 — 방학을 건너서도 · 방학달은 평달이 안 끼었을 때만, 아니면 시간만) */
   | { kind: "month"; from: YM; carry: boolean; flips: number }
   /** 앞선 같은 계절 달이 없다 — 예전 두 벌(기본 줄)에서 시간만 */
   | { kind: "template"; season: Season }
   /** 가져올 것이 없다 — 줄을 하나씩 더한다 */
   | { kind: "none"; season: Season };
 
+/** a 와 b 사이의 달 (둘 다 빼고) */
+function betweenMonths(a: YM, b: YM): YM[] {
+  const out: YM[] = [];
+  for (let i = ymIndex(a) + 1; i < ymIndex(b); i++) out.push(ymOfIndex(i));
+  return out;
+}
+
 /**
  * 새 달(target)의 출발점. made 는 시간표가 있는 달들, hasTemplate 은 그 계절 기본 줄이 있는가.
- * target 보다 앞선 같은 계절 달 중 가장 가까운 것을 고르고, 그 사이에 다른 계절 달이 끼어 있으면 시간만 가져온다.
+ * target 보다 앞선 같은 계절 달 중 가장 가까운 것을 고른다. 방학달은 그 사이에 평달이 끼어 있으면 시간만 가져온다 (평달은 방학을 건너 이어진다).
  */
 export function chooseMonthSource(target: YM, made: YM[], hasTemplate: (season: Season) => boolean): MonthSource {
   const season = seasonOfMonth(target.m);
@@ -74,8 +84,8 @@ export function chooseMonthSource(target: YM, made: YM[], hasTemplate: (season: 
     .sort((a, b) => ymIndex(b) - ymIndex(a))[0];
   if (from) {
     const f = ymIndex(from);
-    let carry = true;
-    for (let i = f + 1; i < t; i++) if (seasonOfMonth(ymOfIndex(i).m) !== season) carry = false;
+    // 평달은 방학을 건너 이어진다 (3월 ← 12월 · 9월 ← 6월). 방학달만 사이에 평달이 끼면 시간만 가져온다
+    const carry = season === "regular" || !betweenMonths(from, target).some((ym) => seasonOfMonth(ym.m) !== season);
     return { kind: "month", from, carry, flips: t - f };
   }
   return hasTemplate(season) ? { kind: "template", season } : { kind: "none", season };
@@ -116,9 +126,12 @@ export function sourceNote(target: YM, source: MonthSource): string {
     if (!source.carry) {
       return `${from} 시간표에서 시간만 가져와요. ${target.m}월은 ${SEASON_LABEL[seasonOfMonth(target.m)]}로 넘어오는 달이라 과정·과목은 직접 골라 주세요.`;
     }
+    // 방학을 건너온 평달(3월 · 9월) — 방학 전 마지막 평달에서 가져온다고 밝힌다
+    const across = betweenMonths(source.from, target).some((ym) => seasonOfMonth(ym.m) !== seasonOfMonth(target.m));
+    const lead = across ? `방학 다음 달이라 방학 전 ${from} 시간표를 가져와` : `${from} 시간표를 가져와`;
     return source.flips % 2 === 1
-      ? `${from} 시간표를 가져와 과정 A/B 는 뒤집고 과목(LC/RC)은 그대로 채워요. 확인만 하고 다르면 고치세요.`
-      : `${from} 시간표를 가져와요. ${source.flips}달 뒤라 과정 A/B 도 그대로예요. 확인만 하고 다르면 고치세요.`;
+      ? `${lead} 과정 A/B 는 뒤집고 과목(LC/RC)은 그대로 채워요. 확인만 하고 다르면 고치세요.`
+      : `${lead}요. ${source.flips}달 뒤라 과정 A/B 도 그대로예요. 확인만 하고 다르면 고치세요.`;
   }
   if (source.kind === "template") {
     return `${SEASON_LABEL[source.season]} 기본 시간표에서 시간만 가져와요. 과정·과목은 직접 골라 주세요.`;
