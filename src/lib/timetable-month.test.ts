@@ -11,10 +11,12 @@ import {
   parseYm,
   shiftYm,
   slotKinds,
+  slotLabelOf,
   sourceNote,
   ymKey,
   type SlotValues,
 } from "./timetable-month";
+import { blockContains } from "./time-blocks";
 
 const row = (id: number, start: string, end: string, extra: Partial<{ level: number; program: string }> = {}) => ({
   id,
@@ -205,5 +207,107 @@ describe("품을 시간이 없어진 2주완성 줄 (2026-10-05 Alan \"방학달
     const twoWeek = [tw(10, "12:30", "14:40")];
     expect(orphanTwoWeekRows(twoWeek, [sc(1, "12:30", "14:40", 750)]).map((w) => w.id)).toEqual([10]);
     expect(orphanTwoWeekRows(twoWeek, [sc(1, "14:00", "15:30")]).map((w) => w.id)).toEqual([10]);
+  });
+});
+
+describe("짝수달 · 홀수달 종이 그대로 (2026-10-22 Alan — 10월 종이 · 9월 종이 사진)", () => {
+  // 종이 한 칸 = [과정, 월수금 과목, 화목금 과목]. 저녁 화목금은 종이에 '-'(인강) — 과목은 오전과 같다(편성표)
+  type Cell = readonly ["A" | "B", "rc" | "lc", "rc" | "lc"];
+  const EVEN: Record<string, Cell> = {
+    "650 10:00~11:00": ["B", "rc", "lc"],
+    "650 11:10~12:10": ["A", "lc", "rc"],
+    "650 18:30~19:30": ["B", "rc", "lc"],
+    "650 19:40~20:40": ["A", "lc", "rc"],
+    "750 10:00~11:00": ["B", "lc", "rc"],
+    "750 11:10~12:10": ["A", "rc", "lc"],
+    "750 18:30~19:30": ["B", "lc", "rc"],
+    "750 19:40~20:40": ["A", "rc", "lc"],
+    "850 12:30~13:40": ["B", "rc", "lc"],
+    "850 13:50~15:00": ["A", "lc", "rc"],
+  };
+  const ODD: Record<string, Cell> = {
+    "650 10:00~11:00": ["A", "rc", "lc"],
+    "650 11:10~12:10": ["B", "lc", "rc"],
+    "650 18:30~19:30": ["A", "rc", "lc"],
+    "650 19:40~20:40": ["B", "lc", "rc"],
+    "750 10:00~11:00": ["A", "lc", "rc"],
+    "750 11:10~12:10": ["B", "rc", "lc"],
+    "750 18:30~19:30": ["A", "lc", "rc"],
+    "750 19:40~20:40": ["B", "rc", "lc"],
+    "850 12:30~13:40": ["A", "rc", "lc"],
+    "850 13:50~15:00": ["B", "lc", "rc"],
+  };
+  const t = (hhmm: string) => `${hhmm}:00`;
+  const line = (level: number, label: string, program: string, cell: Cell | null): SlotValues => {
+    const [start, end] = label.split("~");
+    return {
+      level,
+      program,
+      start_time: t(start),
+      end_time: t(end),
+      ttf_recorded: start >= "18:00",
+      book_set: cell?.[0] ?? null,
+      subject_mwf: cell?.[1] ?? null,
+      subject_ttf: cell?.[2] ?? null,
+    };
+  };
+  /** 종이 한 장 = 그 달 시간표 줄 전부 (시간 단위 + 한달완성 · 속성반 · 2주완성 줄) */
+  const sheet = (cells: Record<string, Cell>): SlotValues[] => [
+    ...Object.entries(cells).map(([k, c]) => {
+      const [level, label] = k.split(" ");
+      return line(Number(level), label, "score", c);
+    }),
+    line(650, "10:00~12:10", "score", null),
+    line(650, "18:30~20:40", "score", null),
+    line(750, "10:00~12:10", "score", null),
+    line(750, "18:30~20:40", "score", null),
+    line(850, "12:30~15:00", "score", null),
+    line(650, "10:00~13:40", "sparta", null),
+    line(750, "10:00~13:40", "sparta", null),
+    line(750, "10:00~15:00", "sparta", null),
+    line(850, "12:30~15:00", "twoweek", null),
+  ];
+  const key = (r: SlotValues) => `${r.program} ${r.level} ${slotLabelOf(r)}`;
+  const byKey = (rows: SlotValues[]) => new Map(rows.map((r) => [key(r), r]));
+  const madeSepOct = [
+    { y: 2026, m: 9 },
+    { y: 2026, m: 10 },
+  ];
+
+  it("11월 ← 10월(짝수달) 종이: 칸마다 9월(홀수달) 종이와 같다 — 과정만 뒤집히고 과목 · 시간 · 저녁 인강 · 묶음 줄은 그대로", () => {
+    const src = chooseMonthSource({ y: 2026, m: 11 }, madeSepOct, () => true);
+    const nov = byKey(draftMonth(src, sheet(EVEN)));
+    const odd = byKey(sheet(ODD));
+    expect([...nov.keys()].sort()).toEqual([...odd.keys()].sort());
+    for (const [k, want] of odd) expect(nov.get(k), k).toEqual(want);
+  });
+
+  it("12월 ← 11월, 그리고 11월을 건너뛰고 12월 ← 10월: 둘 다 10월(짝수달) 종이로 돌아온다", () => {
+    const even = byKey(sheet(EVEN));
+    const nov = draftMonth(chooseMonthSource({ y: 2026, m: 11 }, madeSepOct, () => true), sheet(EVEN));
+    const decFromNov = byKey(draftMonth(chooseMonthSource({ y: 2026, m: 12 }, [...madeSepOct, { y: 2026, m: 11 }], () => true), nov));
+    const decFromOct = byKey(draftMonth(chooseMonthSource({ y: 2026, m: 12 }, madeSepOct, () => true), sheet(EVEN)));
+    for (const [k, want] of even) {
+      expect(decFromNov.get(k), k).toEqual(want);
+      expect(decFromOct.get(k), k).toEqual(want);
+    }
+  });
+
+  it("속성반은 시간으로 반을 품어 종이 글자가 저절로 맞는다 — 10월 650B+650A+850B → 11월 650A+650B+850A, 750 4교시 750A+750B+850A+850B", () => {
+    const composition = (rows: SlotValues[], level: number, label: string) => {
+      const include = level === 650 ? [650, 850] : [750, 850];
+      return rows
+        .filter((r) => r.program === "score" && include.includes(r.level) && r.book_set && blockContains(label, slotLabelOf(r)) && slotLabelOf(r) !== label)
+        .sort((a, b) => a.start_time.localeCompare(b.start_time))
+        .map((r) => `${r.level}${r.book_set}`)
+        .join("+");
+    };
+    const oct = sheet(EVEN);
+    const nov = draftMonth(chooseMonthSource({ y: 2026, m: 11 }, madeSepOct, () => true), oct);
+    expect(composition(oct, 650, "10:00~13:40")).toBe("650B+650A+850B");
+    expect(composition(oct, 750, "10:00~15:00")).toBe("750B+750A+850B+850A");
+    expect(composition(nov, 650, "10:00~13:40")).toBe("650A+650B+850A");
+    expect(composition(nov, 750, "10:00~13:40")).toBe("750A+750B+850A");
+    expect(composition(nov, 750, "10:00~15:00")).toBe("750A+750B+850A+850B");
   });
 });
