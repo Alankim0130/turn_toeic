@@ -1,18 +1,32 @@
 import Link from "next/link";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import type { MonthSetup } from "@/lib/month-setup";
-import { openMonthClasses } from "@/app/admin/sections/actions";
-import { SubmitButton } from "@/components/ui/SubmitButton";
+import { AUTO_OPEN_STATE_ERRORS, AUTO_OPEN_STATE_MESSAGE, type AutoOpenStateError } from "@/lib/month-open";
 
 /**
  * 반 편성 달력 맨 위 '다음 할 일' (2026-10-22 Alan — 11월 달력을 저장해 두고 "11월 시간표 다 넣어놨는데 왜 안잡히는거야?").
  * 띄울지는 `monthSetup`(`src/lib/month-setup.ts`)이 정한다 — 반이 하나라도 생기면 사라진다.
  *
  * - **평달**: 달력을 저장하면 시간표 · 반이 저절로 생긴다 (같은 날 Alan "방학달 1,2,7,8월만 강사가 직접 반을 열어야하고 나머지는 자동으로").
- *   그래도 이 카드가 서는 평달(그 전에 저장해 둔 달 · 그때 못 연 달)은 **버튼 하나** — 같은 일을 한 번에 한다 (`openMonthClasses` → `autoOpenMonth`).
+ *   그래도 이 카드가 서는 평달(그 전에 저장해 둔 달 · 그때 못 연 달 · 반을 다 지운 달)은 **DB 가 10분마다 보고 저절로 연다**
+ *   (`/api/cron/month-auto-open` — 같은 날 Alan "버튼을 안눌러도 자동으로 세팅되도록 부탁해". 그 전 몇 시간은 이 카드에 '한 번에 만들기' 버튼이 있었다 —
+ *   **버튼을 되살리지 말 것**). 카드는 기다리는 중인지, 지난 확인에서 못 열었으면 그 까닭(`autoState`)만 보여 준다.
  * - **방학달(1 · 2 · 7 · 8월)**: 시간표가 해마다 달라 강사가 직접 — ① 시간표 만들기(과정 · 과목 고르기) ② 새 반 개설.
  */
-export function MonthSetupCard({ month, termKey, setup, source }: { month: number; termKey: string; setup: MonthSetup; source: string | null }) {
+export function MonthSetupCard({
+  month,
+  termKey,
+  setup,
+  source,
+  autoState = null,
+}: {
+  month: number;
+  termKey: string;
+  setup: MonthSetup;
+  source: string | null;
+  /** 10분 확인의 마지막 결과 (month_auto_open_state) — 평달만 */
+  autoState?: { tried_at: string; error: string | null } | null;
+}) {
   const timetableHref = `/admin/timetable?month=${termKey}`;
   const newHref = `/admin/sections/new?term=${termKey}`;
   const waiting =
@@ -29,19 +43,26 @@ export function MonthSetupCard({ month, termKey, setup, source }: { month: numbe
     );
 
   if (setup.auto) {
+    const failure = autoState?.error && (AUTO_OPEN_STATE_ERRORS as readonly string[]).includes(autoState.error) ? (autoState.error as AutoOpenStateError) : null;
+    const triedAt = autoState ? formatDate(autoState.tried_at, { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : null;
     return (
-      <section aria-labelledby="month-setup-title" className="rounded-xl2 border border-amber-200 bg-amber-50 p-4 sm:p-5">
+      <section
+        aria-labelledby="month-setup-title"
+        className={cn("rounded-xl2 border p-4 sm:p-5", failure ? "border-amber-200 bg-amber-50" : "border-brand-100 bg-brand-50")}
+      >
         <h2 id="month-setup-title" className="text-base font-black text-ink">
-          {month}월 반이 아직 없어요
+          {failure ? `${month}월 반을 아직 열지 못했어요` : `${month}월 반을 곧 저절로 열어요`}
         </h2>
         <p className="mt-1 text-sm text-slate">
-          평달은 달력을 저장하면 시간표와 반이 저절로 만들어져요. 이 달은 그 전에 저장했거나 그때 만들지 못해서 아직이에요 — 아래 버튼을 한 번만 누르세요.{" "}
+          {failure ? (
+            <>
+              {triedAt ? `지난 확인(${triedAt})에서 ` : ""}열지 못했어요 — {AUTO_OPEN_STATE_MESSAGE[failure]}
+            </>
+          ) : (
+            <>평달은 반이 저절로 열려요. 10분마다 확인해서 이 달 시간표와 반을 만들어요 — 따로 누를 것은 없어요.</>
+          )}{" "}
           {waiting}
         </p>
-        <form action={openMonthClasses} className="mt-3">
-          <input type="hidden" name="term" value={termKey} />
-          <SubmitButton pendingText="만드는 중…">{month}월 시간표 · 반 한 번에 만들기</SubmitButton>
-        </form>
         {!setup.timetableReady && source && <p className="mt-2 text-xs text-slate">시간표 — {source}</p>}
         <p className="mt-2 text-xs text-slate">
           {setup.timetableReady ? `만들어 둔 ${month}월 시간표대로 ` : ""}강좌마다 모든 시간대의 반(월수금 · 화목금, 850 2주완성 포함)을 &lsquo;모집 중&rsquo; 으로

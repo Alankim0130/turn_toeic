@@ -10,6 +10,7 @@ import type { Database } from "@/lib/supabase/database.types";
 import { sectionKeyOf, timeBlockOf } from "@/components/admin/sections/bulk";
 import { slotKinds } from "@/lib/timetable-month";
 import { sectionInsertOf } from "@/lib/month-open";
+import { insertSections } from "./_lib/open-month";
 
 /**
  * 반 일괄 개설: **그 달 시간표**(레벨·시간대) × 강좌 × 트랙 조합에서 고른 것만 한 번에 만든다.
@@ -117,17 +118,22 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
     );
   }
 
+  // 넣기는 DB 함수 한곳 — 기수마다 잠금을 걸고 이미 있는 (강좌 · 트랙 · 시간대)는 건너뛴다. 평달 자동 세팅(10분 확인)이 같은 순간에 그 달을 열어도
+  // 같은 반이 두 벌 생기지 않는다 (2026-10-22, `insertSections`). 그 사이 생긴 반은 '건너뜀' 으로 센다
+  let created = 0;
   if (inserts.length > 0) {
-    const { error } = await supabase.from("class_sections").insert(inserts);
+    const { count, error } = await insertSections(supabase, termId, inserts, { onlyIfEmpty: false });
     if (error) {
       return { ok: false, error: error.code === "42501" ? "권한이 없어요. 본인 반만 만들 수 있습니다." : "반을 개설하지 못했어요. 잠시 후 다시 시도해 주세요." };
     }
+    created = count;
+    skipped += inserts.length - count;
     // 모집 중인 반이 열렸다 — 받아 둔 다음 달 수강증을 다시 맞춰 예비등록생으로 배정한다 (2026-09-22, `rematchHeldVerifications`)
-    if (inserts.some((r) => r.status === "open")) after(() => rematchHeldVerifications(createAdminClient(), { notify: true }));
+    if (created > 0 && inserts.some((r) => r.status === "open")) after(() => rematchHeldVerifications(createAdminClient(), { notify: true }));
   }
 
   revalidatePath("/admin/sections");
   revalidatePath("/admin");
   revalidatePath("/");
-  return { ok: true, created: inserts.length, skipped };
+  return { ok: true, created, skipped };
 }

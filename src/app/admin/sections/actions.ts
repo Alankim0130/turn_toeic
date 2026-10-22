@@ -227,35 +227,6 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
   return { ok: true, mwf: res.mwf ?? 0, ttf: res.ttf ?? 0, lectures: res.lectures ?? 0, sections: res.sections ?? 0, parts, auto };
 }
 
-/* ─── 평달 반 한 번에 열기 (반 편성 맨 위 카드) ─────────────────────────────
-   달력은 이 기능 전에 저장해 두었거나(2026-10-22 의 11월) 그때 저절로 열지 못한 평달 — 달력을 다시 저장하지 않아도 한 번에 연다 */
-export async function openMonthClasses(formData: FormData) {
-  await requireStaff();
-  const key = str(formData, "term");
-  const match = key.match(/^(\d{4})-(\d{2})$/);
-  const y = match ? Number(match[1]) : NaN;
-  const m = match ? Number(match[2]) : NaN;
-  if (!match || y < 2020 || y > 2100 || m < 1 || m > 12) redirect("/admin/sections");
-
-  const supabase = await createClient();
-  const auto = await autoOpenMonth(supabase, { y, m }, todayKST());
-  revalidateSchedule();
-  const q = new URLSearchParams({ term: key });
-  if (auto?.kind === "opened") {
-    q.set("opened", String(auto.sections));
-    if (auto.timetableMade) q.set("made", "1");
-    if (auto.held > 0) q.set("held", String(auto.held));
-  } else if (auto?.kind === "failed") {
-    q.set("openError", auto.reason);
-  } else if (auto?.kind === "vacation") {
-    q.set("openError", "vacation");
-  } else {
-    // 할 일이 없었다 — 그 사이 반이 생겼거나 달력(개강일 · 종강일)이 없거나 끝난 달
-    q.set("openError", "nothing");
-  }
-  redirect(`/admin/sections?${q.toString()}`);
-}
-
 /* ─── 강좌 마스터 추가 ──────────────────────────────────────────────────── */
 export async function createCourse(_prev: ActionState, formData: FormData): Promise<ActionState> {
   await requireStaff();

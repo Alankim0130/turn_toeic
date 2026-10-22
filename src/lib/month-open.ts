@@ -140,19 +140,38 @@ export type AutoOpenSummary =
 
 export type AutoOpenFailure = "no_timetable" | "timetable_error" | "sections_error" | "forbidden";
 
+/**
+ * 못 연 까닭 — 저장 · 시간표 만들기 뒤 한 줄과 반 편성 카드가 쓴다. **누르라는 말을 적지 않는다** (2026-10-22 Alan "버튼을 안눌러도 자동으로 세팅되도록") —
+ * 반이 없는 평달은 10분마다 DB 가 다시 열어 본다 (`/api/cron/month-auto-open`). 사람이 할 일이 있는 까닭만 그 일을 적는다.
+ */
 export const AUTO_OPEN_FAILURE: Record<AutoOpenFailure, string> = {
-  no_timetable: "가져올 시간표가 없어요. 시간표 설정에서 시간대를 더한 뒤 다시 눌러 주세요.",
-  timetable_error: "시간표를 만들지 못했어요. 잠시 뒤 다시 눌러 주세요.",
-  sections_error: "반을 열지 못했어요. 잠시 뒤 다시 눌러 주세요.",
-  forbidden: "권한이 없어요. 강사 · 관리자 계정으로 테스트 등급을 끈 뒤 다시 눌러 주세요.",
+  no_timetable: "가져올 시간표가 없어요. 시간표 설정에서 이 달 시간대를 넣으면 10분 안에 반이 저절로 열려요.",
+  timetable_error: "시간표를 만들지 못했어요. 10분 안에 저절로 다시 해 봐요.",
+  sections_error: "반을 열지 못했어요. 10분 안에 저절로 다시 해 봐요.",
+  forbidden: "이 계정(테스트 등급)으로는 열 수 없었어요. 10분 안에 저절로 다시 해 봐요.",
 };
 
-/** 저장 · 버튼 뒤 한 줄 — "11월 시간표를 만들고 반 38개를 저절로 열었어요 …" (카드의 버튼으로 연 것은 '저절로' 를 빼고) */
-export function autoOpenMessage(s: AutoOpenSummary, opts: { byButton?: boolean } = {}): string {
+/** 10분 확인의 마지막 결과 (DB month_auto_open_state.error — 그 check 와 같은 목록, `month-open.test.ts`). no_sections = 시간표에 이 달 강좌의 시간대가 없다 */
+export type AutoOpenStateError = AutoOpenFailure | "no_sections";
+export const AUTO_OPEN_STATE_ERRORS: readonly AutoOpenStateError[] = ["no_timetable", "timetable_error", "sections_error", "forbidden", "no_sections"];
+export const AUTO_OPEN_STATE_MESSAGE: Record<AutoOpenStateError, string> = {
+  ...AUTO_OPEN_FAILURE,
+  no_sections: "시간표에 이 달 강좌의 시간대가 없어요. 시간표 설정에서 시간대를 넣으면 10분 안에 반이 저절로 열려요.",
+};
+
+/** 10분 확인이 남길 결과 — 할 일이 없었으면(반이 있음 · 방학달 · 끝난 달) null (남기지 않는다) */
+export function autoOpenStateOf(s: AutoOpenSummary | null): { error: AutoOpenStateError | null; sections: number } | null {
+  if (!s || s.kind === "vacation") return null;
+  if (s.kind === "failed") return { error: s.reason, sections: 0 };
+  return s.sections > 0 ? { error: null, sections: s.sections } : { error: "no_sections", sections: 0 };
+}
+
+/** 저장 · 시간표 만들기 뒤 한 줄 — "11월 시간표를 만들고 반 38개를 저절로 열었어요 …" */
+export function autoOpenMessage(s: AutoOpenSummary): string {
   if (s.kind === "vacation") return `${s.month}월은 방학달이라 반은 직접 열어요 — 맨 위 '다음 할 일' 대로 시간표를 만들고 새 반 개설에서 열어 주세요`;
-  if (s.kind === "failed") return `${s.month}월 반은 저절로 열지 못했어요 — ${AUTO_OPEN_FAILURE[s.reason]}`;
+  if (s.kind === "failed") return `${s.month}월 반은 아직 열지 못했어요 — ${AUTO_OPEN_FAILURE[s.reason]}`;
   if (s.sections === 0) return `${s.month}월 시간표에 열 반이 없어요 — 시간표 설정을 확인해 주세요`;
   const made = s.timetableMade ? `${s.month}월 시간표를 ${s.from ? `${s.from} 시간표에서 가져와 ` : ""}만들고 ` : `${s.month}월 시간표대로 `;
   const held = s.held > 0 ? ` 받아 둔 ${s.month}월 수강증 ${s.held}장은 곧 그 반에 배정돼요.` : "";
-  return `${made}반 ${s.sections}개를 ${opts.byButton ? "" : "저절로 "}열었어요.${held} 과정 · 과목이 맞는지는 시간표 설정에서 확인하세요 — 고치면 반도 따라 바뀌어요`;
+  return `${made}반 ${s.sections}개를 저절로 열었어요.${held} 과정 · 과목이 맞는지는 시간표 설정에서 확인하세요 — 고치면 반도 따라 바뀌어요`;
 }

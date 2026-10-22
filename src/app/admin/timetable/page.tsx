@@ -198,16 +198,16 @@ export default async function AdminTimetablePage({ searchParams }: { searchParam
       )}
 
       {/* 시간표는 있는데 이 달 반이 없다 — 다음은 반 개설 (2026-10-22 Alan "11월 시간표 다 넣어놨는데 왜 안잡히는거야?").
-          평달은 반 편성 맨 위 '한 번에 만들기'(달력을 저장해도 저절로), 방학달은 새 반 개설에서 직접 (같은 날 Alan "방학달 1,2,7,8월만 강사가 직접") */}
+          평달은 저절로 — 달력을 저장할 때, 그 뒤에는 10분마다 DB 가 보고 연다 (같은 날 Alan "버튼을 안눌러도 자동으로"), 방학달은 새 반 개설에서 직접 (같은 날 Alan "방학달 1,2,7,8월만 강사가 직접") */}
       {term && !empty && missingRows === 0 && (sectionRows?.length ?? 0) === 0 && (
         <Alert kind="warning" title={`${ym.m}월 반이 아직 없어요`} className="mb-5">
           {autoOpensMonth(ym.m) ? (
             <>
-              평달은 반이 저절로 열려요 —{" "}
+              평달은 반이 저절로 열려요 — 10분 안에 이 표대로 강좌마다 모든 반이 만들어져요. 따로 누를 것은 없어요 (
               <Link href={`/admin/sections?term=${key}`} className="font-bold text-brand-700 underline decoration-brand-200 underline-offset-2 hover:decoration-brand-500">
                 반 편성
-              </Link>
-              {" "}맨 위 &lsquo;{ym.m}월 시간표 · 반 한 번에 만들기&rsquo; 를 한 번 누르세요 (달력에 개강일 · 종강일이 있어야 해요).
+              </Link>{" "}
+              달력에 개강일 · 종강일이 있어야 해요).
             </>
           ) : (
             <>

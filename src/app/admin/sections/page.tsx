@@ -11,28 +11,16 @@ import { SectionsTabs } from "@/components/admin/sections/SectionsTabs";
 import { MonthSetupCard } from "@/components/admin/sections/MonthSetupCard";
 import { shiftMonth, ymd, daysInMonth } from "@/components/admin/sections/dates";
 import { heldCountable, monthSetup } from "@/lib/month-setup";
-import { AUTO_OPEN_FAILURE, autoOpenMessage } from "@/lib/month-open";
 import { chooseMonthSource, madeMonths, sourceNote } from "@/lib/timetable-month";
 import { loadTermData, parseTerm } from "./_lib/term-data";
 
 export const metadata: Metadata = { title: "반 편성", robots: { index: false } };
 
-/** '한 번에 만들기' 가 반을 못 열었을 때 (openMonthClasses 의 openError 값) */
-const OPEN_NOTICE: Record<string, string> = {
-  ...AUTO_OPEN_FAILURE,
-  vacation: "방학달은 반을 직접 열어요 — 카드의 두 단계대로 시간표를 만들고 새 반 개설에서 열어 주세요.",
-  nothing: "열 반이 없었어요 — 이미 반이 있거나, 달력에 개강일 · 종강일이 없거나, 끝난 달이에요.",
-};
-
 /**
  * 반 편성 — **달력(일정표 편성)만** (2026-10-02 Alan — "반 편성에서 일정표에 관련된 편성만 딱 이뤄지면 좋겠어. 아래로 스크롤을
  * 내리면 너무 많은 정보가 있어"). 개설 반 목록 · 새 반 개설 · 담당 강사 · 스터디 시간은 위 탭(`SectionsTabs`)의 제 화면으로 갔다.
  */
-export default async function AdminSectionsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ term?: string; opened?: string; made?: string; held?: string; openError?: string }>;
-}) {
+export default async function AdminSectionsPage({ searchParams }: { searchParams: Promise<{ term?: string }> }) {
   await requireStaff();
   const sp = await searchParams;
   const { y, m } = parseTerm(sp.term);
@@ -72,13 +60,15 @@ export default async function AdminSectionsPage({
     sections: sections.length,
     held: 0,
   });
-  const [{ count: heldCount }, { data: timetableIndex }] = await Promise.all([
+  const [{ count: heldCount }, { data: timetableIndex }, { data: autoState }] = await Promise.all([
     // 받아 둔 그 달 수강증 — 학생에게도 열린 생성 칸 hold_month 라 세션으로 센다 (연도가 없어 0~2달 뒤인 달만)
     setupBase && heldCountable(y, m, today)
       ? supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).eq("hold_month", m)
       : Promise.resolve({ count: 0 }),
     // 시간표가 없으면 무엇에서 가져오는지 한 줄 (시간표 설정의 '만들기' 와 같은 규칙)
     setupBase && !setupBase.timetableReady ? supabase.from("timetable_slots").select("year, month, season") : Promise.resolve({ data: null }),
+    // 평달은 DB 가 10분마다 보고 저절로 연다 (/api/cron/month-auto-open) — 지난 확인에서 못 열었으면 카드가 그 까닭을 적는다
+    setupBase?.auto && term ? supabase.from("month_auto_open_state").select("tried_at, error").eq("term_id", term.id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
   const setup = setupBase ? { ...setupBase, held: heldCount ?? 0 } : null;
   const setupSource = timetableIndex
@@ -87,21 +77,6 @@ export default async function AdminSectionsPage({
         chooseMonthSource({ y, m }, madeMonths(timetableIndex), (season) => timetableIndex.some((r) => r.year == null && r.season === season)),
       )
     : null;
-
-  // 카드의 '한 번에 만들기' 결과 (openMonthClasses 가 돌려보낸 주소) — 반이 생기면 카드는 사라지므로 맨 위에 한 줄로 알린다
-  const openedNow = sp.opened != null && /^\d{1,3}$/.test(sp.opened) ? Number(sp.opened) : null;
-  const openedNotice =
-    openedNow != null
-      ? autoOpenMessage({
-          kind: "opened",
-          month: m,
-          sections: openedNow,
-          timetableMade: sp.made === "1",
-          from: null,
-          held: sp.held && /^\d{1,4}$/.test(sp.held) ? Number(sp.held) : 0,
-        }, { byButton: true })
-      : null;
-  const openError = sp.openError && Object.hasOwn(OPEN_NOTICE, sp.openError) ? OPEN_NOTICE[sp.openError] : null;
 
   const saved: TermSchedule = {
     opens: term?.enrollment_opens_at ?? null,
@@ -149,10 +124,7 @@ export default async function AdminSectionsPage({
       {/* 달력은 자기 ‹ › 로 달을 넘기므로 탭에는 달 넘기기를 그리지 않는다 */}
       <SectionsTabs current="calendar" year={y} month={m} counts={{ classes: sections.length }} monthNav={false} />
 
-      {openedNotice && <Alert kind="success">{openedNotice}</Alert>}
-      {openError && <Alert kind="warning">{openError}</Alert>}
-
-      {setup && <MonthSetupCard month={m} termKey={key} setup={setup} source={setupSource} />}
+      {setup && <MonthSetupCard month={m} termKey={key} setup={setup} source={setupSource} autoState={autoState} />}
 
       {/* 달력 */}
       <section aria-label={`${termLabel} 달력`} className="card p-4 sm:p-6">

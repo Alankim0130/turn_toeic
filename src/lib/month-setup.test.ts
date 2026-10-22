@@ -17,7 +17,7 @@ describe("반 편성 달력의 '다음 할 일'", () => {
     expect(monthSetup({ ...NOV, slots: 19 })).toEqual({ timetableReady: true, held: 3, auto: true });
   });
 
-  it("평달은 버튼 하나(한 번에 만들기) · 방학달(1 · 2 · 7 · 8월)은 강사가 두 단계로 (2026-10-22 Alan '방학달만 강사가 직접')", () => {
+  it("평달은 저절로(버튼 없이 — 10분마다) · 방학달(1 · 2 · 7 · 8월)은 강사가 두 단계로 (2026-10-22 Alan '방학달만 강사가 직접' · '버튼을 안눌러도')", () => {
     for (const month of [3, 4, 5, 6, 9, 10, 11, 12]) expect(monthSetup({ ...NOV, month })?.auto, `${month}월`).toBe(true);
     for (const month of [1, 2, 7, 8]) expect(monthSetup({ ...NOV, month })?.auto, `${month}월`).toBe(false);
   });
@@ -48,9 +48,12 @@ describe("반 편성 달력의 '다음 할 일'", () => {
     const card = readFileSync("src/components/admin/sections/MonthSetupCard.tsx", "utf8");
     expect(card).toContain("/admin/timetable?month=");
     expect(card).toContain("/admin/sections/new?term=");
-    // 평달은 버튼 하나 — 반 편성 액션 openMonthClasses (autoOpenMonth 와 같은 길)
+    // 평달은 버튼 없이 — DB 가 10분마다 연다 (/api/cron/month-auto-open). 카드는 기다리는 중인지 · 지난 확인에서 못 연 까닭만
     expect(card).toContain("setup.auto");
-    expect(card).toContain("action={openMonthClasses}");
+    expect(card).toContain("AUTO_OPEN_STATE_MESSAGE[failure]");
+    expect(card).not.toContain("openMonthClasses");
+    expect(calendar).toContain('.from("month_auto_open_state")');
+    expect(calendar).toContain("autoState={autoState}");
     const bulk = readFileSync("src/app/admin/sections/new/page.tsx", "utf8");
     expect(bulk).toContain("sourceNote(");
     expect(bulk).toMatch(/달력과 따로/);

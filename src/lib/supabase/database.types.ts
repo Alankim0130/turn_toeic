@@ -1440,6 +1440,35 @@ export type Database = {
         }
         Relationships: []
       }
+      month_auto_open_state: {
+        Row: {
+          term_id: number
+          tried_at: string
+          error: string | null
+          sections: number
+        }
+        Insert: {
+          term_id: number
+          tried_at?: string
+          error?: string | null
+          sections?: number
+        }
+        Update: {
+          term_id?: number
+          tried_at?: string
+          error?: string | null
+          sections?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "month_auto_open_state_term_id_fkey"
+            columns: ["term_id"]
+            isOneToOne: true
+            referencedRelation: "terms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       naver_booking_events: {
         Row: {
           created_at: string
@@ -2783,6 +2812,7 @@ export type Database = {
       my_last_active_at: { Args: never; Returns: string | null }
       refresh_my_enrollment_status: { Args: never; Returns: undefined }
       move_class_material: { Args: { p_id: number; p_up: boolean }; Returns: undefined }
+      open_month_sections: { Args: { p_term: number; p_rows: Json; p_only_if_empty?: boolean }; Returns: number }
       my_schedule_section_ids: { Args: never; Returns: number[] }
       save_term_schedule: {
         Args: {

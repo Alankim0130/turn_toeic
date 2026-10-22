@@ -1,15 +1,16 @@
 import "server-only";
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
-import type { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database, Json } from "@/lib/supabase/database.types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rematchHeldVerifications } from "@/lib/rematch-held";
-import { sectionKeyOf } from "@/components/admin/sections/bulk";
 import { heldCountable } from "@/lib/month-setup";
 import { autoOpenInserts, autoOpensMonth, type AutoOpenSummary } from "@/lib/month-open";
 import { chooseMonthSource, draftMonth, madeMonths, ymLabel, type MonthSource, type SlotValues, type YM } from "@/lib/timetable-month";
 
-type Client = Awaited<ReturnType<typeof createClient>>;
+/** 강사 · 관리자의 세션(달력 저장 · 시간표 만들기) 또는 서버(10분 확인 `/api/cron/month-auto-open`) */
+type Client = SupabaseClient<Database>;
 type DraftRow = SlotValues & { year: number; month: number };
 
 const SLOT_COLUMNS = "id, year, month, level, program, start_time, end_time, ttf_recorded, book_set, subject_mwf, subject_ttf";
@@ -39,15 +40,42 @@ export async function draftMonthTimetable(supabase: Client, ym: YM): Promise<{ e
   return { exists: false, source, rows: draftMonth(source, rows).map((r) => ({ ...r, year: ym.y, month: ym.m })) };
 }
 
+type SectionInsert = Database["public"]["Tables"]["class_sections"]["Insert"];
+
 /**
- * **평달 자동 세팅** (2026-10-22 Alan — "방학달 1,2,7,8월만 강사가 직접 반을 열어야하고 나머지는 자동으로 세팅되도록 부탁해!").
- * 평달 달력을 저장할 때(`saveTermSchedule`) · 시간표 설정에서 그 달 시간표를 만들 때(`createMonthTimetable`) · 반 편성 맨 위 카드의
- * '한 번에 만들기'(`openMonthClasses`)가 부른다. 규칙은 `src/lib/month-open.ts`.
+ * **반 넣기 — DB 함수 `open_month_sections` 한곳** (마이그레이션 20261022100000). 기수마다 잠금을 건 뒤 넣고,
+ * 이미 있는 (강좌 · 트랙 · 시간대)는 건너뛴다 — `onlyIfEmpty` 면 그 기수에 반이 하나라도 있을 때 아무것도 넣지 않는다 (자동 세팅).
+ * 달력 저장 · 10분 확인 · 새 반 개설이 같은 순간에 돌아도 같은 반이 두 벌 생기지 않는다 (class_sections 에는 그 unique 가 없다). 넣은 수를 돌려준다.
+ * 함수가 아직 없으면(PGRST202 — 배포 사이에 새 코드가 마이그레이션보다 먼저 뜬 경우) 예전처럼 표에 바로 넣는다.
+ */
+export async function insertSections(
+  supabase: Client,
+  termId: number,
+  rows: SectionInsert[],
+  opts: { onlyIfEmpty: boolean },
+): Promise<{ count: number; error: { code?: string; message?: string } | null }> {
+  if (rows.length === 0) return { count: 0, error: null };
+  const { data, error } = await supabase.rpc("open_month_sections", { p_term: termId, p_rows: rows as unknown as Json, p_only_if_empty: opts.onlyIfEmpty });
+  if (error?.code === "PGRST202") {
+    const { error: direct } = await supabase.from("class_sections").insert(rows);
+    return { count: direct ? 0 : rows.length, error: direct };
+  }
+  return { count: error ? 0 : (data ?? 0), error };
+}
+
+/**
+ * **평달 자동 세팅** (2026-10-22 Alan — "방학달 1,2,7,8월만 강사가 직접 반을 열어야하고 나머지는 자동으로 세팅되도록 부탁해!"
+ * → 같은 날 "버튼을 안눌러도 자동으로 세팅되도록 부탁해"). 규칙은 `src/lib/month-open.ts`. 부르는 곳은 셋이다:
+ * 평달 달력을 저장할 때(`saveTermSchedule`) · 시간표 설정에서 그 달 시간표를 만들 때(`createMonthTimetable`) — 그 자리에서,
+ * 그리고 **10분마다 DB 가 부르는 확인**(`/api/cron/month-auto-open`, pg_cron `month-auto-open`) — 그 전에 저장해 둔 달 · 그때 못 연 달 ·
+ * 강사가 반을 다 지운 달을 버튼 없이 연다.
  *
  * 하는 일은 **그 달 반이 하나도 없을 때만** — 개강일 · 종강일이 있고 · 종강 전이고 · 반이 0개. 반이 하나라도 있으면 손대지 않는다 —
- * 강사가 몇 개를 지웠어도 빈자리를 다시 채우지 않는다 (강사가 짠 반을 기계가 덮지 않는다). 다 지운 달만 다음 저장 때 다시 연다.
+ * 강사가 몇 개를 지웠어도 빈자리를 다시 채우지 않는다 (강사가 짠 반을 기계가 덮지 않는다).
  * ① 시간표가 없으면 만든다 ② 강좌마다 '전체 선택' 과 같은 반을 연다(모집 중) ③ 받아 둔 그 달 수강증을 다시 맞춘다(`after`).
- * 쓰기는 **로그인한 사람의 세션으로** — 시간표 · 반 쓰기 정책(is_staff)이 한 번 더 막는다. 부르는 쪽이 `requireStaff()` 를 먼저 한다.
+ * 반은 **DB 함수 `open_month_sections` 로만** 넣는다 — 기수마다 잠금을 건 뒤 "반이 하나도 없을 때만" 넣어서, 달력 저장과 10분 확인이
+ * 같은 순간에 돌아도 반이 두 벌 생기지 않는다. 쓰기는 **부른 쪽의 클라이언트로** — 강사 · 관리자 세션이면 시간표 · 반 쓰기 정책(is_staff)이 한 번 더 막고
+ * (부르는 쪽이 `requireStaff()` 를 먼저 한다), 10분 확인은 서버 권한이다 (라우트가 DB 의 비밀을 먼저 확인한다).
  *
  * 돌려주는 것: 할 일이 없으면 null · 방학달이면 vacation(강사가 연다) · 열었으면 opened · 못 열었으면 failed(까닭).
  * 실패해도 던지지 않는다 — 달력 저장 · 시간표 만들기는 그대로 성공이다.
@@ -80,38 +108,39 @@ export async function autoOpenMonth(supabase: Client, ym: YM, today: string): Pr
     if (slots.length === 0) return { kind: "failed", month: ym.m, reason: "no_timetable" };
   }
 
-  const [{ data: courses }, { data: classDates }, { data: existing }] = await Promise.all([
+  const [{ data: courses }, { data: classDates }] = await Promise.all([
     supabase.from("courses").select("id, program, target_score").eq("is_active", true),
     supabase.from("term_class_dates").select("track").eq("term_id", term.id),
-    // 반을 세고 나서 사이에 다른 창이 열었을 수 있다 — 넣기 바로 전에 다시 본다
-    supabase.from("class_sections").select("course_id, track, time_block").eq("term_id", term.id),
   ]);
-  if ((existing ?? []).length > 0) return null;
   const sessionsOf = (track: string) => (classDates ?? []).filter((d) => d.track === track).length;
   const inserts = autoOpenInserts({
     term: { id: term.id, enrollment_opens_at: term.enrollment_opens_at, closes_at: term.closes_at },
     courses: courses ?? [],
     slots,
-    taken: new Set((existing ?? []).map((s) => sectionKeyOf(s.course_id, s.track, s.time_block))),
+    taken: new Set(),
     sessions: { mwf: sessionsOf("mwf"), ttf: sessionsOf("ttf") },
   });
+  let opened = 0;
   if (inserts.length > 0) {
-    const { error } = await supabase.from("class_sections").insert(inserts);
+    // 잠금을 건 뒤 "반이 하나도 없을 때만" — 반을 세고 나서 넣기까지의 틈에 다른 길(달력 저장 · 10분 확인)이 열었으면 0 이 온다
+    const { count, error } = await insertSections(supabase, term.id, inserts, { onlyIfEmpty: true });
     if (error) return { kind: "failed", month: ym.m, reason: error.code === "42501" ? "forbidden" : "sections_error" };
+    opened = count;
+    if (opened === 0) return null;
   }
 
   // 반을 기다리던 그 달 수강증 — 학생에게도 열린 생성 칸 hold_month 라 세션으로 센다 (연도가 없어 0~2달 뒤인 달만)
   const { count: held } =
-    inserts.length > 0 && heldCountable(ym.y, ym.m, today)
+    opened > 0 && heldCountable(ym.y, ym.m, today)
       ? await supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).eq("hold_month", ym.m)
       : { count: 0 };
   // 모집 중인 반이 열렸다 — 받아 둔 다음 달 수강증을 올릴 때와 같은 조건으로 다시 맞춘다 (새 반 개설과 같은 길)
-  if (inserts.length > 0) after(() => rematchHeldVerifications(createAdminClient(), { notify: true }));
+  if (opened > 0) after(() => rematchHeldVerifications(createAdminClient(), { notify: true }));
 
   revalidatePath("/admin/sections", "layout");
   revalidatePath("/admin/timetable");
   revalidatePath("/admin/verifications");
   revalidatePath("/admin");
   revalidatePath("/");
-  return { kind: "opened", month: ym.m, sections: inserts.length, timetableMade, from, held: held ?? 0 };
+  return { kind: "opened", month: ym.m, sections: opened, timetableMade, from, held: held ?? 0 };
 }
