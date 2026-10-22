@@ -79,7 +79,15 @@ export async function rematchHeldVerifications(admin: Admin, opts: { notify?: bo
         sectionIds: matched?.sectionIds ?? [],
       });
       const nameMatches = typeof candidates.nameMatches === "boolean" ? candidates.nameMatches : null;
-      const blockers = autoApproveBlockers({ parsed, nameMatches, flags, matched: !!matched, periodUnclear: matched?.periodUnclear === true });
+      // 달은 받아 둔 그 달로 못박아 넘겼으니 `monthUnclear` 는 서지 않는다 — 그래도 올릴 때와 같은 조건을 그대로 넘긴다
+      const blockers = autoApproveBlockers({
+        parsed,
+        nameMatches,
+        flags,
+        matched: !!matched,
+        periodUnclear: matched?.periodUnclear === true,
+        monthUnclear: matched?.monthUnclear === true,
+      });
       // 반을 바꾼 수강증 (2026-10-06 — 올릴 때와 같은 규칙, `class-change.ts`). 오래된 것부터 맞추므로 나중에 올린 수강증이 남는다
       const onlyEnrolled = blockers.length > 0 && blockers.every((b) => b === "already_enrolled");
       const change = auto.on && matched && onlyEnrolled ? await planClassChangeFor(admin, v.user_id, matched.sectionIds) : null;

@@ -330,7 +330,13 @@ export function TermCalendar({
         onDone?.(false);
         return;
       }
-      const applied = res.sections ? ` · 이 달 반 ${res.sections}개의 수업일에 반영` : "";
+      // 반이 아직 없는 달 — 달력만으로는 반이 생기지 않는다 (2026-10-22 Alan "11월 시간표 다 넣어놨는데 왜 안잡히는거야?").
+      // 다음 할 일은 화면 맨 위 카드(MonthSetupCard)가 말한다
+      const applied = res.sections
+        ? ` · 이 달 반 ${res.sections}개의 수업일에 반영`
+        : sectionCount === 0
+          ? ` · 이 달 반은 아직 없어요 — 맨 위 '다음 할 일' 대로 ${month}월 시간표를 만들고 반을 열어 주세요`
+          : "";
       setNotice(null);
       setResult({
         kind: "success",

@@ -11,7 +11,7 @@ const TEXT = "역전토익 650+ 왕기초반\n수강생 _ 김민서\n수강센�
 
 const good = (): StoredVerification => ({
   ocrText: TEXT,
-  parsed: { gates: { academy: true, brand: true }, brandExact: true, card: true, modeEvidence: "room", mode: "onsite" },
+  parsed: { gates: { academy: true, brand: true }, brandExact: true, card: true, modeEvidence: "room", mode: "onsite", courseMonth: 10, startMonth: 10 },
   candidates: {
     result: { kind: "match", sectionIds: [101, 102] },
     nameMatches: false,
@@ -70,6 +70,21 @@ describe("planRenameRecheck", () => {
     row.candidates!.flags = undefined;
     row.candidates!.blockers = ["name", "card"];
     expect(planRenameRecheck(row, "김민서")).toEqual({ kind: "review", blockers: ["card"] });
+  });
+
+  it("몇 월 과정인지 못 읽고 열린 달 하나로 고른 반이면 승인하지 않는다 — 표시가 생기기 전 기록도 판독 결과로 다시 잰다 (2026-10-22)", () => {
+    const flagged = good();
+    flagged.candidates!.result = { kind: "match", sectionIds: [101, 102], monthUnclear: true };
+    expect(planRenameRecheck(flagged, "김민서")).toEqual({ kind: "review", blockers: ["month_unclear"] });
+
+    const old = good();
+    old.parsed = { ...old.parsed, courseMonth: null, startMonth: null };
+    expect(planRenameRecheck(old, "김민서")).toEqual({ kind: "review", blockers: ["month_unclear"] });
+
+    // 배지를 못 읽어도 개강일 달을 읽었으면 그대로 승인한다
+    const start = good();
+    start.parsed = { ...start.parsed, courseMonth: null, startMonth: 10 };
+    expect(planRenameRecheck(start, "김민서")).toEqual({ kind: "approve", sectionIds: [101, 102], mode: "onsite" });
   });
 
   it("수강 방식을 못 읽은 기록은 승인하지 않는다", () => {

@@ -275,7 +275,16 @@ export async function submitVerification(input: { filePath: string }): Promise<S
   const flags = rejected ? null : await receiptFlags(admin, flagInput(user.id, outcome, matched?.sectionIds ?? []));
   // 자동 승인 조건은 한곳(`auto-approve.ts`) — 받아 둔 예비 접수를 다시 맞출 때도 같은 조건을 본다
   const blockers =
-    read && flags ? autoApproveBlockers({ parsed: read.parsed, nameMatches: read.nameMatches, flags, matched: !!matched, periodUnclear: matched?.periodUnclear === true }) : null;
+    read && flags
+      ? autoApproveBlockers({
+          parsed: read.parsed,
+          nameMatches: read.nameMatches,
+          flags,
+          matched: !!matched,
+          periodUnclear: matched?.periodUnclear === true,
+          monthUnclear: matched?.monthUnclear === true,
+        })
+      : null;
   // 반을 바꾼 수강증 (2026-10-06 Alan — "마지막에 올린 수강증을 기반으로 등업처리를 해주면 좋겠어"). 그 달 반에 이미 있다는 것 **하나만** 걸렸으면
   // 바꾼 것이 분명한지 본다 (`class-change.ts` — 같은 반 · 시간이 겹침 · 같은 레벨). 분명하면 새 수강증대로 등업하고 그 달 이전 등록을 뺀다.
   // 단과를 하나 더 산 것일 수 있거나 · 다른 레벨이거나 · 강사가 직접 넣은 배정이면 예전처럼 강사가 본다

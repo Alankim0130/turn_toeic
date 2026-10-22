@@ -193,6 +193,17 @@ export default async function AdminTimetablePage({ searchParams }: { searchParam
         </Alert>
       )}
 
+      {/* 시간표는 있는데 이 달 반이 없다 — 다음은 반 개설 (2026-10-22 Alan "11월 시간표 다 넣어놨는데 왜 안잡히는거야?") */}
+      {term && !empty && missingRows === 0 && (sectionRows?.length ?? 0) === 0 && (
+        <Alert kind="warning" title={`${ym.m}월 반이 아직 없어요`} className="mb-5">
+          시간표를 확인했으면{" "}
+          <Link href={`/admin/sections/new?term=${key}`} className="font-bold text-brand-700 underline decoration-brand-200 underline-offset-2 hover:decoration-brand-500">
+            새 반 개설
+          </Link>
+          에서 강좌마다 &lsquo;전체 선택&rsquo; 으로 반을 열어 주세요. 반을 열어야 받아 둔 {ym.m}월 수강증이 그 반에 배정되고 학생 화면에 {ym.m}월이 서요.
+        </Alert>
+      )}
+
       {empty && (
         <section aria-labelledby="month-empty-title" className="card mb-6 p-5 sm:p-6">
           <h2 id="month-empty-title" className="text-lg font-black text-ink">

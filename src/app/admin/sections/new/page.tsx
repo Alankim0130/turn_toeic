@@ -11,6 +11,7 @@ import { BulkCreateSections, type BulkSlot } from "@/components/admin/sections/B
 import { sectionKeyOf, timeBlockOf } from "@/components/admin/sections/bulk";
 import { SectionsTabs } from "@/components/admin/sections/SectionsTabs";
 import { SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
+import { chooseMonthSource, madeMonths, sourceNote } from "@/lib/timetable-month";
 import { loadTermData, parseTerm } from "../_lib/term-data";
 
 export const metadata: Metadata = { title: "새 반 개설", robots: { index: false } };
@@ -43,6 +44,14 @@ export default async function AdminSectionNewPage({ searchParams }: { searchPara
     .filter((s) => s.label);
   const monthHasNoSlots = term != null && bulkSlots.length === 0;
   const timetableHref = `/admin/timetable?month=${key}`;
+  // 시간표가 없으면 '만들기' 가 무엇에서 가져오는지 한 줄 — 달력과 시간표가 따로라는 것을 모르면 "다 넣었는데" 가 된다 (2026-10-22 Alan)
+  const { data: timetableIndex } = monthHasNoSlots ? await supabase.from("timetable_slots").select("year, month, season") : { data: null };
+  const timetableSource = timetableIndex
+    ? sourceNote(
+        { y, m },
+        chooseMonthSource({ y, m }, madeMonths(timetableIndex), (s) => timetableIndex.some((r) => r.year == null && r.season === s)),
+      )
+    : null;
   const existingKeys = sections.map((s) => sectionKeyOf(s.course_id, s.track, s.time_block));
 
   return (
@@ -77,10 +86,12 @@ export default async function AdminSectionNewPage({ searchParams }: { searchPara
                 실제 수업인 60분·70분 반이라, 한달완성 학생은 안에 든 반을 자동으로 함께 들어요. <strong className="text-ink">과목(LC/RC)과 과정(A/B)</strong>은
                 시간표에서 정한 값으로 만들어져요.
               </p>
+              {/* 2026-10-22 Alan 이 11월 달력을 저장하고 이 경고를 보며 "11월 시간표 다 넣어놨는데 왜 안잡히는거야?" — 달력과 시간표가 따로라고 말한다 */}
               {monthHasNoSlots && (
                 <div className="mt-3">
-                  <Alert kind="warning">
-                    {termLabel} 시간표가 아직 없어요. 시간표가 있어야 반의 시간·과목·과정이 맞게 들어가므로 표에 아무것도 띄우지 않았습니다.{" "}
+                  <Alert kind="warning" title={`${m}월 시간표가 아직 없어요`}>
+                    {m}월 달력(수업일 · 개강일 · 종강일)은 저장돼 있어요. 반의 시간 · 과정 A/B · 과목을 정하는 <b className="text-ink">시간표는 달력과 따로</b>{" "}
+                    시간표 설정에서 만들어요 — 시간표가 있어야 반이 맞게 들어가서 표를 비워 뒀어요.{timetableSource ? ` '${m}월 시간표 만들기' 를 누르면 ${timetableSource}` : ""}{" "}
                     <Link href={timetableHref} className="font-bold underline underline-offset-2">
                       {m}월 시간표 만들기 →
                     </Link>

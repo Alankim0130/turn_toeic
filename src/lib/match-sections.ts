@@ -12,6 +12,8 @@ import { termKeyOf, type EnrollSection } from "./enroll-options";
  * 스태프 검토로 넘긴다 — 애매한데 골라 넣으면 오배정이고, 오배정은 학생이 남의 반 다시보기를 보게 한다.
  *
  * 수강월은 (1) 배지 `NN월 과정` → (2) 수강요일 줄의 개강일 달 `[4주-09/04]` → (3) 열린 기수가 하나뿐이면 그것, 순서로 정한다.
+ * **(3) 으로 고른 것은 짐작이라 자동 승인하지 않는다** (2026-10-22, `monthUnclear`) — 다음 달 수강증은 그 달 반이 열리기 전에 먼저 오므로
+ * (받아 두기 — `decideVerification` 의 `upcoming`), 이번 달 반만 열린 동안 몇 월인지 못 읽은 11월 수강증이 10월 반에 그대로 붙었다.
  * **캡처 시각(`현재시간`)으로는 달을 고르지 않는다** (2026-09-22) — 9월 25일에 캡처한 10월 수강증이 배지를 못 읽으면
  * 9월 반에 자동 배정됐다 (재현). 수강월을 읽었는데 **그 달 반이 없으면 다른 달로 넘어가지 않는다** — 예전에는 날짜로 내려가
  * 10월 과정 수강증을 같은 시간대의 9월 반에 붙였다.
@@ -34,6 +36,12 @@ export type MatchResult =
        * 두 수강증은 그 숫자 하나로만 갈린다 — 찾은 한 달 반은 승인 화면에 골라 두되 자동 승인하지 않는다 (`period_unclear`)
        */
       periodUnclear?: true;
+      /**
+       * 수강월(배지 · 개강일)을 못 읽었는데 열린 기수가 하나뿐이라 그 달 반을 골랐다 (2026-10-22). 다음 달 수강증은 그 달 반이 열리기 전에 먼저 오고
+       * (11월 등록은 10월 셋째 주부터), 그동안 열린 반은 이번 달뿐이라 **11월 수강증이 10월 반에 자동 배정**될 수 있었다 —
+       * 찾은 반은 승인 화면에 골라 두되 자동 승인하지 않는다 (`month_unclear`). 받아 둔 수강증을 다시 맞출 때는 달을 못박아 넘기므로 붙지 않는다
+       */
+      monthUnclear?: true;
     }
   | { kind: "none" | "ambiguous"; reason: string };
 
@@ -154,5 +162,16 @@ export function matchSections(
   // 그 숫자(`[4주-`)를 또렷이 못 읽었는데 같은 레벨 · 시간에 2주완성이 열리면 사람이 본다 (찾은 한 달 반은 승인 화면에 골라 둔다)
   const spots = opts.twoWeekSpots ?? twoWeekSpots(sections);
   const periodUnclear = parsed.program === "score" && parsed.weeks !== 4 && spots.has(periodKey(parsed.level, parsed.time.timeBlock));
-  return { result: { kind: "match", sectionIds: picked, term: terms[0], ...(periodUnclear ? { periodUnclear: true as const } : {}) }, log };
+  // 수강월을 못 읽어 열린 기수 하나로 고른 것 — 다음 달 수강증일 수 있어 사람이 본다 (2026-10-22, 위 `monthUnclear`)
+  const monthUnclear = receiptCourseMonth(parsed) == null;
+  return {
+    result: {
+      kind: "match",
+      sectionIds: picked,
+      term: terms[0],
+      ...(periodUnclear ? { periodUnclear: true as const } : {}),
+      ...(monthUnclear ? { monthUnclear: true as const } : {}),
+    },
+    log,
+  };
 }

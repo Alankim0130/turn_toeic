@@ -76,10 +76,26 @@ describe("반 자동 대조", () => {
     expect(result.kind).toBe("ambiguous");
   });
 
-  it("열린 기수가 하나뿐이면 달을 못 읽어도 그 달로 맞춘다", () => {
+  it("열린 기수가 하나뿐이면 달을 못 읽어도 그 달 반을 찾되 monthUnclear — 자동 승인하지 않고 승인 화면에 골라 둔다 (2026-10-22)", () => {
     const only = SECTIONS.filter((s) => s.term === SEP);
     const { result } = matchSections({ ...base, courseMonth: null }, only);
-    expect(result.kind).toBe("match");
+    expect(result).toEqual({ kind: "match", sectionIds: [find(SEP, "mwf", 1, "10:00~11:00")], term: "2026-09", monthUnclear: true });
+    // 배지든 개강일이든 달을 읽었으면 표시가 없다
+    expect(matchSections({ ...base, courseMonth: 9 }, only).result).not.toHaveProperty("monthUnclear");
+    expect(matchSections({ ...base, courseMonth: null, startMonth: 9 }, only).result).not.toHaveProperty("monthUnclear");
+  });
+
+  it("다음 달 반을 열기 전에 온 다음 달 수강증 — 달을 못 읽으면 이번 달 반을 고르지만 표시가 붙어 사람이 본다 (2026-10-22 11월 수강증 · 10월 반만 열림)", () => {
+    const octOnly = SECTIONS.filter((s) => s.term === OCT);
+    // 11월 수강증인데 배지(11월 과정)도 개강일([4주-11/04])도 못 읽었다 — 예전에는 10월 반에 자동 배정됐다
+    const p = parseReceipt(["역전토익 [종합반]", "650 목표", "수강센터 부산 서면센터", "강의실 본관 701호", "수강요일 월수금 (월9회)", "수강시간 10:00~11:00"].join("\n"));
+    expect(p.courseMonth).toBeNull();
+    expect(p.startMonth).toBeNull();
+    expect(matchSections(p, octOnly).result).toMatchObject({ kind: "match", term: "2026-10", monthUnclear: true });
+    // 개강일 달을 읽었으면 10월 반으로 넘어가지 않는다 (받아 두기 — decideVerification 의 upcoming)
+    const nov = parseReceipt(p.text.replace("수강요일 월수금", "수강요일 [4주-11/04] 월수금"));
+    expect(nov.startMonth).toBe(11);
+    expect(matchSections(nov, octOnly).result).toMatchObject({ kind: "none" });
   });
 
   // 2026-09-22 오류 점검 — 둘 다 **엉뚱한 달 반에 자동 배정**되던 경우다

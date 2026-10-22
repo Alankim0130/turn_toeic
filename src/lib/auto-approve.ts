@@ -42,6 +42,11 @@ export type AutoApproveBlocker =
    */
   | "period_unclear"
   /**
+   * 몇 월 과정인지(배지 `NN월 과정` · 개강일 `[4주-MM/DD]`) 못 읽어 열린 달이 하나라 그 달 반을 골랐다 (2026-10-22, `MatchResult.monthUnclear`).
+   * 다음 달 반을 열기 전에 다음 달 수강증이 먼저 오므로, 짐작으로 붙이면 11월 학생이 10월 반에 들어간다
+   */
+  | "month_unclear"
+  /**
    * (옛 기록용) 2026-10-05 몇 시간 동안 2주완성 수강증을 모두 사람에게 보냈다 — 표기를 확인하기 전이었다.
    * 같은 날 Alan 이 표기(`[2주-…]`)를 알려 줘 더는 붙이지 않는다. 그때 남은 기록의 까닭을 읽으려고 이름만 둔다
    */
@@ -64,12 +69,15 @@ export type AutoApproveInput = {
   matched: boolean;
   /** 반 대조가 기간 숫자(4주 · 2주)를 못 가렸다 (`MatchResult.periodUnclear`) */
   periodUnclear?: boolean;
+  /** 반 대조가 수강월을 못 읽고 열린 달 하나로 골랐다 (`MatchResult.monthUnclear`) */
+  monthUnclear?: boolean;
 };
 
-export function autoApproveBlockers({ parsed, nameMatches, flags, matched, periodUnclear = false }: AutoApproveInput): AutoApproveBlocker[] {
+export function autoApproveBlockers({ parsed, nameMatches, flags, matched, periodUnclear = false, monthUnclear = false }: AutoApproveInput): AutoApproveBlocker[] {
   const out: AutoApproveBlocker[] = [];
   if (!matched) out.push("no_match");
   if (matched && periodUnclear) out.push("period_unclear");
+  if (matched && monthUnclear) out.push("month_unclear");
   if (parsed.gates?.academy !== true || parsed.gates?.brand !== true) out.push("gate");
   if (parsed.brandExact !== true) out.push("brand_word");
   if (parsed.card !== true) out.push("card");
@@ -98,6 +106,7 @@ export const BLOCKER_LABEL: Record<AutoApproveBlocker, string> = {
   already_enrolled: "이미 그 달 반에 배정됨",
   decided_before: "같은 캡처를 전에 사람이 판정함",
   period_unclear: "수강 기간 숫자(4주 · 2주)를 또렷이 못 읽음 — 같은 시간에 2주완성반이 있어 한 달 반이 맞는지 강사가 확인",
+  month_unclear: "몇 월 과정인지 못 읽음 — 지금 열린 달의 반을 골라 뒀어요. 다음 달 수강증이면 그 달 반을 연 뒤 그 반으로 승인해 주세요",
   two_week: "2주완성 수강증 — 표기를 확인하기 전이라 강사가 반을 확인",
 };
 

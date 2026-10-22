@@ -8,7 +8,10 @@ import { Icon } from "@/components/ui/Icon";
 import { todayKST } from "@/lib/utils";
 import { TermCalendar, type TermSchedule, type OtherTermDate } from "@/components/admin/sections/TermCalendar";
 import { SectionsTabs } from "@/components/admin/sections/SectionsTabs";
+import { MonthSetupCard } from "@/components/admin/sections/MonthSetupCard";
 import { shiftMonth, ymd, daysInMonth } from "@/components/admin/sections/dates";
+import { heldCountable, monthSetup } from "@/lib/month-setup";
+import { chooseMonthSource, madeMonths, sourceNote } from "@/lib/timetable-month";
 import { loadTermData, parseTerm } from "./_lib/term-data";
 
 export const metadata: Metadata = { title: "반 편성", robots: { index: false } };
@@ -45,6 +48,32 @@ export default async function AdminSectionsPage({ searchParams }: { searchParams
     ? await supabase.from("session_dates").select("date, section_id, replays!inner(id)").in("section_id", [...sectionTrack.keys()])
     : { data: [] as { date: string; section_id: number }[] };
   const replayDates = (replayRows ?? []).map((r) => ({ date: r.date, track: sectionTrack.get(r.section_id) === "ttf" ? ("ttf" as const) : ("mwf" as const) }));
+
+  // 달력만 저장하고 반이 없는 달 — 맨 위에 '다음 할 일' (2026-10-22 Alan "11월 시간표 다 넣어놨는데 왜 안잡히는거야?").
+  // 달력은 날짜만 정한다. 그 달 시간표(시간 · 과정 · 과목)를 만들고 반을 열어야 받아 둔 수강증이 배정되고 학생 화면에 그 달이 선다
+  const setupBase = monthSetup({
+    hasSaved: data.hasSaved,
+    closes: term?.closes_at ?? null,
+    today,
+    slots: data.timetable.length,
+    sections: sections.length,
+    held: 0,
+  });
+  const [{ count: heldCount }, { data: timetableIndex }] = await Promise.all([
+    // 받아 둔 그 달 수강증 — 학생에게도 열린 생성 칸 hold_month 라 세션으로 센다 (연도가 없어 0~2달 뒤인 달만)
+    setupBase && heldCountable(y, m, today)
+      ? supabase.from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).eq("hold_month", m)
+      : Promise.resolve({ count: 0 }),
+    // 시간표가 없으면 무엇에서 가져오는지 한 줄 (시간표 설정의 '만들기' 와 같은 규칙)
+    setupBase && !setupBase.timetableReady ? supabase.from("timetable_slots").select("year, month, season") : Promise.resolve({ data: null }),
+  ]);
+  const setup = setupBase ? { ...setupBase, held: heldCount ?? 0 } : null;
+  const setupSource = timetableIndex
+    ? sourceNote(
+        { y, m },
+        chooseMonthSource({ y, m }, madeMonths(timetableIndex), (season) => timetableIndex.some((r) => r.year == null && r.season === season)),
+      )
+    : null;
 
   const saved: TermSchedule = {
     opens: term?.enrollment_opens_at ?? null,
@@ -91,6 +120,8 @@ export default async function AdminSectionsPage({ searchParams }: { searchParams
 
       {/* 달력은 자기 ‹ › 로 달을 넘기므로 탭에는 달 넘기기를 그리지 않는다 */}
       <SectionsTabs current="calendar" year={y} month={m} counts={{ classes: sections.length }} monthNav={false} />
+
+      {setup && <MonthSetupCard month={m} termKey={key} setup={setup} source={setupSource} />}
 
       {/* 달력 */}
       <section aria-label={`${termLabel} 달력`} className="card p-4 sm:p-6">

@@ -35,6 +35,14 @@ describe("자동 승인 조건 — 수강증을 올린 자리와 예비 접수 �
     expect(autoApproveBlockers({ ...ok, matched: false, periodUnclear: true })).toEqual(["no_match"]);
   });
 
+  it("몇 월 과정인지 못 읽고 열린 달 하나로 고른 반이면 막는다 — 다음 달 수강증이 이번 달 반에 붙지 않게 (2026-10-22)", () => {
+    expect(autoApproveBlockers({ ...ok, monthUnclear: true })).toEqual(["month_unclear"]);
+    expect(autoApproveBlockers({ ...ok, monthUnclear: false })).toEqual([]);
+    expect(autoApproveBlockers({ ...ok, periodUnclear: true, monthUnclear: true })).toEqual(["period_unclear", "month_unclear"]);
+    // 반을 못 찾았으면 달은 따로 적지 않는다 — 반 대조가 남긴 까닭 문장이 말한다
+    expect(autoApproveBlockers({ ...ok, matched: false, monthUnclear: true })).toEqual(["no_match"]);
+  });
+
   it("저장해 둔 예전 판독 결과에 칸이 없으면 막는 쪽으로 읽는다", () => {
     expect(autoApproveBlockers({ ...ok, parsed: { gates: { academy: true, brand: true } } })).toEqual(["brand_word", "card", "mode"]);
     expect(autoApproveBlockers({ ...ok, parsed: {}, nameMatches: undefined })).toEqual(["gate", "brand_word", "card", "name", "mode"]);
@@ -44,9 +52,9 @@ describe("자동 승인 조건 — 수강증을 올린 자리와 예비 접수 �
 describe("막은 까닭의 이름", () => {
   it("모든 까닭에 화면에 적을 말이 있다", () => {
     const flags = { duplicateImage: true, staleCapture: true, sameCapture: true, alreadyEnrolled: [1], decidedBefore: "approved" } as const;
-    // no_match 와 period_unclear 는 함께 붙지 않는다 (반을 찾았을 때만 기간을 본다) — 두 번 불러 모은다
+    // no_match 와 period_unclear · month_unclear 는 함께 붙지 않는다 (반을 찾았을 때만 기간 · 달을 본다) — 두 번 불러 모은다
     const unmatched = autoApproveBlockers({ parsed: {}, nameMatches: false, matched: false, flags });
-    const unclear = autoApproveBlockers({ parsed: {}, nameMatches: false, matched: true, periodUnclear: true, flags });
+    const unclear = autoApproveBlockers({ parsed: {}, nameMatches: false, matched: true, periodUnclear: true, monthUnclear: true, flags });
     // two_week · palette 는 옛 기록의 까닭이라 지금은 붙지 않는다 — 그 기록을 읽을 이름표만 둔다 (palette 는 2026-10-06 에 뺀 검사)
     const all = new Set<AutoApproveBlocker>([...unmatched, ...unclear, "two_week", "palette"]);
     expect([...all].sort()).toEqual(Object.keys(BLOCKER_LABEL).sort());

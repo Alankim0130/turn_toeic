@@ -1,6 +1,6 @@
 import { autoApproveBlockers, type AutoApproveBlocker, type AutoApproveFlags } from "./auto-approve";
 import type { StoredParsed } from "./held-receipt";
-import { receiptHasName } from "./receipt";
+import { receiptCourseMonth, receiptHasName } from "./receipt";
 
 /**
  * 학생이 이름을 고친 뒤, **이름 때문에 멈춰 있던 수강증을 다시 본다** (2026-10-02 Alan — "수정의 기회").
@@ -13,7 +13,7 @@ import { receiptHasName } from "./receipt";
 
 /** `enrollment_verifications.candidates` 에 남긴 대조 기록 (actions.ts 의 submitVerification). 예전 기록은 칸이 빠져 있을 수 있다 */
 export type StoredCandidates = {
-  result?: { kind: string; sectionIds?: number[]; periodUnclear?: boolean } | null;
+  result?: { kind: string; sectionIds?: number[]; periodUnclear?: boolean; monthUnclear?: boolean } | null;
   nameMatches?: boolean | null;
   flags?: Partial<AutoApproveFlags> | null;
   blockers?: AutoApproveBlocker[] | null;
@@ -54,7 +54,9 @@ export function planRenameRecheck(row: StoredVerification, newName: string): Ren
     alreadyEnrolled: c.flags.alreadyEnrolled ?? [],
     decidedBefore: c.flags.decidedBefore ?? null,
   };
-  const blockers = autoApproveBlockers({ parsed: row.parsed ?? {}, nameMatches: true, flags, matched, periodUnclear: c.result?.periodUnclear === true });
+  // 수강월을 못 읽고 열린 달 하나로 고른 반이면 사람이 본다 (2026-10-22) — 그 표시가 생기기 전 기록은 남겨 둔 판독 결과로 다시 잰다
+  const monthUnclear = c.result?.monthUnclear === true || (matched && receiptCourseMonth({ courseMonth: row.parsed?.courseMonth ?? null, startMonth: row.parsed?.startMonth ?? null }) == null);
+  const blockers = autoApproveBlockers({ parsed: row.parsed ?? {}, nameMatches: true, flags, matched, periodUnclear: c.result?.periodUnclear === true, monthUnclear });
   const mode = row.parsed?.mode;
 
   if (blockers.length === 0 && c.hold == null && matched && (mode === "onsite" || mode === "live")) {
