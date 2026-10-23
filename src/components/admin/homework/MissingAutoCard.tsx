@@ -99,7 +99,7 @@ export function MissingAutoCard({ view, canEdit }: { view: MissingAutoView; canE
             화목금 숙제예요 (기한은 같은 트랙 다음 수업일 오후 5시).
           </p>
           <p className="mt-1 text-xs text-mist">
-            &lsquo;알림 안 받기&rsquo; 를 누른 학생은 빼요. 한 학생에게 하루 한 통만 가고, 이미 알림을 받은 숙제로는 다시 보내지 않아요 (아래에서 손으로 보낸 알림도 세요).
+            숙제제출 화면에서 알림을 끈 학생은 빼요. 한 학생에게 하루 한 통만 가고, 이미 알림을 받은 숙제로는 다시 보내지 않아요 (아래에서 손으로 보낸 알림도 세요).
           </p>
         </div>
       </div>

@@ -249,7 +249,7 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
       </div>
       <p className="mb-4 text-xs text-mist">
         숙제 기한은 같은 트랙의 다음 수업일 {HOMEWORK_DUE_LABEL}예요 (월수금 월요일 숙제는 수요일 5시, 금요일 숙제는 다음 주 첫 수업일 5시 · 화목금도 같고, 주5일은 두 트랙을
-        따로 봐요). 그 시간이 지나도 안 냈으면 &lsquo;안 냄&rsquo; 이에요. 숙제제출 화면에서 &lsquo;알림 안 받기&rsquo; 를 누른 학생은 명단에서 빠지고 알림도 가지 않아요.
+        따로 봐요). 그 시간이 지나도 안 냈으면 &lsquo;안 냄&rsquo; 이에요. 숙제제출 화면에서 알림을 끈 학생은 명단에서 빠지고 알림도 가지 않아요.
         미제출 전체선택은 마지막 알림 뒤에 새로 기한이 지난 숙제가 있는 학생을 골라요.
         {view === "dates" && " 날짜별에서는 수업마다 안 낸 학생을 보여 줘요 — N강은 그 트랙(월수금 · 화목금)의 N번째 수업이에요."}
       </p>
@@ -264,7 +264,7 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
         <EmptyState
           icon="bell"
           title="이 레벨 학생이 모두 알림을 껐어요"
-          description={`숙제제출 화면에서 '알림 안 받기' 를 누른 학생은 명단에서 빠져요. ${optedOut}명은 위의 '알림 안 받는 학생도 보기' 로 볼 수 있어요.`}
+          description={`숙제제출 화면에서 알림을 끈 학생은 명단에서 빠져요. ${optedOut}명은 위의 '알림 안 받는 학생도 보기' 로 볼 수 있어요.`}
         />
       ) : (
         // 기수 · 레벨이 바뀌면 고른 것을 비운다 (보기를 바꾸는 것은 그대로 둔다 — 날짜별에서 고르고 학생별에서 확인할 수 있게)
@@ -310,10 +310,10 @@ async function loadAutoView(supabase: DB): Promise<MissingAutoView> {
         : { text: `${when(latest)} · 보내는 중이에요`, tone: "quiet" };
     } else if ((latest.sent ?? 0) > 0) {
       const what = tracksLabel(latest.tracks);
-      const off = (latest.opted_out ?? 0) > 0 ? ` · 알림 안 받기 ${latest.opted_out}명은 뺐어요` : "";
+      const off = (latest.opted_out ?? 0) > 0 ? ` · 알림을 끈 ${latest.opted_out}명은 뺐어요` : "";
       last = { text: `${when(latest)}${what ? ` · ${what}` : ""} · ${latest.sent}명에게 보냈어요${off}`, tone: "ok" };
     } else {
-      const off = (latest.opted_out ?? 0) > 0 ? ` (알림 안 받기 ${latest.opted_out}명은 뺐어요)` : "";
+      const off = (latest.opted_out ?? 0) > 0 ? ` (알림을 끈 ${latest.opted_out}명은 뺐어요)` : "";
       last = { text: `${when(latest)} · 새로 기한이 지난 숙제를 안 낸 학생이 없었어요${off}`, tone: "quiet" };
     }
   }

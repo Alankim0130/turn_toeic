@@ -190,7 +190,7 @@ export function MissingBoard({
       text:
         `${res.sent}명에게 숙제 알림을 보냈어요. 학생 알림함(마이페이지 → 알림)에서 볼 수 있어요.` +
         (res.skipped > 0 ? ` 그 사이 숙제를 다 낸 ${res.skipped}명은 뺐어요.` : "") +
-        (res.unsubscribed > 0 ? ` 그 사이 '알림 안 받기' 를 누른 ${res.unsubscribed}명은 뺐어요.` : "") +
+        (res.unsubscribed > 0 ? ` 그 사이 알림을 끈 ${res.unsubscribed}명은 뺐어요.` : "") +
         (res.already > 0 ? ` 화면을 연 뒤 이미 알림을 받은 ${res.already}명은 뺐어요.` : ""),
     });
     setCompose(false);
