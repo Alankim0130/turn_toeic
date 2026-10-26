@@ -14,6 +14,7 @@ import {
   orderStepIndex,
   ownedItemIds,
   PICKUP_DAYS_AHEAD,
+  PICKUP_PLACE,
   PICKUP_TIMES,
   pickupDateLabel,
   pickupLabel,
@@ -325,6 +326,9 @@ describe("교재비 안내 — 등록 교재 · 지난 주문 · 계좌", () => 
     expect(m.body).toContain("현장수령: 배송비 없이 합계 40,000원");
     expect(m.body).toContain("하나은행 000-000000-00000 · 예금주 이영수 · 택배 44,500원 · 현장수령 40,000원");
     expect(m.body).toContain("받으러 올 날짜와 시각");
+    // 학원에서 받는 곳 (2026-10-26 Alan) — 첫 줄과 마지막 안내에
+    expect(m.body).toContain(`${PICKUP_PLACE}에서 직접 받아요`);
+    expect(m.body).toContain(`${PICKUP_PLACE}에서 건네 드려요`);
 
     // 가장 긴 경우 — 속성반 8권 + 계좌 둘
     const two = { ...ACC, id: 8, label: "배송비", account_no: "111-111111-11111" };
@@ -429,9 +433,15 @@ describe("현장수령 — 받는 방법 · 날짜 · 시각 · 상태 이름 (2
     expect(textbookAdminStatus("shipped", false)).toBe("배송완료");
   });
 
+  it("받는 곳은 YBM 어학원 3층 303호 — 1층 데스크가 아니다 (2026-10-26 Alan)", () => {
+    expect(PICKUP_PLACE).toBe("YBM 어학원 3층 303호");
+    expect(TEXTBOOK_PICKUP_STATUS.confirmed.hint).toBe("금액이 확인됐어요. 고른 날짜에 YBM 어학원 3층 303호에서 받아 가세요");
+    expect(Object.values(TEXTBOOK_PICKUP_STATUS).some((s) => s.hint.includes("데스크"))).toBe(false);
+  });
+
   it("금액이 확인되면 학생 안내에 받으러 올 날짜 · 시각을 그대로 적는다", () => {
     const o = { status: "confirmed", delivery_method: "pickup", pickup_date: "2026-10-12", pickup_time: "14:00:00" };
-    expect(orderHint(o)).toBe("금액이 확인됐어요. 10월 12일 (월) 오후 2시쯤 학원에서 받아 가세요");
+    expect(orderHint(o)).toBe("금액이 확인됐어요. 10월 12일 (월) 오후 2시쯤 YBM 어학원 3층 303호에서 받아 가세요");
     expect(orderHint({ ...o, status: "requested" })).toBe(TEXTBOOK_PICKUP_STATUS.requested.hint);
     expect(orderHint({ status: "confirmed", delivery_method: "parcel" })).toBe(TEXTBOOK_STATUS.confirmed.hint);
     // 예전 주문(칸이 없던 때)은 택배다

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { formatWon } from "@/lib/utils";
-import type { TextbookNotice } from "@/lib/textbook";
+import { PICKUP_PLACE, type TextbookNotice } from "@/lib/textbook";
 
 /**
  * 불라방 교재비 안내 (2026-10-02 Alan — "수강증 업로드를 하고 나면 거기에 맞춰서 교재비 안내가 나가면 편할것 같아!").
@@ -19,7 +19,7 @@ export function TextbookNoticeCard({ notice, cta = "primary" }: { notice: Textbo
         <Icon name="textbook" size={22} />
         {notice.month}월 불라방 교재비 안내
       </h3>
-      <p className="mt-1 text-xs text-slate">불라방 수강생은 교재를 택배로 받거나 학원에 와서 직접 받아요. 내 반에 맞춘 교재예요.</p>
+      <p className="mt-1 text-xs text-slate">불라방 수강생은 교재를 택배로 받거나 {PICKUP_PLACE}에서 직접 받아요. 내 반에 맞춘 교재예요.</p>
 
       <dl className="mt-3 space-y-1 text-sm">
         <div className="flex justify-between gap-3">
@@ -38,7 +38,7 @@ export function TextbookNoticeCard({ notice, cta = "primary" }: { notice: Textbo
             </div>
             <div className="flex justify-between gap-3 text-base">
               <dt className="font-black text-ink">
-                학원에서 받으면 <span className="text-xs font-bold text-slate">(현장수령 · 배송비 없음)</span>
+                학원에서 받으면 <span className="text-xs font-bold text-slate">({PICKUP_PLACE} · 배송비 없음)</span>
               </dt>
               <dd className="font-black tabular-nums text-brand-700">{formatWon(notice.pickupTotal)}</dd>
             </div>

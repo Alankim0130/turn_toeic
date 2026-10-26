@@ -95,6 +95,13 @@ export type DeliveryMethod = "parcel" | "pickup";
 export const DELIVERY_LABEL: Record<DeliveryMethod, string> = { parcel: "택배", pickup: "현장수령" };
 export const isPickup = (o: { delivery_method?: string | null }) => o.delivery_method === "pickup";
 
+/**
+ * 학원에서 받는 곳 (2026-10-26 Alan — "학원 데스크 수령이 아니라 학원에서 받기 (ybm 어학원 3층 303호) 이걸로 안내부탁해!").
+ * 1층 데스크가 아니라 3층 303호에서 건넨다. 주문 화면의 받는 방법 이름 · 접수 안내 · 학생 주문 카드 · 입금확인 안내 ·
+ * 교재비 안내(알림함 · 등업 팝업) · 조교 화면의 현장수령 예정이 이 값을 쓴다 — 받는 곳이 바뀌면 여기만 고친다.
+ */
+export const PICKUP_PLACE = "YBM 어학원 3층 303호";
+
 /** 받으러 올 날짜는 오늘(KST)부터 이 날수 안 — DB 함수 `create_textbook_order` 의 `v_today + 60` 과 같다 (바꾸면 둘 다) */
 export const PICKUP_DAYS_AHEAD = 60;
 
@@ -327,7 +334,7 @@ export function textbookNotice(month: number, g: TextbookGuide): TextbookNotice 
 export function textbookNoticeMessage(n: TextbookNotice): { title: string; body: string } {
   const both = n.shipping > 0;
   const lines = [
-    "불라방 수강생은 교재를 택배로 받거나 학원에 와서 직접 받아요(현장수령 — 배송비 없음). 내 반에 맞춘 교재비를 안내해 드려요.",
+    `불라방 수강생은 교재를 택배로 받거나 ${PICKUP_PLACE}에서 직접 받아요(현장수령 — 배송비 없음). 내 반에 맞춘 교재비를 안내해 드려요.`,
     "",
     `교재 ${n.books.length}권 · ${formatWon(n.itemsTotal)}`,
     `(${n.books.join(" · ")})`,
@@ -342,7 +349,7 @@ export function textbookNoticeMessage(n: TextbookNotice): { title: string; body:
         (both ? `택배 ${formatWon(p.amount)} · 현장수령 ${formatWon(p.pickupAmount)}` : formatWon(p.amount)),
     ),
     "",
-    "‘불라방 교재주문’에서 받는 방법(택배 · 현장수령)을 고르고 입금자명을 적어 주문해 주세요. 현장수령은 받으러 올 날짜와 시각을 함께 남겨요. 입금하시면 선생님이 통장과 대조해 확인한 뒤 보내 드리거나 학원에서 건네 드려요.",
+    `‘불라방 교재주문’에서 받는 방법(택배 · 현장수령)을 고르고 입금자명을 적어 주문해 주세요. 현장수령은 받으러 올 날짜와 시각을 함께 남겨요. 입금하시면 선생님이 통장과 대조해 확인한 뒤 보내 드리거나 ${PICKUP_PLACE}에서 건네 드려요.`,
     n.owned > 0 ? `지난 주문에서 받은 교재 ${n.owned}권은 뺐어요. 이미 가진 교재가 더 있으면 주문할 때 빼면 돼요.` : "이미 가진 교재가 있으면 주문할 때 빼면 돼요.",
   ];
   return { title: `${n.month}월 불라방 교재비 안내`, body: lines.join("\n").slice(0, 1000) };
@@ -390,7 +397,7 @@ export const TEXTBOOK_STATUS: Record<string, { label: string; hint: string }> = 
  */
 export const TEXTBOOK_PICKUP_STATUS: Record<string, { label: string; hint: string }> = {
   requested: { label: "주문완료", hint: "입금하시면 강사님이 통장과 대조해 금액을 확인해요" },
-  confirmed: { label: "입금확인", hint: "금액이 확인됐어요. 고른 날짜에 학원에서 받아 가세요" },
+  confirmed: { label: "입금확인", hint: `금액이 확인됐어요. 고른 날짜에 ${PICKUP_PLACE}에서 받아 가세요` },
   shipped: { label: "수령완료", hint: "교재를 받았어요. 확인을 누르면 내역에서 사라져요" },
   cancelled: { label: "취소", hint: "" },
 };
@@ -402,7 +409,7 @@ export const textbookStatus = (status: string, pickup: boolean): { label: string
 /** 학생 주문 카드의 안내 한 줄 — 현장수령은 금액이 확인되면 받으러 올 날짜 · 시각을 그대로 적는다 */
 export function orderHint(o: { status: string; delivery_method?: string | null; pickup_date?: string | null; pickup_time?: string | null }): string {
   if (isPickup(o) && o.status === "confirmed" && o.pickup_date && o.pickup_time) {
-    return `금액이 확인됐어요. ${pickupLabel(o.pickup_date, o.pickup_time)} 학원에서 받아 가세요`;
+    return `금액이 확인됐어요. ${pickupLabel(o.pickup_date, o.pickup_time)} ${PICKUP_PLACE}에서 받아 가세요`;
   }
   return textbookStatus(o.status, isPickup(o)).hint;
 }

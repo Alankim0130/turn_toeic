@@ -12,7 +12,7 @@ import { termLabel } from "../_lib/queries";
 import { getProfileNames } from "../_lib/profile-names";
 import { confirmTextbookPayment, markTextbookPickedUp, markTextbookShipped, updateTextbookOrder } from "./actions";
 import { isStaff, requireCrew } from "@/lib/auth";
-import { isPickup, pickupLabel, TEXTBOOK_ADMIN_STATUS, textbookAdminStatus } from "@/lib/textbook";
+import { isPickup, PICKUP_PLACE, pickupLabel, TEXTBOOK_ADMIN_STATUS, textbookAdminStatus } from "@/lib/textbook";
 import { isTextbookAccountMissing } from "@/lib/textbook-guide";
 
 export const metadata: Metadata = { title: "교재주문", robots: { index: false } };
@@ -134,7 +134,7 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
             <Icon name="calendar" size={22} />
             현장수령 예정 <span className="rounded-full bg-brand-500 px-2 py-0.5 text-xs font-black text-white">{(pickups ?? []).length}</span>
           </h2>
-          <p className="mt-1 text-xs text-slate">학생이 학원에 와서 받아 가는 주문이에요 (배송비 없음). 받으러 올 날짜 · 시각 순이고, 건네면 그 주문의 수령완료를 눌러 주세요.</p>
+          <p className="mt-1 text-xs text-slate">학생이 {PICKUP_PLACE}로 받으러 오는 주문이에요 (배송비 없음). 받으러 올 날짜 · 시각 순이고, 건네면 그 주문의 수령완료를 눌러 주세요.</p>
           <ul className="mt-3 divide-y divide-line">
             {(pickups ?? []).map((o) => {
               const day = o.pickup_date ?? "";

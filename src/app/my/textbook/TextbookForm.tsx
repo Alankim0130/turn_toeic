@@ -9,6 +9,7 @@ import { cn, formatWon } from "@/lib/utils";
 import {
   DELIVERY_LABEL,
   PICKUP_DAYS_AHEAD,
+  PICKUP_PLACE,
   PICKUP_TIMES,
   pickupDateLabel,
   pickupLabel,
@@ -98,7 +99,7 @@ export function TextbookForm({
     return (
       <Alert kind="success" title="교재주문이 접수됐어요">
         {state.pickup
-          ? `안내한 계좌로 입금하시면 강사님이 통장과 대조해 금액을 확인해요(입금확인). ${state.pickup} 학원에 와서 교재를 받아 가세요. 진행 상태는 아래 내역에서 볼 수 있어요.`
+          ? `안내한 계좌로 입금하시면 강사님이 통장과 대조해 금액을 확인해요(입금확인). ${state.pickup} ${PICKUP_PLACE}에서 교재를 받아 가세요. 진행 상태는 아래 내역에서 볼 수 있어요.`
           : "안내한 계좌로 입금하시면 강사님이 통장과 대조해 금액을 확인하고(배송확인) 교재를 보내 드려요(배송시작). 진행 상태는 아래 내역에서 볼 수 있어요."}
       </Alert>
     );
@@ -206,8 +207,9 @@ export function TextbookForm({
         <div className="grid gap-2 sm:grid-cols-2">
           {(
             [
-              { value: "parcel", title: "택배로 받기", sub: shippingFee > 0 ? `집으로 보내 드려요 · 배송비 ${formatWon(shippingFee)}` : "집으로 보내 드려요" },
-              { value: "pickup", title: "학원에서 받기 (현장수령)", sub: shippingFee > 0 ? "배송비 없음 · 받으러 올 날짜 · 시각만 남겨요" : "받으러 올 날짜 · 시각만 남겨요" },
+              { value: "parcel", title: "택배로 받기", place: null, sub: shippingFee > 0 ? `집으로 보내 드려요 · 배송비 ${formatWon(shippingFee)}` : "집으로 보내 드려요" },
+              // 받는 곳까지 이름에 적는다 (2026-10-26 Alan — "학원 데스크 수령이 아니라 학원에서 받기 (ybm 어학원 3층 303호)")
+              { value: "pickup", title: "학원에서 받기", place: PICKUP_PLACE, sub: shippingFee > 0 ? "배송비 없음 · 받으러 올 날짜 · 시각만 남겨요" : "받으러 올 날짜 · 시각만 남겨요" },
             ] as const
           ).map((o) => {
             const on = delivery === o.value;
@@ -225,7 +227,11 @@ export function TextbookForm({
                   className="mt-1 h-4 w-4 accent-brand-500"
                 />
                 <span className="min-w-0">
-                  <span className="block font-bold text-ink">{o.title}</span>
+                  <span className="block font-bold text-ink">
+                    {o.title}
+                    {/* 좁은 화면에서 받는 곳이 가운데서 갈리지 않게 괄호째 한 덩어리로 내린다 */}
+                    {o.place && <> <span className="whitespace-nowrap">({o.place})</span></>}
+                  </span>
                   <span className="mt-0.5 block text-xs text-slate">{o.sub}</span>
                 </span>
               </label>
@@ -310,11 +316,16 @@ export function TextbookForm({
           </div>
           {/* 고른 날의 요일까지 한 줄로 — 날짜 칸은 기기마다 요일을 안 보여 준다 */}
           <p className={cn("rounded-xl px-3 py-2 text-sm", pickupDateOk && pickupTime ? "bg-brand-50 font-bold text-ink" : "bg-surface text-slate")}>
-            {pickupDateOk && pickupTime
-              ? `${pickupLabel(pickupDate, pickupTime)} 학원에서 받아요`
-              : pickupDateOk
-                ? `${pickupDateLabel(pickupDate)} — 몇 시쯤 올지도 골라 주세요`
-                : `오늘부터 ${PICKUP_DAYS_AHEAD}일 안에서 날짜를 골라 주세요. 강사님이 입금을 확인하면 그 날 학원에서 받아 가요.`}
+            {pickupDateOk && pickupTime ? (
+              // 받는 곳은 한 덩어리로 — 좁은 화면에서 "YBM" 과 "어학원" 이 갈리지 않게
+              <>
+                {pickupLabel(pickupDate, pickupTime)} <span className="whitespace-nowrap">{PICKUP_PLACE}에서</span> 받아요
+              </>
+            ) : pickupDateOk ? (
+              `${pickupDateLabel(pickupDate)} — 몇 시쯤 올지도 골라 주세요`
+            ) : (
+              `오늘부터 ${PICKUP_DAYS_AHEAD}일 안에서 날짜를 골라 주세요. 강사님이 입금을 확인하면 그 날 ${PICKUP_PLACE}에서 받아 가요.`
+            )}
           </p>
         </div>
         {/* 요청사항 칸은 없앴다 (2026-10-07 Alan "요청사항도 없애줘") — 예전 주문의 메모는 강사 · 조교 화면에 그대로 보인다 */}

@@ -14,6 +14,7 @@ import {
   orderPreset,
   ownedItemIds,
   PICKUP_DAYS_AHEAD,
+  PICKUP_PLACE,
   pickupLabel,
   textbookGuide,
   textbookStatus,
@@ -87,7 +88,7 @@ export default async function TextbookPage() {
       <PageHeader
         icon="textbook"
         title="불라방 교재주문"
-        description="불라방 수강생은 교재를 택배로 받거나 학원에 와서 직접 받을 수 있어요(현장수령 — 배송비 없음). 교재를 고르고, 안내된 계좌로 입금한 뒤 주문하세요."
+        description={`불라방 수강생은 교재를 택배로 받거나 ${PICKUP_PLACE}에 와서 직접 받을 수 있어요(현장수령 — 배송비 없음). 교재를 고르고, 안내된 계좌로 입금한 뒤 주문하세요.`}
       />
 
       {formTerms.length === 0 ? (
@@ -147,7 +148,7 @@ export default async function TextbookPage() {
                         // 현장수령 (2026-10-07) — 주소 대신 받으러 올 날짜 · 시각
                         <p className="mt-1 text-slate">
                           <span className="mr-1.5 inline-block rounded-full bg-brand-50 px-2 py-0.5 align-middle text-xs font-black text-brand-700">현장수령</span>
-                          {o.pickup_date && o.pickup_time ? `${pickupLabel(o.pickup_date, o.pickup_time)} 학원에서` : "학원에서"} · {o.recipient_name}
+                          {o.pickup_date && o.pickup_time ? `${pickupLabel(o.pickup_date, o.pickup_time)} ${PICKUP_PLACE}에서` : `${PICKUP_PLACE}에서`} · {o.recipient_name}
                         </p>
                       ) : (
                         <p className="mt-1 text-slate">
