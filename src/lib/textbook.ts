@@ -102,17 +102,57 @@ export const isPickup = (o: { delivery_method?: string | null }) => o.delivery_m
  */
 export const PICKUP_PLACE = "YBM 어학원 3층 303호";
 
-/** 받으러 올 날짜는 오늘(KST)부터 이 날수 안 — DB 함수 `create_textbook_order` 의 `v_today + 60` 과 같다 (바꾸면 둘 다) */
+/**
+ * 받으러 올 날짜는 오늘(KST)부터 이 날수 안 — DB 함수 `create_textbook_order` 의 `v_today + 60` · `textbook_pickup_days` 의
+ * `today_kst() + 60` 과 같다 (바꾸면 셋 다)
+ */
 export const PICKUP_DAYS_AHEAD = 60;
 
+/** 그 날의 트랙 — 반 편성 달력(term_class_dates)에서 그 날이 월수금 수업일인지 화목금 수업일인지 */
+export type PickupTrack = "mwf" | "ttf";
+/** 받으러 올 수 있는 날 하나 — 수업이 있는 날과 그 날 트랙 (DB `textbook_pickup_days`) */
+export type PickupDay = { date: string; track: PickupTrack };
+
 /**
- * "몇 시쯤" 고르는 칸 — 오전 10시부터 밤 8시까지 30분 간격 (2026-10-07 Alan "수령시간은 오전 10시부터 밤 8시까지 설정해줘").
- * 바꾸면 여기만 — DB 는 시각을 거르지 않고 서버 액션이 이 목록 안의 값만 받는다 (이미 들어온 주문의 시각은 범위 밖이어도 그대로 보인다)
+ * "몇 시쯤" — **그 날 트랙이 정한다**, 30분 간격 (2026-10-26 Alan — "월수금은 9:30-15:00 & 18-21시 선택가능하고 화목금은 9:30-15:00 까지 만
+ * 선택 가능하도록 해줘" · 날을 가르는 법은 "반 편성 달력대로"). 월수금 수업일은 저녁에 현장 수업이 있어 저녁에도 받고, 화목금 저녁은 인강이라 낮만.
+ * 금요일은 그 주 달력의 트랙을 따르고, 수업이 없는 날은 날짜 목록에 없다. 2026-10-07 ~ 10-26 은 날과 상관없이 오전 10시 ~ 밤 8시였다.
+ * 바꾸면 여기만 — DB 는 시각을 거르지 않고 서버 액션이 그 날 목록 안의 값만 받는다 (이미 들어온 주문의 시각은 범위 밖이어도 그대로 보인다)
  */
-export const PICKUP_TIMES: readonly string[] = Array.from({ length: (20 - 10) * 2 + 1 }, (_, i) => {
-  const minutes = 10 * 60 + i * 30;
-  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
-});
+export const PICKUP_TIME_RANGES: Record<PickupTrack, readonly (readonly [string, string])[]> = {
+  mwf: [
+    ["09:30", "15:00"],
+    ["18:00", "21:00"],
+  ],
+  ttf: [["09:30", "15:00"]],
+};
+
+const toMinutes = (time: string) => {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+};
+const fromMinutes = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+
+/** 그 날 고를 수 있는 시각 — "09:30" … "15:00" (월수금 수업일은 이어서 "18:00" … "21:00") */
+export function pickupTimesFor(track: PickupTrack): string[] {
+  return PICKUP_TIME_RANGES[track].flatMap(([from, to]) => {
+    const out: string[] = [];
+    for (let t = toMinutes(from); t <= toMinutes(to); t += 30) out.push(fromMinutes(t));
+    return out;
+  });
+}
+
+/** "오전 9시 30분 ~ 오후 3시 · 오후 6시 ~ 오후 9시" — 그 날 받을 수 있는 때 */
+export const pickupRangeLabel = (track: PickupTrack) =>
+  PICKUP_TIME_RANGES[track].map(([from, to]) => `${pickupTimeLabel(from)} ~ ${pickupTimeLabel(to)}`).join(" · ");
+
+/** DB `textbook_pickup_days` 의 줄 → 날짜순 받을 수 있는 날. 모르는 트랙 · 꼴이 틀린 날짜는 뺀다 */
+export function pickupDaysFrom(rows: readonly { pickup_date: string; track: string }[]): PickupDay[] {
+  return rows
+    .filter((r) => (r.track === "mwf" || r.track === "ttf") && /^\d{4}-\d{2}-\d{2}/.test(r.pickup_date))
+    .map((r) => ({ date: r.pickup_date.slice(0, 10), track: r.track as PickupTrack }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
 
 const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -130,6 +170,9 @@ export function pickupTimeLabel(time: string): string {
 
 /** "10월 12일 (월) 오후 2시쯤" — 학생 내역 · 강사 · 조교 화면 · 새 주문 알림이 같은 말을 쓴다 */
 export const pickupLabel = (date: string, time: string) => `${pickupDateLabel(date)} ${pickupTimeLabel(time)}쯤`;
+
+/** 고른 날에 고를 수 없는 시각 — "10월 27일 (화)에는 오전 9시 30분 ~ 오후 3시 사이에서 골라 주세요." (서버 액션이 그 날 트랙을 알 때) */
+export const pickupTimeError = (day: PickupDay) => `${pickupDateLabel(day.date)}에는 ${pickupRangeLabel(day.track)} 사이에서 골라 주세요.`;
 
 // ─── 내 반 교재 (2026-10-02) ──────────────────────────────────────────────
 
@@ -365,7 +408,11 @@ export function textbookOrderError(message: string | undefined): string {
   if (m.includes("invalid_items")) return "고른 교재를 다시 확인해 주세요. 목록이 바뀌었을 수 있어요.";
   if (m.includes("no_account")) return "입금 계좌가 아직 등록되지 않았어요. 강사님께 문의해 주세요.";
   if (m.includes("pickup_date")) return `받으러 올 날짜는 오늘부터 ${PICKUP_DAYS_AHEAD}일 안에서 골라 주세요.`;
-  if (m.includes("pickup_time")) return `받으러 올 시각은 ${pickupTimeLabel(PICKUP_TIMES[0])} ~ ${pickupTimeLabel(PICKUP_TIMES[PICKUP_TIMES.length - 1])} 사이에서 골라 주세요.`;
+  // 서버 액션이 붙이는 것 (2026-10-26) — 반 편성 달력의 수업일이 아니다 · 그 날 고를 수 없는 시각 · 수업일을 읽지 못했다
+  if (m.includes("pickup_days_error")) return "학원에서 받을 수 있는 날을 확인하지 못했어요. 잠시 뒤 다시 주문해 주세요.";
+  if (m.includes("pickup_no_class")) return "받으러 올 날짜는 수업이 있는 날 중에서 골라 주세요.";
+  if (m.includes("pickup_time"))
+    return `몇 시쯤은 월수금 수업일은 ${pickupRangeLabel("mwf")}, 화목금 수업일은 ${pickupRangeLabel("ttf")} 사이에서 골라 주세요.`;
   if (m.includes("delivery")) return "받는 방법(택배 · 현장수령)을 골라 주세요.";
   if (m.includes("recipient")) return "받는 분 이름을 확인해 주세요.";
   if (m.includes("phone")) return "휴대폰 번호를 확인해 주세요.";

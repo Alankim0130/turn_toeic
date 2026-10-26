@@ -13,8 +13,8 @@ import {
   orderHint,
   orderPreset,
   ownedItemIds,
-  PICKUP_DAYS_AHEAD,
   PICKUP_PLACE,
+  pickupDaysFrom,
   pickupLabel,
   textbookGuide,
   textbookStatus,
@@ -23,8 +23,7 @@ import {
   type TextbookSettings,
 } from "@/lib/textbook";
 import { bookSectionsOf, TEXTBOOK_ACCOUNT_COLS, TEXTBOOK_ITEM_COLS } from "@/lib/textbook-guide";
-import { formatDate, formatWon, todayKST, TRACK_LABEL } from "@/lib/utils";
-import { shiftDate } from "@/lib/term-window";
+import { formatDate, formatWon, TRACK_LABEL } from "@/lib/utils";
 import { collapseWeek5, studentTrackLabel, week5SectionIds } from "@/lib/week5";
 import { getMyOrders, getMyTextbookOrders, getMyTextbookTerms, termLabel, type MyTextbookTerm } from "../_lib/queries";
 import { TextbookForm, type OrderTerm } from "./TextbookForm";
@@ -58,15 +57,17 @@ export default async function TextbookPage() {
       supabase.from("textbook_items").select(TEXTBOOK_ITEM_COLS).eq("active", true),
       supabase.from("textbook_accounts").select(TEXTBOOK_ACCOUNT_COLS).eq("active", true),
       supabase.from("textbook_settings").select("shipping_fee, default_account_id, notice").maybeSingle(),
+      // 학원에서 받을 수 있는 날 — 오늘부터 60일 안의 수업일과 그 날 트랙 (2026-10-26 Alan, 반 편성 달력대로)
+      supabase.rpc("textbook_pickup_days"),
     ]),
   );
   if (g.locked) return g.locked;
-  const [{ profile }, orders, myOrders, { data: items }, { data: accounts }, { data: settings }] = g.data;
+  const [{ profile }, orders, myOrders, { data: items }, { data: accounts }, { data: settings }, pickupDayRows] = g.data;
 
   // 학생이 받았다고 누른(배송완료) 주문은 내역에서 뺀다 — 지난 주문에서 받은 교재(ownedItemIds)는 그대로 센다
   const visibleOrders = myOrders.filter((o) => !o.received_at);
-  // 현장수령 날짜는 오늘(KST)부터 고른다 — DB 함수도 같은 날짜로 다시 본다
-  const today = todayKST();
+  // 현장수령 날짜는 수업이 있는 날 중에서 고른다 — 못 읽으면(배포 사이 · 잠깐의 오류) null: 화면이 현장수령을 잠그고 서버 액션도 받지 않는다
+  const pickupDays = pickupDayRows.error ? null : pickupDaysFrom(pickupDayRows.data ?? []);
   const terms = await getMyTextbookTerms(orders);
   const orderedTerms = new Set(myOrders.filter((o) => o.status !== "cancelled" && o.term_id).map((o) => o.term_id));
   // 내 반 교재 (2026-10-02 Alan — "주5일은 4권 … 주3일과 주5일 60분이면 2권") — 함께 듣는 반은 DB 가 정한다 (term_section_includes)
@@ -106,7 +107,7 @@ export default async function TextbookPage() {
             accounts={(accounts ?? []) as TextbookAccount[]}
             settings={(settings ?? null) as TextbookSettings | null}
             defaults={{ recipient_name: profile?.name ?? "", phone: profile?.phone ?? "" }}
-            pickupRange={{ min: today, max: shiftDate(today, PICKUP_DAYS_AHEAD) }}
+            pickupDays={pickupDays}
           />
         </Reveal>
       )}

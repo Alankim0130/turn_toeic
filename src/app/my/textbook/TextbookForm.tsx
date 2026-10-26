@@ -10,12 +10,14 @@ import {
   DELIVERY_LABEL,
   PICKUP_DAYS_AHEAD,
   PICKUP_PLACE,
-  PICKUP_TIMES,
   pickupDateLabel,
   pickupLabel,
+  pickupRangeLabel,
   pickupTimeLabel,
+  pickupTimesFor,
   textbookQuote,
   type DeliveryMethod,
+  type PickupDay,
   type TextbookAccount,
   type TextbookItem,
   type TextbookSettings,
@@ -47,20 +49,24 @@ const initialPick = (t: OrderTerm | undefined) =>
  * 택배면 배송지를, 현장수령이면 배송비 없이 받으러 올 날짜 · 시각을 받는다. 다른 쪽 칸은 숨기기만 하고 지우지 않는다 —
  * 학생이 방법을 바꿨다 되돌려도 적어 둔 주소가 남는다 (숨긴 칸은 `required` 를 끈다 — 켜 두면 브라우저가 제출을 막는다).
  *
- * @param pickupRange 받으러 올 날짜를 고를 수 있는 날 (오늘 ~ 60일 뒤, 한국 날짜) — 서버가 정해 넘긴다
+ * **받으러 올 날 · 시각은 반 편성 달력대로** (2026-10-26 Alan — "월수금은 9:30-15:00 & 18-21시 선택가능하고 화목금은 9:30-15:00 까지 만"):
+ * 날짜는 수업이 있는 날만 고르는 칸이고(달력 칸으로는 날을 막을 수 없다), 시각은 고른 날의 트랙으로 바뀐다 — 월수금 수업일은 낮 · 저녁,
+ * 화목금 수업일은 낮만. 저녁에 받을 수 있는 날에는 날짜 옆에 '저녁 가능' 을 붙인다. 서버 액션이 같은 함수로 다시 본다.
+ *
+ * @param pickupDays 받으러 올 수 있는 날 (오늘부터 60일 안의 수업일 · 트랙, DB `textbook_pickup_days`). null = 읽지 못했다 — 현장수령을 잠근다
  */
 export function TextbookForm({
   terms,
   accounts,
   settings,
   defaults,
-  pickupRange,
+  pickupDays,
 }: {
   terms: OrderTerm[];
   accounts: TextbookAccount[];
   settings: TextbookSettings | null;
   defaults: { recipient_name: string; phone: string };
-  pickupRange: { min: string; max: string };
+  pickupDays: PickupDay[] | null;
 }) {
   const [state, action] = useActionState<TextbookState, FormData>(submitTextbookOrder, {});
   const v: Record<string, string | undefined> = { ...defaults, ...(state.values ?? {}) };
@@ -79,17 +85,22 @@ export function TextbookForm({
   const chosen = (term?.items ?? []).filter((i) => picked.has(i.id));
   const quote = textbookQuote(chosen, accounts, settings, { pickup });
   const shippingFee = Math.max(0, settings?.shipping_fee ?? 0);
-  const pickupDateOk = pickupDate !== "" && pickupDate >= pickupRange.min && pickupDate <= pickupRange.max;
+  // 고른 날 · 그 날 고를 수 있는 시각 — 목록에 없는 날(예전에 적어 둔 값)이면 고르지 않은 것으로 본다
+  const pickupDay = pickupDays?.find((d) => d.date === pickupDate) ?? null;
+  const pickupTimes = pickupDay ? pickupTimesFor(pickupDay.track) : [];
+  const pickupTimeOk = pickupTimes.includes(pickupTime);
   const missing =
     chosen.length === 0
       ? "교재를 하나 이상 골라 주세요"
-      : pickup && !pickupDate
-        ? "받으러 올 날짜를 골라 주세요"
-        : pickup && !pickupDateOk
-          ? `받으러 올 날짜는 오늘부터 ${PICKUP_DAYS_AHEAD}일 안에서 골라 주세요`
-          : pickup && !pickupTime
-            ? "몇 시쯤 올지 골라 주세요"
-            : quote.missingAccount
+      : pickup && pickupDays === null
+        ? "학원에서 받을 수 있는 날을 불러오지 못했어요"
+        : pickup && pickupDays?.length === 0
+          ? "학원에서 받을 수 있는 날이 아직 없어요"
+          : pickup && !pickupDay
+            ? "받으러 올 날짜를 골라 주세요"
+            : pickup && !pickupTimeOk
+              ? "몇 시쯤 올지 골라 주세요"
+              : quote.missingAccount
               ? "입금 계좌가 아직 없어요"
               : !depositor.trim()
                 ? "입금자명을 적어 주세요"
@@ -285,48 +296,78 @@ export function TextbookForm({
           </div>
         </div>
 
-        {/* 현장수령 — 받으러 올 날짜 · 몇 시쯤 (2026-10-07 Alan "무슨날짜에 올껀지, 몇시쯤 올껀지") */}
+        {/* 현장수령 — 받으러 올 날짜 · 몇 시쯤 (2026-10-07 Alan "무슨날짜에 올껀지, 몇시쯤 올껀지").
+            2026-10-26 부터 날은 수업이 있는 날만, 시각은 그 날 트랙대로 (월수금 수업일 낮 · 저녁, 화목금 수업일 낮) */}
         <div className={cn("space-y-2", !pickup && "hidden")}>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="pickup_date" className="label">받으러 올 날짜</label>
-              <input
-                id="pickup_date"
-                name="pickup_date"
-                type="date"
-                required={pickup}
-                min={pickupRange.min}
-                max={pickupRange.max}
-                className="input"
-                value={pickupDate}
-                onChange={(e) => setPickupDate(e.target.value)}
-              />
-            </div>
-            <div>
-              <label htmlFor="pickup_time" className="label">몇 시쯤</label>
-              <select id="pickup_time" name="pickup_time" required={pickup} className="input" value={pickupTime} onChange={(e) => setPickupTime(e.target.value)}>
-                <option value="">시각 고르기</option>
-                {PICKUP_TIMES.map((t) => (
-                  <option key={t} value={t}>
-                    {pickupTimeLabel(t)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {/* 고른 날의 요일까지 한 줄로 — 날짜 칸은 기기마다 요일을 안 보여 준다 */}
-          <p className={cn("rounded-xl px-3 py-2 text-sm", pickupDateOk && pickupTime ? "bg-brand-50 font-bold text-ink" : "bg-surface text-slate")}>
-            {pickupDateOk && pickupTime ? (
-              // 받는 곳은 한 덩어리로 — 좁은 화면에서 "YBM" 과 "어학원" 이 갈리지 않게
-              <>
-                {pickupLabel(pickupDate, pickupTime)} <span className="whitespace-nowrap">{PICKUP_PLACE}에서</span> 받아요
-              </>
-            ) : pickupDateOk ? (
-              `${pickupDateLabel(pickupDate)} — 몇 시쯤 올지도 골라 주세요`
-            ) : (
-              `오늘부터 ${PICKUP_DAYS_AHEAD}일 안에서 날짜를 골라 주세요. 강사님이 입금을 확인하면 그 날 ${PICKUP_PLACE}에서 받아 가요.`
-            )}
-          </p>
+          {pickupDays === null || pickupDays.length === 0 ? (
+            // 날을 못 읽었거나 앞으로 60일 안에 수업일이 없다 — 고를 칸 대신 까닭 (주문 버튼은 위 missing 이 잠근다)
+            <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">
+              {pickupDays === null
+                ? "학원에서 받을 수 있는 날을 불러오지 못했어요. 잠시 뒤 다시 열거나 택배로 받아 주세요."
+                : `앞으로 ${PICKUP_DAYS_AHEAD}일 안에 학원에서 받을 수 있는 수업일이 아직 없어요. 택배로 받아 주세요.`}
+            </p>
+          ) : (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="pickup_date" className="label">받으러 올 날짜</label>
+                  <select
+                    id="pickup_date"
+                    name="pickup_date"
+                    required={pickup}
+                    className="input"
+                    value={pickupDay ? pickupDate : ""}
+                    onChange={(e) => {
+                      const next = pickupDays.find((d) => d.date === e.target.value);
+                      setPickupDate(e.target.value);
+                      // 바꾼 날에 없는 시각이면 비운다 — 월수금 저녁을 고른 채 화목금 날로 바꾸는 경우
+                      if (!next || !pickupTimesFor(next.track).includes(pickupTime)) setPickupTime("");
+                    }}
+                  >
+                    <option value="">날짜 고르기</option>
+                    {pickupDays.map((d) => (
+                      <option key={d.date} value={d.date}>
+                        {pickupDateLabel(d.date)}
+                        {d.track === "mwf" ? " · 저녁 가능" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="pickup_time" className="label">몇 시쯤</label>
+                  <select
+                    id="pickup_time"
+                    name="pickup_time"
+                    required={pickup}
+                    disabled={!pickupDay}
+                    className="input disabled:bg-surface disabled:text-mist"
+                    value={pickupTimeOk ? pickupTime : ""}
+                    onChange={(e) => setPickupTime(e.target.value)}
+                  >
+                    <option value="">{pickupDay ? "시각 고르기" : "날짜부터 골라 주세요"}</option>
+                    {pickupTimes.map((t) => (
+                      <option key={t} value={t}>
+                        {pickupTimeLabel(t)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {/* 고른 날 · 시각을 한 줄로 — 날을 고르면 그 날 받을 수 있는 때를 먼저 알려 준다 */}
+              <p className={cn("rounded-xl px-3 py-2 text-sm", pickupDay && pickupTimeOk ? "bg-brand-50 font-bold text-ink" : "bg-surface text-slate")}>
+                {pickupDay && pickupTimeOk ? (
+                  // 받는 곳은 한 덩어리로 — 좁은 화면에서 "YBM" 과 "어학원" 이 갈리지 않게
+                  <>
+                    {pickupLabel(pickupDate, pickupTime)} <span className="whitespace-nowrap">{PICKUP_PLACE}에서</span> 받아요
+                  </>
+                ) : pickupDay ? (
+                  `${pickupDateLabel(pickupDate)}에는 ${pickupRangeLabel(pickupDay.track)} 사이에 받을 수 있어요. 몇 시쯤 올지 골라 주세요.`
+                ) : (
+                  `수업이 있는 날만 고를 수 있어요. '저녁 가능' 이 붙은 날은 저녁에도 받아요. 강사님이 입금을 확인하면 그 날 ${PICKUP_PLACE}에서 받아 가요.`
+                )}
+              </p>
+            </>
+          )}
         </div>
         {/* 요청사항 칸은 없앴다 (2026-10-07 Alan "요청사항도 없애줘") — 예전 주문의 메모는 강사 · 조교 화면에 그대로 보인다 */}
       </div>

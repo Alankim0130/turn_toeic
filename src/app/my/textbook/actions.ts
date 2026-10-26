@@ -5,7 +5,7 @@ import { after } from "next/server";
 import { notifyStaff } from "@/lib/push";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { PICKUP_TIMES, pickupLabel, textbookOrderError } from "@/lib/textbook";
+import { pickupDaysFrom, pickupLabel, pickupTimeError, pickupTimesFor, textbookOrderError } from "@/lib/textbook";
 import { formatWon } from "@/lib/utils";
 
 /** `pickup` — 현장수령 주문이면 받으러 올 날짜 · 시각 한 줄 (접수 안내에 그대로 쓴다) */
@@ -23,6 +23,10 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
  * 배송지는 주소 + 상세 주소 둘 다 받는다 (2026-10-07 Alan — "우편번호 필요없고 본인 주소만 기입하게 해줘. 그리고 상세주소는 선택이 아니라 필수로
  * 들어가야해. 그래야지 배송을 할 수 있지" · "요청사항도 없애줘"). 우편번호 · 요청사항 칸은 화면에서 없앴고 함수에는 빈 값을 보낸다 (함수 인자는 그대로).
  * **상세 주소를 반드시 받는 것은 여기서 본다** — DB 함수는 예전처럼 비워도 받는다 (현장수령 시각 범위와 같은 규칙. 주문 함수는 금액 · 자격을 지키는 곳이라 건드리지 않았다).
+ *
+ * 현장수령 날 · 시각 (2026-10-26 Alan — "월수금은 9:30-15:00 & 18-21시 … 화목금은 9:30-15:00 까지 만" · 날은 "반 편성 달력대로"):
+ * 고른 날이 **수업이 있는 날**이어야 하고 시각은 **그 날 트랙의 목록 안**이어야 한다 — 화면과 같은 DB 함수(`textbook_pickup_days`)를 로그인한 사람의
+ * 세션으로 다시 부른다. 그 함수를 못 부르면(배포 사이 · 잠깐의 오류) 현장수령 주문을 받지 않는다 — 택배 주문은 그대로 들어간다.
  */
 export async function submitTextbookOrder(_prev: TextbookState, formData: FormData): Promise<TextbookState> {
   const v = (k: string) => String(formData.get(k) ?? "").trim();
@@ -47,12 +51,20 @@ export async function submitTextbookOrder(_prev: TextbookState, formData: FormDa
   if (!Number.isInteger(termId) || termId <= 0) return { error: "주문할 달을 골라 주세요.", values };
   if (itemIds.length === 0) return { error: "주문할 교재를 하나 이상 골라 주세요.", values };
   if (pickup && !DATE.test(values.pickup_date)) return { error: textbookOrderError("pickup_date"), values };
-  if (pickup && !PICKUP_TIMES.includes(values.pickup_time)) return { error: textbookOrderError("pickup_time"), values };
+  if (pickup && !values.pickup_time) return { error: textbookOrderError("pickup_time"), values };
   if (!pickup && !values.address) return { error: textbookOrderError("address"), values };
   if (!pickup && !values.address_detail) return { error: textbookOrderError("address_detail"), values };
   if (!values.depositor_name) return { error: textbookOrderError("depositor"), values };
 
   const supabase = await createClient();
+  if (pickup) {
+    // 수업이 있는 날인지 · 그 날 고를 수 있는 시각인지 (반 편성 달력 — 화면과 같은 함수)
+    const { data: dayRows, error: dayError } = await supabase.rpc("textbook_pickup_days");
+    if (dayError) return { error: textbookOrderError("pickup_days_error"), values };
+    const day = pickupDaysFrom(dayRows ?? []).find((d) => d.date === values.pickup_date);
+    if (!day) return { error: textbookOrderError("pickup_no_class"), values };
+    if (!pickupTimesFor(day.track).includes(values.pickup_time)) return { error: pickupTimeError(day), values };
+  }
   const { data: orderId, error } = await supabase.rpc("create_textbook_order", {
     p_term_id: termId,
     p_item_ids: itemIds,

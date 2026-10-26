@@ -2901,6 +2901,10 @@ export type Database = {
         Args: { p_id: number }
         Returns: boolean
       }
+      textbook_pickup_days: {
+        Args: never
+        Returns: { pickup_date: string; track: string }[]
+      }
       register_detected_stream: {
         Args: { p_session_date_ids: number[]; p_url: string }
         Returns: { live_linked: boolean; session_date_id: number }[]

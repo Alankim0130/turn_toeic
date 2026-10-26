@@ -15,10 +15,14 @@ import {
   ownedItemIds,
   PICKUP_DAYS_AHEAD,
   PICKUP_PLACE,
-  PICKUP_TIMES,
+  PICKUP_TIME_RANGES,
   pickupDateLabel,
+  pickupDaysFrom,
   pickupLabel,
+  pickupRangeLabel,
+  pickupTimeError,
   pickupTimeLabel,
+  pickupTimesFor,
   textbookGuide,
   textbookNotice,
   textbookNoticeMessage,
@@ -150,8 +154,13 @@ describe("주문 오류 문구", () => {
 
   it("현장수령 — 날짜 · 시각 · 받는 방법 (2026-10-07)", () => {
     expect(textbookOrderError("pickup_date")).toContain(`${PICKUP_DAYS_AHEAD}일`);
-    expect(textbookOrderError("pickup_time")).toBe("받으러 올 시각은 오전 10시 ~ 오후 8시 사이에서 골라 주세요.");
+    expect(textbookOrderError("pickup_time")).toBe(
+      "몇 시쯤은 월수금 수업일은 오전 9시 30분 ~ 오후 3시 · 오후 6시 ~ 오후 9시, 화목금 수업일은 오전 9시 30분 ~ 오후 3시 사이에서 골라 주세요.",
+    );
     expect(textbookOrderError("delivery")).toContain("받는 방법");
+    // 서버 액션이 붙이는 것 (2026-10-26) — 수업이 없는 날 · 날을 읽지 못함. 이름이 다른 코드와 겹치지 않는다
+    expect(textbookOrderError("pickup_no_class")).toBe("받으러 올 날짜는 수업이 있는 날 중에서 골라 주세요.");
+    expect(textbookOrderError("pickup_days_error")).toBe("학원에서 받을 수 있는 날을 확인하지 못했어요. 잠시 뒤 다시 주문해 주세요.");
   });
 
   it("택배 배송지 — 상세 주소는 꼭 받는다 (2026-10-07 Alan) · 주소 칸 이름이 겹쳐도 각자 문구로", () => {
@@ -398,16 +407,39 @@ describe("현장수령 — 받는 방법 · 날짜 · 시각 · 상태 이름 (2
     expect(DELIVERY_LABEL).toEqual({ parcel: "택배", pickup: "현장수령" });
   });
 
-  it("몇 시쯤 — 오전 10시부터 밤 8시까지 30분 간격 (2026-10-07 Alan)", () => {
-    expect(PICKUP_TIMES[0]).toBe("10:00");
-    expect(PICKUP_TIMES.at(-1)).toBe("20:00");
-    expect(PICKUP_TIMES).toHaveLength(21);
-    expect(PICKUP_TIMES).not.toContain("09:30");
-    expect(PICKUP_TIMES).not.toContain("20:30");
-    expect(pickupTimeLabel(PICKUP_TIMES[0])).toBe("오전 10시");
-    expect(pickupTimeLabel(PICKUP_TIMES[PICKUP_TIMES.length - 1])).toBe("오후 8시");
-    expect(PICKUP_TIMES).toContain("12:30");
-    expect(new Set(PICKUP_TIMES).size).toBe(PICKUP_TIMES.length);
+  // 2026-10-26 Alan — "월수금은 9:30-15:00 & 18-21시 선택가능하고 화목금은 9:30-15:00 까지 만" (날은 반 편성 달력대로).
+  // 2026-10-07 ~ 10-26 은 날과 상관없이 오전 10시 ~ 밤 8시였다
+  it("몇 시쯤 — 월수금 수업일은 9:30 ~ 15:00 · 18:00 ~ 21:00, 화목금 수업일은 9:30 ~ 15:00 (30분 간격)", () => {
+    const mwf = pickupTimesFor("mwf");
+    const ttf = pickupTimesFor("ttf");
+    expect(ttf).toEqual(["09:30", "10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00", "14:30", "15:00"]);
+    expect(mwf).toEqual([...ttf, "18:00", "18:30", "19:00", "19:30", "20:00", "20:30", "21:00"]);
+    // 낮과 저녁 사이 · 범위 밖은 없다
+    for (const t of ["09:00", "15:30", "16:00", "17:30", "21:30"]) expect(mwf).not.toContain(t);
+    for (const t of ["15:30", "18:00", "21:00"]) expect(ttf).not.toContain(t);
+    for (const list of [mwf, ttf]) expect(new Set(list).size).toBe(list.length);
+    expect(Object.keys(PICKUP_TIME_RANGES).sort()).toEqual(["mwf", "ttf"]);
+  });
+
+  it("그 날 받을 수 있는 때를 사람 말로 · 고른 날에 없는 시각이면 그 날 범위로 돌려보낸다", () => {
+    expect(pickupRangeLabel("mwf")).toBe("오전 9시 30분 ~ 오후 3시 · 오후 6시 ~ 오후 9시");
+    expect(pickupRangeLabel("ttf")).toBe("오전 9시 30분 ~ 오후 3시");
+    expect(pickupTimeError({ date: "2026-10-27", track: "ttf" })).toBe("10월 27일 (화)에는 오전 9시 30분 ~ 오후 3시 사이에서 골라 주세요.");
+  });
+
+  it("받을 수 있는 날 — DB 줄을 날짜순으로, 모르는 트랙 · 틀린 날짜는 뺀다", () => {
+    expect(
+      pickupDaysFrom([
+        { pickup_date: "2026-10-30", track: "mwf" },
+        { pickup_date: "2026-10-27", track: "ttf" },
+        { pickup_date: "2026-10-28", track: "weekend" },
+        { pickup_date: "언젠가", track: "mwf" },
+      ]),
+    ).toEqual([
+      { date: "2026-10-27", track: "ttf" },
+      { date: "2026-10-30", track: "mwf" },
+    ]);
+    expect(pickupDaysFrom([])).toEqual([]);
   });
 
   it("날짜 · 시각을 사람 말로 — 요일까지 (DB time 의 초는 떼고)", () => {
@@ -458,5 +490,31 @@ describe("현장수령 — 받는 방법 · 날짜 · 시각 · 상태 이름 (2
     expect(sql).toMatch(/p_delivery\s+text default 'parcel'/);
     expect(sql).toMatch(/p_pickup_date\s+date default null/);
     expect(sql).toMatch(/p_pickup_time\s+time default null/);
+  });
+
+  // 받을 수 있는 날은 반 편성 달력의 수업일 (2026-10-26 Alan "반 편성 달력대로", 마이그레이션 20261026100000)
+  it("받을 수 있는 날 함수 — 오늘부터 60일 안의 수업일 · 트랙만 준다 · 겹치면 월수금 · 비로그인은 못 부른다", () => {
+    const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261026100000_textbook_pickup_days.sql"), "utf8");
+    expect(sql).toContain("returns table (pickup_date date, track text)");
+    expect(sql).toMatch(/security definer\s+set search_path = ''/);
+    expect(sql).toContain(`where d.date between private.today_kst() and private.today_kst() + ${PICKUP_DAYS_AHEAD}`);
+    expect(sql).toContain("case when bool_or(d.track = 'mwf') then 'mwf' else 'ttf' end");
+    expect(sql).toContain("revoke all on function public.textbook_pickup_days() from public, anon;");
+    expect(sql).toContain("grant execute on function public.textbook_pickup_days() to authenticated;");
+  });
+
+  it("서버 액션 — 그 날이 수업일인지 · 그 날 시각인지를 로그인한 사람의 세션으로 다시 본다 · 못 읽으면 현장수령을 받지 않는다", () => {
+    const src = readFileSync(join(process.cwd(), "src/app/my/textbook/actions.ts"), "utf8");
+    const body = src.slice(src.indexOf("export async function submitTextbookOrder"), src.indexOf("export async function cancelTextbookOrder"));
+    expect(body).toContain('const { data: dayRows, error: dayError } = await supabase.rpc("textbook_pickup_days");');
+    expect(body).toContain('if (dayError) return { error: textbookOrderError("pickup_days_error"), values };');
+    expect(body).toContain('if (!day) return { error: textbookOrderError("pickup_no_class"), values };');
+    expect(body).toContain("if (!pickupTimesFor(day.track).includes(values.pickup_time)) return { error: pickupTimeError(day), values };");
+    // 세션 클라이언트로 — 수업일 검사는 서버 전용 열쇠로 하지 않는다
+    expect(body.indexOf("const supabase = await createClient();")).toBeLessThan(body.indexOf('supabase.rpc("textbook_pickup_days")'));
+    expect(body).not.toMatch(/createAdminClient\(\)\.rpc\("textbook_pickup_days"/);
+    // 화면도 같은 함수로 날짜를 받는다
+    const page = readFileSync(join(process.cwd(), "src/app/my/textbook/page.tsx"), "utf8");
+    expect(page).toContain('supabase.rpc("textbook_pickup_days")');
   });
 });
