@@ -169,7 +169,7 @@ describe("주문 오류 문구", () => {
   it("현장수령 — 날짜 · 시각 · 받는 방법 (2026-10-07)", () => {
     expect(textbookOrderError("pickup_date")).toContain(`${PICKUP_DAYS_AHEAD}일`);
     expect(textbookOrderError("pickup_time")).toBe(
-      "몇 시쯤은 월수금 수업일은 오전 9시 30분 ~ 오후 3시 · 오후 6시 ~ 오후 9시, 화목금 수업일은 오전 9시 30분 ~ 오후 3시 사이에서 골라 주세요.",
+      "몇 시쯤은 월수금 수업일은 오전 9시 30분 ~ 오후 2시 30분 · 오후 6시 ~ 오후 8시 30분, 화목금 수업일은 오전 9시 30분 ~ 오후 2시 30분 사이에서 골라 주세요.",
     );
     expect(textbookOrderError("delivery")).toContain("받는 방법");
     // 서버 액션이 붙이는 것 (2026-10-26) — 수업이 없는 날 · 날을 읽지 못함. 이름이 다른 코드와 겹치지 않는다
@@ -421,24 +421,27 @@ describe("현장수령 — 받는 방법 · 날짜 · 시각 · 상태 이름 (2
     expect(DELIVERY_LABEL).toEqual({ parcel: "택배", pickup: "현장수령" });
   });
 
-  // 2026-10-26 Alan — "월수금은 9:30-15:00 & 18-21시 선택가능하고 화목금은 9:30-15:00 까지 만" (날은 반 편성 달력대로).
+  // 2026-10-26 Alan — "월수금은 9:30-15:00 & 18-21시 선택가능하고 화목금은 9:30-15:00 까지 만" (날은 반 편성 달력대로) →
+  // 2026-10-27 Alan — "화목금에서 3시에 퇴근이고, 월수금에서 9시에 퇴근이야. 즉, 3시와 9시는 없애줘".
   // 2026-10-07 ~ 10-26 은 날과 상관없이 오전 10시 ~ 밤 8시였다
-  it("몇 시쯤 — 월수금 수업일은 9:30 ~ 15:00 · 18:00 ~ 21:00, 화목금 수업일은 9:30 ~ 15:00 (30분 간격)", () => {
+  it("몇 시쯤 — 월수금 수업일은 9:30 ~ 14:30 · 18:00 ~ 20:30, 화목금 수업일은 9:30 ~ 14:30 (30분 간격 · 3시 · 9시는 퇴근)", () => {
     const mwf = pickupTimesFor("mwf");
     const ttf = pickupTimesFor("ttf");
-    expect(ttf).toEqual(["09:30", "10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00", "14:30", "15:00"]);
-    expect(mwf).toEqual([...ttf, "18:00", "18:30", "19:00", "19:30", "20:00", "20:30", "21:00"]);
+    expect(ttf).toEqual(["09:30", "10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00", "14:30"]);
+    expect(mwf).toEqual([...ttf, "18:00", "18:30", "19:00", "19:30", "20:00", "20:30"]);
+    // 퇴근 시각(3시 · 9시)은 어느 날에도 고르지 않는다
+    for (const list of [mwf, ttf]) for (const t of ["15:00", "21:00"]) expect(list).not.toContain(t);
     // 낮과 저녁 사이 · 범위 밖은 없다
     for (const t of ["09:00", "15:30", "16:00", "17:30", "21:30"]) expect(mwf).not.toContain(t);
-    for (const t of ["15:30", "18:00", "21:00"]) expect(ttf).not.toContain(t);
+    for (const t of ["15:30", "18:00", "20:30"]) expect(ttf).not.toContain(t);
     for (const list of [mwf, ttf]) expect(new Set(list).size).toBe(list.length);
     expect(Object.keys(PICKUP_TIME_RANGES).sort()).toEqual(["mwf", "ttf"]);
   });
 
   it("그 날 받을 수 있는 때를 사람 말로 · 고른 날에 없는 시각이면 그 날 범위로 돌려보낸다", () => {
-    expect(pickupRangeLabel("mwf")).toBe("오전 9시 30분 ~ 오후 3시 · 오후 6시 ~ 오후 9시");
-    expect(pickupRangeLabel("ttf")).toBe("오전 9시 30분 ~ 오후 3시");
-    expect(pickupTimeError({ date: "2026-10-27", track: "ttf" })).toBe("10월 27일 (화)에는 오전 9시 30분 ~ 오후 3시 사이에서 골라 주세요.");
+    expect(pickupRangeLabel("mwf")).toBe("오전 9시 30분 ~ 오후 2시 30분 · 오후 6시 ~ 오후 8시 30분");
+    expect(pickupRangeLabel("ttf")).toBe("오전 9시 30분 ~ 오후 2시 30분");
+    expect(pickupTimeError({ date: "2026-10-27", track: "ttf" })).toBe("10월 27일 (화)에는 오전 9시 30분 ~ 오후 2시 30분 사이에서 골라 주세요.");
   });
 
   it("받을 수 있는 날 — DB 줄을 날짜순으로, 모르는 트랙 · 틀린 날짜는 뺀다", () => {

@@ -117,14 +117,17 @@ export type PickupDay = { date: string; track: PickupTrack };
  * "몇 시쯤" — **그 날 트랙이 정한다**, 30분 간격 (2026-10-26 Alan — "월수금은 9:30-15:00 & 18-21시 선택가능하고 화목금은 9:30-15:00 까지 만
  * 선택 가능하도록 해줘" · 날을 가르는 법은 "반 편성 달력대로"). 월수금 수업일은 저녁에 현장 수업이 있어 저녁에도 받고, 화목금 저녁은 인강이라 낮만.
  * 금요일은 그 주 달력의 트랙을 따르고, 수업이 없는 날은 날짜 목록에 없다. 2026-10-07 ~ 10-26 은 날과 상관없이 오전 10시 ~ 밤 8시였다.
- * 바꾸면 여기만 — DB 는 시각을 거르지 않고 서버 액션이 그 날 목록 안의 값만 받는다 (이미 들어온 주문의 시각은 범위 밖이어도 그대로 보인다)
+ * **3시 · 9시는 퇴근이라 고르지 않는다** (2026-10-27 Alan — "화목금에서 3시에 퇴근이고, 월수금에서 9시에 퇴근이야. 즉, 3시와 9시는 없애줘") —
+ * 마지막 칸은 그 30분 전(오후 2시 30분 · 오후 8시 30분)이고 월수금 수업일의 낮도 같다. 하루 사이(10-26 ~ 10-27)는 15:00 · 21:00 도 골랐다.
+ * 값은 **첫 칸 · 마지막 칸**(둘 다 고를 수 있다). 바꾸면 여기만 — DB 는 시각을 거르지 않고 서버 액션이 그 날 목록 안의 값만 받는다
+ * (이미 들어온 주문의 시각은 범위 밖이어도 그대로 보인다)
  */
 export const PICKUP_TIME_RANGES: Record<PickupTrack, readonly (readonly [string, string])[]> = {
   mwf: [
-    ["09:30", "15:00"],
-    ["18:00", "21:00"],
+    ["09:30", "14:30"],
+    ["18:00", "20:30"],
   ],
-  ttf: [["09:30", "15:00"]],
+  ttf: [["09:30", "14:30"]],
 };
 
 const toMinutes = (time: string) => {
@@ -133,7 +136,7 @@ const toMinutes = (time: string) => {
 };
 const fromMinutes = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 
-/** 그 날 고를 수 있는 시각 — "09:30" … "15:00" (월수금 수업일은 이어서 "18:00" … "21:00") */
+/** 그 날 고를 수 있는 시각 — "09:30" … "14:30" (월수금 수업일은 이어서 "18:00" … "20:30") */
 export function pickupTimesFor(track: PickupTrack): string[] {
   return PICKUP_TIME_RANGES[track].flatMap(([from, to]) => {
     const out: string[] = [];
@@ -142,7 +145,7 @@ export function pickupTimesFor(track: PickupTrack): string[] {
   });
 }
 
-/** "오전 9시 30분 ~ 오후 3시 · 오후 6시 ~ 오후 9시" — 그 날 받을 수 있는 때 */
+/** "오전 9시 30분 ~ 오후 2시 30분 · 오후 6시 ~ 오후 8시 30분" — 그 날 받을 수 있는 때 (고를 수 있는 첫 칸 ~ 마지막 칸) */
 export const pickupRangeLabel = (track: PickupTrack) =>
   PICKUP_TIME_RANGES[track].map(([from, to]) => `${pickupTimeLabel(from)} ~ ${pickupTimeLabel(to)}`).join(" · ");
 
@@ -171,7 +174,7 @@ export function pickupTimeLabel(time: string): string {
 /** "10월 12일 (월) 오후 2시쯤" — 학생 내역 · 강사 · 조교 화면 · 새 주문 알림이 같은 말을 쓴다 */
 export const pickupLabel = (date: string, time: string) => `${pickupDateLabel(date)} ${pickupTimeLabel(time)}쯤`;
 
-/** 고른 날에 고를 수 없는 시각 — "10월 27일 (화)에는 오전 9시 30분 ~ 오후 3시 사이에서 골라 주세요." (서버 액션이 그 날 트랙을 알 때) */
+/** 고른 날에 고를 수 없는 시각 — "10월 27일 (화)에는 오전 9시 30분 ~ 오후 2시 30분 사이에서 골라 주세요." (서버 액션이 그 날 트랙을 알 때) */
 export const pickupTimeError = (day: PickupDay) => `${pickupDateLabel(day.date)}에는 ${pickupRangeLabel(day.track)} 사이에서 골라 주세요.`;
 
 // ─── 내 반 교재 (2026-10-02) ──────────────────────────────────────────────
