@@ -15,6 +15,8 @@ import { confirmTextbookPayment, markTextbookPickedUp, markTextbookShipped, upda
 import { isStaff, requireCrew } from "@/lib/auth";
 import { isPickup, PICKUP_PLACE, pickupLabel, TEXTBOOK_ADMIN_STATUS, textbookAdminStatus } from "@/lib/textbook";
 import { isTextbookAccountMissing } from "@/lib/textbook-guide";
+import { trackingKey, type UsedTracking } from "@/lib/tracking-label";
+import { TrackingNoField } from "@/components/admin/textbook-orders/TrackingNoField";
 
 export const metadata: Metadata = { title: "교재주문", robots: { index: false } };
 
@@ -58,7 +60,7 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
     .limit(300);
   if (status !== "all") query = query.eq("status", status);
 
-  const [{ data: rows }, { data: pickups }, accountMissing, ...countRes] = await Promise.all([
+  const [{ data: rows }, { data: pickups }, accountMissing, { data: trackedRows }, ...countRes] = await Promise.all([
     query,
     // 현장수령 예정 (2026-10-07) — 아직 건네지 않은 것(금액확인 전 · 수령 대기)을 받으러 올 날짜 · 시각 순으로. 탭과 상관없이 맨 위에 선다
     supabase
@@ -71,9 +73,21 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
       .limit(50),
     // 입금 계좌가 없어 학생이 주문하지 못하는가 (2026-10-07) — 그동안은 주문이 안 들어와 이 화면이 빈 채로 조용했다
     isTextbookAccountMissing(supabase),
+    // 이미 들어간 운송장번호 (2026-10-27) — 송장 칸에 넣은(사진으로 읽은) 번호가 다른 주문에 있으면 알려 준다. 탭과 상관없이 최근 것
+    supabase
+      .from("textbook_orders")
+      .select("id, tracking_no, recipient_name")
+      .not("tracking_no", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(1000),
     ...["requested", "confirmed", "shipped", "cancelled"].map((s) => supabase.from("textbook_orders").select("id", { count: "exact", head: true }).eq("status", s)),
   ]);
   const today = todayKST();
+  // 한 번 만들어 모든 줄에 같은 목록을 넘긴다 — 화면 데이터에는 한 번만 실린다
+  const usedTracking: UsedTracking[] = (trackedRows ?? []).flatMap((r) => {
+    const key = trackingKey(r.tracking_no);
+    return key ? [{ id: r.id, key, name: r.recipient_name }] : [];
+  });
   // 주문의 반 — 주문할 때 적어 둔 그 달 불라방 반 전부 (2026-10-27 Alan "750 주5일 60분이야. 근데 교재신청에는 월수금으로").
   // 그 칸이 비어 있으면(마이그레이션 전 · 배포 사이) 대표 반 하나
   const classIdsOf = (o: { section_id: number; section_ids?: number[] | null }) => (o.section_ids?.length ? o.section_ids : [o.section_id]);
@@ -314,7 +328,15 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
                         <form action={markTextbookShipped} className="flex flex-col gap-1.5">
                           <input type="hidden" name="order_id" value={o.id} />
                           <input type="hidden" name="back" value={back} />
-                          <input name="tracking_no" defaultValue={o.tracking_no ?? ""} maxLength={60} placeholder="송장번호 (선택)" className="input !py-1.5 text-xs" aria-label="송장번호" />
+                          {/* 사진촬영 — 접수증 QR 에서 운송장번호를 읽어 넣는다 (2026-10-27 Alan "하나씩 기입하려니 너무 많아서") */}
+                          <TrackingNoField
+                            key={o.tracking_no ?? ""}
+                            orderId={o.id}
+                            defaultValue={o.tracking_no ?? ""}
+                            placeholder="송장번호 (선택)"
+                            recipient={o.recipient_name}
+                            used={usedTracking}
+                          />
                           <button type="submit" className="btn-primary w-full !py-1.5 text-xs">배송완료</button>
                         </form>
                       )}
@@ -329,7 +351,15 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
                               <option key={v} value={v}>{textbookAdminStatus(v, pickup)}</option>
                             ))}
                           </select>
-                          <input name="tracking_no" defaultValue={o.tracking_no ?? ""} maxLength={60} placeholder="송장번호" className="input !py-1.5 text-xs" aria-label="송장번호" />
+                          <TrackingNoField
+                            key={o.tracking_no ?? ""}
+                            orderId={o.id}
+                            defaultValue={o.tracking_no ?? ""}
+                            placeholder="송장번호"
+                            recipient={o.recipient_name}
+                            used={usedTracking}
+                            photo={!pickup}
+                          />
                           <button type="submit" className="btn-secondary !py-1.5 text-xs">저장</button>
                           {!staff && (
                             <p className="text-mist">
