@@ -1,22 +1,22 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { cn, formatDate, formatWon, todayKST, TRACK_LABEL } from "@/lib/utils";
+import { todayKST, TRACK_LABEL } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { FilterTabs } from "@/components/admin/FilterTabs";
-import { TableWrap, Th, Td } from "@/components/admin/Table";
 import { PushSetup } from "@/components/push/PushSetup";
 import { orderClassLines, termLabel } from "../_lib/queries";
 import { getProfileNames } from "../_lib/profile-names";
-import { confirmTextbookPayment, markTextbookPickedUp, markTextbookShipped, updateTextbookOrder } from "./actions";
 import { isStaff, requireCrew } from "@/lib/auth";
-import { isPickup, PICKUP_PLACE, pickupLabel, TEXTBOOK_ADMIN_STATUS, textbookAdminStatus } from "@/lib/textbook";
+import { TEXTBOOK_ADMIN_STATUS } from "@/lib/textbook";
 import { isTextbookAccountMissing } from "@/lib/textbook-guide";
 import { trackingKey, type UsedTracking } from "@/lib/tracking-label";
-import { TrackingNoField } from "@/components/admin/textbook-orders/TrackingNoField";
+import { OrderList, type OrderEntry } from "@/components/admin/textbook-orders/OrderList";
+import type { OrderClassLine } from "@/components/admin/textbook-orders/OrderParts";
+import { PickupSchedule } from "@/components/admin/textbook-orders/PickupSchedule";
 
 export const metadata: Metadata = { title: "교재주문", robots: { index: false } };
 
@@ -35,20 +35,17 @@ const ERROR_TEXT: Record<string, string> = {
   staff: "금액확인은 강사·관리자만 할 수 있어요 — 교재비가 강사님 통장으로 들어와요.",
 };
 
-const STATUS_CLASS: Record<string, string> = {
-  requested: "bg-amber-100 text-amber-800",
-  confirmed: "bg-brand-100 text-brand-700",
-  shipped: "bg-emerald-100 text-emerald-800",
-  cancelled: "bg-line text-slate",
-};
-
-type OrderedItem = { id: number; name: string; price: number };
-
-export default async function TextbookOrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; ok?: string; did?: string; error?: string }> }) {
+export default async function TextbookOrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; ok?: string; did?: string; error?: string; open?: string }>;
+}) {
   // 조교에게도 열린 화면이다 (2026-09-16 Alan). 레이아웃이 조교를 통과시키므로 화면마다 가드를 둔다
   const { profile } = await requireCrew();
   const staff = isStaff(profile.role);
-  const { status: statusParam, ok, did, error } = await searchParams;
+  const { status: statusParam, ok, did, error, open: openParam } = await searchParams;
+  // 휴대폰 카드를 열어 둔 채 보여 줄 주문 — 현장수령 예정에서 눌러 왔을 때 (OrderCard)
+  const openId = Number(openParam) || null;
   // 처음 열면 할 일부터 — 강사·관리자는 금액확인 전, 조교는 배송 대기
   const status = TABS.some((t) => t.value === statusParam) ? (statusParam as string) : staff ? "requested" : "confirmed";
   const supabase = await createClient();
@@ -105,10 +102,22 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
   ]);
   const classById = new Map((classRows ?? []).map((s) => [s.id, s]));
   // 반을 다 읽지 못하면 줄을 만들지 않는다 — 대표 반으로 대신 적는다 (한 트랙만 읽혀 주5일이 월수금으로 보이지 않게)
-  const classLinesOf = (o: { section_id: number; section_ids?: number[] | null }) => {
+  const classLinesOf = (o: { section_id: number; section_ids?: number[] | null }): OrderClassLine[] | null => {
     const found = classIdsOf(o).flatMap((id) => classById.get(id) ?? []);
     return found.length === classIdsOf(o).length ? orderClassLines(found) : null;
   };
+  /** 반을 다 읽지 못했을 때 — 주문의 대표 반 두 줄 */
+  const classFallbackOf = (o: NonNullable<typeof rows>[number]): [string, string] => [
+    `${termLabel(o.section?.term, true)} · ${o.section?.course?.name ?? "강좌"}`,
+    `${o.section?.track ? TRACK_LABEL[o.section.track] : ""} ${o.section?.time_block ?? ""}`,
+  ];
+  // 표 · 휴대폰 카드가 같이 그리는 한 건 — 가입 이름 · 반은 여기서 한 번 만든다
+  const orders: OrderEntry[] = (rows ?? []).map((o) => ({
+    order: o,
+    student: names.get(o.user_id)?.name ?? "-",
+    classLines: classLinesOf(o),
+    classFallback: classFallbackOf(o),
+  }));
   const counts: Record<string, number | undefined> = {
     requested: countRes[0].count ?? 0,
     confirmed: countRes[1].count ?? 0,
@@ -174,207 +183,16 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
       )}
 
       {/* 현장수령 예정 (2026-10-07 Alan — "무슨날짜에 올껀지, 몇시쯤 올껀지") — 탭을 넘기지 않아도 누가 언제 오는지 보이게 */}
-      {(pickups ?? []).length > 0 && (
-        <section aria-labelledby="pickup-title" className="card mb-4 p-4 sm:p-5">
-          <h2 id="pickup-title" className="flex items-center gap-2 font-black text-ink">
-            <Icon name="calendar" size={22} />
-            현장수령 예정 <span className="rounded-full bg-brand-500 px-2 py-0.5 text-xs font-black text-white">{(pickups ?? []).length}</span>
-          </h2>
-          <p className="mt-1 text-xs text-slate">학생이 {PICKUP_PLACE}로 받으러 오는 주문이에요 (배송비 없음). 받으러 올 날짜 · 시각 순이고, 건네면 그 주문의 수령완료를 눌러 주세요.</p>
-          <ul className="mt-3 divide-y divide-line">
-            {(pickups ?? []).map((o) => {
-              const day = o.pickup_date ?? "";
-              const tag = day === today ? "오늘" : day && day < today ? "지남" : null;
-              return (
-                <li key={o.id}>
-                  <Link href={`/admin/textbook-orders?status=${o.status}#order-${o.id}`} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 text-sm hover:bg-brand-50/40">
-                    {tag && (
-                      <span className={cn("rounded-full px-2 py-0.5 text-xs font-black", tag === "오늘" ? "bg-brand-500 text-white" : "bg-amber-100 text-amber-800")}>{tag}</span>
-                    )}
-                    <span className="font-bold text-ink">{o.pickup_date && o.pickup_time ? pickupLabel(o.pickup_date, o.pickup_time) : "날짜 없음"}</span>
-                    <span className="text-slate">· {o.recipient_name}</span>
-                    <span className={cn("ml-auto whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-bold", STATUS_CLASS[o.status] ?? "bg-line text-slate")}>
-                      {textbookAdminStatus(o.status, true)}
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
+      {(pickups ?? []).length > 0 && <PickupSchedule pickups={pickups ?? []} today={today} />}
 
       <FilterTabs basePath="/admin/textbook-orders" paramKey="status" current={status} tabs={TABS.map((t) => ({ ...t, count: counts[t.value] }))} />
 
-      {(rows ?? []).length === 0 ? (
+      {orders.length === 0 ? (
         <EmptyState icon="orders" title="해당 상태의 교재 주문이 없습니다" />
       ) : (
-        <TableWrap>
-          <thead>
-            <tr>
-              <Th>주문일</Th>
-              <Th>수강생</Th>
-              <Th>반</Th>
-              <Th>교재 · 금액</Th>
-              <Th>수령인 / 연락처</Th>
-              <Th>주소</Th>
-              <Th>상태</Th>
-              <Th>처리</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line">
-            {(rows ?? []).map((o) => {
-              const ordered = (Array.isArray(o.items) ? o.items : []) as OrderedItem[];
-              const pickup = isPickup(o);
-              const classLines = classLinesOf(o);
-              return (
-                <tr key={o.id} id={`order-${o.id}`} className="scroll-mt-24 align-top hover:bg-brand-50/40 target:bg-brand-50">
-                  <Td className="whitespace-nowrap text-xs">{formatDate(o.created_at, { year: "2-digit", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
-                  <Td className="whitespace-nowrap font-bold">{names.get(o.user_id)?.name ?? "-"}</Td>
-                  {/* 칸이 좁아지면 반 이름이 한 글자씩 세로로 쪼개져서 최소 너비를 둔다 (표는 넘치면 옆으로 민다).
-                      주문의 반 전부를 학생명단 카드처럼 — 주5일은 한 줄, 단과면 RC단과 · LC단과 (2026-10-27) */}
-                  <Td className="min-w-[10rem] text-xs">
-                    {classLines ? (
-                      <ul className="space-y-0.5">
-                        {classLines.map((line) => (
-                          <li key={line.key}>
-                            {line.single && <span className="mr-1 whitespace-nowrap rounded bg-ink px-1 text-white">{line.single}</span>}
-                            {line.label}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <>
-                        {termLabel(o.section?.term, true)} · {o.section?.course?.name ?? "강좌"}
-                        <br />
-                        {o.section?.track ? TRACK_LABEL[o.section.track] : ""} {o.section?.time_block ?? ""}
-                      </>
-                    )}
-                  </Td>
-                  <Td className="min-w-[12rem] text-xs">
-                    {ordered.length > 0 ? (
-                      <ul className="space-y-0.5">
-                        {ordered.map((i) => (
-                          <li key={i.id}>
-                            {i.name} <span className="text-mist">{formatWon(i.price)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <span className="text-mist">{o.quantity}권 (예전 주문)</span>
-                    )}
-                    {o.shipping_fee > 0 && <p className="text-mist">배송비 {formatWon(o.shipping_fee)}</p>}
-                    {o.total_amount > 0 && <p className="mt-1 font-black text-ink">합계 {formatWon(o.total_amount)}</p>}
-                    <p className={cn("mt-1 inline-block rounded-full px-2 py-0.5 font-bold", o.depositor_name ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700")}>
-                      {o.depositor_name ? `입금자 ${o.depositor_name}` : "입금자 미입력"}
-                    </p>
-                  </Td>
-                  <Td className="whitespace-nowrap text-xs">
-                    {o.recipient_name}
-                    <br />
-                    <a href={`tel:${o.phone}`} className="text-brand-600 hover:underline">{o.phone}</a>
-                  </Td>
-                  <Td className="min-w-[14rem] text-xs">
-                    {pickup ? (
-                      // 현장수령 (2026-10-07) — 주소 대신 받으러 올 날짜 · 시각
-                      <p>
-                        <span className="mr-1.5 inline-block rounded-full bg-brand-500 px-2 py-0.5 font-black text-white">현장수령</span>
-                        <span className="font-bold text-ink">{o.pickup_date && o.pickup_time ? pickupLabel(o.pickup_date, o.pickup_time) : "날짜 없음"}</span>
-                      </p>
-                    ) : (
-                      <>
-                        {o.postal_code && <span className="text-mist">[{o.postal_code}] </span>}
-                        {o.address} {o.address_detail}
-                      </>
-                    )}
-                    {o.memo && <p className="mt-1 text-mist">메모: {o.memo}</p>}
-                    {o.tracking_no && <p className="mt-1 font-bold text-ink">송장 {o.tracking_no}</p>}
-                  </Td>
-                  <Td>
-                    <span className={cn("whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-bold", STATUS_CLASS[o.status] ?? "bg-line text-slate")}>
-                      {textbookAdminStatus(o.status, pickup)}
-                    </span>
-                    {/* 학생이 받았다고 누르면(배송완료) 학생 내역에서는 사라지고 여기에 남는다 (2026-10-02). 현장수령은 건넬 때 찍힌다 */}
-                    {o.status === "shipped" && (
-                      <p className="mt-1 whitespace-nowrap text-xs text-slate">
-                        {o.received_at
-                          ? `${pickup ? "학원에서 받아 감" : "학생 수령 확인"} · ${formatDate(o.received_at, { month: "numeric", day: "numeric" })}`
-                          : "학생 수령 확인 전"}
-                      </p>
-                    )}
-                  </Td>
-                  <Td>
-                    <div className="flex min-w-[15rem] flex-col gap-2">
-                      {/* 할 일 한 단계 — 강사·관리자는 금액확인, 조교는 배송완료 (2026-10-02 Alan) */}
-                      {o.status === "requested" &&
-                        (staff ? (
-                          <form action={confirmTextbookPayment}>
-                            <input type="hidden" name="order_id" value={o.id} />
-                            <input type="hidden" name="back" value={back} />
-                            <button type="submit" className="btn-primary w-full !py-1.5 text-xs">금액확인</button>
-                          </form>
-                        ) : (
-                          <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">강사님 금액확인을 기다려요</p>
-                        ))}
-                      {o.status === "confirmed" && pickup && (
-                        <form action={markTextbookPickedUp} className="flex flex-col gap-1.5">
-                          <input type="hidden" name="order_id" value={o.id} />
-                          <input type="hidden" name="back" value={back} />
-                          <button type="submit" className="btn-primary w-full !py-1.5 text-xs">수령완료</button>
-                          <p className="text-mist">학원에서 건넨 뒤 눌러 주세요 — 학생 주문 내역에서 사라져요.</p>
-                        </form>
-                      )}
-                      {o.status === "confirmed" && !pickup && (
-                        <form action={markTextbookShipped} className="flex flex-col gap-1.5">
-                          <input type="hidden" name="order_id" value={o.id} />
-                          <input type="hidden" name="back" value={back} />
-                          {/* QR 찍기 — 카메라에 접수증 QR 을 비추면 운송장번호가 들어간다 (2026-10-27 Alan "하나씩 기입하려니 너무 많아서" → "카메라를 틀어서 qr이 인식이되면") */}
-                          <TrackingNoField
-                            key={o.tracking_no ?? ""}
-                            orderId={o.id}
-                            defaultValue={o.tracking_no ?? ""}
-                            placeholder="송장번호 (선택)"
-                            recipient={o.recipient_name}
-                            used={usedTracking}
-                          />
-                          <button type="submit" className="btn-primary w-full !py-1.5 text-xs">배송완료</button>
-                        </form>
-                      )}
-                      {/* 잘못 누른 것 되돌리기 · 취소 · 송장 고치기 — 평소에는 접어 둔다 */}
-                      <details className="text-xs">
-                        <summary className="cursor-pointer font-bold text-slate">상태 직접 바꾸기</summary>
-                        <form action={updateTextbookOrder} className="mt-1.5 flex flex-col gap-1.5">
-                          <input type="hidden" name="order_id" value={o.id} />
-                          <input type="hidden" name="back" value={back} />
-                          <select name="status" defaultValue={o.status} className="input !py-1.5 text-xs" aria-label="상태">
-                            {(["requested", "confirmed", "shipped", "cancelled"] as const).map((v) => (
-                              <option key={v} value={v}>{textbookAdminStatus(v, pickup)}</option>
-                            ))}
-                          </select>
-                          <TrackingNoField
-                            key={o.tracking_no ?? ""}
-                            orderId={o.id}
-                            defaultValue={o.tracking_no ?? ""}
-                            placeholder="송장번호"
-                            recipient={o.recipient_name}
-                            used={usedTracking}
-                            photo={!pickup}
-                          />
-                          <button type="submit" className="btn-secondary !py-1.5 text-xs">저장</button>
-                          {!staff && (
-                            <p className="text-mist">
-                              금액확인 전 주문을 {textbookAdminStatus("confirmed", pickup)} · {textbookAdminStatus("shipped", pickup)}로 넘기는 것은 강사·관리자만 할 수 있어요 (금액확인).
-                            </p>
-                          )}
-                        </form>
-                      </details>
-                    </div>
-                  </Td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </TableWrap>
+        // 휴대폰 · 태블릿(lg 미만)은 주문마다 간단한 카드, 누르면 그 자리에서 상세 · 처리 (2026-10-27 Alan — "Pc에서는 저렇게 보여도 괜찮은데,
+        // 모바일에서는 쫌 불편해 … 학생의 교재주문신청을 간략하게 보여주고, 그 학생을 클릭하면 상세정보가 나오도록!"). PC 는 표 그대로
+        <OrderList orders={orders} staff={staff} back={back} used={usedTracking} openId={openId} />
       )}
     </>
   );

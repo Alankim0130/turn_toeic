@@ -20,6 +20,7 @@ import { readLabelPhoto } from "./read-label-photo";
  * - **영상 · 사진은 기기 밖으로 나가지 않는다** — 브라우저 안에서 읽고, 파일 칸에 이름(name)이 없어 폼에 실리지 않는다.
  *   카메라 창은 폼 밖(body)에 그려 그 안의 버튼이 배송완료 폼을 보내지 않는다
  * - 다른 주문에 이미 들어간 번호면 알려 준다 (`duplicateTracking` — 막지는 않는다)
+ * - `size="md"` — 휴대폰 카드(`OrderCard`)의 크기. 글자 16px 라 아이폰이 칸을 누를 때 화면을 확대하지 않고 버튼도 누르기 쉽다. 표는 예전 그대로 작다(`sm`)
  */
 export function TrackingNoField({
   orderId,
@@ -28,6 +29,7 @@ export function TrackingNoField({
   recipient,
   used,
   photo = true,
+  size = "sm",
 }: {
   orderId: number;
   defaultValue: string;
@@ -38,6 +40,8 @@ export function TrackingNoField({
   used: readonly UsedTracking[];
   /** 현장수령 주문은 접수증이 없어 버튼을 그리지 않는다 */
   photo?: boolean;
+  /** sm = PC 표 · md = 휴대폰 카드 (16px — 아이폰이 칸을 누를 때 확대하지 않는다) */
+  size?: "sm" | "md";
 }) {
   const [value, setValue] = useState(defaultValue);
   const [read, setRead] = useState<LabelRead | "reading" | null>(null);
@@ -71,6 +75,7 @@ export function TrackingNoField({
   }
 
   const reading = read === "reading";
+  const md = size === "md";
   return (
     <div className="relative flex flex-col gap-1">
       <div className="flex gap-1.5">
@@ -83,7 +88,7 @@ export function TrackingNoField({
           }}
           maxLength={60}
           placeholder={placeholder}
-          className="input min-w-0 flex-1 !py-1.5 text-xs"
+          className={cn("input min-w-0 flex-1", md ? "!py-2.5" : "!py-1.5 text-xs")}
           aria-label="송장번호"
         />
         {photo && (
@@ -93,9 +98,9 @@ export function TrackingNoField({
               onClick={() => setCamera(true)}
               disabled={reading}
               title="카메라를 켜고 GS 편의점 택배 접수증의 오른쪽 위 QR 을 비추면 운송장번호가 들어가요"
-              className="btn-secondary shrink-0 !gap-1 !px-2.5 !py-1.5 text-xs"
+              className={cn("btn-secondary shrink-0", md ? "!gap-1.5 !px-3.5 !py-2.5" : "!gap-1 !px-2.5 !py-1.5 text-xs")}
             >
-              <Icon name="camera" size={16} />
+              <Icon name="camera" size={md ? 18 : 16} />
               {reading ? "읽는 중…" : "QR 찍기"}
             </button>
             {/* 이름(name)이 없어 폼과 함께 서버로 가지 않는다 — 사진은 이 기기 안에서만 읽는다 */}
@@ -113,11 +118,11 @@ export function TrackingNoField({
         )}
       </div>
       {read && (
-        <p role="status" className={cn("text-[11px] font-bold leading-snug", reading ? "text-slate" : read.kind === "ok" ? "text-emerald-700" : "text-amber-800")}>
+        <p role="status" className={cn("font-bold leading-snug", md ? "text-xs" : "text-[11px]", reading ? "text-slate" : read.kind === "ok" ? "text-emerald-700" : "text-amber-800")}>
           {reading ? "접수증을 읽는 중…" : labelReadMessage(read, recipient)}
         </p>
       )}
-      {dup && !reading && <p className="text-[11px] font-bold leading-snug text-red-700">{duplicateMessage(dup)}</p>}
+      {dup && !reading && <p className={cn("font-bold leading-snug text-red-700", md ? "text-xs" : "text-[11px]")}>{duplicateMessage(dup)}</p>}
       {/* 카메라 창은 body 에 — 이 칸은 배송완료 폼 안이라, 안에 그리면 창의 버튼이 폼에 속한다 */}
       {camera &&
         createPortal(
