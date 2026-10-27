@@ -5,6 +5,7 @@ import { pickCurrentTerm } from "@/lib/term-window";
 import { orderPhase } from "@/lib/enrollment-window";
 import { formatTime, TRACK_LABEL, MODE_LABEL } from "@/lib/utils";
 import { groupWeek5, week5SectionIds, WEEK5_LABEL, type Week5Section } from "@/lib/week5";
+import { SINGLE_SUBJECT_LABEL, singleSubjectOf } from "@/lib/section-type";
 
 export type DB = SupabaseClient<Database>;
 
@@ -113,6 +114,26 @@ export function enrollmentLines(
       closesAt: closes.at(-1) ?? null,
       statuses: [...new Set(group.map((e) => e.status ?? "active"))],
     };
+  });
+}
+
+/**
+ * 교재주문 한 건의 반 — 주문할 때 적어 둔 그 달 그 학생의 불라방 반 전부(`textbook_orders.section_ids`, 2026-10-27)를 줄로.
+ * 학생명단 카드와 같은 이름이다 — 주5일 짝은 한 줄(`주5일`), 단과면 `RC단과` · `LC단과` (`sectionChip` · `singleSubjectOf`).
+ * 그전에는 대표 반(월수금 먼저) 하나만 적어서 주5일 학생 주문이 '월수금 10:00~11:00' 으로 보였다 (Alan — "750 주5일 60분이야. 근데 교재신청에는 월수금으로").
+ * 짝은 **넘겨준 반 안에서만** 찾는다 (그 주문의 반).
+ */
+export type OrderClassSection = Week5Section & {
+  start_time?: string | null;
+  subject?: string | null;
+  term?: { year: number; month: number } | null;
+  course?: { name: string; target_score?: number | null; program?: string | null; course_type?: string | null } | null;
+};
+export function orderClassLines(sections: readonly OrderClassSection[]): { key: string; label: string; single: string | null }[] {
+  const week5 = week5SectionIds(sections);
+  return groupWeek5([...sections], (s) => s, week5).map((group) => {
+    const single = singleSubjectOf(group);
+    return { key: group.map((s) => s.id).join("-"), label: sectionChip(group[0], week5), single: single ? SINGLE_SUBJECT_LABEL[single] : null };
   });
 }
 

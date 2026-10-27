@@ -7,25 +7,29 @@ import { Icon } from "@/components/ui/Icon";
 import { startInstall } from "@/components/pwa/install-store";
 import { deletePushSubscription, ownsPushDevice, savePushSubscription, sendTestPush } from "@/app/admin/notifications/actions";
 import { deleteStudentPushSubscription, ownsStudentPushDevice, saveStudentPushSubscription, sendStudentTestPush } from "@/app/my/notifications/push-actions";
+import { deleteOrderPushSubscription, ownsOrderPushDevice, saveOrderPushSubscription, sendOrderTestPush } from "@/app/admin/textbook-orders/push-actions";
 import { detectPush, disablePush, enablePush, type PushState } from "./push-client";
 
 /**
  * 이 기기에서 푸시 알림 켜기 · 끄기 · 테스트.
  * - staff: 관리자 알림 설정 (`/admin/notifications`) — 등업신청 · 교재주문 · 네이버 예약 …
  * - student: 학생 알림 (`/my/notifications`, 2026-10-15) — 숙제 미제출 · 불라방 시작만
+ * - order: 새 교재주문 알림 (`/admin/textbook-orders`, 2026-10-27) — 교재주문을 맡은 조교가 켠다. 켜면 그 조교의 교재주문 알림도 켜진다
  * 저장은 audience 마다 다른 서버 액션이다 (각자 로그인한 사람의 기기만 저장한다).
  */
 const ACTIONS = {
   staff: { save: savePushSubscription, remove: deletePushSubscription, test: sendTestPush, owns: ownsPushDevice },
   student: { save: saveStudentPushSubscription, remove: deleteStudentPushSubscription, test: sendStudentTestPush, owns: ownsStudentPushDevice },
+  order: { save: saveOrderPushSubscription, remove: deleteOrderPushSubscription, test: sendOrderTestPush, owns: ownsOrderPushDevice },
 } as const;
 
 const TEXT = {
   staff: { device: "이 기기", topic: "이 기기는", where: "관리자 > 알림 설정" },
   student: { device: "이 휴대폰", topic: "이 휴대폰은", where: "마이 > 알림" },
+  order: { device: "이 기기", topic: "이 기기는", where: "관리자 > 교재주문" },
 } as const;
 
-export function PushSetup({ publicKey, audience = "staff" }: { publicKey: string | null; audience?: "staff" | "student" }) {
+export function PushSetup({ publicKey, audience = "staff" }: { publicKey: string | null; audience?: keyof typeof ACTIONS }) {
   const router = useRouter();
   const [state, setState] = useState<PushState>("loading");
   const [busy, setBusy] = useState(false);
@@ -103,7 +107,7 @@ export function PushSetup({ publicKey, audience = "staff" }: { publicKey: string
             </li>
           </ol>
           <p className="mt-2 text-xs">iOS 16.4 이상에서 동작해요.</p>
-          {audience === "student" && (
+          {audience !== "staff" && (
             <button type="button" onClick={() => void startInstall()} className="btn-secondary mt-3 !px-4 !py-2 text-sm">
               <Icon name="download" size={18} />
               홈 화면에 추가하는 법 보기

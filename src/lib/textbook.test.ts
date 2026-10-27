@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -42,6 +42,20 @@ import {
 
 const LC: TextbookAccount = { id: 1, bank_name: "신한", account_no: "110-1", holder: "이혜영", label: "LC", active: true, sort_order: 0 };
 const RC: TextbookAccount = { id: 2, bank_name: "국민", account_no: "220-2", holder: "이영수", label: "RC", active: true, sort_order: 1 };
+/** 주문 함수 create_textbook_order 의 마지막 정의 — 마이그레이션을 파일 순서대로 보아 가장 뒤의 것 (운영에 살아 있는 것) */
+function lastOrderFunction(): string {
+  const dir = join(process.cwd(), "supabase/migrations");
+  const head = "create or replace function public.create_textbook_order(";
+  const file = readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .filter((f) => readFileSync(join(dir, f), "utf8").includes(head))
+    .at(-1)!;
+  const sql = readFileSync(join(dir, file), "utf8");
+  const start = sql.lastIndexOf(head);
+  return sql.slice(start, sql.indexOf("$$;", sql.indexOf("as $$", start)));
+}
+
 const item = (id: number, over: Partial<TextbookItem> = {}): TextbookItem => ({
   id,
   name: `교재${id}`,
@@ -480,16 +494,36 @@ describe("현장수령 — 받는 방법 · 날짜 · 시각 · 상태 이름 (2
     expect(orderHint({ status: "shipped" })).toBe(TEXTBOOK_STATUS.shipped.hint);
   });
 
-  // 앱과 DB 함수가 같은 규칙이어야 화면의 금액 · 날짜 범위와 주문이 어긋나지 않는다 (마이그레이션 20261007110000)
+  // 앱과 DB 함수가 같은 규칙이어야 화면의 금액 · 날짜 범위와 주문이 어긋나지 않는다 (마이그레이션 20261007110000 → 마지막 정의)
   it("DB 함수와 같은 규칙 — 배송비 0 · 날짜 범위 · 받는 방법 값", () => {
     const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261007110000_textbook_pickup.sql"), "utf8");
-    expect(sql).toContain(`p_pickup_date > v_today + ${PICKUP_DAYS_AHEAD}`);
-    expect(sql).toContain("v_ship := case when v_method = 'pickup' then 0 else coalesce(v_ship, 0) end;");
     expect(sql).toContain(`check (delivery_method in (${Object.keys(DELIVERY_LABEL).map((k) => `'${k}'`).join(", ")}))`);
+    const fn = lastOrderFunction();
+    expect(fn).toContain(`p_pickup_date > v_today + ${PICKUP_DAYS_AHEAD}`);
+    expect(fn).toContain("v_ship := case when v_method = 'pickup' then 0 else coalesce(v_ship, 0) end;");
     // 예전 9개 인자 호출(옛 앱 · 택배)이 그대로 되도록 새 인자에는 기본값이 있다
-    expect(sql).toMatch(/p_delivery\s+text default 'parcel'/);
-    expect(sql).toMatch(/p_pickup_date\s+date default null/);
-    expect(sql).toMatch(/p_pickup_time\s+time default null/);
+    expect(fn).toMatch(/p_delivery\s+text default 'parcel'/);
+    expect(fn).toMatch(/p_pickup_date\s+date default null/);
+    expect(fn).toMatch(/p_pickup_time\s+time default null/);
+  });
+
+  // 2026-10-27 Alan — "750 주5일 60분이야. 근데 교재신청에는 월수금으로 교재신청이 들어가있어" (대표 반 하나만 적었다)
+  it("주문에 그 달 내 불라방 반 전부를 적는다 — 주5일이면 월수금 · 화목금 둘, 대표 반은 첫째", () => {
+    const fn = lastOrderFunction();
+    expect(fn).toMatch(/select coalesce\(array_agg\(e\.section_id order by \(s\.track = 'mwf'\) desc, s\.id\), '\{\}'\)\s+into v_sections/);
+    expect(fn).toContain("v_section := v_sections[1];");
+    expect(fn).toMatch(/user_id, section_id, section_ids, term_id,/);
+    expect(fn).toMatch(/v_uid, v_section, v_sections, p_term_id,/);
+    // 반을 고르는 조건은 예전 그대로 — 불라방 · 배정 살아 있음 · 등록 예비 · 수강 중 · 그 달 · 종강 전
+    const pick = fn.slice(fn.indexOf("into v_sections"), fn.indexOf("v_section := v_sections[1];"));
+    for (const cond of ["e.mode = 'live'", "e.status = 'active'", "o.status in ('preliminary', 'active')", "s.term_id = p_term_id", "v_today <= s.closes_at"]) {
+      expect(pick).toContain(cond);
+    }
+    // 이미 들어온 주문은 대표 반이 지금 배정에 있을 때만 그 달 불라방 배정 전부로 채운다
+    const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261027100000_textbook_order_sections.sql"), "utf8");
+    expect(sql).toContain("add column if not exists section_ids bigint[] not null default '{}'");
+    expect(sql).toContain("having bool_or(e.section_id = t.section_id)),");
+    expect(sql).toContain("array[t.section_id])");
   });
 
   // 받을 수 있는 날은 반 편성 달력의 수업일 (2026-10-26 Alan "반 편성 달력대로", 마이그레이션 20261026100000)

@@ -8,7 +8,8 @@ import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { TableWrap, Th, Td } from "@/components/admin/Table";
-import { termLabel } from "../_lib/queries";
+import { PushSetup } from "@/components/push/PushSetup";
+import { orderClassLines, termLabel } from "../_lib/queries";
 import { getProfileNames } from "../_lib/profile-names";
 import { confirmTextbookPayment, markTextbookPickedUp, markTextbookShipped, updateTextbookOrder } from "./actions";
 import { isStaff, requireCrew } from "@/lib/auth";
@@ -73,9 +74,27 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
     ...["requested", "confirmed", "shipped", "cancelled"].map((s) => supabase.from("textbook_orders").select("id", { count: "exact", head: true }).eq("status", s)),
   ]);
   const today = todayKST();
+  // 주문의 반 — 주문할 때 적어 둔 그 달 불라방 반 전부 (2026-10-27 Alan "750 주5일 60분이야. 근데 교재신청에는 월수금으로").
+  // 그 칸이 비어 있으면(마이그레이션 전 · 배포 사이) 대표 반 하나
+  const classIdsOf = (o: { section_id: number; section_ids?: number[] | null }) => (o.section_ids?.length ? o.section_ids : [o.section_id]);
+  const classIds = [...new Set((rows ?? []).flatMap(classIdsOf))];
   // 주문한 학생의 가입 이름 — 이름 · 등급만 주는 함수로 (조교는 profiles 를 못 읽는다, 2026-10-03 `profile-names.ts`).
   // 배송에 쓰는 받는 사람 · 연락처 · 주소는 주문에 따로 적혀 있다 (Alan — 교재 배송은 번호가 필요하다)
-  const names = await getProfileNames(supabase, (rows ?? []).map((o) => o.user_id));
+  const [names, { data: classRows }] = await Promise.all([
+    getProfileNames(supabase, (rows ?? []).map((o) => o.user_id)),
+    classIds.length > 0
+      ? supabase
+          .from("class_sections")
+          .select("id, term_id, course_id, track, time_block, start_time, subject, course:courses(name, target_score, program, course_type), term:terms(year, month)")
+          .in("id", classIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+  const classById = new Map((classRows ?? []).map((s) => [s.id, s]));
+  // 반을 다 읽지 못하면 줄을 만들지 않는다 — 대표 반으로 대신 적는다 (한 트랙만 읽혀 주5일이 월수금으로 보이지 않게)
+  const classLinesOf = (o: { section_id: number; section_ids?: number[] | null }) => {
+    const found = classIdsOf(o).flatMap((id) => classById.get(id) ?? []);
+    return found.length === classIdsOf(o).length ? orderClassLines(found) : null;
+  };
   const counts: Record<string, number | undefined> = {
     requested: countRes[0].count ?? 0,
     confirmed: countRes[1].count ?? 0,
@@ -125,6 +144,19 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
             "강사님께 교재·입금 계좌 설정에서 계좌를 넣어 달라고 부탁해 주세요."
           )}
         </Alert>
+      )}
+
+      {/* 새 교재주문 알림 — 조교가 이 기기에서 켠다 (2026-10-27 Alan "○○○(조교)인데 불라방 교재주문을 담당하는 사람이야 … 알림 푸시를 받을 수 있도록").
+          조교에게는 알림 설정 화면이 없어 여기서 켠다 — 켠 조교에게만 간다 (push-actions.ts). 강사 · 관리자는 알림 설정 화면을 쓴다 */}
+      {!staff && (
+        <section aria-labelledby="order-push-title" className="card mb-4 p-4 sm:p-5">
+          <h2 id="order-push-title" className="flex items-center gap-2 text-base font-black text-ink">
+            <Icon name="bell" size={22} />
+            새 교재주문 알림
+          </h2>
+          <p className="mb-3 mt-1 text-sm text-slate">불라방 학생이 교재를 주문하면 이 기기로 바로 알려 드려요. 교재주문을 맡은 분이 알림 받을 휴대폰에서 켜 주세요.</p>
+          <PushSetup publicKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? null} audience="order" />
+        </section>
       )}
 
       {/* 현장수령 예정 (2026-10-07 Alan — "무슨날짜에 올껀지, 몇시쯤 올껀지") — 탭을 넘기지 않아도 누가 언제 오는지 보이게 */}
@@ -180,15 +212,30 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
             {(rows ?? []).map((o) => {
               const ordered = (Array.isArray(o.items) ? o.items : []) as OrderedItem[];
               const pickup = isPickup(o);
+              const classLines = classLinesOf(o);
               return (
                 <tr key={o.id} id={`order-${o.id}`} className="scroll-mt-24 align-top hover:bg-brand-50/40 target:bg-brand-50">
                   <Td className="whitespace-nowrap text-xs">{formatDate(o.created_at, { year: "2-digit", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Td>
                   <Td className="whitespace-nowrap font-bold">{names.get(o.user_id)?.name ?? "-"}</Td>
-                  {/* 칸이 좁아지면 반 이름이 한 글자씩 세로로 쪼개져서 최소 너비를 둔다 (표는 넘치면 옆으로 민다) */}
-                  <Td className="min-w-[9rem] text-xs">
-                    {termLabel(o.section?.term, true)} · {o.section?.course?.name ?? "강좌"}
-                    <br />
-                    {o.section?.track ? TRACK_LABEL[o.section.track] : ""} {o.section?.time_block ?? ""}
+                  {/* 칸이 좁아지면 반 이름이 한 글자씩 세로로 쪼개져서 최소 너비를 둔다 (표는 넘치면 옆으로 민다).
+                      주문의 반 전부를 학생명단 카드처럼 — 주5일은 한 줄, 단과면 RC단과 · LC단과 (2026-10-27) */}
+                  <Td className="min-w-[10rem] text-xs">
+                    {classLines ? (
+                      <ul className="space-y-0.5">
+                        {classLines.map((line) => (
+                          <li key={line.key}>
+                            {line.single && <span className="mr-1 whitespace-nowrap rounded bg-ink px-1 text-white">{line.single}</span>}
+                            {line.label}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <>
+                        {termLabel(o.section?.term, true)} · {o.section?.course?.name ?? "강좌"}
+                        <br />
+                        {o.section?.track ? TRACK_LABEL[o.section.track] : ""} {o.section?.time_block ?? ""}
+                      </>
+                    )}
                   </Td>
                   <Td className="min-w-[12rem] text-xs">
                     {ordered.length > 0 ? (

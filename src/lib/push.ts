@@ -7,7 +7,8 @@ import { studentPushMessage, type StudentPushRow } from "@/lib/student-push";
 
 /**
  * 웹 푸시. 알림은 기기마다 "알림 받기"를 눌러 둔 곳으로만 간다.
- * - 관리자 알림(`notifyStaff` · `notifyUser`): 강사·관리자 — 종류마다 알림 설정으로 끈다
+ * - 관리자 알림(`notifyStaff` · `notifyUser`): 강사·관리자 — 종류마다 알림 설정으로 끈다.
+ *   새 교재주문은 교재주문 화면에서 알림을 켠 조교에게도 (`CREW_ALERT_KINDS`, 2026-10-27)
  * - 학생 알림(`pushStudentMessages`, 2026-10-15): 숙제 미제출 · 불라방 시작만 — 학생 알림함 줄을 그대로 휴대폰으로 (`student-push.ts`)
  * 발송 실패는 사용자 동작을 막지 않도록 삼키고 로그만 남긴다. 404/410 구독은 지운다.
  */
@@ -90,17 +91,27 @@ async function deliver(rows: SubscriptionRow[], message: PushMessage): Promise<P
   return { sent: delivered.length, failed, removed: gone.length };
 }
 
-/** 해당 알림을 켜 둔 스태프 모두에게 보낸다. 설정 행이 없으면 켜진 것으로 본다 */
+/**
+ * 조교도 받을 수 있는 관리자 알림 — **그 일을 맡은 조교가 스스로 켠 경우에만** 간다 (2026-10-27 Alan — "○○○(조교)인데 불라방 교재주문을
+ * 담당하는 사람이야. 이 사람이 불라방 교재주문 알림 푸시를 받을 수 있도록"). 조교에게는 알림 설정 화면이 없어 교재주문 화면에서 켠다
+ * (`src/app/admin/textbook-orders/push-actions.ts` — 켜면 그 조교의 notification_settings.textbook_order 가 true).
+ * 강사 · 관리자는 예전처럼 설정 행이 없으면 켜진 것이고, 조교는 행이 없으면 꺼진 것이다 — 교재주문을 맡지 않은 조교에게는 가지 않는다.
+ */
+export const CREW_ALERT_KINDS: readonly NotificationKind[] = ["textbook_order"];
+
+/** 해당 알림을 켜 둔 스태프 모두에게 보낸다. 설정 행이 없으면 켜진 것으로 본다 — 조교는 `CREW_ALERT_KINDS` 를 켠 사람만 */
 export async function notifyStaff(kind: NotificationKind, message: PushMessage): Promise<PushResult> {
   try {
     const admin = createAdminClient();
-    const { data: staff } = await admin.from("profiles").select("id").in("role", ["instructor", "admin"]).is("merged_into", null);
+    const roles = CREW_ALERT_KINDS.includes(kind) ? (["instructor", "admin", "assistant"] as const) : (["instructor", "admin"] as const);
+    const { data: staff } = await admin.from("profiles").select("id, role").in("role", roles).is("merged_into", null);
     const staffIds = (staff ?? []).map((s) => s.id);
     if (staffIds.length === 0) return EMPTY;
 
     const { data: settings } = await admin.from("notification_settings").select("*").in("user_id", staffIds);
-    const mutedIds = new Set((settings ?? []).filter((s) => s[kind] === false).map((s) => s.user_id));
-    const targets = staffIds.filter((id) => !mutedIds.has(id));
+    const setting = new Map((settings ?? []).map((s) => [s.user_id, s[kind]]));
+    // 강사 · 관리자는 끈 사람만 빼고, 조교는 켠 사람만
+    const targets = (staff ?? []).filter((s) => (s.role === "assistant" ? setting.get(s.id) === true : setting.get(s.id) !== false)).map((s) => s.id);
     if (targets.length === 0) return EMPTY;
 
     const { data: subs } = await admin.from("push_subscriptions").select("id, endpoint, p256dh, auth").in("user_id", targets);

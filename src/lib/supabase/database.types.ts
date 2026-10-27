@@ -2518,6 +2518,7 @@ export type Database = {
           received_at: string | null
           recipient_name: string
           section_id: number
+          section_ids: number[]
           shipping_fee: number
           status: string
           term_id: number | null
@@ -2545,6 +2546,7 @@ export type Database = {
           received_at?: string | null
           recipient_name: string
           section_id: number
+          section_ids?: number[]
           shipping_fee?: number
           status?: string
           term_id?: number | null
@@ -2572,6 +2574,7 @@ export type Database = {
           received_at?: string | null
           recipient_name?: string
           section_id?: number
+          section_ids?: number[]
           shipping_fee?: number
           status?: string
           term_id?: number | null

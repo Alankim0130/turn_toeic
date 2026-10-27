@@ -244,7 +244,10 @@ describe("구독 키 · 기기 수 · 보내기 · 로그아웃 (2026-10-16 점�
     const actions = readFileSync("src/app/(auth)/actions.ts", "utf8");
     expect(actions).toMatch(/export async function signOut\(formData\?: FormData\)/);
     expect(actions).toMatch(/formData\?\.get\("push_endpoint"\)/);
-    expect(actions).toMatch(/if \(!isAdmin\(me\?\.role\)\) await deleteSubscription\(user\.id, endpoint\);/);
+    expect(actions).toContain("let keep = isAdmin(me?.role);");
+    // 교재주문 화면에서 새 교재주문 알림을 켠 조교의 기기도 남긴다 (2026-10-27) — 그 밖의 조교 · 학생은 지운다
+    expect(actions).toMatch(/if \(!keep && me\?\.role === "assistant"\) \{[\s\S]*?select\("textbook_order"\)[\s\S]*?keep = alert\?\.textbook_order === true;\s*\}/);
+    expect(actions).toContain("if (!keep) await deleteSubscription(user.id, endpoint);");
     // 로그아웃하기 전에 지운다 — 로그아웃하면 누구의 기기인지 모른다
     expect(actions.indexOf("deleteSubscription(user.id, endpoint)")).toBeLessThan(actions.indexOf("await supabase.auth.signOut()"));
     // 로그아웃 폼마다 이 기기의 주소를 넣는다 — 새 로그아웃 폼을 만들면 여기에 걸린다
@@ -307,8 +310,14 @@ describe("서버 · 화면", () => {
     expect(src).toContain("pushStudentMessages(rows)");
   });
 
-  it("학생 기기를 켰다고 관리자 알림이 오지 않는다 — 관리자 알림은 강사 · 관리자 계정만 고른다", () => {
-    expect(read("src/lib/push.ts")).toContain('.in("role", ["instructor", "admin"])');
+  it("학생 기기를 켰다고 관리자 알림이 오지 않는다 — 관리자 알림은 강사 · 관리자, 그리고 교재주문 알림을 켠 조교만 고른다", () => {
+    const src = read("src/lib/push.ts");
+    const body = src.slice(src.indexOf("export async function notifyStaff"), src.indexOf("export async function notifyUser"));
+    // 학생 · 회원 등급은 어느 알림에도 없다. 조교는 CREW_ALERT_KINDS(교재주문)에서만 · 켠 사람만 (2026-10-27)
+    expect(src).toContain('export const CREW_ALERT_KINDS: readonly NotificationKind[] = ["textbook_order"];');
+    expect(body).toContain('CREW_ALERT_KINDS.includes(kind) ? (["instructor", "admin", "assistant"] as const) : (["instructor", "admin"] as const)');
+    expect(body).toContain('.in("role", roles).is("merged_into", null)');
+    expect(body).toContain('s.role === "assistant" ? setting.get(s.id) === true : setting.get(s.id) !== false');
   });
 
   it("학생 서버 액션은 로그인한 사람의 기기만 저장 · 지운다", () => {
@@ -348,5 +357,38 @@ describe("서버 · 화면", () => {
     expect(prompt).toContain("saveStudentPushSubscription");
     // 앱 설치 카드와 겹쳐 서지 않는다
     expect(prompt).toContain("installCardShown");
+  });
+});
+
+describe("새 교재주문 알림 — 교재주문을 맡은 조교가 교재주문 화면에서 켠다 (2026-10-27 Alan)", () => {
+  // "○○○(조교)인데 불라방 교재주문을 담당하는 사람이야. 이 사람이 불라방 교재주문 알림 푸시를 받을 수 있도록" —
+  // 그전에는 notifyStaff 가 강사 · 관리자만 골라 조교에게는 받을 길이 없었다 (알림 설정 화면도 조교에게 닫혀 있다)
+  const read = (p: string) => readFileSync(p, "utf8");
+  const actions = read("src/app/admin/textbook-orders/push-actions.ts");
+  const fn = (name: string) => actions.slice(actions.indexOf(`export async function ${name}`), actions.indexOf("\n}\n", actions.indexOf(`export async function ${name}`)));
+
+  it("켜면 이 기기를 내 기기로 저장하고 내 교재주문 알림을 켠다 · 끄면 둘 다 끈다 — 함수마다 맨 위 requireCrew", () => {
+    for (const name of ["saveOrderPushSubscription", "deleteOrderPushSubscription", "ownsOrderPushDevice", "sendOrderTestPush"]) {
+      expect(fn(name), name).toMatch(/^export async function \w+\([^)]*\)[^{]*\{\s*const \{ user \} = await requireCrew\(\);/);
+    }
+    expect(fn("saveOrderPushSubscription")).toContain("saveSubscription(user.id, input)");
+    expect(fn("saveOrderPushSubscription")).toContain("setOrderAlert(user.id, true)");
+    expect(fn("deleteOrderPushSubscription")).toContain("deleteSubscription(user.id, endpoint)");
+    expect(fn("deleteOrderPushSubscription")).toContain("setOrderAlert(user.id, false)");
+    // 내 행의 교재주문 칸만 바꾼다 — 다른 종류는 그대로
+    expect(actions).toMatch(/upsert\(\{ user_id: userId, textbook_order: on, updated_at: [^}]+\}, \{ onConflict: "user_id" \}\)/);
+  });
+
+  it("'받고 있어요' 는 이 기기가 내 것이고 교재주문을 켰을 때만 — 학생 알림함에서 켠 기기라도 교재주문을 안 켰으면 꺼짐", () => {
+    expect(fn("ownsOrderPushDevice")).toContain("ownsSubscription(endpoint)");
+    expect(fn("ownsOrderPushDevice")).toContain('select("textbook_order").eq("user_id", user.id)');
+    expect(fn("ownsOrderPushDevice")).toContain("return mine && setting?.textbook_order === true;");
+  });
+
+  it("교재주문 화면은 조교에게만 이 카드를 그린다 — 강사 · 관리자는 알림 설정 화면을 쓴다", () => {
+    const page = read("src/app/admin/textbook-orders/page.tsx");
+    expect(page).toMatch(/\{!staff && \(\s*<section aria-labelledby="order-push-title"[\s\S]*?<PushSetup [^>]*audience="order" \/>/);
+    const setup = read("src/components/push/PushSetup.tsx");
+    expect(setup).toContain("order: { save: saveOrderPushSubscription, remove: deleteOrderPushSubscription, test: sendOrderTestPush, owns: ownsOrderPushDevice },");
   });
 });

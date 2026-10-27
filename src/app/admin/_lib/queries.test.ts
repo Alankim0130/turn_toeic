@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { enrollmentLines, enrollmentPhases, sectionChip, sectionSummary } from "./queries";
+import { enrollmentLines, enrollmentPhases, orderClassLines, sectionChip, sectionSummary } from "./queries";
 import { week5SectionIds, collapseWeek5 } from "@/lib/week5";
 
 const term = { year: 2026, month: 9 };
@@ -163,5 +163,38 @@ describe("학생 관리 반 배정 — 주5일은 한 줄 (2026-10-02 Alan)", ()
   it("sectionSummary 의 예전 부르기(방식 하나)는 그대로다", () => {
     expect(sectionSummary(sec(1, "mwf"), "live")).toBe("10월 · 650+ 왕기초반 · 월수금 · 10:00~12:10 · 불라방");
     expect(sectionSummary(sec(1, "mwf"), null)).toBe("10월 · 650+ 왕기초반 · 월수금 · 10:00~12:10");
+  });
+});
+
+describe("교재주문의 반 — 주문할 때 적어 둔 그 달 불라방 반 전부 (2026-10-27 Alan)", () => {
+  // "750 주5일 60분이야. 근데 교재신청에는 월수금으로 교재신청이 들어가있어" — 주문이 대표 반(월수금) 하나만 적어 '월수금' 으로 보였다
+  const oct = { year: 2026, month: 10 };
+  const c750 = { name: "750+ 유형마스터", target_score: 750, program: "score", course_type: "full" };
+  const s = (id: number, track: string, time_block: string, subject: string | null) => ({ id, term_id: 10, course_id: 75, track, time_block, start_time: null, subject, term: oct, course: c750 });
+
+  it("주5일 60분은 한 줄 — 주5일로 적고 단과가 아니다 (월수금 RC · 화목금 LC)", () => {
+    expect(orderClassLines([s(1, "mwf", "10:00~11:00", "lc"), s(2, "ttf", "10:00~11:00", "rc")])).toEqual([
+      { key: "1-2", label: "10월 · 750+ · 주5일 10:00~11:00", single: null },
+    ]);
+  });
+
+  it("화목금이 먼저 와도 월수금 줄로 — 순서가 바뀌어도 같은 줄", () => {
+    expect(orderClassLines([s(2, "ttf", "10:00~11:00", "rc"), s(1, "mwf", "10:00~11:00", "lc")]).map((l) => l.label)).toEqual(["10월 · 750+ · 주5일 10:00~11:00"]);
+  });
+
+  it("주3일 60분은 트랙 그대로 · 단과 이름표", () => {
+    expect(orderClassLines([s(1, "mwf", "10:00~11:00", "lc")])).toEqual([{ key: "1", label: "10월 · 750+ · 월수금 10:00~11:00", single: "LC단과" }]);
+  });
+
+  it("단과 두 장(다른 시간)은 두 줄 — 주5일로 묶지 않는다", () => {
+    const lines = orderClassLines([s(1, "mwf", "10:00~11:00", "lc"), s(4, "ttf", "11:10~12:10", "lc")]);
+    expect(lines.map((l) => [l.label, l.single])).toEqual([
+      ["10월 · 750+ · 월수금 10:00~11:00", "LC단과"],
+      ["10월 · 750+ · 화목금 11:10~12:10", "LC단과"],
+    ]);
+  });
+
+  it("120분 묶음 반은 과목 칸이 비어 단과 이름표가 없다", () => {
+    expect(orderClassLines([s(3, "mwf", "10:00~12:10", null)])).toEqual([{ key: "3", label: "10월 · 750+ · 월수금 10:00~12:10", single: null }]);
   });
 });
