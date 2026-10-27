@@ -69,7 +69,7 @@ export async function deleteTextbookAccount(formData: FormData) {
 }
 
 // ─── 교재 ─────────────────────────────────────────────────────────────────
-/** "lc-A" → 과목 · 과정 (2026-10-02 — 내 반 교재). 비우면 학생이 직접 고르는 교재 */
+/** "lc-A" → 과목 · 과정 (2026-10-02 — 내 반 교재). 비우면 내 반 교재를 정하지 못한 달(방학달 등)에 학생이 직접 고를 때만 보인다 (2026-10-27) */
 function bookKeyOf(v: string): { subject: "lc" | "rc"; book_set: "A" | "B" } | null | "invalid" {
   if (!v) return null;
   const m = /^(lc|rc)-(A|B)$/.exec(v);

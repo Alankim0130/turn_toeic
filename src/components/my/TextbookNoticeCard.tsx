@@ -72,7 +72,8 @@ export function TextbookNoticeCard({ notice, cta = "primary" }: { notice: Textbo
 
       <p className="mt-3 text-xs text-slate">
         교재주문에서 받는 방법(택배 · 현장수령)을 고르고 입금자명을 적어 주문해 주세요. 현장수령은 받으러 올 날짜와 시각을 함께 남겨요.
-        {notice.owned > 0 ? ` 지난 주문에서 받은 교재 ${notice.owned}권은 뺐어요.` : " 이미 가진 교재가 있으면 주문할 때 빼면 돼요."}
+        {/* 주문 화면에서 교재를 뺄 수 없다 (2026-10-27 — 내 반 교재 그대로) — 이미 가진 교재는 주문하기 전에 선생님께 */}
+        {notice.owned > 0 ? ` 지난 주문에서 받은 교재 ${notice.owned}권은 뺐어요.` : ""} 이미 가진 교재가 {notice.owned > 0 ? "더 " : ""}있으면 주문하기 전에 선생님께 말씀해 주세요.
       </p>
       {/* 등업 팝업 안에서는 "맞아요, 확인" 이 먼저라 버튼을 한 단계 낮춘다 */}
       <Link href="/my/textbook" className={`${cta === "primary" ? "btn-primary" : "btn-secondary"} mt-3 w-full !py-2.5 text-sm sm:w-auto`}>

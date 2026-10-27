@@ -10,7 +10,7 @@ import {
   itemsForBooks,
   itemsForLevels,
   orderHint,
-  orderPreset,
+  orderPlan,
   orderStepIndex,
   ownedItemIds,
   PICKUP_DAYS_AHEAD,
@@ -23,6 +23,7 @@ import {
   pickupTimeError,
   pickupTimeLabel,
   pickupTimesFor,
+  sameOrderItems,
   textbookGuide,
   textbookNotice,
   textbookNoticeMessage,
@@ -377,30 +378,92 @@ describe("교재비 안내 — 등록 교재 · 지난 주문 · 계좌", () => 
   });
 });
 
-describe("주문 화면에 골라 둘 교재", () => {
+describe("주문 화면의 교재 — 내 반 교재 그대로, 고르는 칸 없음 (2026-10-27 Alan \"이제는 자동시스템이니 선택할 수 없게\")", () => {
   const books = [
     item(1, { name: "650 LC A과정", subject: "lc", book_set: "A" }),
     item(2, { name: "650 RC B과정", subject: "rc", book_set: "B" }),
   ];
+  // 같은 레벨의 다른 과정 교재 · 시간을 안 정한 교재 — 학생이 고르던 것들
+  const otherSet = item(3, { name: "650 LC B과정", subject: "lc", book_set: "B" });
+  const vocab = item(4, { name: "단어장", level: null, price: 8000 });
+  const levelItems = [...books, otherSet, vocab];
   const keys = [
     { level: 650, subject: "lc" as const, set: "A" as const },
     { level: 650, subject: "rc" as const, set: "B" as const },
   ];
-  const guide = (owned: number[], unknown = false, items = books) =>
+  const guide = (owned: number[], unknown = false, items = levelItems) =>
     textbookGuide({ books: { keys, unknown }, items, accounts: [LC], settings: null, ownedItemIds: new Set(owned) });
 
-  it("내 반 교재를 골라 두고 몇 권인지 말한다 — 지난 주문에서 받은 것은 빼고", () => {
-    expect(orderPreset(guide([]))).toEqual({ recommended: [1, 2], note: "내 반 교재 2권을 골라 뒀어요." });
-    expect(orderPreset(guide([1]))).toEqual({ recommended: [2], note: "내 반 교재 1권을 골라 뒀어요. 지난 주문에서 받은 1권은 뺐어요." });
+  it("내 반 교재만 — 같은 레벨의 다른 과정 교재 · 시간을 안 정한 교재는 나오지 않는다", () => {
+    expect(orderPlan(guide([]), levelItems)).toEqual({ locked: true, items: books, note: "내 반에 맞춰 정해진 교재 2권이에요." });
   });
 
-  it("다 받았으면 아무것도 골라 두지 않는다", () => {
-    expect(orderPreset(guide([1, 2]))).toEqual({ recommended: [], note: "내 반 교재는 지난 주문에서 모두 받았어요. 더 필요한 교재가 있으면 골라 주세요." });
+  it("지난 주문에서 받은 교재는 빼고 무엇을 뺐는지 적는다", () => {
+    expect(orderPlan(guide([1]), levelItems)).toEqual({
+      locked: true,
+      items: [books[1]],
+      note: "내 반에 맞춰 정해진 교재 1권이에요. 지난 주문에서 받은 1권(650 LC A과정)은 뺐어요.",
+    });
   });
 
-  it("정하지 못했으면 골라 두지 않는다 (예전처럼 학생이 고른다) · 등록 안 된 교재는 이름을 적는다", () => {
-    expect(orderPreset(guide([], true))).toEqual({ recommended: null, note: "내 반 교재를 정하지 못했어요 — 필요한 교재를 직접 골라 주세요." });
-    expect(orderPreset(guide([], false, [books[0]]))).toEqual({ recommended: [1], note: "내 반 교재 1권을 골라 뒀어요. 아직 등록되지 않은 교재: 650 RC B과정" });
+  it("다 받았으면 주문할 교재가 없다 — 화면은 까닭만 적고 주문 칸을 그리지 않는다", () => {
+    expect(orderPlan(guide([1, 2]), levelItems)).toEqual({
+      locked: true,
+      items: [],
+      note: "새로 주문할 교재가 없어요. 내 반 교재 2권(650 LC A과정 · 650 RC B과정)은 지난 주문에서 모두 받았어요. 다시 사야 하는 교재가 있으면 강사님께 문의해 주세요.",
+    });
+  });
+
+  it("강사가 아직 등록하지 않은 교재 — 등록된 것만 주문하고 빠진 이름을 적는다 · 하나도 없으면 주문하지 않는다", () => {
+    expect(orderPlan(guide([], false, [books[0], vocab]), levelItems)).toEqual({
+      locked: true,
+      items: [books[0]],
+      note: "내 반에 맞춰 정해진 교재 1권이에요. 아직 등록되지 않은 교재(650 RC B과정)는 강사님께 문의해 주세요.",
+    });
+    expect(orderPlan(guide([], false, [vocab]), [vocab])).toEqual({
+      locked: true,
+      items: [],
+      note: "강사님이 아직 내 반 교재(650 LC A과정 · 650 RC B과정)를 등록하지 않았어요. 등록되면 여기에서 주문할 수 있어요.",
+    });
+    expect(orderPlan(guide([1], false, [books[0]]), levelItems).note).toBe(
+      "새로 주문할 수 있는 교재가 없어요. 지난 주문에서 받은 1권(650 LC A과정)은 뺐어요. 아직 등록되지 않은 교재(650 RC B과정)는 강사님께 문의해 주세요.",
+    );
+  });
+
+  it("내 반 교재를 정하지 못한 달(방학달 통짜 반 등)만 예전처럼 학생이 고른다 — 내 레벨 + 모든 레벨", () => {
+    expect(orderPlan(guide([], true), levelItems)).toEqual({ locked: false, items: levelItems, note: "내 반 교재를 정하지 못했어요 — 필요한 교재를 직접 골라 주세요." });
+  });
+
+  it("서버 액션의 대조 — 화면이 보낸 교재가 그 달 주문할 교재와 똑같아야 한다 (순서 · 겹침은 보지 않는다)", () => {
+    expect(sameOrderItems([2, 1], books)).toBe(true);
+    expect(sameOrderItems([1, 2, 2], books)).toBe(true);
+    expect(sameOrderItems([1], books)).toBe(false);
+    expect(sameOrderItems([1, 2, 3], books)).toBe(false);
+    expect(sameOrderItems([1, 3], books)).toBe(false);
+  });
+
+  it("화면과 서버 액션이 같은 계산을 쓰고, 체크 칸은 내 반 교재를 정하지 못한 달에만 있다", () => {
+    const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
+    const form = read("src/app/my/textbook/TextbookForm.tsx");
+    const page = read("src/app/my/textbook/page.tsx");
+    const src = read("src/app/my/textbook/actions.ts");
+    const body = src.slice(src.indexOf("export async function submitTextbookOrder"), src.indexOf("export async function cancelTextbookOrder"));
+    // 주문할 교재는 한 함수가 정한다 — 화면과 서버 액션이 따로 계산하면 갈라진다
+    expect(page).toContain("orderTermsOf(supabase, orders, myOrders, catalog)");
+    expect(body).toContain("orderTermsOf(supabase, orders, myOrders, catalog)");
+    // 내 반 교재 칸 — 숨은 값만 있고 체크 칸이 없다
+    const locked = form.slice(form.indexOf("{term.locked ? ("), form.indexOf('<legend className="label">교재 고르기</legend>'));
+    expect(locked).toContain('<input type="hidden" name="item_id" value={i.id} />');
+    expect(locked).not.toContain('type="checkbox"');
+    expect(form).toContain("const chosen = term?.locked ? term.items : (term?.items ?? []).filter((i) => picked.has(i.id));");
+    // 서버는 다시 계산한 교재와 다르면 받지 않고, 같으면 그 교재로 주문한다
+    expect(body).toContain('if (plan.locked && plan.items.length === 0) return { error: textbookOrderError("nothing_to_order"), values };');
+    expect(body).toMatch(/if \(plan\.locked && !sameOrderItems\(itemIds, plan\.items\)\) \{\s*\/\/[^\n]*\n\s*revalidatePath\("\/my\/textbook"\);\s*return \{ error: textbookOrderError\("items_changed"\), values \};/);
+    expect(body).toContain("p_item_ids: plan.locked ? plan.items.map((i) => i.id) : itemIds,");
+    // 계산은 주문 함수를 부르기 전에
+    expect(body.indexOf("orderTermsOf(")).toBeLessThan(body.indexOf('supabase.rpc("create_textbook_order"'));
+    expect(textbookOrderError("items_changed")).toBe("내 반 교재가 바뀌었어요. 바뀐 교재를 확인하고 다시 주문해 주세요.");
+    expect(textbookOrderError("nothing_to_order")).toBe("새로 주문할 교재가 없어요.");
   });
 });
 
@@ -543,8 +606,8 @@ describe("현장수령 — 받는 방법 · 날짜 · 시각 · 상태 이름 (2
   it("서버 액션 — 그 날이 수업일인지 · 그 날 시각인지를 로그인한 사람의 세션으로 다시 본다 · 못 읽으면 현장수령을 받지 않는다", () => {
     const src = readFileSync(join(process.cwd(), "src/app/my/textbook/actions.ts"), "utf8");
     const body = src.slice(src.indexOf("export async function submitTextbookOrder"), src.indexOf("export async function cancelTextbookOrder"));
-    expect(body).toContain('const { data: dayRows, error: dayError } = await supabase.rpc("textbook_pickup_days");');
-    expect(body).toContain('if (dayError) return { error: textbookOrderError("pickup_days_error"), values };');
+    expect(body).toContain('pickup ? supabase.rpc("textbook_pickup_days") : null,');
+    expect(body).toContain('if (pickupDayRows.error) return { error: textbookOrderError("pickup_days_error"), values };');
     expect(body).toContain('if (!day) return { error: textbookOrderError("pickup_no_class"), values };');
     expect(body).toContain("if (!pickupTimesFor(day.track).includes(values.pickup_time)) return { error: pickupTimeError(day), values };");
     // 세션 클라이언트로 — 수업일 검사는 서버 전용 열쇠로 하지 않는다

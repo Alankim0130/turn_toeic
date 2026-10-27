@@ -17,33 +17,23 @@ import {
   pickupTimesFor,
   textbookQuote,
   type DeliveryMethod,
+  type OrderTerm,
   type PickupDay,
   type TextbookAccount,
-  type TextbookItem,
   type TextbookSettings,
 } from "@/lib/textbook";
 
-export type OrderTerm = {
-  id: number;
-  label: string;
-  items: TextbookItem[];
-  ordered: boolean;
-  /**
-   * 내 반 교재 중 새로 살 것 (2026-10-02 Alan — "주5일은 4권 … 주3일과 주5일 60분이면 2권") — 처음부터 골라 둔다.
-   * null = 내 반 교재를 정하지 못했다(학생이 직접 고른다). [] = 정했지만 지난 주문에서 다 받았다
-   */
-  recommended: number[] | null;
-  /** 골라 둔 까닭 한 줄 (몇 권 · 지난 주문에서 뺀 것 · 아직 등록 안 된 교재) */
-  note: string | null;
-};
-
-/** 처음 골라 둘 교재 — 내 반 교재. 정하지 못했으면 예전처럼 교재가 하나뿐일 때 그것 */
-const initialPick = (t: OrderTerm | undefined) =>
-  new Set(!t ? [] : t.recommended ?? (t.items.length === 1 ? [t.items[0].id] : []));
+/** 학생이 직접 고르는 달(내 반 교재를 정하지 못한 달)에 처음 골라 둘 교재 — 예전처럼 교재가 하나뿐일 때 그것 */
+const initialPick = (t: OrderTerm | undefined) => new Set(t && !t.locked && t.items.length === 1 ? [t.items[0].id] : []);
 
 /**
  * 불라방 교재 주문 (2026-09-21). 교재·계좌·배송비는 강사가 등록한 것을 쓴다.
  * 합계와 계좌별 입금액은 **미리보기** 다 — 주문에 박히는 금액은 DB 함수가 같은 규칙으로 다시 계산한다.
+ *
+ * **교재는 고르지 않는다** (2026-10-27 Alan — "이제는 자동시스템이니 선택할 수 없게, 본인 레벨에 맞는 교재만 딱 보이도록"):
+ * 내 반 교재(`term.items` — 듣는 시간의 과목 × 과정, 지난 주문에서 받은 것은 빼고)를 체크 칸 없이 보여 주고 그대로 보낸다 (숨은 칸).
+ * 서버 액션이 같은 계산으로 다시 보고 다르면 받지 않는다. 주문할 교재가 없으면(다 받았다 · 강사가 아직 등록하지 않았다) 까닭만 적고 나머지 칸을 그리지 않는다.
+ * 내 반 교재를 정하지 못한 달(`locked` false — 방학달 통짜 반 등)만 예전처럼 체크해서 고른다.
  *
  * **받는 방법** (2026-10-07 Alan — "불라방 현장수령도 있어. 현장수령시 택배비가 없어 … 무슨날짜에 올껀지, 몇시쯤 올껀지 남겨주면 좋겠어"):
  * 택배면 배송지를, 현장수령이면 배송비 없이 받으러 올 날짜 · 시각을 받는다. 다른 쪽 칸은 숨기기만 하고 지우지 않는다 —
@@ -83,7 +73,10 @@ export function TextbookForm({
   const [pickupTime, setPickupTime] = useState(v.pickup_time ?? "");
   const pickup = delivery === "pickup";
 
-  const chosen = (term?.items ?? []).filter((i) => picked.has(i.id));
+  // 내 반 교재로 정해진 달은 그 교재 전부, 학생이 고르는 달만 체크한 것
+  const chosen = term?.locked ? term.items : (term?.items ?? []).filter((i) => picked.has(i.id));
+  // 주문할 교재가 없는 달 — 까닭만 적고 받는 방법 · 입금 안내 · 주문 버튼은 그리지 않는다
+  const nothingToOrder = !!term?.locked && term.items.length === 0;
   const quote = textbookQuote(chosen, accounts, settings, { pickup });
   const shippingFee = Math.max(0, settings?.shipping_fee ?? 0);
   // 고른 날 · 그 날 고를 수 있는 시각 — 목록에 없는 날(예전에 적어 둔 값)이면 고르지 않은 것으로 본다
@@ -165,274 +158,300 @@ export function TextbookForm({
         </div>
       )}
 
-      <fieldset>
-        <legend className="label">교재 고르기</legend>
-        {/* 내 반 교재를 골라 둔 까닭 (2026-10-02) — 몇 권인지 · 지난 주문에서 뺀 것. 바꾸고 싶으면 체크를 고친다 */}
-        {term.note && <p className="mb-2 rounded-xl bg-brand-50 px-3 py-2 text-sm font-bold text-ink">{term.note}</p>}
-        {term.items.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-line px-4 py-5 text-center text-sm text-slate">
-            강사님이 이 레벨 교재를 아직 등록하지 않았어요. 등록되면 여기에서 고를 수 있어요.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {term.items.map((i) => {
-              const on = picked.has(i.id);
-              const mine = term.recommended?.includes(i.id) ?? false;
-              return (
-                <li key={i.id}>
-                  <label className={cn("flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition", on ? "border-brand-400 bg-brand-50/60" : "border-line hover:border-brand-200")}>
-                    <input
-                      type="checkbox"
-                      name="item_id"
-                      value={i.id}
-                      checked={on}
-                      onChange={(e) => {
-                        const next = new Set(picked);
-                        if (e.target.checked) next.add(i.id);
-                        else next.delete(i.id);
-                        setPicked(next);
-                      }}
-                      className="mt-1 h-4 w-4 accent-brand-500"
-                    />
-                    <span className="min-w-0 flex-1">
-                      {/* 가격은 늘 오른쪽 — 좁은 화면에서는 '내 반 교재' 표가 이름 아래로 접힌다 */}
-                      <span className="flex items-baseline justify-between gap-x-3">
-                        <span className="min-w-0 font-bold text-ink">
-                          {i.name}
-                          {mine && <span className="ml-1.5 inline-block rounded-full bg-brand-500 px-2 py-0.5 align-middle text-[10px] font-black text-white">내 반 교재</span>}
-                        </span>
-                        <span className="shrink-0 font-black tabular-nums text-ink">{formatWon(i.price)}</span>
-                      </span>
-                      {i.note && <span className="mt-0.5 block text-xs text-slate">{i.note}</span>}
-                    </span>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </fieldset>
-
-      {/* 받는 방법 (2026-10-07 Alan) — 택배 · 현장수령. 현장수령은 배송비가 없다 */}
-      <fieldset>
-        <legend className="label">받는 방법</legend>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {(
-            [
-              { value: "parcel", title: "택배로 받기", place: null, sub: shippingFee > 0 ? `집으로 보내 드려요 · 배송비 ${formatWon(shippingFee)}` : "집으로 보내 드려요" },
-              // 받는 곳까지 이름에 적는다 (2026-10-26 Alan — "학원 데스크 수령이 아니라 학원에서 받기 (ybm 어학원 3층 303호)")
-              { value: "pickup", title: "학원에서 받기", place: PICKUP_PLACE, sub: shippingFee > 0 ? "배송비 없음 · 받으러 올 날짜 · 시각만 남겨요" : "받으러 올 날짜 · 시각만 남겨요" },
-            ] as const
-          ).map((o) => {
-            const on = delivery === o.value;
-            return (
-              <label
-                key={o.value}
-                className={cn("flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition", on ? "border-brand-400 bg-brand-50/60" : "border-line hover:border-brand-200")}
-              >
-                <input
-                  type="radio"
-                  name="delivery"
-                  value={o.value}
-                  checked={on}
-                  onChange={() => setDelivery(o.value)}
-                  className="mt-1 h-4 w-4 accent-brand-500"
-                />
-                <span className="min-w-0">
-                  <span className="block font-bold text-ink">
-                    {o.title}
-                    {/* 좁은 화면에서 받는 곳이 가운데서 갈리지 않게 괄호째 한 덩어리로 내린다 */}
-                    {o.place && <> <span className="whitespace-nowrap">({o.place})</span></>}
-                  </span>
-                  <span className="mt-0.5 block text-xs text-slate">{o.sub}</span>
-                </span>
-              </label>
-            );
-          })}
-        </div>
-      </fieldset>
-
-      <div className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor="recipient_name" className="label">{pickup ? "받으러 올 분" : "받는 분"}</label>
-            <input
-              id="recipient_name"
-              name="recipient_name"
-              required
-              maxLength={30}
-              className="input"
-              value={recipient}
-              onChange={(e) => {
-                // 입금자명을 따로 고치지 않았으면 받는 분 이름을 따라간다
-                if (depositor === recipient) setDepositor(e.target.value);
-                setRecipient(e.target.value);
-              }}
-            />
-          </div>
-          <div>
-            <label htmlFor="phone" className="label">휴대폰 번호</label>
-            <input id="phone" name="phone" type="tel" inputMode="numeric" required className="input" placeholder="01012345678" defaultValue={v.phone} />
-          </div>
-        </div>
-
-        {/* 택배 — 배송지는 주소 + 상세 주소 둘 다 (2026-10-07 Alan — "우편번호 필요없고 본인 주소만 기입하게 해줘. 그리고 상세주소는 선택이 아니라
-            필수로 들어가야해. 그래야지 배송을 할 수 있지"). 우편번호 칸은 없앴다. 현장수령이면 숨기기만 한다 (적어 둔 주소가 남게 — 숨긴 칸은 required 를 끈다) */}
-        <div className={cn("space-y-4", pickup && "hidden")}>
-          <div>
-            <label htmlFor="address" className="label">주소</label>
-            <input id="address" name="address" required={!pickup} maxLength={200} className="input" placeholder="도로명 주소" defaultValue={v.address} />
-          </div>
-          <div>
-            <label htmlFor="address_detail" className="label">상세 주소</label>
-            <input
-              id="address_detail"
-              name="address_detail"
-              required={!pickup}
-              maxLength={100}
-              className="input"
-              placeholder="동·호수, 공동현관 비밀번호 등"
-              defaultValue={v.address_detail}
-            />
-          </div>
-        </div>
-
-        {/* 현장수령 — 받으러 올 날짜 · 몇 시쯤 (2026-10-07 Alan "무슨날짜에 올껀지, 몇시쯤 올껀지").
-            2026-10-26 부터 날은 수업이 있는 날만, 시각은 그 날 트랙대로 (월수금 수업일 낮 · 저녁, 화목금 수업일 낮) */}
-        <div className={cn("space-y-2", !pickup && "hidden")}>
-          {pickupDays === null || pickupDays.length === 0 ? (
-            // 날을 못 읽었거나 앞으로 60일 안에 수업일이 없다 — 고를 칸 대신 까닭 (주문 버튼은 위 missing 이 잠근다)
-            <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">
-              {pickupDays === null
-                ? "학원에서 받을 수 있는 날을 불러오지 못했어요. 잠시 뒤 다시 열거나 택배로 받아 주세요."
-                : `앞으로 ${PICKUP_DAYS_AHEAD}일 안에 학원에서 받을 수 있는 수업일이 아직 없어요. 택배로 받아 주세요.`}
-            </p>
-          ) : (
+      {term.locked ? (
+        // 내 반 교재 — 체크 칸이 없다 (2026-10-27 Alan "선택할 수 없게"). 보내는 값은 숨은 칸이고 서버가 같은 계산으로 다시 본다
+        <section aria-labelledby="order-books-title">
+          <h3 id="order-books-title" className="label">주문할 교재</h3>
+          {term.note && <p className="mb-2 rounded-xl bg-brand-50 px-3 py-2 text-sm font-bold text-ink">{term.note}</p>}
+          {term.items.length > 0 && (
             <>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="pickup_date" className="label">받으러 올 날짜</label>
-                  <select
-                    id="pickup_date"
-                    name="pickup_date"
-                    required={pickup}
-                    className="input"
-                    value={pickupDay ? pickupDate : ""}
-                    onChange={(e) => {
-                      const next = pickupDays.find((d) => d.date === e.target.value);
-                      setPickupDate(e.target.value);
-                      // 바꾼 날에 없는 시각이면 비운다 — 월수금 저녁을 고른 채 화목금 날로 바꾸는 경우
-                      if (!next || !pickupTimesFor(next.track).includes(pickupTime)) setPickupTime("");
-                    }}
-                  >
-                    <option value="">날짜 고르기</option>
-                    {pickupDays.map((d) => (
-                      <option key={d.date} value={d.date}>
-                        {pickupDateLabel(d.date)}
-                        {d.track === "mwf" ? " · 저녁 가능" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="pickup_time" className="label">몇 시쯤</label>
-                  <select
-                    id="pickup_time"
-                    name="pickup_time"
-                    required={pickup}
-                    disabled={!pickupDay}
-                    className="input disabled:bg-surface disabled:text-mist"
-                    value={pickupTimeOk ? pickupTime : ""}
-                    onChange={(e) => setPickupTime(e.target.value)}
-                  >
-                    <option value="">{pickupDay ? "시각 고르기" : "날짜부터 골라 주세요"}</option>
-                    {pickupTimes.map((t) => (
-                      <option key={t} value={t}>
-                        {pickupTimeLabel(t)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              {/* 고른 날 · 시각을 한 줄로 — 날을 고르면 그 날 받을 수 있는 때를 먼저 알려 준다 */}
-              <p className={cn("rounded-xl px-3 py-2 text-sm", pickupDay && pickupTimeOk ? "bg-brand-50 font-bold text-ink" : "bg-surface text-slate")}>
-                {pickupDay && pickupTimeOk ? (
-                  // 받는 곳은 한 덩어리로 — 좁은 화면에서 "YBM" 과 "어학원" 이 갈리지 않게
-                  <>
-                    {pickupLabel(pickupDate, pickupTime)} <span className="whitespace-nowrap">{PICKUP_PLACE}에서</span> 받아요
-                  </>
-                ) : pickupDay ? (
-                  `${pickupDateLabel(pickupDate)}에는 ${pickupRangeLabel(pickupDay.track)} 사이에 받을 수 있어요. 몇 시쯤 올지 골라 주세요.`
-                ) : (
-                  `수업이 있는 날만 고를 수 있어요. '저녁 가능' 이 붙은 날은 저녁에도 받아요. 강사님이 입금을 확인하면 그 날 ${PICKUP_PLACE}에서 받아 가요.`
-                )}
-              </p>
+              <ul className="space-y-2">
+                {term.items.map((i) => (
+                  <li key={i.id} className="rounded-xl border border-line p-3">
+                    <input type="hidden" name="item_id" value={i.id} />
+                    {/* 가격은 늘 오른쪽 */}
+                    <span className="flex items-baseline justify-between gap-x-3">
+                      <span className="min-w-0 font-bold text-ink">{i.name}</span>
+                      <span className="shrink-0 font-black tabular-nums text-ink">{formatWon(i.price)}</span>
+                    </span>
+                    {i.note && <span className="mt-0.5 block text-xs text-slate">{i.note}</span>}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-slate">이미 가진 교재가 있으면 주문하기 전에 강사님께 말씀해 주세요.</p>
             </>
           )}
-        </div>
-        {/* 요청사항 칸은 없앴다 (2026-10-07 Alan "요청사항도 없애줘") — 예전 주문의 메모는 강사 · 조교 화면에 그대로 보인다 */}
-      </div>
-
-      <section aria-labelledby="pay-title" className="rounded-xl2 border border-brand-200 bg-brand-50/50 p-4 sm:p-5">
-        <h3 id="pay-title" className="font-black text-ink">입금 안내</h3>
-        <dl className="mt-3 space-y-1 text-sm">
-          <div className="flex justify-between"><dt className="text-slate">교재</dt><dd className="tabular-nums text-ink">{formatWon(quote.itemsTotal)}</dd></div>
-          {quote.shipping > 0 && <div className="flex justify-between"><dt className="text-slate">배송비</dt><dd className="tabular-nums text-ink">{formatWon(quote.shipping)}</dd></div>}
-          {/* 현장수령으로 아낀 배송비를 보여 준다 — 배송비가 원래 없으면 적지 않는다 */}
-          {pickup && shippingFee > 0 && chosen.length > 0 && (
-            <div className="flex justify-between"><dt className="text-slate">배송비</dt><dd className="text-ink">없음 ({DELIVERY_LABEL.pickup})</dd></div>
-          )}
-          <div className="flex justify-between border-t border-brand-100 pt-2 text-base"><dt className="font-black text-ink">합계</dt><dd className="font-black tabular-nums text-brand-700">{formatWon(quote.total)}</dd></div>
-        </dl>
-
-        {chosen.length === 0 ? (
-          <p className="mt-3 text-sm text-slate">교재를 고르면 입금할 계좌와 금액이 나와요.</p>
-        ) : quote.missingAccount ? (
-          <p className="mt-3 text-sm font-bold text-amber-800">입금 계좌가 아직 등록되지 않았어요. 강사님께 문의해 주세요.</p>
-        ) : (
-          quote.lines.length > 0 && (
-            <ul className="mt-3 space-y-2">
-              {quote.lines.map((l) => (
-                <li key={l.account?.id ?? "none"} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-3 py-2.5">
-                  <div className="min-w-0 text-sm">
-                    <p className="font-bold text-ink">
-                      {l.account?.bank_name} {l.account?.account_no}
-                      {l.account?.label ? <span className="ml-1.5 text-xs font-normal text-slate">{l.account.label}</span> : null}
-                    </p>
-                    <p className="text-xs text-slate">예금주 {l.account?.holder} · {formatWon(l.amount)}</p>
-                  </div>
-                  {l.account && <CopyButton text={l.account.account_no} />}
-                </li>
-              ))}
+        </section>
+      ) : (
+        <fieldset>
+          <legend className="label">교재 고르기</legend>
+          {/* 내 반 교재를 정하지 못한 달 (방학달 통짜 반 등) — 예전처럼 학생이 고른다 */}
+          {term.note && <p className="mb-2 rounded-xl bg-brand-50 px-3 py-2 text-sm font-bold text-ink">{term.note}</p>}
+          {term.items.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-line px-4 py-5 text-center text-sm text-slate">
+              강사님이 이 레벨 교재를 아직 등록하지 않았어요. 등록되면 여기에서 고를 수 있어요.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {term.items.map((i) => {
+                const on = picked.has(i.id);
+                return (
+                  <li key={i.id}>
+                    <label className={cn("flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition", on ? "border-brand-400 bg-brand-50/60" : "border-line hover:border-brand-200")}>
+                      <input
+                        type="checkbox"
+                        name="item_id"
+                        value={i.id}
+                        checked={on}
+                        onChange={(e) => {
+                          const next = new Set(picked);
+                          if (e.target.checked) next.add(i.id);
+                          else next.delete(i.id);
+                          setPicked(next);
+                        }}
+                        className="mt-1 h-4 w-4 accent-brand-500"
+                      />
+                      <span className="min-w-0 flex-1">
+                        {/* 가격은 늘 오른쪽 */}
+                        <span className="flex items-baseline justify-between gap-x-3">
+                          <span className="min-w-0 font-bold text-ink">{i.name}</span>
+                          <span className="shrink-0 font-black tabular-nums text-ink">{formatWon(i.price)}</span>
+                        </span>
+                        {i.note && <span className="mt-0.5 block text-xs text-slate">{i.note}</span>}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
             </ul>
-          )
-        )}
-        {quote.lines.length > 1 && <p className="mt-2 text-xs text-slate">계좌가 둘이라 계좌마다 적힌 금액을 따로 입금해 주세요.</p>}
-        {settings?.notice && <p className="mt-3 text-xs text-slate">{settings.notice}</p>}
+          )}
+        </fieldset>
+      )}
 
-        <div className="mt-4">
-          <label htmlFor="depositor_name" className="label">입금자명</label>
-          <input
-            id="depositor_name"
-            name="depositor_name"
-            required
-            maxLength={30}
-            className="input"
-            value={depositor}
-            onChange={(e) => setDepositor(e.target.value)}
-            placeholder="통장에 찍히는 이름"
-          />
-          <p className="mt-1 text-xs text-slate">부모님 이름으로 입금하면 그 이름을 적어 주세요. 강사님이 통장과 대조해요.</p>
-        </div>
-      </section>
+      {!nothingToOrder && (
+        <>
+          {/* 받는 방법 (2026-10-07 Alan) — 택배 · 현장수령. 현장수령은 배송비가 없다 */}
+          <fieldset>
+            <legend className="label">받는 방법</legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {(
+                [
+                  { value: "parcel", title: "택배로 받기", place: null, sub: shippingFee > 0 ? `집으로 보내 드려요 · 배송비 ${formatWon(shippingFee)}` : "집으로 보내 드려요" },
+                  // 받는 곳까지 이름에 적는다 (2026-10-26 Alan — "학원 데스크 수령이 아니라 학원에서 받기 (ybm 어학원 3층 303호)")
+                  { value: "pickup", title: "학원에서 받기", place: PICKUP_PLACE, sub: shippingFee > 0 ? "배송비 없음 · 받으러 올 날짜 · 시각만 남겨요" : "받으러 올 날짜 · 시각만 남겨요" },
+                ] as const
+              ).map((o) => {
+                const on = delivery === o.value;
+                return (
+                  <label
+                    key={o.value}
+                    className={cn("flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition", on ? "border-brand-400 bg-brand-50/60" : "border-line hover:border-brand-200")}
+                  >
+                    <input
+                      type="radio"
+                      name="delivery"
+                      value={o.value}
+                      checked={on}
+                      onChange={() => setDelivery(o.value)}
+                      className="mt-1 h-4 w-4 accent-brand-500"
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-bold text-ink">
+                        {o.title}
+                        {/* 좁은 화면에서 받는 곳이 가운데서 갈리지 않게 괄호째 한 덩어리로 내린다 */}
+                        {o.place && <> <span className="whitespace-nowrap">({o.place})</span></>}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-slate">{o.sub}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <SubmitButton pendingText="주문하는 중…" disabled={!!missing}>
-          {quote.total > 0 ? `${formatWon(quote.total)} 입금하고 주문하기` : "주문하기"}
-        </SubmitButton>
-        {/* 버튼이 왜 잠겼는지 적는다 — 잠긴 버튼만 있으면 무엇을 해야 할지 모른다 */}
-        {missing && <p className="text-sm font-bold text-slate">{missing}</p>}
-      </div>
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor="recipient_name" className="label">{pickup ? "받으러 올 분" : "받는 분"}</label>
+                <input
+                  id="recipient_name"
+                  name="recipient_name"
+                  required
+                  maxLength={30}
+                  className="input"
+                  value={recipient}
+                  onChange={(e) => {
+                    // 입금자명을 따로 고치지 않았으면 받는 분 이름을 따라간다
+                    if (depositor === recipient) setDepositor(e.target.value);
+                    setRecipient(e.target.value);
+                  }}
+                />
+              </div>
+              <div>
+                <label htmlFor="phone" className="label">휴대폰 번호</label>
+                <input id="phone" name="phone" type="tel" inputMode="numeric" required className="input" placeholder="01012345678" defaultValue={v.phone} />
+              </div>
+            </div>
+
+            {/* 택배 — 배송지는 주소 + 상세 주소 둘 다 (2026-10-07 Alan — "우편번호 필요없고 본인 주소만 기입하게 해줘. 그리고 상세주소는 선택이 아니라
+                필수로 들어가야해. 그래야지 배송을 할 수 있지"). 우편번호 칸은 없앴다. 현장수령이면 숨기기만 한다 (적어 둔 주소가 남게 — 숨긴 칸은 required 를 끈다) */}
+            <div className={cn("space-y-4", pickup && "hidden")}>
+              <div>
+                <label htmlFor="address" className="label">주소</label>
+                <input id="address" name="address" required={!pickup} maxLength={200} className="input" placeholder="도로명 주소" defaultValue={v.address} />
+              </div>
+              <div>
+                <label htmlFor="address_detail" className="label">상세 주소</label>
+                <input
+                  id="address_detail"
+                  name="address_detail"
+                  required={!pickup}
+                  maxLength={100}
+                  className="input"
+                  placeholder="동·호수, 공동현관 비밀번호 등"
+                  defaultValue={v.address_detail}
+                />
+              </div>
+            </div>
+
+            {/* 현장수령 — 받으러 올 날짜 · 몇 시쯤 (2026-10-07 Alan "무슨날짜에 올껀지, 몇시쯤 올껀지").
+                2026-10-26 부터 날은 수업이 있는 날만, 시각은 그 날 트랙대로 (월수금 수업일 낮 · 저녁, 화목금 수업일 낮) */}
+            <div className={cn("space-y-2", !pickup && "hidden")}>
+              {pickupDays === null || pickupDays.length === 0 ? (
+                // 날을 못 읽었거나 앞으로 60일 안에 수업일이 없다 — 고를 칸 대신 까닭 (주문 버튼은 위 missing 이 잠근다)
+                <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">
+                  {pickupDays === null
+                    ? "학원에서 받을 수 있는 날을 불러오지 못했어요. 잠시 뒤 다시 열거나 택배로 받아 주세요."
+                    : `앞으로 ${PICKUP_DAYS_AHEAD}일 안에 학원에서 받을 수 있는 수업일이 아직 없어요. 택배로 받아 주세요.`}
+                </p>
+              ) : (
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="pickup_date" className="label">받으러 올 날짜</label>
+                      <select
+                        id="pickup_date"
+                        name="pickup_date"
+                        required={pickup}
+                        className="input"
+                        value={pickupDay ? pickupDate : ""}
+                        onChange={(e) => {
+                          const next = pickupDays.find((d) => d.date === e.target.value);
+                          setPickupDate(e.target.value);
+                          // 바꾼 날에 없는 시각이면 비운다 — 월수금 저녁을 고른 채 화목금 날로 바꾸는 경우
+                          if (!next || !pickupTimesFor(next.track).includes(pickupTime)) setPickupTime("");
+                        }}
+                      >
+                        <option value="">날짜 고르기</option>
+                        {pickupDays.map((d) => (
+                          <option key={d.date} value={d.date}>
+                            {pickupDateLabel(d.date)}
+                            {d.track === "mwf" ? " · 저녁 가능" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="pickup_time" className="label">몇 시쯤</label>
+                      <select
+                        id="pickup_time"
+                        name="pickup_time"
+                        required={pickup}
+                        disabled={!pickupDay}
+                        className="input disabled:bg-surface disabled:text-mist"
+                        value={pickupTimeOk ? pickupTime : ""}
+                        onChange={(e) => setPickupTime(e.target.value)}
+                      >
+                        <option value="">{pickupDay ? "시각 고르기" : "날짜부터 골라 주세요"}</option>
+                        {pickupTimes.map((t) => (
+                          <option key={t} value={t}>
+                            {pickupTimeLabel(t)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  {/* 고른 날 · 시각을 한 줄로 — 날을 고르면 그 날 받을 수 있는 때를 먼저 알려 준다 */}
+                  <p className={cn("rounded-xl px-3 py-2 text-sm", pickupDay && pickupTimeOk ? "bg-brand-50 font-bold text-ink" : "bg-surface text-slate")}>
+                    {pickupDay && pickupTimeOk ? (
+                      // 받는 곳은 한 덩어리로 — 좁은 화면에서 "YBM" 과 "어학원" 이 갈리지 않게
+                      <>
+                        {pickupLabel(pickupDate, pickupTime)} <span className="whitespace-nowrap">{PICKUP_PLACE}에서</span> 받아요
+                      </>
+                    ) : pickupDay ? (
+                      `${pickupDateLabel(pickupDate)}에는 ${pickupRangeLabel(pickupDay.track)} 사이에 받을 수 있어요. 몇 시쯤 올지 골라 주세요.`
+                    ) : (
+                      `수업이 있는 날만 고를 수 있어요. '저녁 가능' 이 붙은 날은 저녁에도 받아요. 강사님이 입금을 확인하면 그 날 ${PICKUP_PLACE}에서 받아 가요.`
+                    )}
+                  </p>
+                </>
+              )}
+            </div>
+            {/* 요청사항 칸은 없앴다 (2026-10-07 Alan "요청사항도 없애줘") — 예전 주문의 메모는 강사 · 조교 화면에 그대로 보인다 */}
+          </div>
+
+          <section aria-labelledby="pay-title" className="rounded-xl2 border border-brand-200 bg-brand-50/50 p-4 sm:p-5">
+            <h3 id="pay-title" className="font-black text-ink">입금 안내</h3>
+            <dl className="mt-3 space-y-1 text-sm">
+              <div className="flex justify-between"><dt className="text-slate">교재</dt><dd className="tabular-nums text-ink">{formatWon(quote.itemsTotal)}</dd></div>
+              {quote.shipping > 0 && <div className="flex justify-between"><dt className="text-slate">배송비</dt><dd className="tabular-nums text-ink">{formatWon(quote.shipping)}</dd></div>}
+              {/* 현장수령으로 아낀 배송비를 보여 준다 — 배송비가 원래 없으면 적지 않는다 */}
+              {pickup && shippingFee > 0 && chosen.length > 0 && (
+                <div className="flex justify-between"><dt className="text-slate">배송비</dt><dd className="text-ink">없음 ({DELIVERY_LABEL.pickup})</dd></div>
+              )}
+              <div className="flex justify-between border-t border-brand-100 pt-2 text-base"><dt className="font-black text-ink">합계</dt><dd className="font-black tabular-nums text-brand-700">{formatWon(quote.total)}</dd></div>
+            </dl>
+
+            {chosen.length === 0 ? (
+              <p className="mt-3 text-sm text-slate">교재를 고르면 입금할 계좌와 금액이 나와요.</p>
+            ) : quote.missingAccount ? (
+              <p className="mt-3 text-sm font-bold text-amber-800">입금 계좌가 아직 등록되지 않았어요. 강사님께 문의해 주세요.</p>
+            ) : (
+              quote.lines.length > 0 && (
+                <ul className="mt-3 space-y-2">
+                  {quote.lines.map((l) => (
+                    <li key={l.account?.id ?? "none"} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-3 py-2.5">
+                      <div className="min-w-0 text-sm">
+                        <p className="font-bold text-ink">
+                          {l.account?.bank_name} {l.account?.account_no}
+                          {l.account?.label ? <span className="ml-1.5 text-xs font-normal text-slate">{l.account.label}</span> : null}
+                        </p>
+                        <p className="text-xs text-slate">예금주 {l.account?.holder} · {formatWon(l.amount)}</p>
+                      </div>
+                      {l.account && <CopyButton text={l.account.account_no} />}
+                    </li>
+                  ))}
+                </ul>
+              )
+            )}
+            {quote.lines.length > 1 && <p className="mt-2 text-xs text-slate">계좌가 둘이라 계좌마다 적힌 금액을 따로 입금해 주세요.</p>}
+            {settings?.notice && <p className="mt-3 text-xs text-slate">{settings.notice}</p>}
+
+            <div className="mt-4">
+              <label htmlFor="depositor_name" className="label">입금자명</label>
+              <input
+                id="depositor_name"
+                name="depositor_name"
+                required
+                maxLength={30}
+                className="input"
+                value={depositor}
+                onChange={(e) => setDepositor(e.target.value)}
+                placeholder="통장에 찍히는 이름"
+              />
+              <p className="mt-1 text-xs text-slate">부모님 이름으로 입금하면 그 이름을 적어 주세요. 강사님이 통장과 대조해요.</p>
+            </div>
+          </section>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <SubmitButton pendingText="주문하는 중…" disabled={!!missing}>
+              {quote.total > 0 ? `${formatWon(quote.total)} 입금하고 주문하기` : "주문하기"}
+            </SubmitButton>
+            {/* 버튼이 왜 잠겼는지 적는다 — 잠긴 버튼만 있으면 무엇을 해야 할지 모른다 */}
+            {missing && <p className="text-sm font-bold text-slate">{missing}</p>}
+          </div>
+        </>
+      )}
     </form>
   );
 }

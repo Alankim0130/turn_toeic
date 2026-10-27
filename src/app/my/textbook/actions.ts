@@ -5,8 +5,10 @@ import { after } from "next/server";
 import { notifyStaff } from "@/lib/push";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { pickupDaysFrom, pickupLabel, pickupTimeError, pickupTimesFor, textbookOrderError } from "@/lib/textbook";
+import { pickupDaysFrom, pickupLabel, pickupTimeError, pickupTimesFor, sameOrderItems, textbookOrderError } from "@/lib/textbook";
 import { formatWon } from "@/lib/utils";
+import { getMyOrders, getMyTextbookOrders } from "../_lib/queries";
+import { catalogOf, orderTermsOf, textbookCatalogQueries } from "./_lib/order-terms";
 
 /** `pickup` — 현장수령 주문이면 받으러 올 날짜 · 시각 한 줄 (접수 안내에 그대로 쓴다) */
 export type TextbookState = { ok?: boolean; pickup?: string; error?: string; values?: Record<string, string> };
@@ -28,6 +30,12 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
  * 2026-10-27 "3시와 9시는 없애줘" — 퇴근 시각이라 마지막 칸은 2시 30분 · 8시 30분):
  * 고른 날이 **수업이 있는 날**이어야 하고 시각은 **그 날 트랙의 목록 안**이어야 한다 — 화면과 같은 DB 함수(`textbook_pickup_days`)를 로그인한 사람의
  * 세션으로 다시 부른다. 그 함수를 못 부르면(배포 사이 · 잠깐의 오류) 현장수령 주문을 받지 않는다 — 택배 주문은 그대로 들어간다.
+ *
+ * **교재는 내 반 교재 그대로** (2026-10-27 Alan — "이제는 자동시스템이니 선택할 수 없게, 본인 레벨에 맞는 교재만 딱 보이도록"):
+ * 주문 화면과 같은 계산(`orderTermsOf` — 내 불라방 반이 듣는 시간의 과목 × 과정, 지난 주문에서 받은 것은 빼고)을 로그인한 사람의 세션으로 다시 하고,
+ * 화면이 보낸 교재가 그것과 똑같을 때만 주문한다. 다르면(그 사이 강사가 교재를 바꿨다 · 지난 주문을 취소했다) 화면을 새로 그려 바뀐 교재를 보여 준다.
+ * 내 반 교재를 정하지 못한 달(방학달 통짜 반 등 — `locked` false)만 학생이 고른 교재를 그대로 보낸다 (레벨은 DB 함수가 본다).
+ * **DB 함수는 건드리지 않았다** — 주소를 바로 부르면 내 레벨의 다른 교재도 주문되지만, 그 값은 학생이 내고 강사가 통장과 대조한다 (금액 · 자격은 함수가 지킨다).
  */
 export async function submitTextbookOrder(_prev: TextbookState, formData: FormData): Promise<TextbookState> {
   const v = (k: string) => String(formData.get(k) ?? "").trim();
@@ -58,17 +66,36 @@ export async function submitTextbookOrder(_prev: TextbookState, formData: FormDa
   if (!values.depositor_name) return { error: textbookOrderError("depositor"), values };
 
   const supabase = await createClient();
-  if (pickup) {
+  const [orders, myOrders, catalogRows, pickupDayRows] = await Promise.all([
+    getMyOrders(),
+    getMyTextbookOrders(),
+    textbookCatalogQueries(supabase),
     // 수업이 있는 날인지 · 그 날 고를 수 있는 시각인지 (반 편성 달력 — 화면과 같은 함수)
-    const { data: dayRows, error: dayError } = await supabase.rpc("textbook_pickup_days");
-    if (dayError) return { error: textbookOrderError("pickup_days_error"), values };
-    const day = pickupDaysFrom(dayRows ?? []).find((d) => d.date === values.pickup_date);
+    pickup ? supabase.rpc("textbook_pickup_days") : null,
+  ]);
+
+  // 주문할 교재 — 화면과 같은 계산으로 다시 정한다 (2026-10-27 — 고르는 칸이 없다)
+  const catalog = catalogOf(catalogRows);
+  if (!catalog) return { error: textbookOrderError(undefined), values };
+  const plan = (await orderTermsOf(supabase, orders, myOrders, catalog)).find((t) => t.id === termId);
+  if (!plan) return { error: textbookOrderError("not_eligible"), values };
+  if (plan.locked && plan.items.length === 0) return { error: textbookOrderError("nothing_to_order"), values };
+  if (plan.locked && !sameOrderItems(itemIds, plan.items)) {
+    // 화면을 새로 그려 바뀐 교재를 보여 준다 (서버 액션이 경로를 비우면 열린 화면이 새 목록을 받는다)
+    revalidatePath("/my/textbook");
+    return { error: textbookOrderError("items_changed"), values };
+  }
+
+  if (pickupDayRows) {
+    if (pickupDayRows.error) return { error: textbookOrderError("pickup_days_error"), values };
+    const day = pickupDaysFrom(pickupDayRows.data ?? []).find((d) => d.date === values.pickup_date);
     if (!day) return { error: textbookOrderError("pickup_no_class"), values };
     if (!pickupTimesFor(day.track).includes(values.pickup_time)) return { error: pickupTimeError(day), values };
   }
   const { data: orderId, error } = await supabase.rpc("create_textbook_order", {
     p_term_id: termId,
-    p_item_ids: itemIds,
+    // 내 반 교재로 정해진 달은 서버가 정한 그 교재 (화면이 보낸 것과 같다는 것을 위에서 봤다)
+    p_item_ids: plan.locked ? plan.items.map((i) => i.id) : itemIds,
     p_recipient: values.recipient_name,
     p_phone: values.phone,
     p_postal_code: "",

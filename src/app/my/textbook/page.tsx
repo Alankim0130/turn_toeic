@@ -2,32 +2,17 @@ import { loadGated } from "@/components/student/StudentGate";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Alert } from "@/components/ui/Alert";
 import { Reveal } from "@/components/ui/Reveal";
 import { Icon } from "@/components/ui/Icon";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import {
-  booksForSections,
-  isPickup,
-  itemsForLevels,
-  orderHint,
-  orderPreset,
-  ownedItemIds,
-  PICKUP_PLACE,
-  pickupDaysFrom,
-  pickupLabel,
-  textbookGuide,
-  textbookStatus,
-  type TextbookAccount,
-  type TextbookItem,
-  type TextbookSettings,
-} from "@/lib/textbook";
-import { bookSectionsOf, TEXTBOOK_ACCOUNT_COLS, TEXTBOOK_ITEM_COLS } from "@/lib/textbook-guide";
-import { formatDate, formatWon, TRACK_LABEL } from "@/lib/utils";
-import { collapseWeek5, studentTrackLabel, week5SectionIds } from "@/lib/week5";
-import { getMyOrders, getMyTextbookOrders, getMyTextbookTerms, termLabel, type MyTextbookTerm } from "../_lib/queries";
-import { TextbookForm, type OrderTerm } from "./TextbookForm";
+import { isPickup, orderHint, PICKUP_PLACE, pickupDaysFrom, pickupLabel, textbookStatus } from "@/lib/textbook";
+import { formatDate, formatWon } from "@/lib/utils";
+import { getMyOrders, getMyTextbookOrders, termLabel } from "../_lib/queries";
+import { TextbookForm } from "./TextbookForm";
 import { cancelTextbookOrder, receiveTextbookOrder } from "./actions";
+import { catalogOf, orderTermsOf, textbookCatalogQueries } from "./_lib/order-terms";
 import { OrderSteps } from "@/components/my/OrderSteps";
 
 export const metadata: Metadata = {
@@ -38,14 +23,6 @@ export const metadata: Metadata = {
 type PayTo = { account_id: number | null; bank_name: string | null; account_no: string | null; holder: string | null; label: string | null; amount: number };
 type OrderedItem = { id: number; name: string; price: number };
 
-/** "2026년 10월 · 650+ 왕기초반 주5일 10:00~12:10" — 주5일은 한 줄로 합친다 */
-function termOrderLabel(t: MyTextbookTerm) {
-  const week5 = week5SectionIds(t.sections);
-  const rows = collapseWeek5(t.sections, (s) => s, week5);
-  const classes = rows.map((s) => [s.course?.name ?? "강좌", studentTrackLabel(s, week5, TRACK_LABEL), s.time_block].filter(Boolean).join(" "));
-  return `${termLabel(t.term)} · ${classes.join(" · ")}`;
-}
-
 export default async function TextbookPage() {
   // 불라방 수강생(예비등록생 포함)이 아니면 기능 대신 잠금 안내를 보여준다 — 잠금 판정과 데이터를 함께 받는다 (loadGated)
   const supabase = await createClient();
@@ -54,45 +31,37 @@ export default async function TextbookPage() {
       requireUser("/my/textbook"),
       getMyOrders(),
       getMyTextbookOrders(),
-      supabase.from("textbook_items").select(TEXTBOOK_ITEM_COLS).eq("active", true),
-      supabase.from("textbook_accounts").select(TEXTBOOK_ACCOUNT_COLS).eq("active", true),
-      supabase.from("textbook_settings").select("shipping_fee, default_account_id, notice").maybeSingle(),
+      // 교재 · 입금 계좌 · 배송비 — 서버 액션도 같은 조회로 주문할 교재를 다시 정한다
+      textbookCatalogQueries(supabase),
       // 학원에서 받을 수 있는 날 — 오늘부터 60일 안의 수업일과 그 날 트랙 (2026-10-26 Alan, 반 편성 달력대로)
       supabase.rpc("textbook_pickup_days"),
     ]),
   );
   if (g.locked) return g.locked;
-  const [{ profile }, orders, myOrders, { data: items }, { data: accounts }, { data: settings }, pickupDayRows] = g.data;
+  const [{ profile }, orders, myOrders, catalogRows, pickupDayRows] = g.data;
 
   // 학생이 받았다고 누른(배송완료) 주문은 내역에서 뺀다 — 지난 주문에서 받은 교재(ownedItemIds)는 그대로 센다
   const visibleOrders = myOrders.filter((o) => !o.received_at);
   // 현장수령 날짜는 수업이 있는 날 중에서 고른다 — 못 읽으면(배포 사이 · 잠깐의 오류) null: 화면이 현장수령을 잠그고 서버 액션도 받지 않는다
   const pickupDays = pickupDayRows.error ? null : pickupDaysFrom(pickupDayRows.data ?? []);
-  const terms = await getMyTextbookTerms(orders);
-  const orderedTerms = new Set(myOrders.filter((o) => o.status !== "cancelled" && o.term_id).map((o) => o.term_id));
-  // 내 반 교재 (2026-10-02 Alan — "주5일은 4권 … 주3일과 주5일 60분이면 2권") — 함께 듣는 반은 DB 가 정한다 (term_section_includes)
-  const { includes, sections } = await bookSectionsOf(supabase, terms.flatMap((t) => t.sections));
-  const formTerms: OrderTerm[] = terms.map((t) => {
-    const levelItems = itemsForLevels((items ?? []) as TextbookItem[], t.levels);
-    const guide = textbookGuide({
-      books: booksForSections(t.sections.map((s) => s.id), includes, sections),
-      items: levelItems,
-      accounts: (accounts ?? []) as TextbookAccount[],
-      settings: (settings ?? null) as TextbookSettings | null,
-      ownedItemIds: ownedItemIds(myOrders, t.termId),
-    });
-    return { id: t.termId, label: termOrderLabel(t), items: levelItems, ordered: orderedTerms.has(t.termId), ...orderPreset(guide) };
-  });
+  // 주문할 교재 — 내 반 교재 그대로, 고르는 칸이 없다 (2026-10-27 Alan — "이제는 자동시스템이니 선택할 수 없게, 본인 레벨에 맞는 교재만 딱 보이도록").
+  // 교재 목록을 못 읽었으면 "등록하지 않았어요" 로 잘못 말하지 않고 다시 열라고 한다
+  const catalog = catalogOf(catalogRows);
+  const formTerms = catalog ? await orderTermsOf(supabase, orders, myOrders, catalog) : [];
 
   return (
     <div className="space-y-8">
       <PageHeader
         icon="textbook"
         title="불라방 교재주문"
-        description={`불라방 수강생은 교재를 택배로 받거나 ${PICKUP_PLACE}에 와서 직접 받을 수 있어요(현장수령 — 배송비 없음). 교재를 고르고, 안내된 계좌로 입금한 뒤 주문하세요.`}
+        description={`불라방 수강생은 교재를 택배로 받거나 ${PICKUP_PLACE}에 와서 직접 받을 수 있어요(현장수령 — 배송비 없음). 내 반에 맞춘 교재를 확인하고, 안내된 계좌로 입금한 뒤 주문하세요.`}
       />
 
-      {formTerms.length === 0 ? (
+      {!catalog ? (
+        <Alert kind="warning" title="교재 목록을 불러오지 못했어요">
+          잠시 뒤 이 화면을 다시 열어 주세요. 계속 안 되면 강사님께 문의해 주세요.
+        </Alert>
+      ) : formTerms.length === 0 ? (
         <EmptyState
           icon="textbook"
           title="불라방 수강생만 주문할 수 있어요"
@@ -104,8 +73,8 @@ export default async function TextbookPage() {
           <h2 className="mb-4 text-base font-black text-ink">교재 주문</h2>
           <TextbookForm
             terms={formTerms}
-            accounts={(accounts ?? []) as TextbookAccount[]}
-            settings={(settings ?? null) as TextbookSettings | null}
+            accounts={catalog.accounts}
+            settings={catalog.settings}
             defaults={{ recipient_name: profile?.name ?? "", phone: profile?.phone ?? "" }}
             pickupDays={pickupDays}
           />

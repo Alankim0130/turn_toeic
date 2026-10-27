@@ -23,7 +23,8 @@ export const metadata: Metadata = { title: "교재·입금 계좌 설정", robot
 function BookSelect({ defaultValue, label }: { defaultValue: string; label: string }) {
   return (
     <select name="book" defaultValue={defaultValue} className="input !py-2 text-sm sm:col-span-2" aria-label={label}>
-      <option value="">시간 안 정함 (학생이 고름)</option>
+      {/* 비워 두면 평소에는 학생 화면에 나오지 않는다 — 내 반 교재를 정하지 못한 달(방학달 등)에 학생이 고를 때만 (2026-10-27) */}
+      <option value="">시간 안 정함</option>
       <option value="lc-A">LC · A과정 교재</option>
       <option value="lc-B">LC · B과정 교재</option>
       <option value="rc-A">RC · A과정 교재</option>
@@ -135,13 +136,14 @@ export default async function TextbookSetupPage({ searchParams }: { searchParams
           <h2 id="items-title" className="flex items-center gap-2 text-lg font-black text-ink">
             <Icon name="textbook" size={26} />교재
           </h2>
+          {/* 학생은 교재를 고르지 않는다 (2026-10-27 Alan — "이제는 자동시스템이니 선택할 수 없게, 본인 레벨에 맞는 교재만 딱 보이도록") */}
           <p className="mt-1 text-sm text-slate">
-            학생은 자기 레벨 교재와 &ldquo;모든 레벨&rdquo; 교재만 봐요. 속성반은 두 레벨 교재가 다 보여요. 계좌를 안 고른 교재는 기본 계좌로 가요.
+            불라방 학생의 주문 화면에는 <b className="text-ink">내 반 교재만</b> 나오고 학생이 고르거나 뺄 수 없어요.{" "}
+            <b className="text-ink">어느 시간의 교재</b>(LC · RC × A · B 과정)를 정해 둔 교재 중 그 학생이 듣는 시간의 교재가 저절로 들어가요 — 주5일 120분은 4권, 주3일 · 주5일 60분은 2권.
+            지난 주문에서 받은 교재는 빼요. 수강증이 승인되면 그 금액으로 <b className="text-ink">교재비 안내</b>가 학생 알림함에 가요.
           </p>
           <p className="mt-1 text-sm text-slate">
-            <b className="text-ink">어느 시간의 교재</b>(LC · RC × A · B 과정)를 고르면 그 시간을 듣는 불라방 학생에게 미리 골라지고,
-            수강증이 승인되면 그 금액으로 <b className="text-ink">교재비 안내</b>가 학생 알림함에 가요 — 주5일 120분은 4권, 주3일 · 주5일 60분은 2권이 저절로 잡혀요.
-            지난 주문에서 받은 교재는 빼고 안내해요.
+            시간을 안 정한 교재와 &ldquo;모든 레벨&rdquo; 교재는 내 반 교재를 정하지 못한 달(방학달 등)에만 학생이 직접 고를 때 보여요. 계좌를 안 고른 교재는 기본 계좌로 가요.
           </p>
 
           {(items ?? []).length > 0 && (

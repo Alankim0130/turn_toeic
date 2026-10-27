@@ -23,7 +23,10 @@ export type TextbookItem = {
   note: string | null;
   active: boolean;
   sort_order: number;
-  /** 이 교재를 쓰는 과목 · 과정 (2026-10-02). 둘 다 있으면 그 시간을 듣는 학생에게 미리 골라진다. 비면 학생이 직접 고르는 교재 */
+  /**
+   * 이 교재를 쓰는 과목 · 과정 (2026-10-02). 둘 다 있으면 그 시간을 듣는 불라방 학생의 "내 반 교재" 다 — 주문 화면에 그대로 들어간다 (2026-10-27 부터 고르는 칸 없음).
+   * 비면 내 반 교재를 정하지 못한 달(방학달 등)에 학생이 직접 고를 때만 보인다
+   */
   subject: string | null;
   book_set: string | null;
 };
@@ -307,24 +310,50 @@ export function ownedItemIds(orders: readonly { status: string; term_id: number 
 }
 
 /**
- * 주문 화면에 처음 골라 둘 교재와 그 까닭 한 줄.
- * 내 반 교재를 다 정하지 못했으면(`unknown`) 아무것도 골라 두지 않는다(null) — 몇 권만 골라 두면 그게 전부인 줄 안다.
+ * 주문 화면 한 달의 교재 — **고르는 칸이 없다** (2026-10-27 Alan — "이제는 자동시스템이니 선택할 수 없게, 본인 레벨에 맞는 교재만 딱 보이도록").
+ *   - locked: 내 반 교재(`textbookGuide` 의 picked — 듣는 시간의 과목 × 과정, 지난 주문에서 받은 것은 빼고)를 **그대로** 주문한다.
+ *     학생은 더하지도 빼지도 못하고, 서버 액션이 같은 계산으로 다시 본다. 비어 있으면(다 받았다 · 강사가 아직 등록하지 않았다) 주문하지 않는다
+ *   - 내 반 교재를 정하지 못했으면(`unknown` — 방학달 통짜 반처럼 과목 칸이 빈 반) 예전처럼 **학생이 직접 고른다**(locked false, 내 레벨 + 모든 레벨).
+ *     짐작해서 채우지 않는다 — 방학달 교재 규칙은 그 달이 오면 Alan 에게 묻는다
+ * 2026-10-02 ~ 10-27 에는 내 반 교재를 미리 골라 두기만 하고 학생이 체크를 바꿀 수 있었다 (`orderPreset`).
  */
-export function orderPreset(g: TextbookGuide): { recommended: number[] | null; note: string | null } {
+export type OrderPlan = {
+  /** true = 내 반 교재를 그대로 주문한다 (고르는 칸 없음). false = 내 반 교재를 정하지 못해 학생이 직접 고른다 */
+  locked: boolean;
+  /** locked: 주문할 교재. 아니면 고를 수 있는 교재 (내 레벨 + 모든 레벨) */
+  items: TextbookItem[];
+  /** 교재 목록 위에 적을 한 줄 — 몇 권인지 · 지난 주문에서 뺀 것 · 아직 등록되지 않은 교재 */
+  note: string | null;
+};
+
+/** 주문 화면의 한 달 — 그 달 내 반 · 이미 주문했나 + 주문할 교재 */
+export type OrderTerm = { id: number; label: string; ordered: boolean } & OrderPlan;
+
+/** "2권(650 LC A과정 · 650 RC B과정)" — 조사는 '권' 에 붙여 쓴다 (교재 이름은 강사가 짓는다) */
+const bookCount = (list: readonly TextbookItem[]) => `${list.length}권(${list.map((i) => i.name).join(" · ")})`;
+
+export function orderPlan(g: TextbookGuide, levelItems: TextbookItem[]): OrderPlan {
   if (g.unknown || g.books.length === 0) {
-    return { recommended: null, note: g.unknown ? "내 반 교재를 정하지 못했어요 — 필요한 교재를 직접 골라 주세요." : null };
+    return { locked: false, items: levelItems, note: g.unknown ? "내 반 교재를 정하지 못했어요 — 필요한 교재를 직접 골라 주세요." : null };
   }
-  const missing = g.missing.length > 0 ? ` 아직 등록되지 않은 교재: ${g.missing.map(bookLabel).join(" · ")}` : "";
+  const missing = g.missing.length > 0 ? `아직 등록되지 않은 교재(${g.missing.map(bookLabel).join(" · ")})는 강사님께 문의해 주세요.` : "";
   if (g.picked.length === 0) {
-    return {
-      recommended: [],
-      note: g.owned.length > 0 ? `내 반 교재는 지난 주문에서 모두 받았어요. 더 필요한 교재가 있으면 골라 주세요.${missing}` : missing.trim() || null,
-    };
+    const note =
+      g.owned.length === 0
+        ? `강사님이 아직 내 반 교재(${g.missing.map(bookLabel).join(" · ")})를 등록하지 않았어요. 등록되면 여기에서 주문할 수 있어요.`
+        : g.missing.length === 0
+          ? `새로 주문할 교재가 없어요. 내 반 교재 ${bookCount(g.owned)}은 지난 주문에서 모두 받았어요. 다시 사야 하는 교재가 있으면 강사님께 문의해 주세요.`
+          : `새로 주문할 수 있는 교재가 없어요. 지난 주문에서 받은 ${bookCount(g.owned)}은 뺐어요. ${missing}`;
+    return { locked: true, items: [], note };
   }
-  return {
-    recommended: g.picked.map((i) => i.id),
-    note: `내 반 교재 ${g.picked.length}권을 골라 뒀어요.${g.owned.length > 0 ? ` 지난 주문에서 받은 ${g.owned.length}권은 뺐어요.` : ""}${missing}`,
-  };
+  const owned = g.owned.length > 0 ? `지난 주문에서 받은 ${bookCount(g.owned)}은 뺐어요.` : "";
+  return { locked: true, items: g.picked, note: [`내 반에 맞춰 정해진 교재 ${g.picked.length}권이에요.`, owned, missing].filter(Boolean).join(" ") };
+}
+
+/** 서버 액션 — 화면이 보낸 교재가 그 달 주문할 교재와 똑같은가 (순서 · 겹침은 보지 않는다) */
+export function sameOrderItems(sent: readonly number[], items: readonly TextbookItem[]): boolean {
+  const s = new Set(sent);
+  return s.size === items.length && items.every((i) => s.has(i.id));
 }
 
 /**
@@ -396,7 +425,10 @@ export function textbookNoticeMessage(n: TextbookNotice): { title: string; body:
     ),
     "",
     `‘불라방 교재주문’에서 받는 방법(택배 · 현장수령)을 고르고 입금자명을 적어 주문해 주세요. 현장수령은 받으러 올 날짜와 시각을 함께 남겨요. 입금하시면 선생님이 통장과 대조해 확인한 뒤 보내 드리거나 ${PICKUP_PLACE}에서 건네 드려요.`,
-    n.owned > 0 ? `지난 주문에서 받은 교재 ${n.owned}권은 뺐어요. 이미 가진 교재가 더 있으면 주문할 때 빼면 돼요.` : "이미 가진 교재가 있으면 주문할 때 빼면 돼요.",
+    // 주문 화면에서 교재를 뺄 수 없다 (2026-10-27 — 내 반 교재 그대로) — 이미 가진 교재는 주문하기 전에 선생님께
+    n.owned > 0
+      ? `지난 주문에서 받은 교재 ${n.owned}권은 뺐어요. 이미 가진 교재가 더 있으면 주문하기 전에 선생님께 말씀해 주세요.`
+      : "이미 가진 교재가 있으면 주문하기 전에 선생님께 말씀해 주세요.",
   ];
   return { title: `${n.month}월 불라방 교재비 안내`, body: lines.join("\n").slice(0, 1000) };
 }
@@ -407,6 +439,9 @@ export function textbookOrderError(message: string | undefined): string {
   // 배포 사이에 새 화면이 아직 바뀌지 않은 DB 함수를 부르면 "…(p_address, p_delivery, …) in the schema cache" 가 온다 — 칸 이름에 속지 않게 먼저 거른다
   if (m.includes("schema cache")) return "주문하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
   if (m.includes("duplicate")) return "이 달 교재는 이미 주문했어요. 바꾸려면 아래 내역에서 취소하고 다시 주문해 주세요.";
+  // 서버 액션이 붙이는 것 (2026-10-27 — 내 반 교재 그대로) — 화면을 연 뒤 교재가 바뀌었다 · 새로 주문할 교재가 없다
+  if (m.includes("items_changed")) return "내 반 교재가 바뀌었어요. 바뀐 교재를 확인하고 다시 주문해 주세요.";
+  if (m.includes("nothing_to_order")) return "새로 주문할 교재가 없어요.";
   if (m.includes("not_eligible")) return "이 달 불라방으로 등록된 반이 없어요. 불라방 수강생만 교재를 주문할 수 있어요.";
   if (m.includes("invalid_items")) return "고른 교재를 다시 확인해 주세요. 목록이 바뀌었을 수 있어요.";
   if (m.includes("no_account")) return "입금 계좌가 아직 등록되지 않았어요. 강사님께 문의해 주세요.";
