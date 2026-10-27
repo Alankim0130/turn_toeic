@@ -74,6 +74,54 @@ export async function scanLabel(
   return { kind: other ? "other" : "none" };
 }
 
+/*
+ * ─── 카메라로 바로 읽기 (2026-10-27 Alan — "사진을 찍어서 올리는게 아니라 그냥 카메라를 틀어서 qr이 인식이되면 카메라가 꺼지면서
+ * 바로 송장번호가 기입되는걸로") — 영상 한 장씩 읽는 일은 `label-camera-reader.ts`(브라우저), 카메라 화면은 `LabelCamera.tsx`.
+ *
+ * 화면에는 영상의 **가운데 정사각형**이 보이고(object-cover) 그 가운데 72% 가 네모다. 읽는 곳은 그 정사각형의 가운데 80% 뿐이다 —
+ * 책상에 접수증이 여러 장 놓여 있어도 화면 가장자리에 걸린 다른 학생 접수증의 QR 을 읽지 않게. 네모보다 조금 넓게 잡아 살짝 비껴 대도 읽힌다.
+ */
+export const LIVE_SCAN_CROP = 0.8;
+
+/** 영상(가로 w · 세로 h) 에서 읽을 곳 — 가운데 정사각형의 가운데 80%. 영상 크기를 아직 모르면 null */
+export function liveCropRect(w: number, h: number): { sx: number; sy: number; size: number } | null {
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1) return null;
+  const size = Math.max(1, Math.round(Math.min(w, h) * LIVE_SCAN_CROP));
+  return { sx: Math.round((w - size) / 2), sy: Math.round((h - size) / 2), size };
+}
+
+/**
+ * jsQR 로 읽을 크기 — 영상 한 장에 한 크기씩 돌아가며 읽는다 (늘리지는 않는다).
+ * 실물 접수증 다섯 장을 영상 크기(짧은 변 480 · 720 · 1080)로 줄이고 흐림을 더해 QR 이 화면의 15 ~ 70% 를 차지하게 재 보니(2026-10-27)
+ * 사진처럼 **640 이 가장 잘 읽히고**(종이 결이 덜 보인다) QR 이 작게 보일 때는 800 · 원래 크기가 읽었다. 손이 조금씩 움직여 장마다 영상이 달라서
+ * 크기를 돌려 가며 읽으면 한두 바퀴 안에 읽힌다
+ */
+export const LIVE_SCAN_SIZES = [640, 800, 480, 1080] as const;
+
+export function liveScanSize(crop: number, tick: number): number {
+  if (!Number.isFinite(crop) || crop < 1) return 0;
+  const sizes = [...new Set(LIVE_SCAN_SIZES.map((s) => Math.min(s, Math.round(crop))))];
+  return sizes[Math.abs(Math.trunc(tick)) % sizes.length];
+}
+
+/** 영상 한 장에서 읽은 결과 — many = 접수증 QR 이 둘 보인다(번호가 다르다). 읽지 않고 계속 비추게 한다 */
+export type LiveRead = { kind: "ok"; tracking: string } | { kind: "other" } | { kind: "many" } | { kind: "none" };
+
+/** 한 장에서 읽은 QR 글자들(BarcodeDetector 는 여럿 · jsQR 은 하나) → 결과. 번호가 하나로 정해질 때만 넣는다 */
+export function liveRead(texts: readonly string[]): LiveRead {
+  const found = [...new Set(texts.map(trackingFromLabelQr).filter((t): t is string => t !== null))];
+  if (found.length === 1) return { kind: "ok", tracking: found[0] };
+  if (found.length > 1) return { kind: "many" };
+  return texts.some((t) => t.trim()) ? { kind: "other" } : { kind: "none" };
+}
+
+/** 카메라 화면의 안내 한 줄 — 비춘 QR 이 접수증 것이 아니거나 둘일 때 (읽을 때까지 카메라는 켜 둔다) */
+export function liveHint(kind: "other" | "many"): string {
+  return kind === "many"
+    ? "접수증 QR 이 두 개 보여요. 한 장만 네모 안에 비춰 주세요."
+    : "GS 편의점 택배 접수증의 QR 이 아니에요. 접수증 오른쪽 위 QR 을 비춰 주세요.";
+}
+
 /** 운송장번호를 견줄 때 — 숫자만 (직접 적을 때 띄어 쓰거나 - 를 넣을 수 있다). 숫자가 8자리 미만이면 견주지 않는다 */
 export function trackingKey(value: string | null | undefined): string | null {
   const digits = (value ?? "").replace(/\D/g, "");

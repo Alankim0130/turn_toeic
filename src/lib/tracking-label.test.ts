@@ -8,6 +8,12 @@ import {
   LABEL_SCAN_SIZES,
   labelReadMessage,
   labelScanSizes,
+  LIVE_SCAN_CROP,
+  LIVE_SCAN_SIZES,
+  liveCropRect,
+  liveHint,
+  liveRead,
+  liveScanSize,
   scanLabel,
   trackingFromLabelQr,
   trackingKey,
@@ -174,6 +180,98 @@ describe("접수증 사진 흉내로 실제 판독 (sharp + jsQR)", () => {
     expect(await scanLabel(2000, decoderFor(other, 2000))).toEqual({ kind: "other" });
     const blank = await labelPhoto(null);
     expect(await scanLabel(2000, decoderFor(blank, 2000))).toEqual({ kind: "none" });
+  }, 30_000);
+});
+
+describe("카메라로 바로 읽기 — 읽는 곳 · 크기 · 결과 (2026-10-27 Alan \"카메라를 틀어서 qr이 인식이되면\")", () => {
+  it("화면에 보이는 가운데 정사각형의 가운데 80% 만 읽는다 — 세로로 든 휴대폰 · 가로 영상 · 영상 크기를 모를 때", () => {
+    expect(LIVE_SCAN_CROP).toBe(0.8);
+    expect(liveCropRect(1080, 1920)).toEqual({ sx: 108, sy: 528, size: 864 });
+    expect(liveCropRect(1920, 1080)).toEqual({ sx: 528, sy: 108, size: 864 });
+    expect(liveCropRect(640, 480)).toEqual({ sx: 128, sy: 48, size: 384 });
+    expect(liveCropRect(0, 0)).toBeNull();
+    expect(liveCropRect(Number.NaN, 720)).toBeNull();
+  });
+
+  it("영상 한 장에 한 크기씩 돌아가며 — 640 먼저, 늘리지는 않는다", () => {
+    expect(LIVE_SCAN_SIZES[0]).toBe(640);
+    expect([0, 1, 2, 3, 4].map((t) => liveScanSize(864, t))).toEqual([640, 800, 480, 864, 640]);
+    expect([0, 1, 2, 3].map((t) => liveScanSize(700, t))).toEqual([640, 700, 480, 640]);
+    expect([0, 1, 2].map((t) => liveScanSize(384, t))).toEqual([384, 384, 384]);
+    expect(liveScanSize(0, 0)).toBe(0);
+    expect(liveScanSize(864, -1)).toBe(800);
+  });
+
+  it("번호가 하나로 정해질 때만 넣는다 — 접수증 QR 둘(번호가 다름)은 many, 다른 QR 은 other", () => {
+    expect(liveRead([labelQr("123456789012")])).toEqual({ kind: "ok", tracking: "123456789012" });
+    expect(liveRead(["https://example.com", labelQr("123456789012"), labelQr("123456789012", "04")])).toEqual({ kind: "ok", tracking: "123456789012" });
+    expect(liveRead([labelQr("123456789012"), labelQr("555566667777")])).toEqual({ kind: "many" });
+    expect(liveRead(["https://winnertoeic.com/attend?t=abcdefghijklmnopqrst"])).toEqual({ kind: "other" });
+    expect(liveRead([])).toEqual({ kind: "none" });
+    expect(liveRead(["  "])).toEqual({ kind: "none" });
+    expect(liveHint("many")).toBe("접수증 QR 이 두 개 보여요. 한 장만 네모 안에 비춰 주세요.");
+    expect(liveHint("other")).toContain("GS 편의점 택배 접수증의 QR 이 아니에요");
+  });
+});
+
+/**
+ * 카메라 영상 한 장 흉내 — 세로로 든 휴대폰(1080 × 1920). 나무색 바탕 위 흰 종이 한가운데 QR 이 있고, QR 은 화면 정사각형(짧은 변)의 `frac` 만큼.
+ * `at` 이 있으면 QR 을 그 자리에(위 · 왼쪽 모서리 기준) — 화면 가장자리에 걸린 다른 접수증 흉내. 기울이고 흐리게 하고 압축한다
+ */
+async function cameraFrame(qrText: string, frac: number, at?: { left: number; top: number }): Promise<{ data: Buffer; width: number; height: number }> {
+  const W = 1080;
+  const H = 1920;
+  const qrSize = Math.round(W * frac);
+  const qr = await sharp(await QRCode.toBuffer(qrText, { errorCorrectionLevel: "M", margin: 1, width: qrSize })).rotate(4, { background: "#f4f3ef" }).png().toBuffer();
+  const qm = await sharp(qr).metadata();
+  const left = at ? at.left : Math.round((W - (qm.width ?? 0)) / 2);
+  const top = at ? at.top : Math.round((H - (qm.height ?? 0)) / 2);
+  const paper = { left: Math.max(0, left - 60), top: Math.max(0, top - 60), width: Math.min(W, (qm.width ?? 0) + 120), height: Math.min(H, (qm.height ?? 0) + 120) };
+  const frame = await sharp({ create: { width: W, height: H, channels: 3, background: "#c9b48d" } })
+    .composite([
+      { input: { create: { width: paper.width, height: paper.height, channels: 3, background: "#f4f3ef" } }, left: paper.left, top: paper.top },
+      { input: qr, left, top },
+    ])
+    .blur(1)
+    .jpeg({ quality: 70 })
+    .toBuffer();
+  const { data, info } = await sharp(frame).raw().toBuffer({ resolveWithObject: true });
+  return { data, width: info.width, height: info.height };
+}
+
+/** 앱과 같은 규칙으로 영상 한 장을 읽는다 — 브라우저의 캔버스 대신 sharp (가운데 80% 를 잘라 그 장의 크기로) */
+async function readCameraFrame(frame: { data: Buffer; width: number; height: number }, tick: number): Promise<string[]> {
+  const rect = liveCropRect(frame.width, frame.height)!;
+  const size = liveScanSize(rect.size, tick);
+  const { data, info } = await sharp(frame.data, { raw: { width: frame.width, height: frame.height, channels: 3 } })
+    .extract({ left: rect.sx, top: rect.sy, width: rect.size, height: rect.size })
+    .resize({ width: size, height: size })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const text = jsQR(new Uint8ClampedArray(data), info.width, info.height, { inversionAttempts: "dontInvert" })?.data;
+  return text ? [text] : [];
+}
+
+describe("카메라 영상 흉내로 실제 판독 (sharp + jsQR)", () => {
+  it("QR 이 화면의 20 · 40 · 60% 로 보여도 한 바퀴(네 장) 안에 운송장번호를 읽는다", async () => {
+    for (const frac of [0.2, 0.4, 0.6]) {
+      const frame = await cameraFrame(labelQr("246813579024", "22"), frac);
+      let got: ReturnType<typeof liveRead> = { kind: "none" };
+      for (let tick = 0; tick < LIVE_SCAN_SIZES.length && got.kind !== "ok"; tick++) got = liveRead(await readCameraFrame(frame, tick));
+      expect(got, `frac=${frac}`).toEqual({ kind: "ok", tracking: "246813579024" });
+    }
+  }, 30_000);
+
+  it("화면 가장자리에 걸린 다른 접수증 QR 은 읽지 않는다 — 네모 둘레만 본다", async () => {
+    // 세로 화면의 위쪽(보이는 정사각형 밖) · 정사각형 안이지만 읽는 곳(가운데 80%) 밖 왼쪽 위 모서리
+    for (const at of [{ left: 400, top: 60 }, { left: 0, top: 420 }]) {
+      const frame = await cameraFrame(labelQr("111122223333"), 0.15, at);
+      // 영상 전체를 읽으면 읽히는 QR 이다 — 그래도 앱은 읽지 않는다
+      const { data, info } = await sharp(frame.data, { raw: { width: frame.width, height: frame.height, channels: 3 } }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      expect(jsQR(new Uint8ClampedArray(data), info.width, info.height, { inversionAttempts: "dontInvert" })?.data, JSON.stringify(at)).toBe(labelQr("111122223333"));
+      for (let tick = 0; tick < LIVE_SCAN_SIZES.length; tick++) expect(liveRead(await readCameraFrame(frame, tick)), JSON.stringify(at)).toEqual({ kind: "none" });
+    }
   }, 30_000);
 });
 

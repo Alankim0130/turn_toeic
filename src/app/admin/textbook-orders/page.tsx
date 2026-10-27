@@ -328,7 +328,7 @@ export default async function TextbookOrdersPage({ searchParams }: { searchParam
                         <form action={markTextbookShipped} className="flex flex-col gap-1.5">
                           <input type="hidden" name="order_id" value={o.id} />
                           <input type="hidden" name="back" value={back} />
-                          {/* 사진촬영 — 접수증 QR 에서 운송장번호를 읽어 넣는다 (2026-10-27 Alan "하나씩 기입하려니 너무 많아서") */}
+                          {/* QR 찍기 — 카메라에 접수증 QR 을 비추면 운송장번호가 들어간다 (2026-10-27 Alan "하나씩 기입하려니 너무 많아서" → "카메라를 틀어서 qr이 인식이되면") */}
                           <TrackingNoField
                             key={o.tracking_no ?? ""}
                             orderId={o.id}
