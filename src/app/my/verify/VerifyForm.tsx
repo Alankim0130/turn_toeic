@@ -99,8 +99,17 @@ const fixNameHref = (m: NameMismatch) => `/my/profile?name=${encodeURIComponent(
 
 /**
  * @param canRename 등업 전이라 본인이 이름을 고칠 수 있다 (`can_rename_self`). 그러면 이름 불일치 안내가 "내 정보에서 고치기" 로 보낸다
+ * @param nextStep 등업되면 이어서 할 일 — 화면 맨 위에 그 카드가 선다 (`이름 · 전화번호 확인과 수강생 설문`, 2026-10-28). 승인 팝업의 확인이 맨 위로 옮겨 준다
  */
-export function VerifyForm({ sections, canRename = false }: { sections: EnrollSection[]; canRename?: boolean }) {
+export function VerifyForm({
+  sections,
+  canRename = false,
+  nextStep = null,
+}: {
+  sections: EnrollSection[];
+  canRename?: boolean;
+  nextStep?: string | null;
+}) {
   const [manual, setManual] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -412,8 +421,19 @@ export function VerifyForm({ sections, canRename = false }: { sections: EnrollSe
               <TextbookNoticeCard notice={textbook} cta="secondary" />
             </div>
           )}
+          {nextStep && <p className="mt-3 font-bold text-ink">확인을 누르면 맨 위에서 {nextStep}을 이어서 해요.</p>}
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <button type="button" onClick={() => setPopup(null)} className="btn-primary w-full sm:w-auto">맞아요, 확인</button>
+            <button
+              type="button"
+              onClick={() => {
+                setPopup(null);
+                // 다음 할 일(이름 · 전화번호 확인 · 수강생 설문)은 화면 맨 위에 선다 — 폼 아래에 있던 학생을 그리로 옮긴다
+                if (nextStep) window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              className="btn-primary w-full sm:w-auto"
+            >
+              맞아요, 확인
+            </button>
             <button type="button" onClick={toManual} className="btn-secondary w-full sm:w-auto">반이 달라요 — 수동신청</button>
           </div>
         </>

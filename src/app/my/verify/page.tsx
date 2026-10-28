@@ -8,11 +8,13 @@ import { VerifyForm } from "./VerifyForm";
 import { NoReceiptCard } from "./NoReceiptCard";
 import { ForgeryNotice } from "./ForgeryNotice";
 import { ReceiptGuide } from "./ReceiptGuide";
-import { getLastSignInAt, getSessionProfile } from "@/lib/auth";
+import Link from "next/link";
+import { getLastSignInAt, getSessionProfile, getStudentAccess, isCrew } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { IdentityConfirmForm } from "@/components/my/IdentityConfirmForm";
 import { MergePanel, type ChoiceAccount, type MeInfo, type MergeCandidate, type MergeRequest } from "../account/MergePanel";
-import { getMyMergeRequests } from "../_lib/queries";
+import { getMyMergeRequests, getMySurvey } from "../_lib/queries";
+import { SURVEY_PATH } from "@/lib/student-survey";
 import { RETENTION_LABEL } from "@/lib/receipt-retention";
 
 /**
@@ -27,17 +29,26 @@ export const metadata: Metadata = {
 };
 
 export default async function VerifyPage() {
-  const [verifications, sections, { user, profile }, canRename] = await Promise.all([
+  const [verifications, sections, { user, profile }, canRename, access, survey] = await Promise.all([
     getMyVerifications(),
     getOpenEnrollSections(),
     getSessionProfile(),
     // 등업 전이면 이름을 본인이 고칠 수 있다 — 이름 불일치 안내가 "내 정보에서 고치기" 로 보낸다 (2026-10-02 Alan)
     createClient().then((s) => s.rpc("can_rename_self")).then((r) => r.data === true),
+    // 수강생 설문 (2026-10-28 Alan "등업직후 바로 진행") — 레이아웃이 이미 물었다 (같은 요청이라 다시 묻지 않는다)
+    getStudentAccess(),
+    getMySurvey(),
   ]);
 
   // 수강증을 낸 뒤 이름·전화번호를 한 번 확인받는다 (2026-09-18 Alan — 동명이인 방지)
   const confirmed = Boolean(profile?.identity_confirmed_at);
   const needsIdentity = verifications.length > 0 && !confirmed;
+
+  // 등업을 마쳤는데 설문 전 — 이름 · 전화번호 확인이 끝나면 맨 위에 "다음 단계" 로 선다 (강사 · 관리자 · 조교 계정은 내지 않는다)
+  const surveyDue = !isCrew(profile?.role) && !survey.error && !survey.row;
+  const surveyPending = surveyDue && access.enrollee;
+  // 이번에 올린 수강증이 등업되면 이어서 할 일 — 승인 팝업이 말하고 확인을 누르면 맨 위로 옮겨 준다
+  const nextStep = [!confirmed && "이름 · 전화번호 확인", surveyDue && "수강생 설문"].filter(Boolean).join("과 ") || null;
 
   // 확인이 끝나면 **같은 이름·전화번호 계정을 바로 여기서** 보여 준다 (2026-09-19 Alan —
   // "수강증 업로드 → 개인정보 기입 → 이름·전화번호 일치시 계정합치기 안내 및 하나의 계정 선택").
@@ -91,6 +102,26 @@ export default async function VerifyPage() {
         </Reveal>
       )}
 
+      {/* 등업 다음 단계 — 수강생 설문 (2026-10-28 Alan "등업직후 바로 진행. 다 작성해야지 진행할 수 있도록"). 이름 · 전화번호 확인이 먼저다 */}
+      {surveyPending && !needsIdentity && (
+        <Reveal>
+          <section aria-labelledby="survey-next-title" className="card border-brand-300 bg-brand-50/60 p-5 sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-black text-brand-600">다음 단계</p>
+                <h2 id="survey-next-title" className="mt-0.5 text-base font-black text-ink">
+                  수강생 설문을 해 주세요
+                </h2>
+                <p className="mt-1 text-sm text-slate">등업을 마쳤어요. 처음 한 번만 하는 설문이고, 마치면 수강생 화면이 바로 열려요.</p>
+              </div>
+              <Link href={SURVEY_PATH} className="btn-primary w-full shrink-0 sm:w-auto">
+                설문하러 가기
+              </Link>
+            </div>
+          </section>
+        </Reveal>
+      )}
+
       {/* 무엇을 올리나 — 파란색 수강증 (2026-09-30 Alan "파란색 수강증을 올리는게 가장 중요해!"). 폼 앞, 한 줄 전체 */}
       <Reveal>
         <ReceiptGuide />
@@ -132,7 +163,7 @@ export default async function VerifyPage() {
 
         <Reveal delay={120} className="card p-5 sm:p-7">
           <h2 className="mb-4 text-base font-black text-ink">수강증 올리기</h2>
-          <VerifyForm sections={sections} canRename={canRename} />
+          <VerifyForm sections={sections} canRename={canRename} nextStep={nextStep} />
         </Reveal>
       </div>
 

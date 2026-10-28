@@ -2095,6 +2095,114 @@ export type Database = {
           },
         ]
       }
+      student_surveys: {
+        Row: {
+          created_at: string
+          goal_months: number
+          history: string[]
+          history_where: string | null
+          manage_style: string
+          next_class: Json | null
+          next_month: number | null
+          next_plan: string
+          next_reason: string | null
+          next_year: number | null
+          now_lc: number | null
+          now_rc: number | null
+          now_target: number
+          now_total: number | null
+          now_updated_at: string
+          occupation: string
+          reason_other: string | null
+          reasons: string[]
+          referrer_name: string | null
+          score_lc: number | null
+          score_rc: number | null
+          score_total: number | null
+          source_story: string
+          sources: string[]
+          target_score: number
+          term_id: number | null
+          user_id: string
+          workplace: string | null
+        }
+        Insert: {
+          created_at?: string
+          goal_months: number
+          history: string[]
+          history_where?: string | null
+          manage_style: string
+          next_class?: Json | null
+          next_month?: number | null
+          next_plan: string
+          next_reason?: string | null
+          next_year?: number | null
+          now_lc?: number | null
+          now_rc?: number | null
+          now_target: number
+          now_total?: number | null
+          now_updated_at?: string
+          occupation: string
+          reason_other?: string | null
+          reasons: string[]
+          referrer_name?: string | null
+          score_lc?: number | null
+          score_rc?: number | null
+          score_total?: number | null
+          source_story: string
+          sources: string[]
+          target_score: number
+          term_id?: number | null
+          user_id: string
+          workplace?: string | null
+        }
+        Update: {
+          created_at?: string
+          goal_months?: number
+          history?: string[]
+          history_where?: string | null
+          manage_style?: string
+          next_class?: Json | null
+          next_month?: number | null
+          next_plan?: string
+          next_reason?: string | null
+          next_year?: number | null
+          now_lc?: number | null
+          now_rc?: number | null
+          now_target?: number
+          now_total?: number | null
+          now_updated_at?: string
+          occupation?: string
+          reason_other?: string | null
+          reasons?: string[]
+          referrer_name?: string | null
+          score_lc?: number | null
+          score_rc?: number | null
+          score_total?: number | null
+          source_story?: string
+          sources?: string[]
+          target_score?: number
+          term_id?: number | null
+          user_id?: string
+          workplace?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "student_surveys_term_id_fkey"
+            columns: ["term_id"]
+            isOneToOne: false
+            referencedRelation: "terms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "student_surveys_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       studies: {
         Row: {
           created_at: string
@@ -2891,6 +2999,7 @@ export type Database = {
         Args: never
         Returns: { instructor_id: string; label: string; live_to_replay: boolean; section_id: number; session_date_id: number; starts_at: string }[]
       }
+      submit_student_survey: { Args: { p: Json }; Returns: undefined }
       set_study_level: {
         Args: { p_signup_id: number; p_level?: number; p_slot_id?: number }
         Returns: Json

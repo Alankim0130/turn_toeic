@@ -7,7 +7,8 @@ import { DonutChart } from "@/components/admin/charts/DonutChart";
 import { BarChart } from "@/components/admin/charts/BarChart";
 import { ColumnChart } from "@/components/admin/charts/ColumnChart";
 import { countBy, GENDER_LABEL } from "../_lib/queries";
-import { requireStaff } from "@/lib/auth";
+import { isCrew, requireStaff } from "@/lib/auth";
+import { labelOf, OCCUPATIONS, REASONS, SOURCES } from "@/lib/student-survey";
 
 export const metadata: Metadata = { title: "마케팅 분석", robots: { index: false } };
 
@@ -23,9 +24,11 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const scope = scopeParam === "students" ? "students" : "all";
   const supabase = await createClient();
 
-  const [{ data: profiles }, { data: orders }] = await Promise.all([
+  const [{ data: profiles }, { data: orders }, { data: surveyRows }] = await Promise.all([
     supabase.from("profiles").select("id, gender, university, department, created_at, role").limit(5000),
     scope === "students" ? supabase.from("enrollment_orders").select("user_id") : Promise.resolve({ data: [] as { user_id: string }[] }),
+    // 수강생 설문 (2026-10-28) — 수강 계기 · 지금 하는 일 · 공부 이유. 강사 · 관리자 세션으로 읽는다 (정책이 강사 · 관리자 · 본인만)
+    supabase.from("student_surveys").select("occupation, reasons, sources, user:profiles!student_surveys_user_id_fkey(role, merged_into)").limit(5000),
   ]);
 
   let rows = (profiles ?? []).filter((p) => p.role !== "instructor" && p.role !== "admin");
@@ -52,6 +55,17 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     if (signupsByMonth.has(key)) signupsByMonth.set(key, (signupsByMonth.get(key) ?? 0) + 1);
   }
   const signups = months.map((m) => ({ label: m.label, value: signupsByMonth.get(m.key) ?? 0 }));
+
+  // 설문은 학생만 한다 — 그래도 강사 · 관리자 · 조교 계정과 합쳐진 옛 계정의 줄은 세지 않는다 (같은 사람을 두 번 세지 않게)
+  const surveys = (surveyRows ?? []).filter((r) => r.user && !isCrew(r.user.role) && !r.user.merged_into);
+  const tally = (pick: (r: (typeof surveys)[number]) => readonly string[], list: Parameters<typeof labelOf>[0]) => {
+    const m = new Map<string, number>();
+    for (const r of surveys) for (const k of pick(r)) m.set(k, (m.get(k) ?? 0) + 1);
+    return [...m.entries()].map(([k, value]) => ({ label: labelOf(list, k), value })).sort((a, b) => b.value - a.value);
+  };
+  const sources = tally((r) => r.sources, SOURCES);
+  const reasons = tally((r) => r.reasons, REASONS);
+  const occupations = tally((r) => [r.occupation], OCCUPATIONS);
 
   const filled = {
     university: rows.filter((p) => p.university?.trim()).length,
@@ -90,6 +104,30 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
         </section>
       </div>
       <p className="mt-4 text-xs text-mist">“미입력”은 가입 시 해당 항목을 비워 둔 회원입니다.</p>
+
+      {/* 수강생 설문 (2026-10-28 Alan — OT 설문을 웹으로). 등업 직후 처음 한 번 — 여러 개 고르는 질문은 고른 사람 수로 센다 */}
+      <h2 className="mb-1 mt-10 text-lg font-black text-ink">수강생 설문</h2>
+      <p className="mb-4 text-sm text-slate">
+        설문한 수강생 <b className="tabular-nums text-ink">{surveys.length.toLocaleString("ko-KR")}</b>명 · 수강 계기와 공부 이유는 여러 개 고를 수 있어 합이 사람 수보다 많아요.
+      </p>
+      {surveys.length === 0 ? (
+        <p className="card p-5 text-sm text-slate">아직 설문한 수강생이 없어요.</p>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <section className="card p-5 lg:col-span-2">
+            <ChartTitle icon="contact" title="수강 계기 (어떻게 알게 됐나)" />
+            <BarChart title="수강 계기" data={sources} table="visible" />
+          </section>
+          <section className="card p-5">
+            <ChartTitle icon="profile" title="지금 하는 일" />
+            <DonutChart title="지금 하는 일" data={occupations} table="visible" />
+          </section>
+          <section className="card p-5">
+            <ChartTitle icon="target" title="토익 공부 이유" />
+            <BarChart title="토익 공부 이유" data={reasons} table="visible" />
+          </section>
+        </div>
+      )}
     </>
   );
 }
@@ -106,7 +144,7 @@ function Stat({ label, value, of }: { label: string; value: number; of?: number 
   );
 }
 
-function ChartTitle({ icon, title }: { icon: "profile" | "calendar" | "location" | "students"; title: string }) {
+function ChartTitle({ icon, title }: { icon: "profile" | "calendar" | "location" | "students" | "contact" | "target"; title: string }) {
   return (
     <div className="mb-4 flex items-center gap-2">
       <Icon name={icon} size={26} />

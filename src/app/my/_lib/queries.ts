@@ -593,6 +593,25 @@ export async function getMyHomeworkAlert(): Promise<boolean> {
 }
 
 /**
+ * 내 수강생 설문 (2026-10-28 Alan — OT 설문을 웹으로, 등업 직후 · 처음 한 번). 마이페이지 레이아웃이 "설문을 했나" 로 문을 정하고(`SurveyGate`),
+ * 대시보드가 지금 점수 · 목표(`now_*`)를 맨 위 카드로 그린다. 요청 하나에 한 번만 읽는다 (cache — 레이아웃 · 화면이 함께 쓴다).
+ * **`user_id` 로 좁힌다** — 정책 `student_surveys: 강사·관리자·본인 조회` 는 강사 · 관리자에게 모든 학생의 설문을 연다 (머리말).
+ * 읽지 못하면 `error` — 문은 열어 둔다(설문을 했는지 모르면 막지 않는다 — 배포 사이 · 일시 오류에 학생이 사이트를 통째로 못 쓰면 안 된다).
+ */
+export const getMySurvey = cache(async () => {
+  const user = await getSessionUser();
+  if (!user) return { row: null, error: false };
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("student_surveys")
+    .select("user_id, now_total, now_lc, now_rc, now_target, now_updated_at, created_at")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  return { row: error ? null : data, error: Boolean(error) };
+});
+export type MySurvey = NonNullable<Awaited<ReturnType<typeof getMySurvey>>["row"]>;
+
+/**
  * 수업일마다 숙제 기한 날짜 = 같은 트랙의 다음 수업일 (DB `homework_due_dates` — 반 편성 달력, 기수를 넘어서도. 시각은 오후 5시).
  * 달력에 다음 수업일이 아직 없으면 null. 조회가 실패하면 null 을 돌려준다 — 화면은 기한 줄을 그리지 않는다 (틀린 기한을 적느니).
  */

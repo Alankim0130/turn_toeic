@@ -79,6 +79,8 @@ const WIDE_OPEN_TABLES = [
   "attendance_events",
   // 숙제 미제출 알림 안 받기 (2026-10-15 — 정책 `본인 or 강사 · 관리자 · 조교`, 10-14 하루는 신청 표 homework_missing_optins). 학생 화면은 내 줄 하나만 읽는다
   "homework_missing_optouts",
+  // 수강생 설문 (2026-10-28 — 정책 `강사 · 관리자 or 본인`, 조교 아님). 학생 화면은 내 줄 하나(지금 점수 · 목표)만 읽고 고친다
+  "student_surveys",
   "profiles",
 ];
 

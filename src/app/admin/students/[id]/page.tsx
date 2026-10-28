@@ -18,6 +18,7 @@ import { PhotoLightbox } from "@/components/layout/PhotoLightbox";
 import { pickPhoto, safePhotoUrl } from "@/lib/avatar";
 import { signedAvatarUrl } from "@/lib/avatar-url";
 import { StudentReceipts, type StudentReceipt } from "@/components/admin/students/StudentReceipts";
+import { StudentSurveyCard } from "@/components/admin/students/StudentSurveyCard";
 import { receiptFacts, receiptNameMismatch, receiptVerdict } from "@/lib/receipt-history";
 import type { PickerSection } from "@/components/admin/SectionPicker";
 import { enrollmentLines, enrollmentPhases, GENDER_LABEL, pickTerm, termLabel, TERM_COLUMNS } from "../../_lib/queries";
@@ -56,7 +57,7 @@ export default async function StudentDetailPage({
     .maybeSingle();
   if (!student) notFound();
 
-  const [{ data: enrollments }, { data: orders }, { data: terms }, { data: verifications }] = await Promise.all([
+  const [{ data: enrollments }, { data: orders }, { data: terms }, { data: verifications }, survey, optout] = await Promise.all([
     supabase
       .from("enrollments")
       .select(
@@ -74,6 +75,9 @@ export default async function StudentDetailPage({
       .eq("user_id", id)
       .order("created_at", { ascending: false })
       .limit(20),
+    // 수강생 설문 (2026-10-28) — 강사 · 관리자 세션으로 읽는다 (정책이 강사 · 관리자 · 본인만 연다) · 지금 숙제 미제출 알림 스위치
+    supabase.from("student_surveys").select("*").eq("user_id", id).maybeSingle(),
+    supabase.from("homework_missing_optouts").select("user_id").eq("user_id", id).maybeSingle(),
   ]);
 
   // 수강증 그림 — 로그인한 사람의 세션으로 서명 URL (storage receipts 정책이 crew 에게 열려 있다). 지운 원본은 만들지 않는다
@@ -237,6 +241,19 @@ export default async function StudentDetailPage({
             <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
               테스터 계정이에요. 진짜 등급을 학생으로 내리면 관리자 화면을 잃어요 — 테스트는 아래 <b>테스트 등급</b>으로 하세요.
             </p>
+          )}
+        </section>
+
+        {/* 수강생 설문 (2026-10-28 Alan — OT 설문을 웹으로, "볼 수 있는사람은 관리자, 강사만") */}
+        <section aria-labelledby="survey-title" className="card p-5 lg:col-span-2">
+          <h2 id="survey-title" className="mb-1 text-lg font-black text-ink">
+            수강생 설문
+          </h2>
+          <p className="mb-3 text-sm text-slate">등업 직후 학생이 처음 한 번 한 설문이에요. 강사 · 관리자만 봐요.</p>
+          {survey.error ? (
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">설문을 불러오지 못했어요. 잠시 후 새로고침해 주세요.</p>
+          ) : (
+            <StudentSurveyCard survey={survey.data} alertsOn={optout.error ? null : !optout.data} />
           )}
         </section>
 

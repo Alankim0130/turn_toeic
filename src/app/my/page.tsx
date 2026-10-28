@@ -9,6 +9,7 @@ import { PushPrompt } from "@/components/push/PushPrompt";
 import { MonthSchedule } from "@/components/my/MonthSchedule";
 import { AttendanceRate } from "@/components/my/AttendanceRate";
 import { ProfilePhoto } from "@/components/layout/ProfilePhoto";
+import { MyScoreCard } from "@/components/my/MyScoreCard";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionProfile, requireUser } from "@/lib/auth";
 import { cn, formatDate, formatTimeRange, MODE_LABEL, RECORDED_LABEL, TRACK_LABEL } from "@/lib/utils";
@@ -29,6 +30,7 @@ import {
   getMyWeek5,
   getMyMergeRequests,
   getUnreadMessageCount,
+  getMySurvey,
 } from "./_lib/queries";
 
 export const metadata: Metadata = {
@@ -93,7 +95,7 @@ function recordedTracksOf(
 }
 
 export default async function MyPage({ searchParams }: { searchParams: Promise<{ welcome?: string; denied?: string }> }) {
-  const [{ profile, user }, uploadedPhoto, sp, verifications, accessibleWeek5, schedule, mergeRequests, unread, attendance] = await Promise.all([
+  const [{ profile, user }, uploadedPhoto, sp, verifications, accessibleWeek5, schedule, mergeRequests, unread, attendance, survey] = await Promise.all([
     requireUser("/my"),
     // 직접 올린 사진의 주소는 프로필을 받자마자 이어서 만든다 — 다른 조회가 끝나기를 기다리지 않게 (2026-10-09 화면 전환 속도)
     getSessionProfile().then(async ({ profile }) => signedAvatarUrl(await createClient(), profile?.avatar_path)),
@@ -105,6 +107,8 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
     getUnreadMessageCount(),
     // 이번 기수 내 출석률 (2026-09-22 Alan — "마이페이지에서 확인하면 동기부여"). 현장 반이 없으면 빈 배열
     createClient().then((s) => s.rpc("my_attendance_summary")).then((r) => r.data ?? []),
+    // 지금 점수 · 목표 (수강생 설문 — 레이아웃이 이미 물었다, 같은 요청이라 다시 묻지 않는다)
+    getMySurvey(),
   ]);
 
   // 내가 신청하지 않은 통합 요청 = 이 계정에서 확인해야 합쳐진다 (2026-09-18 Alan)
@@ -167,6 +171,9 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
           {name}
           <span className="text-slate"> 님</span>
         </h1>
+
+        {/* 지금 점수 · 목표 — 인사 바로 아래 맨 위 (2026-10-28 Alan "학생 마이페이지 최상단에 넣어놓으면 동기부여가 되지 않을까"). 설문을 한 학생만 */}
+        {survey.row && <MyScoreCard scores={survey.row} />}
 
         {/* 내 등록 현황 — **왼쪽에 프로필 사진** (2026-09-22 Alan) · 종강일은 머리글 오른쪽 (2026-09-23 Alan) */}
         {orders.length > 0 && (
