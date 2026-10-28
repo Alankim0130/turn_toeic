@@ -7,26 +7,24 @@ import { Icon } from "@/components/ui/Icon";
 import { startInstall } from "@/components/pwa/install-store";
 import { deletePushSubscription, ownsPushDevice, savePushSubscription, sendTestPush } from "@/app/admin/notifications/actions";
 import { deleteStudentPushSubscription, ownsStudentPushDevice, saveStudentPushSubscription, sendStudentTestPush } from "@/app/my/notifications/push-actions";
-import { deleteOrderPushSubscription, ownsOrderPushDevice, saveOrderPushSubscription, sendOrderTestPush } from "@/app/admin/textbook-orders/push-actions";
 import { detectPush, disablePush, enablePush, type PushState } from "./push-client";
 
 /**
  * 이 기기에서 푸시 알림 켜기 · 끄기 · 테스트.
- * - staff: 관리자 알림 설정 (`/admin/notifications`) — 등업신청 · 교재주문 · 네이버 예약 …
+ * - staff: 관리자 알림 설정 (`/admin/notifications`) — 등업신청 · 교재주문 · 네이버 예약 … 강사 · 관리자, 그리고 조교(2026-10-28 — 조교는 등업신청 · 교재주문만).
+ *   기기를 켜는 것과 받을 알림(종류)은 따로다 — 종류는 그 화면의 스위치가 정한다
  * - student: 학생 알림 (`/my/notifications`, 2026-10-15) — 숙제 미제출 · 불라방 시작만
- * - order: 새 교재주문 알림 (`/admin/textbook-orders`, 2026-10-27) — 교재주문을 맡은 조교가 켠다. 켜면 그 조교의 교재주문 알림도 켜진다
+ * (2026-10-27 ~ 10-28 하루는 `order` — 교재주문 화면에서 조교가 새 교재주문 알림을 켜던 카드 — 가 있었다. 알림 설정 화면으로 옮겼다)
  * 저장은 audience 마다 다른 서버 액션이다 (각자 로그인한 사람의 기기만 저장한다).
  */
 const ACTIONS = {
   staff: { save: savePushSubscription, remove: deletePushSubscription, test: sendTestPush, owns: ownsPushDevice },
   student: { save: saveStudentPushSubscription, remove: deleteStudentPushSubscription, test: sendStudentTestPush, owns: ownsStudentPushDevice },
-  order: { save: saveOrderPushSubscription, remove: deleteOrderPushSubscription, test: sendOrderTestPush, owns: ownsOrderPushDevice },
 } as const;
 
 const TEXT = {
   staff: { device: "이 기기", topic: "이 기기는", where: "관리자 > 알림 설정" },
   student: { device: "이 휴대폰", topic: "이 휴대폰은", where: "마이 > 알림" },
-  order: { device: "이 기기", topic: "이 기기는", where: "관리자 > 교재주문" },
 } as const;
 
 export function PushSetup({ publicKey, audience = "staff" }: { publicKey: string | null; audience?: keyof typeof ACTIONS }) {

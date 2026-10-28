@@ -347,14 +347,16 @@ export const NAV_BOTTOM: NavItem[] = [
 /**
  * 관리자 메뉴. `crew: true` 인 항목은 **조교도** 쓸 수 있다 — 2026-10-03 Alan 이 다시 정했다:
  * 등업 로그(수동등업 수락) · 교재주문 · 스터디 신청자(스터디 운영) · 불라방 링크 · 숙제점검 · 출석.
- * 그 뒤 Alan 이 하나씩 더했다 — 비대면 자료(2026-10-07) · 비대면스터디 인증 · 숙제 미제출 알림(2026-10-08) · 직원 게시판(2026-10-21, 열째).
+ * 그 뒤 Alan 이 하나씩 더했다 — 비대면 자료(2026-10-07) · 비대면스터디 인증 · 숙제 미제출 알림(2026-10-08) · 직원 게시판(2026-10-21, 열째) ·
+ * 알림 설정(2026-10-28, 열한째 — 조교는 등업신청 접수 · 불라방 교재주문 알림만 켜고 끈다).
  * **학생명단 · 반 배정 · 그 밖의 관리자 화면은 조교에게 없다** (학생명단은 개인정보가 있어서, 반 배정은 강사가 직접 한다).
  * 나머지는 강사·관리자 전용이고 화면마다 requireStaff() 가 한 번 더 막는다.
  */
 /**
  * 관리자 메뉴 **묶음** (2026-10-02 Alan — "관리자 햄버거 메뉴도 학생 모드와 마찬가지로 카테고리별 분리").
  * 순서가 곧 메뉴 순서다. `NAV_ADMIN`(평평한 목록)은 여기서 만든다 — 두 곳에 적지 않는다.
- * 묶음은 여섯: 운영 · 학생 · 수업 편성 · 수업 자료 · 학습 · 직원(2026-10-21). 대시보드가 맨 앞이고, 조교의 첫 화면(adminHomeFor)은 첫 crew 줄인 출석이다 (2026-10-03).
+ * 묶음은 여섯: 운영 · 학생 · 수업 편성 · 수업 자료 · 학습 · 직원(2026-10-21). 대시보드가 맨 앞이고, 조교의 첫 화면(adminHomeFor)은 출석이다 (2026-10-03 —
+ * 2026-10-28 부터 조교 메뉴의 첫 줄은 운영 묶음의 알림 설정이지만 첫 화면은 그대로 출석).
  */
 export const NAV_ADMIN_SECTIONS: NavSection[] = [
   {
@@ -363,7 +365,9 @@ export const NAV_ADMIN_SECTIONS: NavSection[] = [
       { href: "/admin", label: "대시보드", icon: "analytics" },
       { href: "/admin/analytics", label: "마케팅 분석", icon: "analytics" },
       { href: "/admin/contacts", label: "문의", icon: "contact" },
-      { href: "/admin/notifications", label: "알림 설정", icon: "bell" },
+      // 조교도 연다 (2026-10-28 Alan — "여기 알림설정 페이지를 접근할 수 있게 하면 쉽지 않을까? 다만 '등업신청'과 '불라방 교재주문'
+      // 이 두가지만 설정할 수 있도록 하고 나머지는 작동안되게") — 열한째 조교 화면. 조교는 CREW_ALERT_KINDS 두 가지만 켜고 끈다 (src/lib/push.ts)
+      { href: "/admin/notifications", label: "알림 설정", icon: "bell", crew: true },
       // 인수인계 체크리스트 — docs/HANDOVER.md 를 그대로 그리고 체크는 DB(handover_checks)에 (2026-10-04 Alan "햄버거 메뉴에서 인수인계 안보여").
       // 강사·관리자만 — 조교 화면이 아니다 (crew 를 붙이지 말 것)
       { href: "/admin/handover", label: "인수인계", icon: "admin" },
@@ -374,7 +378,7 @@ export const NAV_ADMIN_SECTIONS: NavSection[] = [
     items: [
       // 학생명단 · 학생 관리는 강사·관리자만 (2026-10-03 Alan — "학생명단 (개인정보가 있기때문에)". 그전에는 조교도 봤다)
       { href: "/admin/students", label: "학생명단", icon: "students" },
-      // QR 출석 명단 · 교실 QR (2026-09-21 Alan "조교에게도 명단을 열어줘"). 조교 메뉴의 첫 줄이라 조교의 첫 화면(adminHomeFor)이다
+      // QR 출석 명단 · 교실 QR (2026-09-21 Alan "조교에게도 명단을 열어줘"). 조교의 첫 화면(adminHomeFor)이다
       { href: "/admin/attendance", label: "출석", icon: "location", crew: true },
       { href: "/admin/verifications", label: "등업 로그", icon: "verify", crew: true },
       { href: "/admin/textbook-orders", label: "교재주문", icon: "orders", crew: true },
@@ -475,14 +479,19 @@ export function canEnterAdminPath(role: string | null | undefined, pathname: str
   return best !== null && NAV_ADMIN.some((n) => n.href === best && n.crew === true);
 }
 
+/** 조교의 관리자 첫 화면 — 출석 (2026-10-03) */
+const ASSISTANT_HOME = "/admin/attendance";
+
 /**
  * 관리자 모드로 들어갈 때의 첫 화면 (2026-09-19).
  * `/admin` 대시보드는 `requireStaff()` 가 막으므로 **조교를 그리로 보내면 곧바로 튕긴다** —
- * 조교는 쓸 수 있는 첫 화면으로 보낸다. 조교에게 열린 화면이 하나도 없으면 학생 모드로.
+ * 조교는 출석으로 보낸다. 2026-10-28 까지는 "메뉴의 첫 crew 줄" 이었는데, 알림 설정이 운영 묶음(메뉴 맨 앞)으로 조교 메뉴에 들어와
+ * 그대로 두면 관리자 모드를 누를 때마다 설정 화면이 떴다. 출석이 메뉴에서 빠지면 메뉴의 첫 줄, 그것도 없으면 학생 모드로.
  */
 export function adminHomeFor(role?: string | null): string {
   if (role !== "assistant") return "/admin";
-  return navAdminFor(role)[0]?.href ?? "/my";
+  const items = navAdminFor(role);
+  return items.find((n) => n.href === ASSISTANT_HOME)?.href ?? items[0]?.href ?? "/my";
 }
 
 // ─── 햄버거 메뉴 (모바일·태블릿) ────────────────────────────────────────────

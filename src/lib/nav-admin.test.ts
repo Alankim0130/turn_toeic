@@ -29,7 +29,9 @@ describe("관리자 메뉴 묶음 (NAV_ADMIN_SECTIONS)", () => {
   it("조교는 crew 항목만 보고 빈 묶음은 사라진다 — 첫 화면은 출석", () => {
     const crew = navAdminSectionsFor("assistant");
     for (const s of crew) for (const i of s.items) expect(i.crew, i.href).toBe(true);
-    expect(crew.map((s) => s.label)).toEqual(["학생", "수업 자료", "학습", "직원"]);
+    // 운영 묶음에는 알림 설정 하나 (2026-10-28) — 메뉴의 첫 줄이지만 관리자 모드로 들어올 때의 첫 화면은 그대로 출석이다
+    expect(crew.map((s) => s.label)).toEqual(["운영", "학생", "수업 자료", "학습", "직원"]);
+    expect(crew[0].items.map((i) => i.href)).toEqual(["/admin/notifications"]);
     expect(navAdminFor("assistant").map((i) => i.href)).toEqual(crew.flatMap((s) => s.items.map((i) => i.href)));
     expect(adminHomeFor("assistant")).toBe("/admin/attendance");
     expect(navAdminSectionsFor("instructor")).toEqual(NAV_ADMIN_SECTIONS);
@@ -44,10 +46,13 @@ describe("관리자 메뉴 묶음 (NAV_ADMIN_SECTIONS)", () => {
    * → 같은 날 Alan "응 메뉴에 넣어줘" 로 숙제 미제출 알림이 메뉴 한 줄이 됐다 — 아홉째.
    *    숙제점검 아래 화면이라 조교는 그 전부터 썼다 — 메뉴 줄만 생겼다 ("조교도 보낸다").
    * → 2026-10-21 Alan "관리자모드에서 직원들만 사용할 수 있는 게시판" → 물음에 "조교도 읽고 쓰기" 로 직원 게시판이 열째.
+   * → 2026-10-28 Alan "조교 알림시스템 설정은 어디서하는거야? 여기 알림설정 페이지를 접근할 수 있게 하면 쉽지 않을까? 다만 '등업신청'과
+   *    '불라방 교재주문' 이 두가지만 설정할 수 있도록 하고 나머지는 작동안되게" 로 알림 설정이 열한째 (조교는 두 알림만 켜고 끈다 — student-push.test.ts).
    * 여기에 하나를 더하면 proxy 입구(canEnterAdminPath)와 화면 가드까지 같이 열린다 — Alan 에게 확인하고 더할 것.
-   * DB 쪽 같은 집합은 마이그레이션 20261003100000 · 20261007100000 · 20261008140000 · 20261008150000 · 20261021100000.
+   * DB 쪽 같은 집합은 마이그레이션 20261003100000 · 20261007100000 · 20261008140000 · 20261008150000 · 20261021100000
+   * (알림 설정은 DB 쪽이 그대로다 — 조회는 원래 "본인 조회", 쓰기는 서버 액션뿐. 20261028100000 은 조교 행의 등업신청 칸을 한 번 끈 것).
    */
-  it("조교 화면은 Alan 이 정한 열 개뿐이다 — 학생명단은 없다", () => {
+  it("조교 화면은 Alan 이 정한 열한 개뿐이다 — 학생명단은 없다", () => {
     expect(navAdminFor("assistant").map((i) => i.href).sort()).toEqual(
       [
         "/admin/attendance",
@@ -55,6 +60,7 @@ describe("관리자 메뉴 묶음 (NAV_ADMIN_SECTIONS)", () => {
         "/admin/homework",
         "/admin/homework/missing",
         "/admin/live",
+        "/admin/notifications",
         "/admin/study",
         "/admin/study-checkins",
         "/admin/study-materials",

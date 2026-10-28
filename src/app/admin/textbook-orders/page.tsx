@@ -7,7 +7,6 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { FilterTabs } from "@/components/admin/FilterTabs";
-import { PushSetup } from "@/components/push/PushSetup";
 import { orderClassLines, termLabel } from "../_lib/queries";
 import { getProfileNames } from "../_lib/profile-names";
 import { isStaff, requireCrew } from "@/lib/auth";
@@ -167,19 +166,6 @@ export default async function TextbookOrdersPage({
             "강사님께 교재·입금 계좌 설정에서 계좌를 넣어 달라고 부탁해 주세요."
           )}
         </Alert>
-      )}
-
-      {/* 새 교재주문 알림 — 조교가 이 기기에서 켠다 (2026-10-27 Alan "○○○(조교)인데 불라방 교재주문을 담당하는 사람이야 … 알림 푸시를 받을 수 있도록").
-          조교에게는 알림 설정 화면이 없어 여기서 켠다 — 켠 조교에게만 간다 (push-actions.ts). 강사 · 관리자는 알림 설정 화면을 쓴다 */}
-      {!staff && (
-        <section aria-labelledby="order-push-title" className="card mb-4 p-4 sm:p-5">
-          <h2 id="order-push-title" className="flex items-center gap-2 text-base font-black text-ink">
-            <Icon name="bell" size={22} />
-            새 교재주문 알림
-          </h2>
-          <p className="mb-3 mt-1 text-sm text-slate">불라방 학생이 교재를 주문하면 이 기기로 바로 알려 드려요. 교재주문을 맡은 분이 알림 받을 휴대폰에서 켜 주세요.</p>
-          <PushSetup publicKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? null} audience="order" />
-        </section>
       )}
 
       {/* 현장수령 예정 (2026-10-07 Alan — "무슨날짜에 올껀지, 몇시쯤 올껀지") — 탭을 넘기지 않아도 누가 언제 오는지 보이게 */}

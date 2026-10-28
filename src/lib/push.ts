@@ -8,7 +8,7 @@ import { studentPushMessage, type StudentPushRow } from "@/lib/student-push";
 /**
  * 웹 푸시. 알림은 기기마다 "알림 받기"를 눌러 둔 곳으로만 간다.
  * - 관리자 알림(`notifyStaff` · `notifyUser`): 강사·관리자 — 종류마다 알림 설정으로 끈다.
- *   새 교재주문은 교재주문 화면에서 알림을 켠 조교에게도 (`CREW_ALERT_KINDS`, 2026-10-27)
+ *   등업신청 접수 · 새 교재주문은 알림 설정에서 그 알림을 켠 조교에게도 (`CREW_ALERT_KINDS`, 2026-10-27 · 10-28)
  * - 학생 알림(`pushStudentMessages`, 2026-10-15): 숙제 미제출 · 불라방 시작만 — 학생 알림함 줄을 그대로 휴대폰으로 (`student-push.ts`)
  * 발송 실패는 사용자 동작을 막지 않도록 삼키고 로그만 남긴다. 404/410 구독은 지운다.
  */
@@ -92,12 +92,32 @@ async function deliver(rows: SubscriptionRow[], message: PushMessage): Promise<P
 }
 
 /**
- * 조교도 받을 수 있는 관리자 알림 — **그 일을 맡은 조교가 스스로 켠 경우에만** 간다 (2026-10-27 Alan — "○○○(조교)인데 불라방 교재주문을
- * 담당하는 사람이야. 이 사람이 불라방 교재주문 알림 푸시를 받을 수 있도록"). 조교에게는 알림 설정 화면이 없어 교재주문 화면에서 켠다
- * (`src/app/admin/textbook-orders/push-actions.ts` — 켜면 그 조교의 notification_settings.textbook_order 가 true).
- * 강사 · 관리자는 예전처럼 설정 행이 없으면 켜진 것이고, 조교는 행이 없으면 꺼진 것이다 — 교재주문을 맡지 않은 조교에게는 가지 않는다.
+ * 조교도 받을 수 있는 관리자 알림 — **그 일을 맡은 조교가 스스로 켠 경우에만** 간다. 등업신청 접수 · 불라방 교재주문 두 가지다
+ * (2026-10-27 Alan — "○○○(조교)인데 불라방 교재주문을 담당하는 사람이야 … 알림 푸시를 받을 수 있도록" → 2026-10-28 Alan — "여기
+ * 알림설정 페이지를 접근할 수 있게 하면 쉽지 않을까? 다만 '등업신청'과 '불라방 교재주문' 이 두가지만 설정할 수 있도록 하고 나머지는
+ * 작동안되게"). 조교는 알림 설정 화면(`/admin/notifications`)에서 이 두 가지만 켜고 끈다 — 나머지 종류는 그 화면에서 잠겨 있고 서버 액션도
+ * 이 두 칸만 쓴다. 10-27 ~ 10-28 하루는 교재주문 화면의 '새 교재주문 알림' 카드에서 켰다 (지금은 없다).
+ * 강사 · 관리자는 예전처럼 설정 행이 없으면 켜진 것이고, 조교는 **행이 없거나 그 칸이 true 가 아니면 꺼진 것**이다 — 맡지 않은 조교에게는 가지 않는다.
+ * 하나를 더하면 조교 화면에서 그 줄이 저절로 열린다 — 조교가 그 알림의 주소(`url`)를 열 수 있는지 먼저 볼 것 (`canEnterAdminPath`).
  */
-export const CREW_ALERT_KINDS: readonly NotificationKind[] = ["textbook_order"];
+export const CREW_ALERT_KINDS: readonly NotificationKind[] = ["verification", "textbook_order"];
+
+/** 알림 설정 화면에서 켜고 끌 수 있는 종류 — 강사 · 관리자는 전부, 조교는 `CREW_ALERT_KINDS` (2026-10-28). 서버 액션도 이 칸만 쓴다 */
+export function editableAlertKinds(staff: boolean): readonly NotificationKind[] {
+  return staff ? NOTIFICATION_KINDS.map((k) => k.key) : CREW_ALERT_KINDS;
+}
+
+/**
+ * 알림 설정 화면의 스위치 — **그 알림이 실제로 가는지**를 그대로 보인다 (아래 `notifyStaff` 와 같은 규칙).
+ * 강사 · 관리자는 행이 없거나 그 칸이 false 가 아니면 켜짐. 조교는 고를 수 있는 칸이 true 일 때만 켜짐이고, 나머지는 늘 꺼짐(조교에게는 가지 않는다) —
+ * 조교 행의 나머지 칸은 표의 기본값(true)으로 생겨 있어서 그 값을 그대로 보이면 받지도 않는 알림이 켜진 것처럼 보인다.
+ */
+export function alertSwitches(row: Partial<Record<NotificationKind, boolean>> | null, staff: boolean): Record<NotificationKind, boolean> {
+  const editable = editableAlertKinds(staff);
+  return Object.fromEntries(
+    NOTIFICATION_KINDS.map(({ key }) => [key, staff ? row?.[key] !== false : editable.includes(key) && row?.[key] === true]),
+  ) as Record<NotificationKind, boolean>;
+}
 
 /** 해당 알림을 켜 둔 스태프 모두에게 보낸다. 설정 행이 없으면 켜진 것으로 본다 — 조교는 `CREW_ALERT_KINDS` 를 켠 사람만 */
 export async function notifyStaff(kind: NotificationKind, message: PushMessage): Promise<PushResult> {

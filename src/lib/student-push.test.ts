@@ -5,6 +5,7 @@ import { createECDH, randomBytes } from "node:crypto";
 import { PUSH_BODY_MAX, pushBody, STUDENT_PUSH_KINDS, STUDENT_PUSH_TTL, STUDENT_PUSH_URL, studentPushMessage } from "./student-push";
 import { DEVICES_PER_USER, devicesOverLimit, isPushKeyPair, isPushServiceEndpoint } from "./push-endpoint";
 import { detectPush } from "@/components/push/push-client";
+import { alertSwitches, CREW_ALERT_KINDS, editableAlertKinds, NOTIFICATION_KINDS } from "./push";
 
 /**
  * 학생 휴대폰 푸시 (2026-10-15 Alan — "숙제 미제출이랑 불라방 시작 알림 푸시로 만들어줘. 단 불라방은 불라방 학생들에게만 …
@@ -245,8 +246,8 @@ describe("구독 키 · 기기 수 · 보내기 · 로그아웃 (2026-10-16 점�
     expect(actions).toMatch(/export async function signOut\(formData\?: FormData\)/);
     expect(actions).toMatch(/formData\?\.get\("push_endpoint"\)/);
     expect(actions).toContain("let keep = isAdmin(me?.role);");
-    // 교재주문 화면에서 새 교재주문 알림을 켠 조교의 기기도 남긴다 (2026-10-27) — 그 밖의 조교 · 학생은 지운다
-    expect(actions).toMatch(/if \(!keep && me\?\.role === "assistant"\) \{[\s\S]*?select\("textbook_order"\)[\s\S]*?keep = alert\?\.textbook_order === true;\s*\}/);
+    // 알림 설정에서 등업신청 · 교재주문 알림(CREW_ALERT_KINDS)을 켠 조교의 기기도 남긴다 (2026-10-27 → 10-28) — 그 밖의 조교 · 학생은 지운다
+    expect(actions).toMatch(/if \(!keep && me\?\.role === "assistant"\) \{[\s\S]*?keep = CREW_ALERT_KINDS\.some\(\(kind\) => alert\?\.\[kind\] === true\);\s*\}/);
     expect(actions).toContain("if (!keep) await deleteSubscription(user.id, endpoint);");
     // 로그아웃하기 전에 지운다 — 로그아웃하면 누구의 기기인지 모른다
     expect(actions.indexOf("deleteSubscription(user.id, endpoint)")).toBeLessThan(actions.indexOf("await supabase.auth.signOut()"));
@@ -310,11 +311,11 @@ describe("서버 · 화면", () => {
     expect(src).toContain("pushStudentMessages(rows)");
   });
 
-  it("학생 기기를 켰다고 관리자 알림이 오지 않는다 — 관리자 알림은 강사 · 관리자, 그리고 교재주문 알림을 켠 조교만 고른다", () => {
+  it("학생 기기를 켰다고 관리자 알림이 오지 않는다 — 관리자 알림은 강사 · 관리자, 그리고 등업신청 · 교재주문 알림을 켠 조교만 고른다", () => {
     const src = read("src/lib/push.ts");
     const body = src.slice(src.indexOf("export async function notifyStaff"), src.indexOf("export async function notifyUser"));
-    // 학생 · 회원 등급은 어느 알림에도 없다. 조교는 CREW_ALERT_KINDS(교재주문)에서만 · 켠 사람만 (2026-10-27)
-    expect(src).toContain('export const CREW_ALERT_KINDS: readonly NotificationKind[] = ["textbook_order"];');
+    // 학생 · 회원 등급은 어느 알림에도 없다. 조교는 CREW_ALERT_KINDS(등업신청 · 교재주문)에서만 · 켠 사람만 (2026-10-27 → 10-28)
+    expect(src).toContain('export const CREW_ALERT_KINDS: readonly NotificationKind[] = ["verification", "textbook_order"];');
     expect(body).toContain('CREW_ALERT_KINDS.includes(kind) ? (["instructor", "admin", "assistant"] as const) : (["instructor", "admin"] as const)');
     expect(body).toContain('.in("role", roles).is("merged_into", null)');
     expect(body).toContain('s.role === "assistant" ? setting.get(s.id) === true : setting.get(s.id) !== false');
@@ -340,8 +341,8 @@ describe("서버 · 화면", () => {
     expect(client).toContain("if (!mine) return \"off\";");
     expect(read("src/components/push/PushSetup.tsx")).toContain("detectPush(actions.owns)");
     expect(read("src/components/push/PushPrompt.tsx")).toContain("detectPush(ownsStudentPushDevice)");
-    // 관리자 쪽 액션도 가드가 먼저다
-    expect(read("src/app/admin/notifications/actions.ts")).toMatch(/export async function ownsPushDevice\(endpoint: string\): Promise<boolean> \{\s*await requireStaff\(\);/);
+    // 관리자 쪽 액션도 가드가 먼저다 — 조교도 여는 화면이라 requireCrew (2026-10-28)
+    expect(read("src/app/admin/notifications/actions.ts")).toMatch(/export async function ownsPushDevice\(endpoint: string\): Promise<boolean> \{\s*await requireCrew\(\);/);
   });
 
   it("알림 키가 없으면 대기열을 가져가지 않는다 (가져가면 표시만 되고 사라진다)", () => {
@@ -360,35 +361,64 @@ describe("서버 · 화면", () => {
   });
 });
 
-describe("새 교재주문 알림 — 교재주문을 맡은 조교가 교재주문 화면에서 켠다 (2026-10-27 Alan)", () => {
-  // "○○○(조교)인데 불라방 교재주문을 담당하는 사람이야. 이 사람이 불라방 교재주문 알림 푸시를 받을 수 있도록" —
-  // 그전에는 notifyStaff 가 강사 · 관리자만 골라 조교에게는 받을 길이 없었다 (알림 설정 화면도 조교에게 닫혀 있다)
+describe("조교 알림 설정 — 등업신청 · 교재주문만 켜고 끈다 (2026-10-28 Alan)", () => {
+  // "조교 알림시스템 설정은 어디서하는거야? 여기 알림설정 페이지를 접근할 수 있게 하면 쉽지 않을까? 다만 '등업신청'과 '불라방 교재주문'
+  // 이 두가지만 설정할 수 있도록 하고 나머지는 작동안되게 해놓으면 좋겠어" — 그전 하루(10-27)는 교재주문 화면의 카드에서 교재주문만 켰다
   const read = (p: string) => readFileSync(p, "utf8");
-  const actions = read("src/app/admin/textbook-orders/push-actions.ts");
+  const actions = read("src/app/admin/notifications/actions.ts");
   const fn = (name: string) => actions.slice(actions.indexOf(`export async function ${name}`), actions.indexOf("\n}\n", actions.indexOf(`export async function ${name}`)));
 
-  it("켜면 이 기기를 내 기기로 저장하고 내 교재주문 알림을 켠다 · 끄면 둘 다 끈다 — 함수마다 맨 위 requireCrew", () => {
-    for (const name of ["saveOrderPushSubscription", "deleteOrderPushSubscription", "ownsOrderPushDevice", "sendOrderTestPush"]) {
-      expect(fn(name), name).toMatch(/^export async function \w+\([^)]*\)[^{]*\{\s*const \{ user \} = await requireCrew\(\);/);
+  it("조교가 켜고 끌 수 있는 것은 등업신청 접수 · 불라방 교재주문 둘 — 강사 · 관리자는 전부", () => {
+    expect([...editableAlertKinds(false)]).toEqual(["verification", "textbook_order"]);
+    expect([...editableAlertKinds(false)]).toEqual([...CREW_ALERT_KINDS]);
+    expect([...editableAlertKinds(true)]).toEqual(NOTIFICATION_KINDS.map((k) => k.key));
+  });
+
+  it("스위치는 그 알림이 실제로 가는지를 보인다 — notifyStaff 와 같은 규칙", () => {
+    const all = Object.fromEntries(NOTIFICATION_KINDS.map((k) => [k.key, true]));
+    const none = Object.fromEntries(NOTIFICATION_KINDS.map((k) => [k.key, false]));
+    // 강사 · 관리자: 행이 없으면 다 켜짐, 끈 칸만 꺼짐
+    expect(Object.values(alertSwitches(null, true)).every(Boolean)).toBe(true);
+    expect(alertSwitches({ ...all, contact: false }, true).contact).toBe(false);
+    expect(alertSwitches(none, true).naver_reservation).toBe(false);
+    // 조교: 행이 없으면 다 꺼짐 · 켠 두 칸만 켜짐 · 나머지는 행의 값(표 기본값 true)이 있어도 꺼짐 — 조교에게는 가지 않는다
+    expect(Object.values(alertSwitches(null, false)).some(Boolean)).toBe(false);
+    const crew = alertSwitches(all, false);
+    expect(Object.entries(crew).filter(([, on]) => on).map(([k]) => k).sort()).toEqual(["textbook_order", "verification"]);
+    expect(alertSwitches({ ...none, textbook_order: true }, false)).toMatchObject({ textbook_order: true, verification: false, contact: false });
+  });
+
+  it("서버 액션은 함수마다 맨 위 requireCrew · 알림 종류는 그 사람이 켤 수 있는 칸만 쓴다 (조교가 화면을 거치지 않고 보내도 잠긴 칸은 안 바뀐다)", () => {
+    for (const name of ["savePushSubscription", "deletePushSubscription", "removeDevice", "sendTestPush", "saveNotificationSettings"]) {
+      expect(fn(name), name).toMatch(/^export async function \w+\([^)]*\)[^{]*\{\s*const \{ user(?:, profile)? \} = await requireCrew\(\);/);
     }
-    expect(fn("saveOrderPushSubscription")).toContain("saveSubscription(user.id, input)");
-    expect(fn("saveOrderPushSubscription")).toContain("setOrderAlert(user.id, true)");
-    expect(fn("deleteOrderPushSubscription")).toContain("deleteSubscription(user.id, endpoint)");
-    expect(fn("deleteOrderPushSubscription")).toContain("setOrderAlert(user.id, false)");
-    // 내 행의 교재주문 칸만 바꾼다 — 다른 종류는 그대로
-    expect(actions).toMatch(/upsert\(\{ user_id: userId, textbook_order: on, updated_at: [^}]+\}, \{ onConflict: "user_id" \}\)/);
+    expect(actions).not.toContain("requireStaff(");
+    expect(fn("saveNotificationSettings")).toContain("editableAlertKinds(isStaff(profile.role)).map((k) => [k, on(k)])");
+    expect(fn("saveNotificationSettings")).toMatch(/upsert\(\{ user_id: user\.id, \.\.\.values, updated_at: [^}]+\}, \{ onConflict: "user_id" \}\)/);
+    // 기기는 내 것만 지운다
+    expect(fn("removeDevice")).toContain('.eq("id", id).eq("user_id", user.id)');
   });
 
-  it("'받고 있어요' 는 이 기기가 내 것이고 교재주문을 켰을 때만 — 학생 알림함에서 켠 기기라도 교재주문을 안 켰으면 꺼짐", () => {
-    expect(fn("ownsOrderPushDevice")).toContain("ownsSubscription(endpoint)");
-    expect(fn("ownsOrderPushDevice")).toContain('select("textbook_order").eq("user_id", user.id)');
-    expect(fn("ownsOrderPushDevice")).toContain("return mine && setting?.textbook_order === true;");
+  it("화면 — 조교도 열고, 잠긴 알림은 꺼진 채 눌리지 않는다 · 네이버 예약 칸은 강사 · 관리자에게만", () => {
+    const page = read("src/app/admin/notifications/page.tsx");
+    expect(page).toContain("const { user, profile } = await requireCrew();");
+    expect(page).toContain("const values = alertSwitches(settings, staff);");
+    expect(page).toContain("locked: !editable.includes(k.key)");
+    expect(page).toMatch(/\{staff && \(\s*<section id="naver"/);
+    const form = read("src/components/admin/notifications/SettingsForm.tsx");
+    expect(form).toContain("defaultChecked={!k.locked && values[k.key] === true} disabled={k.locked}");
+    expect(form).toContain("강사 · 관리자만");
   });
 
-  it("교재주문 화면은 조교에게만 이 카드를 그린다 — 강사 · 관리자는 알림 설정 화면을 쓴다", () => {
-    const page = read("src/app/admin/textbook-orders/page.tsx");
-    expect(page).toMatch(/\{!staff && \(\s*<section aria-labelledby="order-push-title"[\s\S]*?<PushSetup [^>]*audience="order" \/>/);
-    const setup = read("src/components/push/PushSetup.tsx");
-    expect(setup).toContain("order: { save: saveOrderPushSubscription, remove: deleteOrderPushSubscription, test: sendOrderTestPush, owns: ownsOrderPushDevice },");
+  it("교재주문 화면의 '새 교재주문 알림' 카드(하루 쓴 것)는 없다 — 켜는 곳은 알림 설정 하나", () => {
+    expect(existsSync("src/app/admin/textbook-orders/push-actions.ts")).toBe(false);
+    expect(read("src/app/admin/textbook-orders/page.tsx")).not.toContain("PushSetup");
+    expect(read("src/components/push/PushSetup.tsx")).not.toMatch(/\border:\s*\{/);
+  });
+
+  it("조교 행의 등업신청 칸은 한 번 꺼 둔다 — 하루 쓴 카드가 만든 행은 그 칸이 표 기본값(true)이라 고르지 않은 알림이 갈 뻔했다", () => {
+    const sql = read("supabase/migrations/20261028100000_assistant_alert_settings.sql");
+    expect(sql).toMatch(/update public\.notification_settings s\s+set verification = false\s+from public\.profiles p\s+where p\.id = s\.user_id\s+and p\.role = 'assistant'\s+and s\.verification;/);
+    expect(sql).not.toMatch(/textbook_order\s*=/);
   });
 });

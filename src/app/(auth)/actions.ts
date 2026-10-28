@@ -6,6 +6,7 @@ import { isAuthWeakPasswordError } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { COMPLETE_PROFILE_PATH, isAdmin } from "@/lib/auth";
+import { CREW_ALERT_KINDS } from "@/lib/push";
 import { deleteSubscription } from "@/lib/push-subscription";
 import { getSocialLogins } from "@/lib/auth-providers";
 import { isSocialProvider } from "@/lib/social";
@@ -187,8 +188,8 @@ export async function signOut(formData?: FormData) {
   const supabase = await createClient();
   // 이 기기의 알림을 끈다 (`PushLogoutField` 가 넣은 주소) — 같은 기기를 다른 사람이 이어 쓰면 앞사람의 숙제 미제출 · 불라방 알림이
   // 이름과 함께 계속 뜬다 (2026-10-16 점검). 강사 · 관리자 기기는 관리자 알림(네이버 예약 · 등업신청 …)을 받는 자기 기기라 남긴다 —
-  // 로그아웃했다 다시 들어와 알림이 꺼진 줄 모르고 놓치지 않게. 교재주문 화면에서 새 교재주문 알림을 켠 조교의 기기도 같은 까닭으로 남긴다
-  // (2026-10-27). 지우다 실패해도 로그아웃은 한다
+  // 로그아웃했다 다시 들어와 알림이 꺼진 줄 모르고 놓치지 않게. 알림 설정에서 등업신청 · 교재주문 알림(CREW_ALERT_KINDS)을 켠 조교의 기기도
+  // 같은 까닭으로 남긴다 (2026-10-27 교재주문 → 10-28 알림 설정). 지우다 실패해도 로그아웃은 한다
   const endpoint = formData?.get("push_endpoint");
   if (typeof endpoint === "string" && endpoint) {
     try {
@@ -199,8 +200,8 @@ export async function signOut(formData?: FormData) {
         const { data: me } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
         let keep = isAdmin(me?.role);
         if (!keep && me?.role === "assistant") {
-          const { data: alert } = await supabase.from("notification_settings").select("textbook_order").eq("user_id", user.id).maybeSingle();
-          keep = alert?.textbook_order === true;
+          const { data: alert } = await supabase.from("notification_settings").select("*").eq("user_id", user.id).maybeSingle();
+          keep = CREW_ALERT_KINDS.some((kind) => alert?.[kind] === true);
         }
         if (!keep) await deleteSubscription(user.id, endpoint);
       }
