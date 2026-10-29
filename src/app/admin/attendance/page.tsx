@@ -253,7 +253,9 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         {date !== today && !viewingPast && inTerm(today, term) && <Link href="/admin/attendance" className="text-sm font-bold text-brand-600 hover:underline">오늘로</Link>}
       </nav>
 
+      {/* 날짜를 바꾸면(?date=) 새로 그린다 — 안 그러면 앞 날의 '결석 안내' 글과 고른 학생이 남아 다음 날 날짜로 보내졌다 (2026-10-29 점검) */}
       <AbsenceNotice
+        key={date}
         date={date}
         dateLabel={formatDate(date, { month: "long", day: "numeric", weekday: "short" })}
         absentees={absentees}

@@ -5,6 +5,7 @@ import { updateSection, type ActionState } from "@/app/admin/sections/actions";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
 import { SectionFields } from "./SectionFields";
+import { submitWithoutReset } from "@/lib/form-submit";
 
 type Instructor = { id: string; name: string; role: string };
 
@@ -32,7 +33,9 @@ export function SectionEditForm({
   const listed = !!v.instructor_id && !!instructors?.some((i) => i.id === v.instructor_id);
 
   return (
-    <form action={action} className="space-y-5">
+    // 보내기는 직접 한다 (2026-10-29) — `<form action>` 이 끝나면 React 가 폼을 초기화해 담당 강사 고르기가 처음 모양으로 돌아갔다.
+    // 빈 칸에서 강사를 골라 저장하면 빈 칸이 목록에서 빠져 첫 강사가 골라진 채로 보였고, 정원만 고쳐 다시 저장하면 그 강사가 담당이 됐다
+    <form action={action} onSubmit={submitWithoutReset(action)} className="space-y-5">
       <input type="hidden" name="id" value={id} />
       {state.error && <Alert kind="warning">{state.error}</Alert>}
       {state.ok && <Alert kind="success">{state.message}</Alert>}

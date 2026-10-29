@@ -112,6 +112,7 @@ export function NoticeForm({
     setBusy(true);
     setError(null);
     const uploaded: UploadedFile[] = [];
+    let sent = false;
     try {
       // 새 첨부 파일은 저장을 누를 때 하나씩 올린다 (서버 액션 본문 1MB 한도 — 파일은 브라우저가 저장소에 바로)
       for (const [k, p] of added.entries()) {
@@ -120,6 +121,8 @@ export function NoticeForm({
       }
       setProgress("저장하는 중…");
       const pathByKey = new Map(added.map((p, k) => [p.key, uploaded[k]?.path]));
+      // 이 뒤에 끊기면 서버가 저장했을 수 있다 — 그때는 올린 파일을 지우지 않는다 (아래 catch)
+      sent = true;
       const res = await saveClassNotice({
         id: notice?.id ?? null,
         title,
@@ -132,14 +135,15 @@ export function NoticeForm({
         links: parsed.links,
       });
       if (!res.ok) {
-        await removeUploaded(CLASS_NOTICE_FILE_BUCKET, uploaded.map((u) => u.path));
+        // 새 파일 행까지 저장된 뒤 멈췄으면(파일 빼기 · 순서) 지우지 않는다 — 지우면 저장된 첨부가 깨진다 (2026-10-29)
+        if (!res.filesSaved) await removeUploaded(CLASS_NOTICE_FILE_BUCKET, uploaded.map((u) => u.path));
         setError(res.error ?? "저장하지 못했어요.");
         return;
       }
       router.push(back);
       router.refresh();
     } catch (err) {
-      if (uploaded.length) await removeUploaded(CLASS_NOTICE_FILE_BUCKET, uploaded.map((u) => u.path));
+      if (uploaded.length && !sent) await removeUploaded(CLASS_NOTICE_FILE_BUCKET, uploaded.map((u) => u.path));
       setError(err instanceof Error ? err.message : "저장하지 못했어요.");
     } finally {
       setBusy(false);
@@ -150,7 +154,8 @@ export function NoticeForm({
   async function remove() {
     if (!notice || !confirm(`이 공지를 지울까요? 넣은 사진${files.length ? " · 첨부 파일" : ""}도 함께 지워져요.`)) return;
     setBusy(true);
-    const res = await deleteClassNotice(notice.id);
+    // 답 없이 끝나도(연결 끊김) 단추가 잠긴 채 남지 않게 (2026-10-29 점검)
+    const res = await deleteClassNotice(notice.id).catch(() => ({ ok: false as const, error: "삭제하지 못했어요. 인터넷 연결을 확인하고 다시 해 주세요." }));
     setBusy(false);
     if (!res.ok) return setError(res.error ?? "삭제하지 못했어요.");
     router.push(back);

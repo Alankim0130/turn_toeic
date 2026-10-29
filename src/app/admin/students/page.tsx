@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { readAllIn } from "@/lib/read-all";
 import { createClient } from "@/lib/supabase/server";
 import { todayKST, formatDate, MODE_LABEL, cn } from "@/lib/utils";
 import { formatPhone } from "@/lib/phone";
@@ -71,35 +72,54 @@ export default async function StudentsPage({
 
   // 대상 프로필
   // 합쳐진 옛 계정(merged_into)은 명단에서 뺀다 — 로그인도 못 하고 기록은 남은 계정에 있다 (2026-10-02)
-  let profileQuery = supabase
-    .from("profiles")
-    .select("id, name, phone, role, test_role, university, department, created_at, avatar_path")
-    .is("merged_into", null)
-    .order("name")
-    .limit(300);
-  if (tab === "alumni") profileQuery = profileQuery.eq("role", "alumni");
-  else if (tab === "staff") profileQuery = profileQuery.in("role", [...CREW_ROLES]);
-  else if (tab === "all") {
-    // 걸러내지 않는다 — 이름 검색으로 좁힌다
+  const profileQuery = () => {
+    let pq = supabase
+      .from("profiles")
+      .select("id, name, phone, role, test_role, university, department, created_at, avatar_path")
+      .is("merged_into", null);
+    if (q) pq = pq.ilike("name", `%${q.replace(/[%_]/g, "")}%`);
+    return pq;
+  };
+  const PROFILE_MAX = 300;
+  let profiles: Awaited<ReturnType<typeof profileQuery>>["data"];
+  if (tab === "active" || tab === "preliminary") {
+    // 등록생 · 예비등록생 — id 를 100개씩 나눠 묻는다 (2026-10-29). 예전에는 id 를 전부 `.in()` 하나에 실어서, 방학에 600명이면
+    // 요청 주소가 20KB 를 넘어 실패하고 탭이 "해당하는 학생이 없습니다" 로 비었다. 이름순 300명까지는 예전과 같다
+    const want = tab === "active" ? roster.activeIds : roster.preliminaryIds;
+    const { rows } = await readAllIn(want, (chunk, from, to) => profileQuery().in("id", chunk).order("id").range(from, to));
+    profiles = rows.sort((a, b) => a.name.localeCompare(b.name, "ko")).slice(0, PROFILE_MAX);
   } else {
-    const ids = tab === "active" ? roster.activeIds : roster.preliminaryIds;
-    if (ids.length === 0) profileQuery = profileQuery.in("id", ["00000000-0000-0000-0000-000000000000"]);
-    else profileQuery = profileQuery.in("id", ids);
+    let pq = profileQuery().order("name").limit(PROFILE_MAX);
+    if (tab === "alumni") pq = pq.eq("role", "alumni");
+    else if (tab === "staff") pq = pq.in("role", [...CREW_ROLES]);
+    // 전체 탭은 걸러내지 않는다 — 이름 검색으로 좁힌다
+    ({ data: profiles } = await pq);
   }
-  if (q) profileQuery = profileQuery.ilike("name", `%${q.replace(/[%_]/g, "")}%`);
-  const { data: profiles } = await profileQuery;
   const ids = (profiles ?? []).map((p) => p.id);
 
   const [{ data: enrollments }, { data: expiredOrders }, { count: testerCount }, { data: accounts }, { data: studySignups }] = await Promise.all([
-    ids.length
-      ? supabase
-          .from("enrollments")
-          .select("id, student_id, mode, status, section:class_sections!enrollments_section_id_fkey(id, term_id, course_id, track, start_time, time_block, subject, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(name, target_score, program, course_type))")
-          .in("student_id", ids)
-          .order("id")
-      : Promise.resolve({ data: [] as never[] }),
+    // 학생 300명 × 지난달들까지의 배정은 1,000줄을 넘는다 — id 를 100개씩 나눠 1,000줄씩 읽는다 (2026-10-29: 넘친 학생의 반 배지가 조용히 빠졌다)
+    readAllIn(ids, (chunk, from, to, count) =>
+      supabase
+        .from("enrollments")
+        .select(
+          "id, student_id, mode, status, section:class_sections!enrollments_section_id_fkey(id, term_id, course_id, track, start_time, time_block, subject, enrollment_opens_at, closes_at, term:terms(year, month), course:courses(name, target_score, program, course_type))",
+          count ? { count: "exact" } : undefined,
+        )
+        .in("student_id", chunk)
+        .order("id")
+        .range(from, to),
+    ).then((r) => ({ data: r.rows })),
     tab === "alumni" && ids.length
-      ? supabase.from("enrollment_orders").select("user_id, access_until").in("user_id", ids).order("access_until", { ascending: false })
+      ? readAllIn(ids, (chunk, from, to, count) =>
+          supabase
+            .from("enrollment_orders")
+            .select("id, user_id, access_until", count ? { count: "exact" } : undefined)
+            .in("user_id", chunk)
+            .order("access_until", { ascending: false })
+            .order("id")
+            .range(from, to),
+        ).then((r) => ({ data: r.rows }))
       : Promise.resolve({ data: [] as { user_id: string; access_until: string }[] }),
     supabase.from("profiles").select("id", { count: "exact", head: true }).in("role", [...CREW_ROLES]).is("merged_into", null),
     // 이메일·로그인 방식·마지막 접속은 auth 스키마에 있어 스태프 전용 함수로 읽는다 (2026-09-18 Alan 요청).
@@ -109,7 +129,15 @@ export default async function StudentsPage({
       : Promise.resolve({ data: [] as { user_id: string; email: string | null; providers: string[]; last_sign_in_at: string | null; avatar_url: string | null }[] }),
     // 이번(또는 곧 올) 기수의 스터디 신청 — 단어 · 비대면
     ids.length && term
-      ? supabase.from("study_signups").select("user_id, study:studies!inner(kind, term_id)").in("user_id", ids).eq("study.term_id", term.id)
+      ? readAllIn(ids, (chunk, from, to, count) =>
+          supabase
+            .from("study_signups")
+            .select("id, user_id, study:studies!inner(kind, term_id)", count ? { count: "exact" } : undefined)
+            .in("user_id", chunk)
+            .eq("study.term_id", term.id)
+            .order("id")
+            .range(from, to),
+        ).then((r) => ({ data: r.rows }))
       : Promise.resolve({ data: [] as { user_id: string; study: { kind: string } | null }[] }),
   ]);
 

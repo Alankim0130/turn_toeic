@@ -181,6 +181,21 @@ export function NoteEditor({
     if (editor.current) paint(editor.current, doc, urls.current, selected);
   }
 
+  /** 한글 등을 조합하는 중인가 — 그동안 칸을 다시 그리면 조합하던 글자가 깨진다. 기다릴 일은 조합이 끝난 뒤에 (`afterCompose`) */
+  const composing = useRef(false);
+  const afterCompose = useRef<(() => void)[]>([]);
+  const whenSettled = () => (composing.current ? new Promise<void>((resolve) => afterCompose.current.push(resolve)) : Promise.resolve());
+
+  /** 브라우저가 만든 서식 꼴(`hasForeign`)을 우리 꼴로 다시 그린다 — 보이는 것 = 저장되는 것. 커서는 제자리 */
+  function settleForeign(el: HTMLElement) {
+    if (composing.current || !hasForeign(el)) return;
+    const sel = el.contains(document.activeElement) ? readSelection(el) : null;
+    const { doc } = scan(el);
+    repaint(doc, null);
+    if (sel) writeSelection(el, sel[0], sel[1]);
+    commit(doc);
+  }
+
   // 처음 한 번 그린다 — 그 뒤로는 칸이 스스로 글자를 받는다
   useEffect(() => {
     const doc = parseDoc(defaultValue);
@@ -353,12 +368,40 @@ export function NoteEditor({
     return () => el.removeEventListener("beforeinput", on);
   }, []);
 
+  /**
+   * `at` 자리에 넣는다 — **포커스를 가져가지 않고** 쓰던 커서는 제자리(넣은 만큼 밀어)에 둔다. 돌려주는 값은 넣은 것 바로 뒤.
+   * 사진은 올리는 데 몇 초가 걸려 그동안 제목 칸 · 칸의 다른 곳을 쓰고 있을 수 있다 (2026-10-29 점검 — 예전에는 다 올라가는 순간 칸이 포커스를
+   * 가져가고 커서를 사진 뒤로 옮겨, 쓰던 곳에서 튕겼다)
+   */
+  function insertQuietly(at: number, runs: NoteRun[]): number {
+    const el = editor.current;
+    if (!el || disabled) return at;
+    const { doc } = scan(el);
+    const pos = Math.min(Math.max(at, 0), runsLength(doc.runs));
+    const n = runsLength(runs);
+    const sel = el.contains(document.activeElement) ? readSelection(el) : null;
+    const next = spliceDoc(doc, pos, pos, runs);
+    setPicked(null);
+    repaint(next, null);
+    const shift = (x: number) => (x >= pos ? x + n : x);
+    if (sel) writeSelection(el, shift(sel[0]), shift(sel[1]));
+    if (lastRange.current) lastRange.current = [shift(lastRange.current[0]), shift(lastRange.current[1])];
+    commit(next);
+    return pos + n;
+  }
+
+  /**
+   * 사진 넣기 · 붙여 넣기 · 끌어 놓기 — **고른 때의 커서 자리**에 넣는다 (2026-10-29 점검 — 예전에는 다 올라간 때의 커서 자리라, 기다리며 다른 곳을 쓰면
+   * 사진이 쓰던 문장 한가운데 들어갔다). 고른 글자를 지우지 않는다 (올리는 동안 글이 바뀌었을 수 있다).
+   * 한글을 조합하는 중이면 조합이 끝난 뒤에 넣는다 — 그 자리에서 칸을 다시 그리면 조합하던 글자가 깨진다
+   */
   async function addImages(files: File[]) {
     if (!images || disabled || files.length === 0) return;
     const el = editor.current;
     if (!el) return;
     const maxBytes = images.maxBytes ?? 10 * MB;
     const maxCount = images.maxCount ?? 30;
+    let at = range()?.[0] ?? runsLength(scan(el).doc.runs);
     for (const file of files) {
       if (!isImageType(file.type)) {
         setHint(`${file.name}: 사진(jpg · png · webp · gif)만 넣을 수 있어요.`);
@@ -376,13 +419,13 @@ export function NoteEditor({
       try {
         const up = await uploadFile(images.bucket, `${images.folder}${objectName(file)}`, file);
         urls.current[up.path] = URL.createObjectURL(file);
+        await whenSettled();
         // 사진은 한 줄에 하나 — 앞뒤에 줄을 바꿔 넣는다 (블로그처럼)
-        const { doc } = scan(el);
-        const text = Array.from(runsText(doc.runs));
-        const r = range() ?? [text.length, text.length];
-        const before = r[0] > 0 && text[r[0] - 1] !== "\n" ? [{ text: "\n", style: {} }] : [];
-        const after = text[r[1]] === "\n" ? [] : [{ text: "\n", style: {} }];
-        insert([...before, imageRun(up.path), ...after], before.length + 1 + after.length);
+        const text = Array.from(runsText(scan(el).doc.runs));
+        const pos = Math.min(Math.max(at, 0), text.length);
+        const before = pos > 0 && text[pos - 1] !== "\n" ? [{ text: "\n", style: {} }] : [];
+        const after = text[pos] === "\n" ? [] : [{ text: "\n", style: {} }];
+        at = insertQuietly(pos, [...before, imageRun(up.path), ...after]);
         setHint(null);
       } catch (err) {
         setHint(err instanceof Error ? err.message : "사진을 올리지 못했어요.");
@@ -613,7 +656,8 @@ export function NoteEditor({
             />
           </>
         )}
-        <Tool label="표 넣기" onUse={() => setTableEdit({ table: null })} disabled={disabled} wide>
+        {/* 사진을 올리는 동안은 표 팝업을 열지 않는다 — 다 올라가 사진이 들어가면 고르던 표가 풀려 팝업의 고친 표가 들어갈 자리를 잃는다 (2026-10-29 점검) */}
+        <Tool label="표 넣기" onUse={() => setTableEdit({ table: null })} disabled={disabled || uploading > 0} wide>
           <span className="inline-flex items-center gap-1">
             <TableGlyph />
             표 넣기
@@ -674,6 +718,7 @@ export function NoteEditor({
           <Tool
             label="표 고치기 — 셀 글자 · 줄 · 칸 · 셀 합치기"
             onUse={() => setTableEdit({ table: (editor.current && picked?.kind === "table" && tableAt(scan(editor.current).doc, picked.offset)) || pickedTable.table })}
+            disabled={uploading > 0}
             wide
           >
             표 고치기
@@ -698,9 +743,24 @@ export function NoteEditor({
         data-placeholder={placeholder}
         data-empty={value === "" || undefined}
         onInput={(e) => {
-          commit(scan(e.currentTarget).doc);
+          const el = e.currentTarget;
+          commit(scan(el).doc);
           setPicked(null);
           setHint(null);
+          if (!(e.nativeEvent as InputEvent).isComposing) settleForeign(el);
+        }}
+        onCompositionStart={() => {
+          composing.current = true;
+        }}
+        onCompositionEnd={(e) => {
+          composing.current = false;
+          const el = e.currentTarget;
+          // 조합을 마친 글자가 칸에 들어간 뒤에 — 서식 꼴 정리, 기다리던 사진 넣기
+          window.setTimeout(() => {
+            if (composing.current) return;
+            settleForeign(el);
+            afterCompose.current.splice(0).forEach((resolve) => resolve());
+          }, 0);
         }}
         onPointerDown={(e) => {
           // 표 끌기 (PC 마우스) — 왼쪽 위 손잡이를 누르는 동안만 끌 수 있게 한다. 표 어디서나 끌리면 칸 글자를 끌어 고를 수 없고(2026-10-19 Alan),
@@ -1172,16 +1232,109 @@ function caretOnObj(root: HTMLElement, offset: number) {
   return !!r && ((r[0] === r[1] && r[0] === offset + 1) || (r[0] === offset && r[1] === offset + 1));
 }
 
-function styleOfNode(node: Node, root: HTMLElement): NoteStyle {
+function styleOfNode(node: Node, root: HTMLElement, palette: () => Palette): NoteStyle {
   let style: NoteStyle = {};
   for (let el = node.parentElement; el && el !== root; el = el.parentElement) {
     if (el.dataset.note) {
       try {
         style = { ...(JSON.parse(el.dataset.note) as NoteStyle), ...style };
       } catch {}
+    } else if (FOREIGN_TAGS.has(el.tagName) || el.hasAttribute("style") || el.hasAttribute("color")) {
+      style = { ...nativeStyleOf(el, palette), ...style };
     }
   }
   return style;
+}
+
+/**
+ * 브라우저가 스스로 만든 서식 꼴 (2026-10-29 점검 — 크롬 실측). 서식 있는 낱말을 끝까지 지우고 이어 치면 크롬이 지운 글자의 모양을 이어 주려고
+ * `<b>` · `<i>` · `<u>` · `<font color>` · `<span style="font-size · background-color">` 로 감싸는데, 예전에는 우리 조각(data-note)만 읽어
+ * **칸에는 굵게 보이는데 저장은 보통 글자**였다 (2026-10-22 의 서식 메뉴와 같은 꼴 — 지운 굵은 정답 `(B)` 를 `(C)` 로 고쳐 치면 학생에게는 보통 글자).
+ * 굵게 · 기울임 · 밑줄은 태그 · 글꼴 굵기로, 색 · 크기 · 형광펜은 우리 다섯 색 · 세 크기 · 형광펜과 **같은 값일 때만** 읽는다 (다른 값은 버린다).
+ * 읽은 뒤에는 칸을 우리 꼴로 다시 그린다 (`hasForeign` — 보이는 것 = 저장되는 것)
+ */
+const FOREIGN_TAGS = new Set(["B", "STRONG", "I", "EM", "U", "INS", "FONT"]);
+type Palette = { color: Map<string, NoteColor>; size: Map<string, NoteSize>; mark: string };
+
+function nativeStyleOf(el: HTMLElement, palette: () => Palette): NoteStyle {
+  const s: NoteStyle = {};
+  const tag = el.tagName;
+  if (tag === "B" || tag === "STRONG") s.bold = true;
+  if (tag === "I" || tag === "EM") s.italic = true;
+  if (tag === "U" || tag === "INS") s.underline = true;
+  const st = el.style;
+  const weight = st.fontWeight;
+  if (weight === "bold" || weight === "bolder" || Number(weight) >= 600) s.bold = true;
+  else if (weight === "normal" || (weight !== "" && Number(weight) < 600)) s.bold = false;
+  if (st.fontStyle === "italic" || st.fontStyle === "oblique") s.italic = true;
+  if (`${st.textDecorationLine} ${st.textDecoration}`.includes("underline")) s.underline = true;
+  const color = tag === "FONT" ? el.getAttribute("color") || st.color : st.color;
+  if (color) {
+    const c = palette().color.get(normColor(color, "color"));
+    if (c) s.color = c;
+  }
+  if (st.fontSize) {
+    const z = palette().size.get(normColor(st.fontSize, "fontSize"));
+    if (z) s.size = z;
+  }
+  if (st.backgroundColor && palette().mark && normColor(st.backgroundColor, "backgroundColor") === palette().mark) s.mark = true;
+  // 형광펜이 덮어쓴 글자 색(text-ink)은 형광펜의 몫이다 — 색으로 따로 읽지 않는다
+  return s;
+}
+
+/** 값을 브라우저가 계산한 꼴로 (`#dc2626` · `rgb(…)` · `oklch(…)` 를 같은 자로 견주려고) */
+function normColor(value: string, prop: "color" | "backgroundColor" | "fontSize"): string {
+  const probe = document.createElement("span");
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  probe.style[prop] = value;
+  document.body.append(probe);
+  const out = getComputedStyle(probe)[prop];
+  probe.remove();
+  return out;
+}
+
+/**
+ * 우리 다섯 색 · 세 크기 · 형광펜이 이 화면에서 계산되는 값 — 칸 하나를 훑을 때 한 번만 잰다.
+ * 칸과 같은 클래스를 단 상자 안에서 잰다 — 칸의 기본 글자(크기 · 색)와 같은 값은 서식이 아니다 (크롬은 칸과 다를 때만 감싼다)
+ */
+function paletteOf(root: HTMLElement): Palette {
+  const box = document.createElement("div");
+  box.className = root.className;
+  box.style.position = "absolute";
+  box.style.visibility = "hidden";
+  const probe = document.createElement("span");
+  box.append(probe);
+  document.body.append(box);
+  const read = (className: string, prop: "color" | "backgroundColor" | "fontSize") => {
+    probe.className = className;
+    return getComputedStyle(probe)[prop];
+  };
+  const color = new Map<string, NoteColor>();
+  for (const c of Object.keys(NOTE_COLORS) as NoteColor[]) {
+    const v = read(NOTE_COLORS[c].className, "color");
+    if (v && !color.has(v)) color.set(v, c);
+  }
+  const size = new Map<string, NoteSize>();
+  for (const z of Object.keys(NOTE_SIZES) as NoteSize[]) {
+    const v = read(NOTE_SIZES[z].className, "fontSize");
+    if (v && !size.has(v)) size.set(v, z);
+  }
+  const mark = read(runClassName({ mark: true }), "backgroundColor");
+  // 칸의 기본 글자와 같은 값은 서식이 아니다 (색 · 크기를 못 재는 화면이면 읽지 않는다)
+  color.delete(read("", "color"));
+  size.delete(read("", "fontSize"));
+  box.remove();
+  return { color, size, mark: mark && mark !== "rgba(0, 0, 0, 0)" && mark !== "transparent" ? mark : "" };
+}
+
+/** 칸 안에 브라우저가 만든 서식 꼴이 있나 — 표(우리가 그린 덩어리) 안은 보지 않는다. 글자를 칠 때마다 보므로 좁은 선택자로 */
+const FOREIGN_SELECTOR = "b, strong, i, em, u, ins, font, span:not([data-note]), [style]:not(img), [color]";
+function hasForeign(root: HTMLElement): boolean {
+  for (const el of root.querySelectorAll<HTMLElement>(FOREIGN_SELECTOR)) {
+    if (!el.closest("[data-table]")) return true;
+  }
+  return false;
 }
 
 const isBlock = (n: Node) => n instanceof HTMLElement && /^(DIV|P|LI|H[1-6])$/.test(n.tagName);
@@ -1201,6 +1354,8 @@ function scan(root: HTMLElement): { doc: NoteDoc; entries: Entry[] } {
   const entries: Entry[] = [];
   let count = 0;
   let started = false;
+  let pal: Palette | null = null;
+  const palette = () => (pal ??= paletteOf(root));
   const newline = (node: Node, block: boolean, a: NoteAlign) => {
     entries.push({ kind: "nl", node, start: count, block });
     runs.push({ text: "\n", style: {} });
@@ -1214,7 +1369,7 @@ function scan(root: HTMLElement): { doc: NoteDoc; entries: Entry[] } {
       started = true;
       const len = Array.from(t).length;
       entries.push({ kind: "text", node: node as Text, start: count, len });
-      runs.push({ text: t, style: styleOfNode(node, root) });
+      runs.push({ text: t, style: styleOfNode(node, root, palette) });
       count += len;
       return;
     }

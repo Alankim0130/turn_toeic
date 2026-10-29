@@ -175,8 +175,10 @@ export async function approveVerificationWith(admin: Admin, input: ApproveInput)
   }
   const oldOrders = [...new Set([...plan.absorb, ...plan.remove].map((e) => e.order_id))].filter((id) => id !== order.id);
   if (oldOrders.length > 0) {
-    const { data: still } = await admin.from("enrollments").select("order_id").in("order_id", oldOrders);
-    const emptied = oldOrders.filter((id) => !(still ?? []).some((r) => r.order_id === id));
+    // 남은 배정을 읽지 못하면 지우지 않는다 — 등록을 지우면 남은 배정까지 함께 지워진다(on delete cascade). 빈 등록이 남는 편이 낫다 (2026-10-29)
+    const { data: still, error: stillError } = await admin.from("enrollments").select("order_id").in("order_id", oldOrders);
+    const emptied = stillError ? [] : oldOrders.filter((id) => !(still ?? []).some((r) => r.order_id === id));
+    if (stillError) console.error("[approve] 옛 등록의 남은 배정을 읽지 못해 그대로 뒀어요", stillError.message);
     if (emptied.length > 0) {
       const { error } = await admin.from("enrollment_orders").delete().in("id", emptied);
       if (error) console.error("[approve] 비게 된 옛 등록을 지우지 못했어요", error.message);

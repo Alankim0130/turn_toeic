@@ -23,8 +23,9 @@ function revalidateMaterials() {
  * (인증이 붙은 회차는 수업일이 줄어도 남겨 두므로 옛 파일을 계속 가리킬 수 있다 — 20260922124700)
  */
 async function removeIfUnused(supabase: Awaited<ReturnType<typeof createClient>>, path: string) {
-  const { count } = await supabase.from("study_materials").select("id", { count: "exact", head: true }).eq("file_path", path);
-  if (!count) await supabase.storage.from(BUCKET).remove([path]);
+  // 세지 못하면 지우지 않는다 — 아직 쓰는 파일을 지우면 그 회차를 받은 학생의 자료가 사라진다 (2026-10-29)
+  const { count, error } = await supabase.from("study_materials").select("id", { count: "exact", head: true }).eq("file_path", path);
+  if (!error && count === 0) await supabase.storage.from(BUCKET).remove([path]);
 }
 
 /**

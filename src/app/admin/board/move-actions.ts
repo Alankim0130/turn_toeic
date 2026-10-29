@@ -55,6 +55,8 @@ export type MoveOptions = { quiet?: boolean };
 const TESTING = "테스트 등급을 켠 동안에는 옮길 수 없어요. 위 띠에서 테스트를 끝낸 뒤 해 주세요.";
 const BAD = "잘못된 요청이에요.";
 const COPY_FAIL = "사진 · 파일을 옮기지 못했어요. 잠시 후 다시 시도해 주세요.";
+/** 레벨 목록을 못 읽으면 옮기지 않는다 — 빈 목록으로 거르면 650 공지가 '모든 레벨' 글이 되고 돌아갈 때 전체 공지가 됐다 (2026-10-29) */
+const LEVELS_FAIL = "레벨 목록을 읽지 못해 옮기지 않았어요. 잠시 후 다시 시도해 주세요.";
 
 const denied = (error: { code?: string } | null, fallback: string) =>
   error?.code === "42501" ? "권한이 없어요. 강사 · 관리자 계정으로 다시 로그인해 주세요." : fallback;
@@ -131,7 +133,7 @@ export async function moveStaffPostToClass(input: { id: number; target: unknown 
   if (!target) return { ok: false, error: "옮길 곳을 다시 골라 주세요." };
 
   const supabase = await createClient();
-  const [{ data: levelRows }, { data: post }] = await Promise.all([
+  const [{ data: levelRows, error: levelError }, { data: post }] = await Promise.all([
     supabase.from("lc_levels").select("level"),
     supabase
       .from("staff_posts")
@@ -139,6 +141,7 @@ export async function moveStaffPostToClass(input: { id: number; target: unknown 
       .eq("id", id)
       .maybeSingle(),
   ]);
+  if (levelError) return { ok: false, error: LEVELS_FAIL };
   if (!post) return { ok: false, error: "글을 찾을 수 없어요. 새로고침해 주세요." };
   const known = (levelRows ?? []).map((l) => l.level);
   const targetError = moveTargetError(target, known);
@@ -298,7 +301,7 @@ export async function moveClassNoticeToBoard(id: number, opts?: MoveOptions): Pr
   if (profile.test_role) return TESTING_STOP;
   if (!Number.isInteger(id) || id <= 0) return { ok: false, error: BAD };
   const supabase = await createClient();
-  const [{ data: levelRows }, { data: notice }] = await Promise.all([
+  const [{ data: levelRows, error: levelError }, { data: notice }] = await Promise.all([
     supabase.from("lc_levels").select("level"),
     supabase
       .from("class_notices")
@@ -306,9 +309,11 @@ export async function moveClassNoticeToBoard(id: number, opts?: MoveOptions): Pr
       .eq("id", id)
       .maybeSingle(),
   ]);
+  if (levelError) return { ok: false, error: LEVELS_FAIL };
   if (!notice) return { ok: false, error: "공지를 찾을 수 없어요. 새로고침해 주세요." };
   const known = (levelRows ?? []).map((l) => l.level);
-  const levels = normalizeLevels(notice.levels).filter((l) => known.includes(l));
+  const origin = normalizeLevels(notice.levels);
+  const levels = origin.filter((l) => known.includes(l));
   const err = staffPostError({ title: notice.title, body: notice.body, levels }, known);
   if (err) return { ok: false, error: err };
 
@@ -332,7 +337,8 @@ export async function moveClassNoticeToBoard(id: number, opts?: MoveOptions): Pr
       levels,
       subject,
       book_set: null,
-      moved_from: { kind: "notice", levels, subjects },
+      // 원래 범위는 그대로 적는다 — 돌아갈 때 지금 레벨 목록으로 다시 거른다 (originTargetOf)
+      moved_from: { kind: "notice", levels: origin, subjects },
     },
     files,
     fileSteps,
@@ -359,7 +365,7 @@ export async function moveClassMaterialToBoard(id: number, opts?: MoveOptions): 
   if (profile.test_role) return TESTING_STOP;
   if (!Number.isInteger(id) || id <= 0) return { ok: false, error: BAD };
   const supabase = await createClient();
-  const [{ data: levelRows }, { data: material }] = await Promise.all([
+  const [{ data: levelRows, error: levelError }, { data: material }] = await Promise.all([
     supabase.from("lc_levels").select("level"),
     supabase
       .from("class_materials")
@@ -367,6 +373,7 @@ export async function moveClassMaterialToBoard(id: number, opts?: MoveOptions): 
       .eq("id", id)
       .maybeSingle(),
   ]);
+  if (levelError) return { ok: false, error: LEVELS_FAIL };
   if (!material) return { ok: false, error: "자료를 찾을 수 없어요. 새로고침해 주세요." };
   const known = (levelRows ?? []).map((l) => l.level);
   const levels = known.includes(material.level) ? [material.level] : [];

@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { COURSE_TYPE_LABEL } from "@/lib/utils";
 import { NewCourseForm } from "./NewCourseForm";
 import { SectionFields } from "./SectionFields";
+import { submitWithoutReset } from "@/lib/form-submit";
 
 type Course = { id: number; code: string; name: string; course_type: string; target_score: number | null };
 type Instructor = { id: string; name: string; role: string };
@@ -31,7 +32,8 @@ export function CreateSectionForm({
 
   return (
     <div className="space-y-5">
-      <form action={action} className="space-y-5">
+      {/* 보내기는 직접 한다 (2026-10-29) — 오류 뒤 초기화되면 고른 강좌 · 담당 강사가 처음 값으로 돌아갔다 (`form-submit.ts`) */}
+      <form action={action} onSubmit={submitWithoutReset(action)} className="space-y-5">
         <input type="hidden" name="term_id" value={termId} />
         {state.error && <Alert kind="warning">{state.error}</Alert>}
 

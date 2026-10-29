@@ -24,7 +24,8 @@ import {
 import { isRoundSet, ROUND_MAX } from "@/lib/class-rounds";
 import { nextMaterialOrder } from "./_lib/next-order";
 
-export type ClassMaterialResult = { ok: boolean; error?: string };
+/** filesSaved — 새 파일 행까지 저장한 뒤 그다음 단계(파일 빼기 · 순서)에서 멈췄다. 올린 파일은 이미 첨부라 화면이 지우면 안 된다 (2026-10-29) */
+export type ClassMaterialResult = { ok: boolean; error?: string; filesSaved?: boolean };
 
 function revalidateMaterials() {
   revalidatePath("/admin/class-materials");
@@ -220,7 +221,7 @@ export async function saveClassMaterial(input: {
       .select("file_path");
     if (removeError) {
       revalidateMaterials();
-      return { ok: false, error: "제목 · 안내는 저장했지만 파일을 빼지 못했어요. 새로고침한 뒤 다시 빼 주세요." };
+      return { ok: false, filesSaved: true, error: "제목 · 안내는 저장했지만 파일을 빼지 못했어요. 새로고침한 뒤 다시 빼 주세요." };
     }
     if (gone?.length) await supabase.storage.from(CLASS_MATERIAL_BUCKET).remove(gone.map((g) => g.file_path));
   }
@@ -233,7 +234,7 @@ export async function saveClassMaterial(input: {
     );
     if (results.some((r) => r.error)) {
       revalidateMaterials();
-      return { ok: false, error: "저장했지만 파일 순서를 다 적지 못했어요. 새로고침한 뒤 다시 옮겨 주세요." };
+      return { ok: false, filesSaved: true, error: "저장했지만 파일 순서를 다 적지 못했어요. 새로고침한 뒤 다시 옮겨 주세요." };
     }
   }
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Dialog } from "@/components/ui/Dialog";
 import { moveClassMaterialToBoard, moveClassNoticeToBoard } from "@/app/admin/board/move-actions";
 import { cn } from "@/lib/utils";
+import { MOVE_THROWN } from "@/lib/board-move";
 
 /**
  * 수업자료실 공지 · 회차 자료 → 직원 게시판 옮기기 (2026-10-21 Alan — "반대로 수업게시물에 있는 내용을 다시 직원게시판으로 옮길 수 도 있어야해").
@@ -36,7 +37,16 @@ export function MoveToBoardButton({
     if (busy) return;
     setBusy(true);
     setError(null);
-    const res = kind === "notice" ? await moveClassNoticeToBoard(id) : await moveClassMaterialToBoard(id);
+    let res: Awaited<ReturnType<typeof moveClassNoticeToBoard>>;
+    try {
+      res = kind === "notice" ? await moveClassNoticeToBoard(id) : await moveClassMaterialToBoard(id);
+    } catch {
+      // 연결이 끊기거나 시간이 다 됐다 (2026-10-29 점검 — 예전에는 '옮기는 중…' 에 멈춰 창을 닫을 수도 없었다). 서버에서는 끝났을 수 있어 화면을 새로 받는다
+      setBusy(false);
+      setError(MOVE_THROWN);
+      router.refresh();
+      return;
+    }
     if (!res.ok) {
       setBusy(false);
       return setError(res.error ?? "옮기지 못했어요.");

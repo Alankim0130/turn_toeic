@@ -9,6 +9,7 @@ import { Icon } from "@/components/ui/Icon";
 import { cn, formatTime } from "@/lib/utils";
 import { isSlotKind, STUDY_KIND_DESC, STUDY_KIND_ICON, STUDY_KIND_LABEL, STUDY_LEVELS, STUDY_STATUS_LABEL, studyLevelLabel, type SlotLite } from "@/lib/study";
 import type { CopySource, PlannerStudy } from "./StudyPlanner";
+import { submitWithoutReset } from "@/lib/form-submit";
 
 const STATUS_OPTIONS = [
   { value: "draft", label: "준비 중", hint: "학생에게 안 보여요" },
@@ -205,7 +206,9 @@ function StudySettingsForm({ kind, study }: { kind: string; study: PlannerStudy 
   const [status, setStatus] = useState(study.status);
 
   return (
-    <form action={action} className="mt-4 space-y-3">
+    // 보내기는 직접 한다 (2026-10-29) — `<form action>` 이 끝나면 React 가 폼을 초기화해 공개 상태 칸이 처음 값으로 돌아갔다.
+    // 화면은 '신청 받기' 인데 다음 저장(안내만 고쳐도)에 처음 상태('준비 중')가 실려 학생 화면에서 스터디가 사라졌다
+    <form action={action} onSubmit={submitWithoutReset(action)} className="mt-4 space-y-3">
       <input type="hidden" name="id" value={study.id} />
       <fieldset>
         <legend className="label">공개 상태</legend>
@@ -304,7 +307,8 @@ function SlotRow({ slot, index }: { slot: SlotLite; index: number }) {
           )}
         </div>
       ) : (
-        <form action={action} className="flex flex-wrap items-end gap-2">
+        // 보내기는 직접 한다 (2026-10-29) — 오류 뒤 초기화되면 레벨 고르기가 처음 레벨로 돌아가, 시각만 고쳐 다시 저장하면 바꾼 레벨이 조용히 빠졌다
+        <form action={action} onSubmit={submitWithoutReset(action)} className="flex flex-wrap items-end gap-2">
           <input type="hidden" name="id" value={slot.id} />
           <SlotInputs idPrefix={`slot-${slot.id}`} values={state.values ?? { start_time: formatTime(slot.start_time), end_time: formatTime(slot.end_time), capacity: slot.capacity?.toString() ?? "", level: slot.level?.toString() ?? "" }} />
           <div className="flex gap-1">

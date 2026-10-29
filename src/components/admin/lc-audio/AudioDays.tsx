@@ -86,6 +86,8 @@ export function AudioDays({
     reset();
     setBusy(true);
     const uploaded: { day: number; label: string | null; file: UploadedFile }[] = [];
+    // 등록을 보낸 뒤에 끊기면 서버가 이미 등록했을 수 있다 — 그때는 올린 음원을 지우지 않는다 (2026-10-29 점검 — 지우면 등록된 음원이 재생되지 않는다)
+    let sent = false;
     try {
       for (let i = 0; i < pending.length; i++) {
         setProgress(`${i + 1} / ${pending.length} 업로드 중…`);
@@ -93,6 +95,7 @@ export function AudioDays({
         uploaded.push({ day: p.day, label: p.label.trim() || null, file: await uploadFile(BUCKET, `${bookId}/${objectName(p.file)}`, p.file) });
       }
       setProgress("목록에 등록 중…");
+      sent = true;
       const res = await setAudioTracks({ bookId, kind, tracks: uploaded });
       if (!res.ok) {
         await removeUploaded(BUCKET, uploaded.map((u) => u.file.path));
@@ -104,6 +107,11 @@ export function AudioDays({
       setDone(`${AUDIO_KIND_LABEL[kind]} ${res.count}개를 올렸어요.`);
       router.refresh();
     } catch (e) {
+      if (sent) {
+        setError("인터넷이 끊겨 등록됐는지 확인하지 못했어요. 화면을 새로 받았으니 목록에 있는지 먼저 봐 주세요.");
+        router.refresh();
+        return;
+      }
       await removeUploaded(BUCKET, uploaded.map((u) => u.file.path));
       setError(e instanceof Error ? e.message : "업로드하지 못했어요.");
     } finally {

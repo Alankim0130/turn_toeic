@@ -44,6 +44,16 @@ export function MissingAutoCard({ view, canEdit }: { view: MissingAutoView; canE
   const [minute, setMinute] = useState(ready?.minute ?? "00");
   const [result, setResult] = useState<MissingAutoResult | null>(null);
   const [pending, startTransition] = useTransition();
+  // 저장된 값이 바뀌면(다른 선생님이 바꿨거나 · 읽지 못했다가 읽었다) 고르는 칸을 그 값으로 맞춘다 (2026-10-29 점검 — 예전에는 처음 받은 값이
+  // 칸에 남아, 그대로 '저장' 하면 남이 바꾼 시각 · 켜짐을 되돌렸다. 읽지 못한 채 열렸다 읽히면 '꺼짐 · 21:00' 이 칸에 남았다). 결과 줄은 남긴다
+  const savedKey = ready ? `${ready.enabled}|${ready.hour}|${ready.minute}` : view.kind;
+  const [seenKey, setSeenKey] = useState(savedKey);
+  if (seenKey !== savedKey) {
+    setSeenKey(savedKey);
+    setEnabled(ready?.enabled ?? false);
+    setHour(ready?.hour ?? "21");
+    setMinute(ready?.minute ?? "00");
+  }
 
   if (view.kind === "testing") {
     return (

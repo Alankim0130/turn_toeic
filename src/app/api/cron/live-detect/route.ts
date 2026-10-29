@@ -3,7 +3,7 @@ import { authorizedAppCall } from "@/lib/cron-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyUser } from "@/lib/push";
 import { detectedNote, matchBroadcasts, toBroadcasts, watchUrl, type LiveCandidate } from "@/lib/live-detect";
-import { activeBroadcasts, channelAccessToken, youtubeConfigured, type ChannelRow } from "@/lib/youtube";
+import { activeBroadcasts, broadcastFailure, channelAccessToken, youtubeConfigured, type ChannelRow } from "@/lib/youtube";
 
 /**
  * 유튜브 송출 감지 (2026-09-21 → 2026-10-01 다시보기용). DB 크론 `live-detect` 가 **감지할 회차가 있을 때만** 30초마다 부른다
@@ -46,60 +46,72 @@ export async function POST(req: NextRequest) {
     .in("user_id", [...byInstructor.keys()]);
 
   let registered = 0;
+  // 강사마다 따로 — 한 채널이 던져도(시간 초과 · DB 오류) 다른 강사 채널은 이번 회차에 그대로 본다 (2026-10-29 점검 — 예전에는 통째로 멈췄다)
   for (const ch of (channels ?? []) as ChannelRow[]) {
-    const now = new Date();
-    let token = await channelAccessToken(ch);
-    if (!token) continue; // 연결이 끊겼다 — 오류를 남기고 강사에게 한 번 알렸다
-    let res = await activeBroadcasts(token);
-    if (res.status === 401 || res.status === 403) {
-      token = await channelAccessToken(ch, true);
-      if (!token) continue;
-      res = await activeBroadcasts(token);
+    try {
+      registered += await detectChannel(admin, ch, byInstructor.get(ch.user_id) ?? []);
+    } catch (e) {
+      console.error("[live-detect]", ch.user_id, e instanceof Error ? e.message : e);
     }
-    if (res.status !== 200) {
-      const reason = `유튜브 조회 실패 (HTTP ${res.status})`;
-      console.error("[live-detect]", ch.user_id, reason);
-      await admin.from("youtube_channels").update({ last_checked_at: now.toISOString(), last_error: reason, last_error_at: now.toISOString() }).eq("user_id", ch.user_id);
-      continue;
-    }
-
-    let found = false;
-    for (const m of matchBroadcasts(byInstructor.get(ch.user_id) ?? [], toBroadcasts(res.json), now)) {
-      if (m.sessions.length === 0) continue;
-      const { data: rows, error: regError } = await admin.rpc("register_detected_stream", {
-        p_session_date_ids: m.sessions.map((s) => s.session_date_id),
-        p_url: watchUrl(m.broadcast.id),
-      });
-      if (regError) {
-        console.error("[live-detect] register", regError.message);
-        continue;
-      }
-      const regs = (rows ?? []) as { session_date_id: number; live_linked: boolean }[];
-      const inserted = new Set(regs.map((r) => r.session_date_id));
-      if (inserted.size === 0) continue; // 그 사이 다른 방송이 먼저 잡혔다 — 알리지 않는다
-      found = true;
-      registered += inserted.size;
-      const hit = m.sessions.filter((s) => inserted.has(s.session_date_id));
-      // 불라방 링크가 비어 있던 회차에는 같은 주소가 불라방 링크로도 들어갔다 (2026-10-01 Alan) — 손으로 넣은 Zoom 링크는 그대로.
-      // 저녁 반은 다시보기를 만들지 않는다 (2026-10-04) — 알림이 "끝나면 다시보기로" 라고 말하지 않게
-      const note = detectedNote({
-        liveLinked: regs.some((r) => r.live_linked),
-        replay: hit.some((s) => s.live_to_replay),
-        privacy: m.broadcast.privacy,
-      });
-      await notifyUser(ch.user_id, "live_detected", {
-        title: "유튜브 송출을 찾았어요",
-        body: `${hit.map((s) => s.label).join(" · ")} — ${note}`,
-        url: "/admin/live-channels",
-        tag: `live-detected-${m.sessions[0].session_date_id}`,
-      });
-    }
-
-    await admin
-      .from("youtube_channels")
-      .update({ last_checked_at: now.toISOString(), last_error: null, last_error_at: null, ...(found ? { last_live_at: now.toISOString() } : {}) })
-      .eq("user_id", ch.user_id);
   }
 
   return NextResponse.json({ ok: true, candidates: candidates.length, registered });
+}
+
+/** 한 강사 채널 — 진행 중 방송을 보고 맞는 회차에 걸어 둔다. 걸어 둔 회차 수 */
+async function detectChannel(admin: ReturnType<typeof createAdminClient>, ch: ChannelRow, candidates: LiveCandidate[]): Promise<number> {
+  let registered = 0;
+  const now = new Date();
+  let token = await channelAccessToken(ch);
+  if (!token) return 0; // 토큰을 받지 못했다 — 까닭을 남겼다 (정말 끊겼으면 강사에게 한 번 알렸다)
+  let res = await activeBroadcasts(token);
+  if (res.status === 401 || res.status === 403) {
+    token = await channelAccessToken(ch, true);
+    if (!token) return 0;
+    res = await activeBroadcasts(token);
+  }
+  if (res.status !== 200) {
+    const reason = broadcastFailure(res.status);
+    console.error("[live-detect]", ch.user_id, reason);
+    await admin.from("youtube_channels").update({ last_checked_at: now.toISOString(), last_error: reason, last_error_at: now.toISOString() }).eq("user_id", ch.user_id);
+    return 0;
+  }
+
+  let found = false;
+  for (const m of matchBroadcasts(candidates, toBroadcasts(res.json), now)) {
+    if (m.sessions.length === 0) continue;
+    const { data: rows, error: regError } = await admin.rpc("register_detected_stream", {
+      p_session_date_ids: m.sessions.map((s) => s.session_date_id),
+      p_url: watchUrl(m.broadcast.id),
+    });
+    if (regError) {
+      console.error("[live-detect] register", regError.message);
+      continue;
+    }
+    const regs = (rows ?? []) as { session_date_id: number; live_linked: boolean }[];
+    const inserted = new Set(regs.map((r) => r.session_date_id));
+    if (inserted.size === 0) continue; // 그 사이 다른 방송이 먼저 잡혔다 — 알리지 않는다
+    found = true;
+    registered += inserted.size;
+    const hit = m.sessions.filter((s) => inserted.has(s.session_date_id));
+    // 불라방 링크가 비어 있던 회차에는 같은 주소가 불라방 링크로도 들어갔다 (2026-10-01 Alan) — 손으로 넣은 Zoom 링크는 그대로.
+    // 저녁 반은 다시보기를 만들지 않는다 (2026-10-04) — 알림이 "끝나면 다시보기로" 라고 말하지 않게
+    const note = detectedNote({
+      liveLinked: regs.some((r) => r.live_linked),
+      replay: hit.some((s) => s.live_to_replay),
+      privacy: m.broadcast.privacy,
+    });
+    await notifyUser(ch.user_id, "live_detected", {
+      title: "유튜브 송출을 찾았어요",
+      body: `${hit.map((s) => s.label).join(" · ")} — ${note}`,
+      url: "/admin/live-channels",
+      tag: `live-detected-${m.sessions[0].session_date_id}`,
+    });
+  }
+
+  await admin
+    .from("youtube_channels")
+    .update({ last_checked_at: now.toISOString(), last_error: null, last_error_at: null, ...(found ? { last_live_at: now.toISOString() } : {}) })
+    .eq("user_id", ch.user_id);
+  return registered;
 }

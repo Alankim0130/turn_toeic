@@ -155,8 +155,9 @@ export async function removeEnrollment(enrollmentIds: number[]): Promise<Student
   if (!gone?.length) return { error: "배정을 찾을 수 없어요." };
 
   for (const orderId of new Set(gone.map((g) => g.order_id).filter((o): o is number => o != null))) {
-    const { count } = await admin.from("enrollments").select("id", { count: "exact", head: true }).eq("order_id", orderId);
-    if (!count) await admin.from("enrollment_orders").delete().eq("id", orderId);
+    // 세지 못하면 등록을 지우지 않는다 — 등록을 지우면 남은 배정까지 함께 지워진다(on delete cascade) (2026-10-29)
+    const { count, error: countError } = await admin.from("enrollments").select("id", { count: "exact", head: true }).eq("order_id", orderId);
+    if (!countError && count === 0) await admin.from("enrollment_orders").delete().eq("id", orderId);
   }
 
   const studentId = gone[0].student_id;

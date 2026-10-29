@@ -6,6 +6,7 @@ import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
 import { isYoutubeUrl } from "@/lib/live-links";
+import { submitWithoutReset } from "@/lib/form-submit";
 
 function shorten(url: string, max = 36) {
   const s = url.replace(/^https?:\/\//, "");
@@ -123,7 +124,9 @@ export function LiveReplayToggle({ sectionId, on, readOnly }: { sectionId: numbe
   const [state, action] = useActionState<ActionState, FormData>(setLiveToReplay, {});
   const [checked, setChecked] = useState(on);
   return (
-    <form action={action} className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm">
+    // 보내기는 직접 한다 (2026-10-29) — `<form action>` 이 끝나면 React 가 폼을 초기화해 체크 칸이 처음 모양으로 돌아갔다.
+    // 글은 '오전반처럼' 인데 칸은 꺼진 채로 보였고, 오류 뒤 다시 저장하면 처음 값이 실렸다
+    <form action={action} onSubmit={submitWithoutReset(action)} className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm">
       <input type="hidden" name="section_id" value={sectionId} />
       <label className="flex cursor-pointer items-center gap-2 font-bold text-ink">
         <input

@@ -13,7 +13,15 @@ type Client = Pick<ReturnType<typeof createAdminClient>, "from">;
  * 학생 화면(세션)과 예비 접수 다시 맞추기(서버)가 **같은 조회**를 쓴다 — 조건이 갈라지면 학생이 본 반과 자동 배정이 어긋난다.
  */
 export async function fetchOpenEnrollSections(client: Client): Promise<EnrollSection[]> {
-  const { data } = await client
+  return (await readOpenEnrollSections(client)) ?? [];
+}
+
+/**
+ * 같은 조회 — **읽지 못하면 null** (2026-10-29). 등업신청 판정이 쓴다: 빈 목록으로 판정하면 '열린 반이 없다' 가 되어
+ * 이번 달 수강증이 "N월 반을 열면 배정해 드려요" 로 받아 둬지고(스태프 알림도 없다) 반을 새로 열 때까지 아무도 모른 채 기다렸다
+ */
+export async function readOpenEnrollSections(client: Client): Promise<EnrollSection[] | null> {
+  const { data, error } = await client
     .from("class_sections")
     // subject · course_type = 종합 · 단과를 가린다 (2026-10-06 — 수동 등업신청의 단과 고르기 · 승인 팝업의 RC단과 이름표)
     .select("id, track, time_block, subject, term:terms(year, month), course:courses(id, name, program, target_score, course_type)")
@@ -21,6 +29,10 @@ export async function fetchOpenEnrollSections(client: Client): Promise<EnrollSec
     .gte("closes_at", todayKST())
     .order("enrollment_opens_at")
     .order("time_block");
+  if (error) {
+    console.error(`[verify] 열린 반을 읽지 못했어요: ${error.message}`);
+    return null;
+  }
   return data ?? [];
 }
 

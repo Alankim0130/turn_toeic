@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { readAll } from "@/lib/read-all";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { cn, formatDate, todayKST } from "@/lib/utils";
@@ -250,7 +251,9 @@ function GridView({
           ...(countOf(null) > 0 ? [{ value: "none", label: "레벨 미정", count: countOf(null) }] : []),
         ]}
       />
+      {/* 달 · 레벨을 바꾸면 새로 그린다 — 앞 화면에서 고른 학생 · 쓰던 독촉 글이 남지 않게 (2026-10-29 점검) */}
       <CheckinRoster
+        key={`${termKey}-${levelFilter ?? "all"}`}
         students={shown}
         materials={materials}
         checkins={checkins.map((c) => ({ material_id: c.material_id, user_id: c.user_id, created_at: c.created_at, files: c.study_checkin_files.length }))}
@@ -364,15 +367,27 @@ async function getLegacyCheckins(supabase: Supabase, materialIds: number[]): Pro
 async function getTermClasses(supabase: Supabase, studentIds: string[], termId: number): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
   if (studentIds.length === 0) return out;
-  const { data } = await supabase
-    .from("enrollments")
-    // enrollments 는 class_sections 를 두 번 참조한다(section_id · pending_from_section_id) — FK 이름을 꼭 적는다
-    .select("student_id, section:class_sections!enrollments_section_id_fkey(id, term_id, course_id, track, start_time, time_block, course:courses(name, target_score, program))")
-    .in("student_id", studentIds)
-    .order("id");
-  const byUser = new Map<string, NonNullable<typeof data>>();
-  for (const e of data ?? []) {
-    if (e.section?.term_id !== termId) continue;
+  // **그 기수 반의 배정만** 읽는다 (2026-10-29) — 예전에는 학생 id 수백 개를 주소에 실어(uuid 300개 ≈ 11KB) 모든 달의 배정을 한 번에 읽어서,
+  // 주소가 길어 실패하거나 1,000줄(PostgREST 상한)을 넘으면 학생들의 반이 통째로 비어 보였다. 반 id 는 짧고, 배정은 1,000줄씩 나눠 읽는다
+  const { data: termSections } = await supabase.from("class_sections").select("id").eq("term_id", termId);
+  const sectionIds = (termSections ?? []).map((s) => s.id);
+  if (sectionIds.length === 0) return out;
+  const want = new Set(studentIds);
+  const { rows } = await readAll((from, to, count) =>
+    supabase
+      .from("enrollments")
+      // enrollments 는 class_sections 를 두 번 참조한다(section_id · pending_from_section_id) — FK 이름을 꼭 적는다
+      .select(
+        "id, student_id, section:class_sections!enrollments_section_id_fkey(id, term_id, course_id, track, start_time, time_block, course:courses(name, target_score, program))",
+        count ? { count: "exact" } : undefined,
+      )
+      .in("section_id", sectionIds)
+      .order("id")
+      .range(from, to),
+  );
+  const byUser = new Map<string, typeof rows>();
+  for (const e of rows) {
+    if (e.section?.term_id !== termId || !want.has(e.student_id)) continue;
     byUser.set(e.student_id, [...(byUser.get(e.student_id) ?? []), e]);
   }
   for (const [id, mine] of byUser) {

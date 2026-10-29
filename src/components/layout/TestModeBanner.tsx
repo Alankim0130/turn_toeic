@@ -18,7 +18,9 @@ export function TestModeBanner({ profile }: { profile: Profile | null }) {
             반 배정 바꾸기
           </Link>
         </p>
-        <form action={switchMyTestRole} className="flex items-center gap-1.5">
+        {/* 등급이 바뀌면 새로 그린다 (2026-10-29) — 고르는 칸은 처음 값(defaultValue)을 처음 그릴 때만 쓰고, 보낸 뒤 React 가 폼을 처음 모양으로 되돌려
+            '수강생으로 보여요' 옆 칸에 옛 등급이 남았다. 그대로 '바꾸기' 를 누르면 옛 등급으로 돌아갔다 */}
+        <form key={profile.test_role} action={switchMyTestRole} className="flex items-center gap-1.5">
           <label htmlFor="test-mode-role" className="sr-only">테스트 등급</label>
           <select id="test-mode-role" name="test_role" defaultValue={profile.test_role} className="input !w-auto !py-1 !pl-2 !pr-7 text-xs font-bold">
             {TEST_ROLES.map((r) => (

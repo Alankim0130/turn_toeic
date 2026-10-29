@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { safeNextPath } from "@/lib/safe-next";
 import { redirect } from "next/navigation";
 import { Logo } from "@/components/ui/Logo";
-import { COMPLETE_PROFILE_PATH, getSessionProfile, isProfileIncomplete } from "@/lib/auth";
+import { COMPLETE_PROFILE_PATH, PROFILE_UNREADABLE, getSessionProfile, isProfileIncomplete } from "@/lib/auth";
 import { CompleteProfileForm } from "./CompleteProfileForm";
 
 export const metadata: Metadata = {
@@ -16,9 +16,11 @@ export const metadata: Metadata = {
  * requireUser() 가 미완성 계정을 여기로 보내므로 이 화면은 requireUser 를 쓰지 않는다 (되돌이 방지).
  */
 export default async function CompleteProfilePage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
-  const [{ next }, { user, profile }] = await Promise.all([searchParams, getSessionProfile()]);
+  const [{ next }, { user, profile, profileError }] = await Promise.all([searchParams, getSessionProfile()]);
   const target = safeNextPath(next);
   if (!user) redirect(`/login?next=${encodeURIComponent(COMPLETE_PROFILE_PATH)}`);
+  // 프로필을 못 읽었으면 빈 칸을 내밀지 않는다 — 가입을 마친 사람이 이름 칸이 비어 있는 것을 보게 된다 (2026-10-29 점검)
+  if (profileError) throw new Error(PROFILE_UNREADABLE);
   if (!isProfileIncomplete(profile)) redirect(target);
 
   return (

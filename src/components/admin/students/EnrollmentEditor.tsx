@@ -6,6 +6,7 @@ import { assignSections, removeEnrollment, type StudentActionState } from "@/app
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Icon } from "@/components/ui/Icon";
 import { SectionPicker, type PickerSection } from "@/components/admin/SectionPicker";
+import { submitWithoutReset } from "@/lib/form-submit";
 
 /** 반 배정 추가 — 강좌 · 시간대별로 월수금 / 화목금 / 주5일(둘 다) 을 고른다 */
 export function AssignSections({ id, sections }: { id: string; sections: PickerSection[] }) {
@@ -24,7 +25,8 @@ export function AssignSections({ id, sections }: { id: string; sections: PickerS
   }
 
   return (
-    <form action={action} className="space-y-3">
+    // 보내기는 직접 한다 (2026-10-29) — 오류 뒤 React 가 폼을 초기화하면 수강 방식이 '현장' 으로 돌아가, 그대로 다시 배정하면 불라방 학생이 현장으로 들어갔다
+    <form action={action} onSubmit={submitWithoutReset(action)} className="space-y-3">
       <input type="hidden" name="id" value={id} />
 
       <SectionPicker sections={sections} value={picked} onChange={setPicked} />

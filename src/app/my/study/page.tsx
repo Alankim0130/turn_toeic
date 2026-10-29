@@ -125,6 +125,8 @@ export default async function MyStudyPage() {
                   {study.notice && <p className="mt-2 whitespace-pre-wrap text-sm text-slate">{study.notice}</p>}
                   {/* 내 레벨 · 변경 요청 (2026-10-12) — 레벨이 없던 신청은 여기서 한 번 바로 고른다 */}
                   <StudyLevelPanel
+                    // 요청 상태가 바뀌면(요청 · 취소 · 승인 · 거절) 칸을 새로 그린다 — 지난 요청의 '변경을 요청했어요' 가 취소 · 결정 뒤에 다시 서지 않게 (2026-10-29)
+                    key={`${s.id}-${s.requested_level ?? ""}-${s.requested_at ?? ""}-${s.request_result ?? ""}-${s.request_decided_at ?? ""}`}
                     signupId={s.id}
                     kind={study.kind}
                     level={s.level}

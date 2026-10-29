@@ -18,7 +18,8 @@ function validUrl(url: string) {
 }
 
 function rlsMessage(code?: string, fallback = "저장하지 못했어요. 잠시 후 다시 시도해 주세요.") {
-  if (code === "42501") return "권한이 없어요. 본인 반의 회차만 등록할 수 있습니다.";
+  // 강사 · 관리자는 모든 반을 고친다 (private.can_manage_section) — 막히는 것은 테스트 등급을 켰을 때다
+  if (code === "42501") return "권한이 없어요. 테스트 등급을 켰다면 끈 뒤에 다시 해 주세요.";
   return fallback;
 }
 

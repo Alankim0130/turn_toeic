@@ -145,6 +145,21 @@ export function capturedAtOf(parsed: unknown): string | null {
 }
 
 /**
+ * 이 그림(capture)과 **같은 그림**인 줄 — 같은 파일(경로 · 해시) · 같은 초 캡처 (`sameCapture`, 2026-10-29).
+ * 수동 등업신청이 자동 승인 뒤의 "반이 달라요" 정정 요청인지 가린다 — 같은 달에 승인된 수강증이 있어도 **다른 그림이면**
+ * (단과를 둘 산 학생의 둘째 수강증) 정정 요청이 아니다. 예전에는 같은 달 승인 하나만으로 정정 요청이라 해서 둘째 수강증 승인 화면이
+ * "기존 승인의 배정 수정에서 고쳐 주세요" 로 첫째 단과 반을 바꾸게 했다
+ */
+export function sameCaptureRow<T extends Pick<SeatRow, "file_path" | "file_hash" | "parsed">>(rows: readonly T[], capture: NonNullable<ReceiptSeat["capture"]>): T | null {
+  const me: ReceiptSeat = { sectionIds: [], slots: null, capture };
+  return (
+    rows.find((r) =>
+      sameCapture(me, { sectionIds: [], slots: null, capture: { path: r.file_path ?? null, hash: r.file_hash ?? null, capturedAt: capturedAtOf(r.parsed) } }),
+    ) ?? null
+  );
+}
+
+/**
  * 새로 낸 반들의 자리 (자동 승인 · 수동 등업신청 · 스태프 승인에서 고른 반). capture = 그 수강증 그림,
  * parsed = 그 그림에서 읽은 값 — 읽은 시간도 자리에 더한다 (`seatOfRow` 와 같은 규칙)
  */

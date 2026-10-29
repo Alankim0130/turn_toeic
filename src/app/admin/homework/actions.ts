@@ -41,9 +41,11 @@ export async function checkHomework(input: { id: number; feedback?: string }): P
     .from("homework_submissions")
     .update({ status: "checked", checked_by: user.id, checked_at: new Date().toISOString(), feedback: feedback || null })
     .eq("id", id)
+    // 점검 전인 숙제만 — 두 사람이 같은 숙제를 동시에 누르거나 두 번 눌러도 알림이 두 번 가지 않고 앞사람 코멘트를 덮지 않는다 (2026-10-29, 비대면 인증 확인과 같다)
+    .eq("status", "submitted")
     .select("id, user_id, level, subject, class_date");
   if (error) return { ok: false, error: `저장하지 못했어요. ${error.message}` };
-  if (!data?.length) return { ok: false, error: "제출물을 찾을 수 없어요." };
+  if (!data?.length) return { ok: false, error: "이미 점검했거나 학생이 지운 숙제예요. 화면을 새로고침해 주세요." };
 
   const s = data[0];
   const msg = homeworkCheckedMessage({ level: s.level, subject: s.subject, classDate: s.class_date, feedback });

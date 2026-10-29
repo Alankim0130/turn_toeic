@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
  *   그래서 이 컴포넌트는 이름을 받지 않는다 — 받으면 언젠가 다시 글자로 되돌아간다.
  * - 받아 오지 못하면(카카오 CDN 404 · 주소 만료) `onError` 로 **빈 프로필 이미지로 되돌린다** —
  *   안 그러면 깨진 그림 아이콘이 남는다 (랜딩 유튜브 썸네일과 같은 규칙). 그래서 클라이언트 컴포넌트다.
+ *   **못 받은 것은 그 주소 하나다** (2026-10-29 점검 — 예전에는 한 번 못 받으면 주소가 바뀌어도 빈 이미지에 머물러,
+ *   카카오 사진이 깨진 학생이 새 사진을 올려도 미리 보기가 서지 않았다).
  * - `next/image` 를 쓰지 않는다 — 외부 도메인을 태우면 Vercel 이미지 최적화에 과금되는데
  *   이미 작은 프로필 사진 한 장이라 얻을 게 없다 (수강후기 캡쳐와 같은 이유).
  * - **가로·세로를 CSS 로 못박는다** — Tailwind preflight 의 `img { height: auto }` 때문에
@@ -21,9 +23,9 @@ import { cn } from "@/lib/utils";
  * - `referrerPolicy="no-referrer"` — 우리 주소를 카카오 CDN 에 흘리지 않는다.
  */
 export function ProfilePhoto({ src, size = 56, className }: { src: string | null; size?: number; className?: string }) {
-  const [broken, setBroken] = useState(false);
+  const [broken, setBroken] = useState<string | null>(null);
 
-  if (!src || broken) return <EmptyAvatar size={size} className={className} />;
+  if (!src || broken === src) return <EmptyAvatar size={size} className={className} />;
 
   return (
     // eslint-disable-next-line @next/next/no-img-element
@@ -32,7 +34,7 @@ export function ProfilePhoto({ src, size = 56, className }: { src: string | null
       alt=""
       aria-hidden
       referrerPolicy="no-referrer"
-      onError={() => setBroken(true)}
+      onError={() => setBroken(src)}
       style={{ width: size, height: size }}
       className={cn("shrink-0 rounded-full border border-line bg-surface object-cover", className)}
     />

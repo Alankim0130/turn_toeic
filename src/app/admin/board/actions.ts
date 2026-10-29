@@ -20,7 +20,8 @@ import {
 } from "@/lib/staff-board";
 import { isSafeObjectPath, type UploadedFile } from "@/lib/upload";
 
-export type StaffPostResult = { ok: boolean; error?: string; id?: number };
+/** filesSaved — 새 파일 행까지 저장한 뒤 그다음 단계(파일 빼기 · 순서)에서 멈췄다. 올린 파일은 이미 첨부라 화면이 지우면 안 된다 (2026-10-29) */
+export type StaffPostResult = { ok: boolean; error?: string; id?: number; filesSaved?: boolean };
 
 function revalidateBoard(id?: number) {
   revalidatePath("/admin/board");
@@ -176,7 +177,7 @@ export async function saveStaffPost(input: {
       .select("file_path");
     if (removeError) {
       revalidateBoard(id);
-      return { ok: false, error: "제목 · 본문은 저장했지만 파일을 빼지 못했어요. 새로고침한 뒤 다시 빼 주세요." };
+      return { ok: false, filesSaved: true, error: "제목 · 본문은 저장했지만 파일을 빼지 못했어요. 새로고침한 뒤 다시 빼 주세요." };
     }
     if (dropped?.length) await supabase.storage.from(STAFF_BOARD_BUCKET).remove(dropped.map((g) => g.file_path));
   }
@@ -189,7 +190,7 @@ export async function saveStaffPost(input: {
     );
     if (results.some((r) => r.error)) {
       revalidateBoard(id);
-      return { ok: false, error: "저장했지만 파일 순서를 다 적지 못했어요. 새로고침한 뒤 다시 옮겨 주세요." };
+      return { ok: false, filesSaved: true, error: "저장했지만 파일 순서를 다 적지 못했어요. 새로고침한 뒤 다시 옮겨 주세요." };
     }
   }
 

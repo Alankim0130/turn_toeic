@@ -19,3 +19,20 @@ export async function readAll<T>(page: (from: number, to: number, count: boolean
   for (const r of rest) rows.push(...(r.data ?? []));
   return { rows, ok: true };
 }
+
+/**
+ * 주소(쿼리 문자열)에 싣는 id 목록은 나눠 보낸다 — uuid 100개 ≈ 3.7KB. id 수백 개를 `.in()` 하나에 실으면 요청 주소가 너무 길어 실패하고,
+ * 실패는 빈 목록으로 보인다 (2026-10-29 전체 점검 — 방학에 등록생 600명이면 학생명단 등록생 탭이 비었다). 묶음마다 `readAll` 로 1,000줄씩 읽는다
+ */
+export const IN_CHUNK = 100;
+
+export async function readAllIn<T, I>(
+  ids: readonly I[],
+  page: (chunk: I[], from: number, to: number, count: boolean) => PromiseLike<Page<T>>,
+  size = IN_CHUNK,
+): Promise<{ rows: T[]; ok: boolean }> {
+  const chunks: I[][] = [];
+  for (let i = 0; i < ids.length; i += size) chunks.push(ids.slice(i, i + size));
+  const results = await Promise.all(chunks.map((chunk) => readAll<T>((from, to, count) => page(chunk, from, to, count))));
+  return { rows: results.flatMap((r) => r.rows), ok: results.every((r) => r.ok) };
+}

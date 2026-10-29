@@ -13,6 +13,7 @@ import { Schedule } from "@/components/landing/Schedule";
 import { CTA } from "@/components/landing/CTA";
 import { site } from "@/lib/site";
 import { getYbmReviewStats } from "@/lib/ybm-stats-data";
+import { jsonLdText } from "@/lib/json-ld";
 
 export const metadata: Metadata = {
   title: site.fullName,
@@ -51,8 +52,8 @@ function JsonLd() {
       provider: { "@type": "Organization", name: "역전토익" },
     })),
   };
-  // `<` 를 이스케이프해야 데이터 안의 `</script>` 가 스크립트를 닫고 HTML 로 새어 나가지 못한다 (지금 값은 전부 상수지만 습관으로)
-  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data).replace(/</g, "\u003c") }} />;
+  // `<` 를 이스케이프해야 데이터 안의 `</script>` 가 스크립트를 닫고 HTML 로 새어 나가지 못한다 (지금 값은 전부 상수지만 습관으로 — `jsonLdText`)
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdText(data) }} />;
 }
 
 export default async function HomePage() {

@@ -7,6 +7,7 @@ import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { SectionPicker, type PickerSection } from "@/components/admin/SectionPicker";
+import { submitWithoutReset } from "@/lib/form-submit";
 
 export type Candidate = { id: number; label: string };
 export type OrderInfo = {
@@ -79,7 +80,9 @@ export function DecisionForms({
           수강증에 적힌 반을 아래에서 고르세요. 주5일이면 [주5일] 버튼으로 월수금·화목금이 함께 골라지고, 60분 반은 시간대 아래 ↳ 줄에서 고릅니다.
           개강일 전이면 예비등록생으로 만들어지고 개강일에 자동 전환됩니다.
         </p>
-        <form action={approveAction} className="space-y-4">
+        {/* 보내기는 직접 한다 (2026-10-29) — 승인이 막혀(이미 배정 등) 돌아오면 React 가 폼을 초기화해 수강 방식이 처음 값으로 돌아갔다.
+            불라방으로 고쳐 고른 뒤 막힌 까닭만 풀고 다시 승인하면 현장으로 들어갔다 */}
+        <form action={approveAction} onSubmit={submitWithoutReset(approveAction)} className="space-y-4">
           <input type="hidden" name="verification_id" value={verificationId} />
           {approveState.error && <Alert kind="warning">{approveState.error}</Alert>}
           {/* 스태프가 직접 고른 반이 그 달의 최종 배정이다 (2026-09-23 Alan) — 이미 그 반에 있어도 막지 않고 옮겨 온다 */}
@@ -151,7 +154,7 @@ export function DecisionForms({
         <section className="card p-5">
           <h2 className="mb-1 font-black text-ink">반려</h2>
           <p className="mb-4 text-sm text-slate">사유는 학생의 마이페이지에 그대로 표시됩니다.</p>
-          <form action={rejectAction} className="space-y-3">
+          <form action={rejectAction} onSubmit={submitWithoutReset(rejectAction)} className="space-y-3">
             <input type="hidden" name="verification_id" value={verificationId} />
             {rejectState.error && <Alert kind="warning">{rejectState.error}</Alert>}
             <textarea name="reject_reason" rows={3} className="input resize-y" placeholder="예: 수강증의 이름이 가입 실명과 다릅니다. 실명으로 다시 올려 주세요." />
@@ -173,8 +176,15 @@ function EnrollmentEditor({
   candidates: Candidate[];
 }) {
   const [state, action] = useActionState<ActionState, FormData>(updateEnrollment, {});
+  // 지금 반이 고르기 목록(모집 중 · 종강 전 반)에 없으면 그 반을 맨 앞에 넣는다 (2026-10-29). 빠져 있으면 브라우저가 목록의 첫 반을 골라 두어,
+  // 수강 방식만 고치려고 '저장' 을 누른 강사가 학생을 엉뚱한 반으로 옮겼다 (반을 '마감' 으로 바꾼 뒤 · 종강한 반)
+  const options =
+    enrollment.section_id != null && !candidates.some((c) => c.id === enrollment.section_id)
+      ? [{ id: enrollment.section_id, label: `${enrollment.label} (지금 반)` }, ...candidates]
+      : candidates;
   return (
-    <form action={action} className="rounded-xl2 border border-line p-3">
+    // 보내기는 직접 한다 (2026-10-29) — 오류 뒤 초기화되면 고르는 칸 둘이 처음 값으로 돌아갔다 (`form-submit.ts`)
+    <form action={action} onSubmit={submitWithoutReset(action)} className="rounded-xl2 border border-line p-3">
       <input type="hidden" name="verification_id" value={verificationId} />
       <input type="hidden" name="enrollment_id" value={enrollment.id} />
       <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
@@ -186,7 +196,7 @@ function EnrollmentEditor({
       <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
         <select name="section_id" defaultValue={enrollment.section_id ?? ""} className="input !py-2 text-sm" aria-label="반 변경">
           <option value="" disabled>반 선택</option>
-          {candidates.map((c) => (
+          {options.map((c) => (
             <option key={c.id} value={c.id}>{c.label}</option>
           ))}
         </select>

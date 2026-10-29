@@ -44,7 +44,9 @@ export default async function AdminSectionInstructorsPage({ searchParams }: { se
             담당 강사 지정 <span className="text-sm font-semibold text-slate">— {termLabel}</span>
           </h2>
           <div className="mt-4">
+            {/* 달을 바꾸면(?term=) 새로 그린다 — 안 그러면 앞 달에서 고른 반이 보이지 않는 채 남아 '적용' 이 앞 달 반의 담당을 바꿨다 (2026-10-29 점검) */}
             <AssignInstructor
+              key={term.id}
               termLabel={termLabel}
               termId={term.id}
               // 과목이 있는 강사(이혜영 LC · 이영수 RC)를 앞에 둔다 — 관리자는 수업을 맡지 않는다

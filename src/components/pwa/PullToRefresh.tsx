@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getInstallEnv } from "./install-store";
-import { PULL_START, PULL_THRESHOLD, pullDistance, pullOffset, shouldRefresh } from "@/lib/pull-to-refresh";
+import { PULL_START, PULL_THRESHOLD, pullBlockedAt, pullDistance, pullOffset, shouldRefresh } from "@/lib/pull-to-refresh";
 
 /** 앱으로 돌아왔을 때 이만큼 넘게 떠나 있었으면 화면을 새로 받는다 */
 const STALE_MS = 30_000;
@@ -38,7 +38,11 @@ export function PullToRefresh() {
     };
 
     const onStart = (e: TouchEvent) => {
-      if (e.touches.length !== 1 || window.scrollY > 0) return;
+      // 팝업 · 글쓰기 칸 · 안쪽 스크롤 상자에서 시작한 손가락은 보지 않는다 — 새로고침이 쓰던 것을 날린다 (pullBlockedAt)
+      if (e.touches.length !== 1 || window.scrollY > 0 || pullBlockedAt(e.target)) {
+        startY.current = null;
+        return;
+      }
       startY.current = e.touches[0].clientY;
       startX.current = e.touches[0].clientX;
     };

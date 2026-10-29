@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { Reveal } from "@/components/ui/Reveal";
@@ -181,22 +181,24 @@ function Lightbox({ reviews, index, onClose, onMove }: { reviews: (typeof site.r
     [index, onMove, reviews.length],
   );
 
+  // 열 때 한 번만 닫기 버튼에 포커스 (2026-10-29 점검 — 넘길 때마다 효과가 다시 돌았다. Dialog 와 같은 규칙)
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    if (e.key === "Escape") onClose();
+    else if (e.key === "ArrowRight") move(1);
+    else if (e.key === "ArrowLeft") move(-1);
+  });
   useEffect(() => {
     closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      else if (e.key === "ArrowRight") move(1);
-      else if (e.key === "ArrowLeft") move(-1);
-    };
-    window.addEventListener("keydown", onKey);
+    const handler = (e: KeyboardEvent) => onKey(e);
+    window.addEventListener("keydown", handler);
     // 뒤 화면이 같이 움직이면 어지럽다
     const { overflow } = document.body.style;
     document.body.style.overflow = "hidden";
     return () => {
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", handler);
       document.body.style.overflow = overflow;
     };
-  }, [onClose, move]);
+  }, []);
 
   if (!mounted) return null;
 

@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { todayKST } from "@/lib/utils";
@@ -64,7 +65,11 @@ export const effectiveRole = (profile?: { role: UserRole; test_role?: UserRole |
  * 데이터베이스(RLS)도 같은 토큰을 같은 서명으로 믿는다. 요청 하나에 한 번만 확인한다 (cache).
  *
  * **토큰에 없는 값은 없다** — 마지막 로그인 시각은 `getLastSignInAt()` 이 따로 묻는다 (계정 합치기 화면만).
- * 서버 액션(쓰기)은 그대로 `auth.getUser()` 로 확인한다 — 화면 이동 길이 아니다.
+ *
+ * **서버 액션(쓰기) 요청이면 `auth.getUser()` 로 로그인 서버에 묻는다** (2026-10-29 점검 — `isActionRequest`). 관리자 서버 액션 대부분이
+ * 맨 위 `requireStaff()` · `requireCrew()` 만으로 권한을 보고 그 뒤 서비스 롤로 쓰는데, 그 둘이 이 함수를 거쳐 토큰 서명(`getClaims`)만 봤다 —
+ * 로그아웃한 기기에 남은 접속 토큰으로도 만료(1시간 안)까지 서비스 롤 쓰기가 됐다 ("쓰기는 로그인 서버에 묻는다" 는 문서와 달랐다).
+ * 로그인 서버는 로그아웃으로 지운 세션을 거절한다. 화면 이동(GET)은 그대로 `getClaims` 다 — 서버 액션 뒤 같은 요청에서 그리는 화면만 한 번 더 묻는다.
  */
 export type SessionUser = {
   id: string;
@@ -73,8 +78,29 @@ export type SessionUser = {
   app_metadata: Record<string, unknown>;
 };
 
+/**
+ * 이 요청이 서버 액션인가 — Next 가 서버 액션을 부를 때 붙이는 `Next-Action` 머리, 또는 자바스크립트 없이 낸 폼(본문 형식)으로 가른다
+ * (Next 의 `getServerActionRequestMetadata` 와 같은 표시). 화면 · 파일 주소(GET)에는 둘 다 없다. 머리를 못 읽는 자리면 화면으로 본다.
+ */
+export async function isActionRequest(): Promise<boolean> {
+  try {
+    const h = await headers();
+    if (h.get("next-action")) return true;
+    const type = h.get("content-type") ?? "";
+    return type.startsWith("multipart/form-data") || type.startsWith("application/x-www-form-urlencoded");
+  } catch {
+    return false;
+  }
+}
+
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = await createClient();
+  if (await isActionRequest()) {
+    // 쓰기 — 로그인 서버에 묻는다 (위 머리말)
+    const { data } = await supabase.auth.getUser();
+    const u = data.user;
+    return u ? { id: u.id, email: u.email ?? null, user_metadata: u.user_metadata ?? {}, app_metadata: u.app_metadata ?? {} } : null;
+  }
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
   if (!claims?.sub) return null;
@@ -86,15 +112,21 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   };
 });
 
-/** 로그인한 사람 + 프로필. 요청당 1회만 조회되도록 캐시 */
+/**
+ * 로그인한 사람 + 프로필. 요청당 1회만 조회되도록 캐시.
+ * `profileError` — 프로필을 **읽지 못했다**(잠깐의 DB 오류). 행이 없는 것(`profile` null · 오류 없음)과 다르다 (2026-10-29 점검 — 아래 requireUser).
+ */
 export const getSessionProfile = cache(async () => {
   const user = await getSessionUser();
-  if (!user) return { user: null, profile: null as Profile | null };
+  if (!user) return { user: null, profile: null as Profile | null, profileError: false };
 
   const supabase = await createClient();
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
-  return { user, profile };
+  const { data: profile, error } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+  return { user, profile, profileError: !!error };
 });
+
+/** 프로필을 읽지 못했을 때 화면이 던지는 오류 — 오류 화면(다시 시도)이 뜬다. 가입 정보 입력 화면으로 보내지 않는다 */
+export const PROFILE_UNREADABLE = "profile_unreadable";
 
 /**
  * 이 계정의 마지막 접속 — 계정 합치기 화면(내 계정 · 등업신청)에서 "어느 계정을 최근에 썼나" 를 보여 줄 때만 쓴다 (2026-10-02 Alan).
@@ -126,6 +158,8 @@ export const MERGED_PATH = "/account-merged";
 export async function requireUser(next?: string) {
   const s = await getSessionProfile();
   if (!s.user) redirect(`/login${next ? `?next=${encodeURIComponent(next)}` : ""}`);
+  // 프로필을 못 읽었으면(잠깐의 DB 오류) 오류 화면으로 — 예전에는 행이 없는 것과 같이 보아 가입을 마친 사람도 '가입 정보 입력' 으로 보냈다 (2026-10-29 점검)
+  if (s.profileError) throw new Error(PROFILE_UNREADABLE);
   // 계정을 합치면 옛 계정은 로그인만 막는다 (기록은 지우지 않는다)
   if (s.profile?.merged_into) redirect(MERGED_PATH);
   // 구글로 들어와 실명·휴대폰이 없으면 먼저 채우게 한다 (가입 정보 입력 화면 자체는 requireUser 를 쓰지 않는다)

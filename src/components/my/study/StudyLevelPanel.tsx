@@ -6,6 +6,7 @@ import { LevelPicker } from "@/app/(public)/study/StudySignupButton";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { cn, formatDate } from "@/lib/utils";
 import { isSlotFull, isSlotKind, slotTime, sortSlots, studyLevelLabel, type SlotLite } from "@/lib/study";
+import { submitWithoutReset } from "@/lib/form-submit";
 
 /**
  * 내 스터디 카드의 **레벨 칸** (2026-10-12 Alan — "레벨은 학생이 직접 고르는걸로 … 학생이 스터디 레벨을 변경하고 싶다면 신청한 후
@@ -60,7 +61,8 @@ export function StudyLevelPanel({
   const pickedSlot = choiceSlots.find((s) => s.id === picked) ?? null;
 
   const form = (
-    <form action={action} className="mt-2 space-y-2 rounded-xl border border-line bg-surface p-3">
+    // 보내기는 직접 한다 (2026-10-29) — 오류 뒤 React 가 폼을 초기화하면 고른 레벨 · 시간대의 표시가 꺼져 버튼은 열렸는데 아무것도 안 골라진 것처럼 보였다
+    <form action={action} onSubmit={submitWithoutReset(action)} className="mt-2 space-y-2 rounded-xl border border-line bg-surface p-3">
       <input type="hidden" name="signup_id" value={signupId} />
       <input type="hidden" name="level" value={!slotKind && picked != null ? picked : ""} />
       <input type="hidden" name="slot_id" value={slotKind && picked != null ? picked : ""} />

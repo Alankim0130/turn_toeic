@@ -94,7 +94,10 @@ export function CheckinRoster({
   async function send(m: RosterMaterial) {
     if (!compose || busy) return;
     setBusy(true);
-    const res = await sendStudentMessages({ userIds: [...picked], title: compose.title, body: compose.body, kind: "study_checkin", related: { materialId: m.id, date: m.date } });
+    // 답 없이 끝나도(연결 끊김) '보내는 중…' 에 멈추지 않게 (2026-10-29 점검)
+    const res = await sendStudentMessages({ userIds: [...picked], title: compose.title, body: compose.body, kind: "study_checkin", related: { materialId: m.id, date: m.date } }).catch(
+      () => ({ ok: false as const, error: "보내지 못했어요. 인터넷 연결을 확인하고 다시 해 주세요." }),
+    );
     setBusy(false);
     if (!res.ok) return setMsg({ kind: "warning", text: res.error ?? "보내지 못했어요." });
     setMsg({ kind: "success", text: `${res.sent}명에게 알림을 보냈어요. 학생 알림함에서 볼 수 있어요.` });

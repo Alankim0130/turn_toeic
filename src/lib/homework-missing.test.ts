@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  autoPickable,
   buildMissingBoard,
+  classOverAt,
   buildMissingDays,
   countsAsStudent,
   dayFlaggedCount,
@@ -22,6 +24,7 @@ import {
   optedOutCount,
   rowOf,
   shortDay,
+  studentDue,
   type MissingEnrollment,
   type MissingSection,
   type MissingSubmission,
@@ -752,5 +755,58 @@ describe("알림 글", () => {
       ]),
     ).toEqual({ termId: 7, level: 650, subjects: ["rc", "lc"], missing: 2 });
     expect(missingRelated(7, 650, [{ date: "2026-10-09", subject: "lc" }]).subjects).toEqual(["lc"]);
+  });
+});
+
+describe("수업 기간이 끝난 학생 — 저절로 고르지 않고 학생 달력의 기한도 수업 기간 안으로 (2026-10-29 전체 점검)", () => {
+  // 2주완성처럼 앞 절반만 듣는 반 — 마지막 수업 10/9(금), 종강일도 10/9. 그 날 숙제의 기한(다음 월수금 10/12 오후 5시)에는 이미 숙제를 낼 수 없다
+  const HALF: MissingSection = { id: 30, track: "mwf", level: 650, subject: "rc", opens: OPENS, closes: "2026-10-09", dates: MWF.slice(0, 2) };
+  const sections = new Map<number, MissingSection>([...SECTIONS, [30, HALF]]);
+  const people = new Map([
+    ["half", { name: "가앞절반", staff: false }],
+    ["full", { name: "나한달", staff: false }],
+  ]);
+  const enrollments: MissingEnrollment[] = [
+    { studentId: "half", sectionId: 30, from: "2026-10-01" },
+    { studentId: "full", sectionId: 1, from: "2026-10-01" },
+  ];
+  const board = (now: number) =>
+    buildMissingBoard({ level: 650, now, due: DUE, sections, includes: INCLUDES, enrollments, submissions: [], people, optedOut: new Set(), sortKeyOf: (id) => [id] });
+
+  it("종강일까지는 수업 중 · 다음 날 0시부터 끝 — 줄은 그대로 서고 안 낸 숙제도 그대로 센다", () => {
+    expect(classOverAt("2026-10-09")).toBe(Date.parse("2026-10-10T00:00:00+09:00"));
+    expect(rowOf(board(at("2026-10-09T23:59")), "half")!.ended).toBe(false);
+    const after = board(at("2026-10-12T18:00"));
+    expect(rowOf(after, "half")!.ended).toBe(true);
+    expect(rowOf(after, "full")!.ended).toBe(false);
+    expect(rowOf(after, "half")!.missing.length).toBeGreaterThan(0);
+    // 탭 숫자는 사실 그대로 — 안 낸 학생은 둘이다
+    expect(missingStudentCount(after)).toBe(2);
+  });
+
+  it("미제출 전체선택 · 이 날 안 낸 학생 고르기는 수업이 끝난 학생을 고르지 않는다 (자동 알림의 openUntil 과 같다)", () => {
+    const after = board(at("2026-10-12T18:00"));
+    expect(defaultPicks(after)).toEqual(["full"]);
+    const day = buildMissingDays(after, { until: "2026-10-12" }).find((d) => d.date === "2026-10-09")!;
+    // 카드(반) 순서 — 반 1 이 먼저다
+    expect(day.missing.map((m) => [m.id, m.ended])).toEqual([
+      ["full", false],
+      ["half", true],
+    ]);
+    expect(day.missing.filter(autoPickable).map((m) => m.id)).toEqual(["full"]);
+    expect(autoPickable({ alerts: true, assistant: false, ended: true })).toBe(false);
+    expect(autoPickable({ alerts: true, assistant: false, ended: false })).toBe(true);
+  });
+
+  it("학생 달력 — 기한이 수업 기간 뒤면 수업 기간 마지막 날까지로 적는다", () => {
+    // 앞 절반 마지막 수업(10/9)의 기한 10/12 → 10/9 하루 끝까지
+    expect(studentDue("2026-10-12", "2026-10-09", at("2026-10-09T20:00"))).toEqual({ due: "2026-10-09", overdue: false, capped: true });
+    expect(studentDue("2026-10-12", "2026-10-09", at("2026-10-10T00:00")).overdue).toBe(true);
+    // 그 달 마지막 수업(10/30)의 기한이 다음 달 첫 수업일(11/4)이면 종강일(11/3)까지
+    expect(studentDue("2026-11-04", "2026-11-03", at("2026-10-30T12:00"))).toEqual({ due: "2026-11-03", overdue: false, capped: true });
+    // 수업 기간 안의 기한은 그대로 — 다음 수업일 오후 5시
+    expect(studentDue("2026-10-14", "2026-10-31", at("2026-10-14T17:01"))).toEqual({ due: "2026-10-14", overdue: true });
+    expect(studentDue("2026-10-14", null, at("2026-10-14T16:59"))).toEqual({ due: "2026-10-14", overdue: false });
+    expect(studentDue(null, "2026-10-31")).toEqual({ due: null, overdue: false });
   });
 });

@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { setTestRole, type TesterActionState } from "@/app/admin/students/tester-actions";
 import { SubmitButton } from "@/components/ui/SubmitButton";
+import { submitWithoutReset } from "@/lib/form-submit";
 
 export type TestRoleOption = { value: string; label: string; hint: string };
 
@@ -21,7 +22,9 @@ export function TestRoleSelect({ id, current, options }: { id: string; current: 
   }
 
   return (
-    <form action={action} className="space-y-2">
+    // 보내기는 직접 한다 (2026-10-29) — `<form action>` 이 끝나면 React 가 폼을 초기화해 고르는 칸이 처음 등급으로 돌아갔다.
+    // 바꾼 뒤에도 칸에는 옛 등급이 보였고, 오류 뒤 다시 누르면 옛 등급이 실렸다
+    <form action={action} onSubmit={submitWithoutReset(action)} className="space-y-2">
       <input type="hidden" name="id" value={id} />
       <div className="flex flex-wrap items-center gap-2">
         <label htmlFor={`test-role-${id}`} className="sr-only">테스트 등급</label>

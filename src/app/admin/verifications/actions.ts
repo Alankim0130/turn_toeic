@@ -90,8 +90,20 @@ export async function updateEnrollment(_prev: ActionState, formData: FormData): 
   const { data: order } = await admin.from("enrollment_orders").select("id, user_id").eq("verification_id", verificationId).maybeSingle();
   if (!order) return { error: "이 수강증으로 만든 등록이 없습니다." };
   if (order.user_id === user.id && !isStaff(profile.role)) return { error: "자기 배정은 고칠 수 없어요. 강사 · 관리자에게 부탁해 주세요." };
-  const { data: enr } = await admin.from("enrollments").select("id, order_id, student_id").eq("id", enrollmentId).eq("order_id", order.id).maybeSingle();
+  const { data: enr } = await admin.from("enrollments").select("id, order_id, student_id, section_id").eq("id", enrollmentId).eq("order_id", order.id).maybeSingle();
   if (!enr) return { error: "배정 기록을 찾을 수 없습니다." };
+
+  // 반은 그대로 두고 수강 방식만 고친다 (2026-10-29) — 반이 바뀌지 않으니 반의 기간 검사가 필요 없다(종강한 반 · 모집을 마감한 반의 배정도 방식은 고친다)
+  if (enr.section_id === sectionId) {
+    const { error } = await admin.from("enrollments").update({ mode }).eq("id", enrollmentId);
+    if (error) return { error: `저장에 실패했습니다. ${error.message}` };
+    if (mode === "live" && enr.student_id) {
+      const { data: here } = await admin.from("class_sections").select("term_id").eq("id", sectionId).maybeSingle();
+      if (here) await sendTextbookNotice(admin, enr.student_id, here.term_id);
+    }
+    revalidateAll(verificationId);
+    redirect(`/admin/verifications/${verificationId}?done=updated`);
+  }
 
   // 승인과 같은 규칙 — 옮긴 뒤에도 한 등록 안의 반은 한 달(기수)이고, 종강 전이어야 한다 (`enrollment-window.ts`)
   const [{ data: target }, { data: sibs }] = await Promise.all([

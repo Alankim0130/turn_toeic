@@ -5,6 +5,7 @@ import { cancelStudyLevelRequest, cancelStudySignup, requestStudyLevel, signupSt
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { cn } from "@/lib/utils";
 import { studyLevelLabel } from "@/lib/study";
+import { submitWithoutReset } from "@/lib/form-submit";
 
 /** 신청 / 시간대 변경. 비대면은 `level`(학생이 고른 레벨)을 함께 보낸다 (2026-10-12) */
 export function StudySignupButton({
@@ -45,7 +46,8 @@ export function OnlineSignupForm({ studyId, levels }: { studyId: number; levels:
   const [state, action] = useActionState<SignupState, FormData>(signupStudy, {});
   const [level, setLevel] = useState<number | null>(null);
   return (
-    <form action={action} className="flex w-full flex-col gap-2">
+    // 보내기는 직접 한다 (2026-10-29) — 오류 뒤 React 가 폼을 초기화하면 고른 레벨 알약의 표시가 꺼져, 버튼은 열려 있는데 아무것도 안 골라진 것처럼 보였다
+    <form action={action} onSubmit={submitWithoutReset(action)} className="flex w-full flex-col gap-2">
       <input type="hidden" name="study_id" value={studyId} />
       <input type="hidden" name="slot_id" value="" />
       <input type="hidden" name="level" value={level ?? ""} />

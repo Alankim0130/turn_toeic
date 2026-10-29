@@ -6,6 +6,7 @@ import { requireStaff } from "@/lib/auth";
 import { calendarMonths, checkedAgo, NAVER_DAYS_AHEAD, slotLabel } from "@/lib/naver-booking";
 import { site } from "@/lib/site";
 import { createClient } from "@/lib/supabase/server";
+import { readAll } from "@/lib/read-all";
 import { shiftDate } from "@/lib/term-window";
 import { cn, todayKST } from "@/lib/utils";
 
@@ -39,19 +40,24 @@ export default async function NaverReservationsPage() {
   const today = todayKST();
   const months = calendarMonths(today);
 
-  const [{ data: slots, error: slotsError }, { data: recent }, { data: status }] = await Promise.all([
-    // 달력이 보여 줄 칸 전부 — 예약이 0 인 칸도 받는다 ("예약 가능 시간" 이 거기서 나온다). 오늘 0시(한국)부터 조회 범위 끝까지
-    supabase
-      .from("naver_booking_slots")
-      .select("slot_at, booking_count, stock, is_sale_day")
-      .gte("slot_at", new Date(`${today}T00:00:00+09:00`).toISOString())
-      .lt("slot_at", new Date(`${shiftDate(today, NAVER_DAYS_AHEAD + 1)}T00:00:00+09:00`).toISOString())
-      .order("slot_at", { ascending: true })
-      .limit(5000),
+  const [slotsRead, { data: recent }, { data: status }] = await Promise.all([
+    // 달력이 보여 줄 칸 전부 — 예약이 0 인 칸도 받는다 ("예약 가능 시간" 이 거기서 나온다). 오늘 0시(한국)부터 조회 범위 끝까지.
+    // 60일치 20분 칸은 1,000줄을 넘는다 — 1,000줄씩 나눠 읽는다 (2026-10-29: 예전 `.limit(5000)` 은 PostgREST 상한 1,000줄에 잘려 먼 날짜의 칸이 조용히 빠졌다)
+    readAll((from, to, count) =>
+      supabase
+        .from("naver_booking_slots")
+        .select("slot_at, booking_count, stock, is_sale_day", count ? { count: "exact" } : undefined)
+        .gte("slot_at", new Date(`${today}T00:00:00+09:00`).toISOString())
+        .lt("slot_at", new Date(`${shiftDate(today, NAVER_DAYS_AHEAD + 1)}T00:00:00+09:00`).toISOString())
+        .order("slot_at", { ascending: true })
+        .range(from, to),
+    ),
     supabase.from("naver_booking_events").select("id, slot_at, kind, prev_count, new_count, stock, created_at").order("created_at", { ascending: false }).limit(30),
     supabase.from("naver_sync_status").select("last_success_at, last_error, consecutive_failures").maybeSingle(),
   ]);
 
+  const slots = slotsRead.rows;
+  const slotsError = !slotsRead.ok;
   const failing = (status?.consecutive_failures ?? 0) > 0;
   const neverRan = !status?.last_success_at;
   const events = recent ?? [];

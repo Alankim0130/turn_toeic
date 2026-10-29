@@ -31,6 +31,9 @@ const BUCKET = "homework";
  */
 type Picked = { key: string; file: File; url: string; type: string; quiet?: boolean };
 
+/** 제출을 보낸 뒤 답을 못 받았을 때 — 저장됐을 수 있다 */
+const SENT_UNKNOWN = "인터넷이 끊겨 제출됐는지 확인하지 못했어요. 아래 낸 숙제 목록에 있는지 먼저 보고, 없으면 다시 내 주세요.";
+
 /**
  * 사진 고르기(여러 장, 최대 `MAX_PHOTOS` 장 — 2026-10-12 부터 30장, 그전 10장) + **음성 파일 고르기**(최대 5개, 2026-10-07 Alan — "학생들이 숙제제출할때 음성파일도
  * 올릴수 있도록 부탁해!") + 질문(선택) → 브라우저에서 Storage 로 바로 올린 뒤 서버 액션에 등록.
@@ -133,8 +136,11 @@ export function HomeworkUploadForm({
 
     setBusy(true);
     const uploaded: UploadedFile[] = [];
-    const fail = async (message: string) => {
-      await removeUploaded(BUCKET, uploaded.map((u) => u.path));
+    // 제출을 보낸 뒤에 끊기면(응답을 못 받음) 서버가 이미 저장했을 수 있다 — 그때는 올린 파일을 지우지 않는다 (2026-10-29 점검 —
+    // 예전에는 지워서, 저장된 숙제의 사진 · 음성이 깨지고 학생은 '제출하지 못했어요' 를 보고 다시 냈다)
+    let sent = false;
+    const fail = async (message: string, keepFiles = false) => {
+      if (!keepFiles) await removeUploaded(BUCKET, uploaded.map((u) => u.path));
       setError(message);
       setBusy(false);
       setProgress(null);
@@ -146,6 +152,7 @@ export function HomeworkUploadForm({
         uploaded.push(await uploadFile(BUCKET, `${folder}/${objectName(picked[i].file)}`, picked[i].file, picked[i].type));
       }
       setProgress("제출하는 중…");
+      sent = true;
       const res = await submitHomework({ level, subject, classDate, question: q, files: uploaded });
       if (!res.ok || !res.id) return await fail(res.error ?? "제출하지 못했어요.");
 
@@ -160,6 +167,12 @@ export function HomeworkUploadForm({
       setBusy(false);
       setProgress(null);
     } catch (err) {
+      if (sent) {
+        // 서버에서는 끝났을 수 있다 — 목록을 새로 받아 보여 주고, 같은 것을 두 번 내지 않게 확인부터 하게 한다
+        await fail(SENT_UNKNOWN, true);
+        router.refresh();
+        return;
+      }
       await fail(err instanceof Error ? err.message : "제출하지 못했어요.");
     }
   }
