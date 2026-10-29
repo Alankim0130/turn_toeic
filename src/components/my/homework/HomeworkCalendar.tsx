@@ -4,6 +4,7 @@ import { useState } from "react";
 import { MonthCalendar, type CalendarMark } from "@/components/my/MonthCalendar";
 import { Icon } from "@/components/ui/Icon";
 import { classDayLabel, HOMEWORK_SUBJECTS, homeworkLabel, SUBJECT_DESC, SUBJECT_LABEL, type HomeworkSubject } from "@/lib/homework";
+import { isFutureClass } from "@/lib/homework-day";
 import { dueLabel, HOMEWORK_DUE_LABEL, shortDay } from "@/lib/homework-missing";
 import { cn, formatDate } from "@/lib/utils";
 import { HomeworkUploadForm } from "./HomeworkUploadForm";
@@ -16,8 +17,11 @@ export type HomeworkMonth = { year: number; month: number; marks: CalendarMark[]
  * 그리고 **제출 기한** — 같은 트랙의 다음 수업일 오후 5시 (2026-10-14 Alan). 기한 날짜를 못 읽었으면 `due` 가 없다 (줄을 그리지 않는다),
  * 다음 수업일이 아직 달력에 없으면 null.
  */
-/** capped — 수업 기간이 기한(다음 수업일)보다 먼저 끝나 `due` 가 수업 기간 마지막 날이다 (그 날 하루가 끝날 때까지 낸다, 2026-10-29) */
-export type HomeworkDay = { date: string; course: string; levels: number[]; due?: string | null; overdue?: boolean; capped?: boolean };
+/**
+ * capped — 수업 기간이 기한(다음 수업일)보다 먼저 끝나 `due` 가 수업 기간 마지막 날이다 (그 날 하루가 끝날 때까지 낸다, 2026-10-29).
+ * startsAt — 오늘이고 첫 수업이 아직 시작 전이면 그 시각("10:00") — 지난 수업 숙제를 오늘 날짜로 잘못 내지 않게 말한다 (2026-10-30)
+ */
+export type HomeworkDay = { date: string; course: string; levels: number[]; due?: string | null; overdue?: boolean; capped?: boolean; startsAt?: string };
 
 /**
  * 숙제업로드 — **달력에서 수업 날짜를 고르고 RC·LC 를 낸다** (2026-09-19 Alan —
@@ -52,6 +56,7 @@ export function HomeworkCalendar({
   if (!month) return null;
 
   const day = days.find((d) => d.date === picked) ?? null;
+  const future = !!day && isFutureClass(day.date, today);
   const ofDay = submissions.filter((s) => s.class_date === picked);
   const countOf = (level: number, subject: string) => ofDay.filter((s) => s.level === level && s.subject === subject).length;
 
@@ -114,8 +119,23 @@ export function HomeworkCalendar({
               </div>
 
               <div className="space-y-3 p-4">
+                {/* **아직 오지 않은 수업 날짜로는 숙제를 받지 않는다** (2026-10-30 문라경 학생 — 금요일 숙제를 주말에 열면 다음 주 월요일이 골라져 있어
+                    그대로 내면 월요일 숙제로 저장되고, 금요일 숙제는 '안 냄' 이 되어 미제출 알림이 갔다). 서버(`submitHomework`)도 같은 규칙으로 막는다 */}
+                {future ? (
+                  <div className="rounded-xl2 border border-line bg-surface px-4 py-3 text-sm">
+                    <p className="font-black text-ink">아직 수업 전이에요</p>
+                    <p className="mt-1 text-ink-soft">이 날 숙제는 수업이 끝난 뒤에 이 날짜로 올려요. 지난 수업 숙제는 달력에서 <b>그 수업 날짜</b>를 눌러 올려 주세요.</p>
+                  </div>
+                ) : (
+                  day.startsAt && (
+                    <p className="rounded-xl2 border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+                      오늘 수업은 {day.startsAt}에 시작해요. 지난 수업 숙제라면 달력에서 그 수업 날짜를 눌러 올려 주세요.
+                    </p>
+                  )
+                )}
+
                 {/* 레벨마다 RC·LC 두 칸. 중급속성·실전속성이면 레벨이 둘이라 네 칸이 된다 */}
-                {day.levels.map((level) => (
+                {!future && day.levels.map((level) => (
                   <div key={level}>
                     {day.levels.length > 1 && <p className="mb-1.5 text-xs font-black text-slate">{level}점 목표</p>}
                     <div className="grid grid-cols-2 gap-2">
@@ -145,9 +165,11 @@ export function HomeworkCalendar({
                   </div>
                 ))}
 
-                {target && (
+                {target && !future && (
                   <div className="animate-fade-up border-t border-line pt-4">
+                    {/* 어느 수업의 숙제인지 날짜부터 적는다 (2026-10-30) — 제출 버튼에도 같은 날짜가 붙는다 */}
                     <p className="mb-3 text-sm font-black text-ink">
+                      {classDayLabel(day.date)} {formatDate(day.date, { weekday: "short" })} 수업 ·{" "}
                       <span className="text-brand-600">{homeworkLabel(target.level, target.subject)}</span> 숙제 올리기 (사진 · 음성)
                     </p>
                     <HomeworkUploadForm
@@ -171,6 +193,12 @@ export function HomeworkCalendar({
           <h2 id="ofday-title" className="mb-3 text-lg font-black text-ink">
             {classDayLabel(day.date)}에 낸 숙제 <span className="tabular-nums text-slate">({ofDay.length})</span>
           </h2>
+          {/* 예전에 아직 오지 않은 수업 날짜로 낸 숙제 (2026-10-30 전) — 날짜를 잘못 골랐을 수 있다 */}
+          {future && (
+            <p className="mb-3 rounded-xl2 border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+              아직 수업 전인 날짜로 낸 숙제예요. 지난 수업 숙제를 잘못 낸 거라면 &lsquo;제출 취소&rsquo; 뒤에 그 수업 날짜로 다시 내 주세요.
+            </p>
+          )}
           <ul className="grid gap-4 lg:grid-cols-2">
             {ofDay.map((s) => (
               <li key={s.id}>

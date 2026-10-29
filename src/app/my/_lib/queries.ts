@@ -80,7 +80,7 @@ export const getMyOrders = cache(async () => {
     .select(
       `id, status, activates_on, access_until, created_at,
        enrollments:enrollments!enrollments_order_id_fkey(
-         id, status, mode,
+         id, status, mode, created_at,
          section:class_sections!enrollments_section_id_fkey(${SECTION_COLS})
        )`,
     )

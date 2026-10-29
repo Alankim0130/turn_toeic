@@ -5,11 +5,12 @@ import { HomeworkCalendar, type HomeworkDay, type HomeworkMonth } from "@/compon
 import { SubmissionCard } from "@/components/my/homework/SubmissionCard";
 import type { CalendarMark } from "@/components/my/MonthCalendar";
 import { requireUser } from "@/lib/auth";
-import { initialDay, initialMonth } from "@/lib/class-day";
+import { initialMonth } from "@/lib/class-day";
 import { levelsOfDay } from "@/lib/homework";
+import { classNotStartedYet, type DaySection, expectedSlotsOfDay, firstClassStart, homeworkStartDay, kstDayMinute, minuteLabel, sentKey } from "@/lib/homework-day";
 import { studentDue } from "@/lib/homework-missing";
 import { formatDate, todayKST } from "@/lib/utils";
-import { getHomeworkDueDates, getHomeworkLevels, getMyHomework, getMyHomeworkAlert, getMySessions, getMyStudyEligibility } from "../_lib/queries";
+import { getHomeworkDueDates, getHomeworkLevels, getMyHomework, getMyHomeworkAlert, getMyOrders, getMySessions, getMyStudyEligibility } from "../_lib/queries";
 
 export const metadata: Metadata = {
   title: "숙제업로드",
@@ -25,26 +26,29 @@ type Course = { target_score?: number | null; includes_levels?: number[] | null 
  * 넘길 수 있더라도 반·기수 전체를 실어 보낼 이유가 없다 (내 시간표와 같은 규칙).
  */
 export default async function HomeworkPage() {
-  const [{ user }, sessions, levels, mine, { opensOn, untilByTerm }, alertOn] = await Promise.all([
+  const [{ user }, sessions, levels, mine, { opensOn, untilByTerm }, alertOn, orders] = await Promise.all([
     requireUser("/my/homework"),
     getMySessions(),
     getHomeworkLevels(),
     getMyHomework(),
     getMyStudyEligibility(),
     getMyHomeworkAlert(),
+    getMyOrders(),
   ]);
   const today = todayKST();
 
   // 같은 날 여러 반이 내려온다 (주5일 60분 둘 · 스파르타 셋) — 날짜로 묶어 레벨을 모은다
   // until = 그 날짜를 낼 수 있는 마지막 날 — 그 기수 내 반(직접 배정)의 가장 늦은 종강일. 그 다음 날부터는 그 날짜 숙제를 낼 수 없다
   // (RLS `has_term_access` · 제출 서버 액션의 `my_section_ids()`). 2주완성은 앞 절반 마지막 날 (2026-10-29)
-  const byDate = new Map<string, { courses: Set<string>; list: Course[]; track: string; until: string | null }>();
+  // sections — 그 날 내 반(레벨 · 과목 칸 · 시간대 · 인강) — 낼 숙제 칸과 첫 수업 시작을 안다 (`homework-day.ts`, 2026-10-30)
+  const byDate = new Map<string, { courses: Set<string>; list: Course[]; track: string; until: string | null; sections: DaySection[] }>();
   for (const s of sessions) {
     const sec = s.section;
     if (!sec) continue;
-    const b = byDate.get(s.date) ?? { courses: new Set<string>(), list: [], track: sec.track, until: null };
+    const b = byDate.get(s.date) ?? { courses: new Set<string>(), list: [], track: sec.track, until: null, sections: [] };
     if (sec.course?.name) b.courses.add(sec.course.name);
     b.list.push(sec.course ?? null);
+    b.sections.push({ level: sec.course?.target_score ?? null, subject: sec.subject, timeBlock: sec.time_block, recorded: sec.recorded });
     const until = untilByTerm.get(sec.term_id) ?? null;
     if (until && (!b.until || until > b.until)) b.until = until;
     byDate.set(s.date, b);
@@ -52,28 +56,62 @@ export default async function HomeworkPage() {
 
   // 숙제 기한 = 같은 트랙의 다음 수업일 오후 5시 (2026-10-14 Alan) — 날짜는 반 편성 달력에서. 못 읽으면 기한 줄을 그리지 않는다
   const due = await getHomeworkDueDates([...byDate.keys()]);
+  // 그 날 낼 숙제 칸 ("레벨|과목") — 처음 고르는 날(`homeworkStartDay`)이 "다 냈나" 를 본다. 화면으로는 넘기지 않는다
+  const expectOf = new Map<string, string[]>();
   const days: HomeworkDay[] = [...byDate.entries()]
-    .map(([date, b]) => ({
-      date,
-      course: [...b.courses].join(" · ") || "수업",
+    .map(([date, b]): HomeworkDay => {
       // lc_levels 에 없는 레벨은 뺀다 — 제출이 FK(23503)로 튕긴다
-      levels: levelsOfDay(b.list).filter((l) => levels.includes(l)),
-      // 기한 — 내 수업 기간이 먼저 끝나면 그 마지막 날까지 (`studentDue`, 2026-10-29)
-      ...(due ? studentDue(due.get(date) ?? null, b.until) : {}),
-    }))
+      const dayLevels = levelsOfDay(b.list).filter((l) => levels.includes(l));
+      const starts = firstClassStart(b.sections);
+      expectOf.set(date, expectedSlotsOfDay(dayLevels, b.sections));
+      return {
+        date,
+        course: [...b.courses].join(" · ") || "수업",
+        levels: dayLevels,
+        // 기한 — 내 수업 기간이 먼저 끝나면 그 마지막 날까지 (`studentDue`, 2026-10-29)
+        ...(due ? studentDue(due.get(date) ?? null, b.until) : {}),
+        // 오늘 수업이 아직 시작 전이면 — 지난 수업 숙제를 이 날짜로 잘못 내지 않게 화면이 말한다 (2026-10-30)
+        ...(date === today && starts != null && classNotStartedYet(starts) ? { startsAt: minuteLabel(starts) } : {}),
+      };
+    })
     .filter((d) => d.levels.length > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
 
   // 달력 칸에는 그 날 낸 건수를 적는다 — 어느 날이 남았는지 한눈에 보이게
   const submittedOn = new Map<string, number>();
-  for (const s of mine) if (s.class_date) submittedOn.set(s.class_date, (submittedOn.get(s.class_date) ?? 0) + 1);
+  const sent = new Set<string>();
+  for (const s of mine) {
+    if (!s.class_date) continue;
+    submittedOn.set(s.class_date, (submittedOn.get(s.class_date) ?? 0) + 1);
+    if (s.level != null && s.subject) sent.add(sentKey(s.class_date, s.level, s.subject));
+  }
+  // 배정일 — 그 앞의 수업은 내 것이 아니었다 (지금 배정 중 가장 이른 것, 한국 날짜)
+  const from =
+    orders
+      .filter((o) => o.status === "active" || o.status === "preliminary")
+      .flatMap((o) => o.enrollments.filter((e) => e.status === "active").map((e) => kstDayMinute(e.created_at)?.day ?? null))
+      .filter((d): d is string => !!d)
+      .sort()[0] ?? null;
 
-  const groups = new Map<string, { year: number; month: number; marks: CalendarMark[]; dates: string[] }>();
+  /**
+   * 처음 고르는 날 = **숙제를 낼 수업** (2026-10-30 — `homeworkStartDay`): 기한이 안 지났고 다 내지 않은 가장 이른 수업일 → 오늘까지의 마지막 수업일.
+   * 예전(`initialDay`)에는 수업이 없는 날 **다음 수업일**이, 기한 날 오전에는 **오늘**이 골라져 지난 수업 숙제가 그 날짜로 저장됐다 (문라경 학생 — `homework-day.ts` 머리말).
+   * 달마다도 같은 규칙으로 고르고, 처음 여는 달은 그 날이 든 달이다 (다음 달 초에도 지난달 마지막 수업 숙제가 남았으면 지난달이 열린다)
+   */
+  const startOf = (list: readonly HomeworkDay[]) =>
+    homeworkStartDay(
+      list.map((d) => ({ ...d, expect: expectOf.get(d.date) ?? [] })),
+      sent,
+      today,
+      from,
+    );
+
+  const groups = new Map<string, { year: number; month: number; marks: CalendarMark[]; days: HomeworkDay[] }>();
   for (const d of days) {
     const year = Number(d.date.slice(0, 4));
     const month = Number(d.date.slice(5, 7));
     const key = `${year}-${String(month).padStart(2, "0")}`;
-    const g = groups.get(key) ?? { year, month, marks: [], dates: [] };
+    const g = groups.get(key) ?? { year, month, marks: [], days: [] };
     const n = submittedOn.get(d.date) ?? 0;
     g.marks.push({
       date: d.date,
@@ -81,13 +119,15 @@ export default async function HomeworkPage() {
       track: byDate.get(d.date)?.track ?? "mwf",
       label: n > 0 ? `제출 ${n}` : d.levels.join("·"),
     });
-    g.dates.push(d.date);
+    g.days.push(d);
     groups.set(key, g);
   }
 
+  const start = startOf(days);
   const months: HomeworkMonth[] = [...groups.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, g]) => ({ year: g.year, month: g.month, marks: g.marks, initial: initialDay(g.dates, today) }));
+    .map(([, g]) => ({ year: g.year, month: g.month, marks: g.marks, initial: startOf(g.days) }));
+  const startMonth = start ? months.findIndex((m) => m.year === Number(start.slice(0, 4)) && m.month === Number(start.slice(5, 7))) : -1;
 
   if (months.length === 0) {
     /**
@@ -123,7 +163,7 @@ export default async function HomeworkPage() {
         months={months}
         days={days}
         submissions={mine}
-        startIndex={initialMonth(months, today)}
+        startIndex={startMonth >= 0 ? startMonth : initialMonth(months, today)}
       />
 
       {mine.length > 0 && (

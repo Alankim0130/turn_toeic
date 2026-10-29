@@ -26,6 +26,11 @@ export type HomeworkRow = {
   audios: { id: number; name: string }[];
   /** 사진도 음성도 아닌 첨부 (옛 제출) */
   files: { id: number; name: string }[];
+  /**
+   * 수업 전에 낸 숙제 — 그 수업 날짜가 오기 전(또는 그 날 첫 수업 시작 전)에 냈다 (2026-10-30 문라경 학생). 지난 수업 숙제를 이 날짜로 잘못 냈을 수 있다.
+   * 이름 검색에서만 센다 (`_lib/early.ts`)
+   */
+  early?: boolean;
 };
 
 /**
@@ -66,6 +71,7 @@ export function HomeworkList({ rows }: { rows: HomeworkRow[] }) {
                   <b className="text-[15px] font-black text-ink">{r.name}</b>
                   {r.label && <span className="rounded-full bg-ink px-1.5 py-0.5 text-[11px] font-black text-white">{r.label}</span>}
                   {r.checked && <span className="rounded-full bg-brand-100 px-1.5 py-0.5 text-[11px] font-bold text-brand-700">점검완료</span>}
+                  {r.early && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-800">수업 전에 냄</span>}
                 </span>
                 <span className="mt-0.5 block truncate text-xs text-mist">{r.sub}</span>
               </span>

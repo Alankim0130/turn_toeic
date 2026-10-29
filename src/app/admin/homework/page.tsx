@@ -9,13 +9,36 @@ import { FilterTabs } from "@/components/admin/FilterTabs";
 import { HomeworkList, type HomeworkRow } from "@/components/admin/homework/HomeworkList";
 import { classDayLabel, HOMEWORK_SUBJECTS, type HomeworkSubject, homeworkFileKind, homeworkFilesLabel, homeworkLabel, isSubject, SUBJECT_LABEL } from "@/lib/homework";
 import { isStaff, requireCrew } from "@/lib/auth";
-import { getProfileNames, getStaffPhones } from "../_lib/profile-names";
+import { getProfileNames, getStaffPhones, type PersonName } from "../_lib/profile-names";
+import { earlySubmissionIds } from "./_lib/early";
 
 export const metadata: Metadata = { title: "숙제점검", robots: { index: false } };
 
 const LIMIT = 300;
 
-export default async function HomeworkAdminPage({ searchParams }: { searchParams: Promise<{ level?: string; subject?: string; done?: string }> }) {
+/** 목록 · 검색이 함께 읽는 칸 */
+const SELECT =
+  "id, user_id, level, subject, class_date, question, feedback, status, created_at, checked_at, checked_by, homework_files(id, file_name, content_type, created_at)";
+
+type Submission = {
+  id: number;
+  user_id: string;
+  level: number | null;
+  subject: string | null;
+  class_date: string | null;
+  question: string | null;
+  feedback: string | null;
+  status: string;
+  created_at: string;
+  checked_at: string | null;
+  checked_by: string | null;
+  homework_files: { id: number; file_name: string; content_type: string | null; created_at: string }[] | null;
+};
+
+/** 검색어 — 앞뒤 빈칸을 떼고 40자까지 (DB 함수 `homework_student_search` 와 같은 상한) */
+const searchTerm = (raw: string | undefined) => (raw ?? "").trim().slice(0, 40);
+
+export default async function HomeworkAdminPage({ searchParams }: { searchParams: Promise<{ level?: string; subject?: string; done?: string; q?: string }> }) {
   // 조교도 점검한다 (2026-10-03 Alan "숙제점검"). 레이아웃이 조교를 통과시키므로 화면마다 막는다 — 그 밖의 등급은 여기서 튕긴다
   const me = await requireCrew();
   /** 조교에게는 학생 전화번호를 넘기지 않는다 — 점검에 필요 없고, 학생명단을 조교에게서 뺀 까닭이 개인정보다 (2026-10-03 Alan) */
@@ -28,6 +51,110 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
    * 어디를 먼저 봐야 할지 없이 전부 소리친다. 지금은 **기본이 미점검**이고 체크 한 번으로 점검완료까지 함께 본다.
    */
   const done = sp.done === "1";
+  /**
+   * **학생 이름 검색** (2026-10-30 Alan — "숙제점검에서 학생이름이 검색가능하도록 해줘!"). 이름의 일부로 찾고(`문라` → 문라경),
+   * 찾으면 그 학생의 숙제를 **과목 · 레벨 · 점검 상태와 상관없이 다** 보여 준다 — 학생이 "냈는데 없어졌어요" 할 때 어느 날짜로 들어갔는지 본다.
+   * 조교도 쓰는 화면이라 이름은 이름 · 등급만 주는 DB 함수로 찾는다 (조교는 profiles 를 못 읽는다 — 등급 체계 9-2)
+   */
+  const q = searchTerm(sp.q);
+  /** 검색해도 보던 과목 · 레벨 · 점검완료 포함은 그대로 들고 다닌다 — 검색을 지우면 그 칸으로 돌아온다 (주소에 있던 값만) */
+  const carry = { subject: sp.subject, level: sp.level, done: sp.done };
+  /** 머리 — `미제출 알림` 은 보던 레벨을 들고 간다 (목록은 고른 레벨, 검색은 주소에 있던 레벨) */
+  const header = (lv: number | null) => (
+    <PageHeader
+      icon="homework"
+      title="숙제점검"
+      description="정규 수업 숙제입니다. 강사(과목) → 레벨로 좁힌 뒤, 학생 줄을 누르면 숙제 사진을 넘겨 보고 음성 파일을 들으면서 질문에 답하고 점검완료할 수 있어요. 학생 이름으로도 찾을 수 있어요."
+    >
+      {/* 누가 안 냈는지 · 한 번에 알림 (2026-10-08 Alan "숙제제출 리스트 … 안한사람은 일괄선택해서 알림메시지도") — 메뉴 `숙제 미제출 알림` 줄(같은 날 "응 메뉴에 넣어줘")과 같은 곳, 보던 레벨을 들고 간다 */}
+      <Link href={`/admin/homework/missing${lv ? `?level=${lv}` : ""}`} className="btn-secondary">
+        <Icon name="bell" size={18} />
+        미제출 알림
+      </Link>
+    </PageHeader>
+  );
+  const searchForm = (
+    <form method="get" action="/admin/homework" role="search" className="mb-4 flex max-w-md gap-2">
+      {Object.entries(carry).map(([k, v]) => (v ? <input key={k} type="hidden" name={k} value={v} /> : null))}
+      {/* key — 검색을 지우거나 바꿔 화면만 옮겨 가도 칸이 지금 검색어로 다시 선다 (물음표 뒤만 바뀌는 이동) */}
+      <input
+        key={q}
+        type="search"
+        name="q"
+        defaultValue={q}
+        maxLength={40}
+        placeholder="학생 이름으로 찾기"
+        aria-label="학생 이름 검색"
+        enterKeyHint="search"
+        className="input min-w-0 flex-1 !py-2"
+      />
+      <button type="submit" className="btn-secondary shrink-0 !py-2">
+        검색
+      </button>
+    </form>
+  );
+
+  if (q) {
+    // 이름 · 등급만 주는 함수 — 강사 · 관리자 · 조교만, 숙제를 냈거나 반에 배정된 적이 있는 사람, 50명까지 (마이그레이션 20261030100000)
+    const { data: found, error: findError } = await supabase.rpc("homework_student_search", { p_q: q });
+    const ids = (found ?? []).map((f) => f.user_id);
+    const { data: subs, error: subsError } = ids.length
+      ? await supabase.from("homework_submissions").select(SELECT).in("user_id", ids).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(LIMIT)
+      : { data: [] as Submission[], error: null };
+    const list: Submission[] = subs ?? [];
+    const [names, phones, early] = await Promise.all([
+      getProfileNames(supabase, list.flatMap((s) => [s.user_id, s.checked_by])),
+      showPhone ? getStaffPhones(supabase, list.map((s) => s.user_id)) : Promise.resolve(new Map<string, string>()),
+      // 수업 전에 낸 숙제 — 날짜를 잘못 골랐을 숙제에 표시를 단다 (`_lib/early.ts`)
+      earlySubmissionIds(supabase, list),
+    ]);
+    const rows = toRows(list, names, phones, showPhone, early);
+    const foundNames = (found ?? []).map((f) => f.name || "이름 없음");
+    const clear = new URLSearchParams(Object.entries(carry).flatMap(([k, v]) => (v ? [[k, v]] : [])));
+
+    return (
+      <>
+        {header(sp.level && /^\d+$/.test(sp.level) ? Number(sp.level) : null)}
+        {searchForm}
+
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <p className="min-w-0 text-sm font-bold text-ink-soft">
+            &lsquo;{q}&rsquo; 검색 · 숙제 <span className="text-ink tabular-nums">{rows.length}</span>건
+            {foundNames.length > 0 && (
+              <span className="font-semibold text-mist">
+                {" "}
+                · 찾은 학생 {foundNames.length}명: {foundNames.slice(0, 10).join(", ")}
+                {foundNames.length > 10 && ` 외 ${foundNames.length - 10}명`}
+              </span>
+            )}
+          </p>
+          <Link href={`/admin/homework${clear.size ? `?${clear}` : ""}`} className="shrink-0 text-sm font-bold text-brand-600 transition hover:text-brand-700">
+            검색 지우기
+          </Link>
+        </div>
+
+        {early.size > 0 && (
+          <p className="mb-4 rounded-xl2 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <b>수업 전에 낸 숙제 {early.size}건</b> — 그 수업 날짜가 오기 전(또는 그 날 수업 시작 전)에 낸 숙제예요. 지난 수업 숙제를 이 날짜로 잘못 냈을 수 있어요 —
+            그러면 원래 수업은 &lsquo;안 냄&rsquo; 으로 보여 미제출 알림이 가요. 점검 전이면 학생이 &lsquo;제출 취소&rsquo; 뒤 원래 수업 날짜로 다시 낼 수 있어요.
+          </p>
+        )}
+
+        {findError || subsError ? (
+          <EmptyState icon="homework" title="검색하지 못했어요" description="잠시 후 다시 시도해 주세요. 테스트 등급을 켠 동안에는 검색되지 않아요." />
+        ) : ids.length === 0 ? (
+          <EmptyState icon="homework" title={`“${q}” 이름의 학생이 없어요`} description="이름의 일부로도 찾을 수 있어요. 숙제를 냈거나 반에 배정된 학생만 찾아요." />
+        ) : rows.length === 0 ? (
+          <EmptyState icon="homework" title="낸 숙제가 없어요" description={`찾은 학생(${foundNames.slice(0, 3).join(", ")}${foundNames.length > 3 ? " …" : ""})이 아직 숙제를 내지 않았어요.`} />
+        ) : (
+          <>
+            <HomeworkList rows={rows} />
+            {rows.length >= LIMIT && <p className="mt-4 text-center text-xs text-mist">최근 {LIMIT}건만 보여요. 이름을 더 길게 적어 좁혀 주세요.</p>}
+          </>
+        )}
+      </>
+    );
+  }
 
   const { data: levelRows } = await supabase.from("lc_levels").select("level").order("sort_order").order("level");
   const levels = (levelRows ?? []).map((l) => l.level);
@@ -68,9 +195,7 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
   let listQuery = scoped(
     supabase
       .from("homework_submissions")
-      .select(
-        "id, user_id, level, subject, class_date, question, feedback, status, created_at, checked_at, checked_by, homework_files(id, file_name, content_type, created_at)",
-      ),
+      .select(SELECT),
   );
   if (!done) listQuery = listQuery.eq("status", "submitted");
 
@@ -96,53 +221,14 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
   const waiting = level ? (byLevel.get(level) ?? 0) : (bySubject.get(subject) ?? 0);
   const finished = checkedCount.count ?? 0;
 
-  /** 목록 한 줄에 들어갈 글자는 **서버가 다 만든다** (클라이언트에서 날짜 문구를 다시 짓지 않는다) */
-  const rows: HomeworkRow[] = (subs ?? []).map((s) => {
-    const files = [...(s.homework_files ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id);
-    // 사진(넘겨 보기) · 음성(플레이어, 2026-10-07) · 그 밖(옛 첨부, 링크) — 가르는 곳은 `homeworkFileKind` 한곳이다
-    const ofKind = (k: ReturnType<typeof homeworkFileKind>) => files.filter((f) => homeworkFileKind(f.content_type) === k).map((f) => ({ id: f.id, name: f.file_name }));
-    const at = formatDate(s.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-    const parts = [s.class_date ? `${classDayLabel(s.class_date)} 수업` : null, homeworkFilesLabel(files) || null].filter(Boolean) as string[];
-    const checked = s.status === "checked";
-    const checker = s.checked_by ? names.get(s.checked_by)?.name : undefined;
-    return {
-      id: s.id,
-      name: names.get(s.user_id)?.name || "이름 없음",
-      phone: showPhone ? (phones.get(s.user_id) ?? null) : null,
-      label: s.level != null && s.subject ? homeworkLabel(s.level, s.subject) : null,
-      sub: parts.join(" · ") || "올린 파일 없음",
-      at,
-      meta: [
-        ...parts,
-        `${at} 제출`,
-        checked ? `점검완료${checker ? ` · ${checker}` : ""}${s.checked_at ? ` · ${formatDate(s.checked_at, { month: "numeric", day: "numeric" })}` : ""}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · "),
-      checked,
-      question: s.question,
-      feedback: s.feedback,
-      photos: ofKind("photo"),
-      audios: ofKind("audio"),
-      files: ofKind("other"),
-    };
-  });
+  const rows = toRows(subs ?? [], names, phones, showPhone);
 
   const keep = { level: level ? String(level) : undefined, subject, done: done ? "1" : undefined };
 
   return (
     <>
-      <PageHeader
-        icon="homework"
-        title="숙제점검"
-        description="정규 수업 숙제입니다. 강사(과목) → 레벨로 좁힌 뒤, 학생 줄을 누르면 숙제 사진을 넘겨 보고 음성 파일을 들으면서 질문에 답하고 점검완료할 수 있어요."
-      >
-        {/* 누가 안 냈는지 · 한 번에 알림 (2026-10-08 Alan "숙제제출 리스트 … 안한사람은 일괄선택해서 알림메시지도") — 메뉴 `숙제 미제출 알림` 줄(같은 날 "응 메뉴에 넣어줘")과 같은 곳, 보던 레벨을 들고 간다 */}
-        <Link href={`/admin/homework/missing${level ? `?level=${level}` : ""}`} className="btn-secondary">
-          <Icon name="bell" size={18} />
-          미제출 알림
-        </Link>
-      </PageHeader>
+      {header(level)}
+      {searchForm}
 
       {/* **과목이 먼저, 그 안에서 레벨** (2026-09-19 Alan — "RC와 LC가 구분되어 있고 과목안에서도 레벨까지만 구분이 되면 좋겠어").
           날짜로는 나누지 않는다 — 날짜는 학생이 찾는 길이고, 강사는 과목 × 레벨로 훑는다.
@@ -208,4 +294,48 @@ export default async function HomeworkAdminPage({ searchParams }: { searchParams
       )}
     </>
   );
+}
+
+/**
+ * 목록 한 줄에 들어갈 글자는 **서버가 다 만든다** (클라이언트에서 날짜 문구를 다시 짓지 않는다).
+ * `early` — 수업 전에 낸 숙제 (이름 검색에서만 센다, `_lib/early.ts`)
+ */
+function toRows(
+  subs: readonly Submission[],
+  names: Map<string, PersonName>,
+  phones: Map<string, string>,
+  showPhone: boolean,
+  early: ReadonlySet<number> = new Set(),
+): HomeworkRow[] {
+  return subs.map((s) => {
+    const files = [...(s.homework_files ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id);
+    // 사진(넘겨 보기) · 음성(플레이어, 2026-10-07) · 그 밖(옛 첨부, 링크) — 가르는 곳은 `homeworkFileKind` 한곳이다
+    const ofKind = (k: ReturnType<typeof homeworkFileKind>) => files.filter((f) => homeworkFileKind(f.content_type) === k).map((f) => ({ id: f.id, name: f.file_name }));
+    const at = formatDate(s.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    const parts = [s.class_date ? `${classDayLabel(s.class_date)} 수업` : null, homeworkFilesLabel(files) || null].filter(Boolean) as string[];
+    const checked = s.status === "checked";
+    const checker = s.checked_by ? names.get(s.checked_by)?.name : undefined;
+    return {
+      id: s.id,
+      name: names.get(s.user_id)?.name || "이름 없음",
+      phone: showPhone ? (phones.get(s.user_id) ?? null) : null,
+      label: s.level != null && s.subject ? homeworkLabel(s.level, s.subject) : null,
+      sub: parts.join(" · ") || "올린 파일 없음",
+      at,
+      meta: [
+        ...parts,
+        `${at} 제출`,
+        checked ? `점검완료${checker ? ` · ${checker}` : ""}${s.checked_at ? ` · ${formatDate(s.checked_at, { month: "numeric", day: "numeric" })}` : ""}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      checked,
+      question: s.question,
+      feedback: s.feedback,
+      photos: ofKind("photo"),
+      audios: ofKind("audio"),
+      files: ofKind("other"),
+      early: early.has(s.id),
+    };
+  });
 }
