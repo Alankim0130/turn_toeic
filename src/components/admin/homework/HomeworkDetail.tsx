@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useEffectEvent, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { HomeworkCheckForm } from "@/components/admin/homework/HomeworkCheckForm";
 import { PhotoViewer } from "@/components/admin/PhotoViewer";
@@ -34,10 +34,12 @@ export function HomeworkDetail({ row, onClose }: { row: HomeworkRow; onClose: ()
     () => false,
   );
 
+  // 열 때 한 번만 닫기 버튼에 포커스 — `onClose` 에 묶으면 목록이 다시 그려질 때마다(점검 취소 뒤 새 목록) 포커스가 튀었다 (2026-10-29 점검, Dialog 와 같은 규칙)
+  const close = useEffectEvent(() => onClose());
   useEffect(() => {
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") close();
     };
     window.addEventListener("keydown", onKey);
     // 뒤 화면이 같이 움직이면 어지럽다
@@ -47,7 +49,7 @@ export function HomeworkDetail({ row, onClose }: { row: HomeworkRow; onClose: ()
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = overflow;
     };
-  }, [onClose]);
+  }, []);
 
   if (!mounted) return null;
 

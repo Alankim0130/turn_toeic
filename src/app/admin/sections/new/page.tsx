@@ -108,7 +108,9 @@ export default async function AdminSectionNewPage({ searchParams }: { searchPara
                 </div>
               )}
               <div className="mt-4">
+                {/* 달을 바꾸면 새로 그린다 — 앞 달에서 고른 칸 수 · 결과 줄이 남지 않게 (2026-10-29 점검) */}
                 <BulkCreateSections
+                  key={term.id}
                   termId={term.id}
                   termLabel={termLabel}
                   timetableHref={timetableHref}

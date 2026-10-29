@@ -15,8 +15,9 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
       // 간편 로그인으로 처음 들어온 계정은 실명·휴대폰이 없다 → 가입 정보부터 받는다 (requireUser 와 같은 판정)
-      const { data: profile } = await supabase.from("profiles").select("name, phone").eq("id", data.user.id).maybeSingle();
-      if (isProfileIncomplete(profile)) {
+      const { data: profile, error: profileError } = await supabase.from("profiles").select("name, phone").eq("id", data.user.id).maybeSingle();
+      // 못 읽었으면(잠깐의 DB 오류) 가던 곳으로 — 그 화면의 requireUser 가 다시 보고, 정말 미완성이면 그때 입력 화면으로 보낸다 (2026-10-29 점검)
+      if (!profileError && isProfileIncomplete(profile)) {
         return NextResponse.redirect(`${origin}${COMPLETE_PROFILE_PATH}?next=${encodeURIComponent(next)}`);
       }
       return NextResponse.redirect(`${origin}${next}`);

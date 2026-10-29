@@ -7,6 +7,12 @@ import { purgeCutoff, RECEIPT_RETENTION_DAYS } from "@/lib/receipt-retention";
 const BATCH = 500;
 
 /**
+ * `.in("file_path", …)` 한 번에 넣는 경로 수 (2026-10-29). 경로가 70자 남짓이라 500개를 한 번에 넣으면 요청 주소가 33KB 를 넘어 실패했고,
+ * 실패하면 다음 날도 같은 500건을 다시 집어 **영영 지우지 못했다** (방학처럼 하루에 수강증이 수백 장 오른 날의 60일 뒤). 100개면 7KB 남짓이다
+ */
+const IN_CHUNK = 100;
+
+/**
  * 보관 기간이 지난 수강증 **원본 파일**을 지운다 (2026-09-20 Alan: 2개월. 미확정 6 해결).
  * Vercel Cron 이 매일 03:20 KST 에 부른다 (`vercel.ts`).
  *
@@ -42,17 +48,21 @@ export async function GET(req: NextRequest) {
   // ★ 같은 파일을 아직 쓰는 신청이 있으면 건너뛴다.
   // 거절당한 학생이 수동으로 다시 낼 때 **이미 올린 파일을 그대로 재사용**하므로(도메인 규칙 4-2),
   // 오래된 거절 건 하나 때문에 지우면 **아직 검토 중인 새 신청의 그림이 사라져** 스태프가 승인을 못 한다.
-  const { data: stillUsed, error: usedError } = await admin
-    .from("enrollment_verifications")
-    .select("file_path")
-    .in("file_path", candidates)
-    .is("file_deleted_at", null)
-    .or(`result.is.null,created_at.gte.${cutoff}`);
-  if (usedError) {
-    console.error(`[purge-receipts] 쓰는 중인 파일을 못 확인했어요: ${usedError.message}`);
-    return NextResponse.json({ ok: false, error: usedError.message }, { status: 500 });
+  const keep = new Set<string>();
+  for (let i = 0; i < candidates.length; i += IN_CHUNK) {
+    const { data: stillUsed, error: usedError } = await admin
+      .from("enrollment_verifications")
+      .select("file_path")
+      .in("file_path", candidates.slice(i, i + IN_CHUNK))
+      .is("file_deleted_at", null)
+      .or(`result.is.null,created_at.gte.${cutoff}`);
+    if (usedError) {
+      // 하나라도 못 확인하면 아무것도 지우지 않는다 — 확인 못 한 파일이 검토 중인 신청의 그림일 수 있다
+      console.error(`[purge-receipts] 쓰는 중인 파일을 못 확인했어요: ${usedError.message}`);
+      return NextResponse.json({ ok: false, error: usedError.message }, { status: 500 });
+    }
+    for (const r of stillUsed ?? []) keep.add(r.file_path);
   }
-  const keep = new Set((stillUsed ?? []).map((r) => r.file_path));
 
   const paths = candidates.filter((p) => !keep.has(p));
   const ids = rows.filter((r) => !keep.has(r.file_path)).map((r) => r.id);

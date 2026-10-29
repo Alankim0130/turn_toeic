@@ -6,10 +6,10 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyStaff } from "@/lib/push";
 import { createHash } from "node:crypto";
-import { decideVerification, type VerifyTerm } from "@/lib/verify-decision";
+import { decideVerification, type VerifyDecision, type VerifyTerm } from "@/lib/verify-decision";
 import { todayKST } from "@/lib/utils";
 import { resolveEnrollChoice, type EnrollSection } from "@/lib/enroll-options";
-import { getOpenEnrollSections } from "../_lib/queries";
+import { readMyOpenEnrollSections } from "../_lib/queries";
 import { fetchTwoWeekSlots } from "@/lib/open-sections";
 import { parseReceipt, readEnoughFor, receiptHasName, receiptStudentName, type ParsedReceipt } from "@/lib/receipt";
 import { nameMismatchOf, type NameMismatch } from "@/lib/name-mismatch";
@@ -23,7 +23,7 @@ import { readAutoVerify } from "@/lib/auto-verify";
 import { sendTextbookNotice } from "@/lib/textbook-guide";
 import type { TextbookNotice } from "@/lib/textbook";
 import { replacePendingReceipts } from "@/lib/pending-receipts";
-import { seatOfSections, type ReceiptSeat } from "@/lib/receipt-seat";
+import { sameCaptureRow, seatOfSections, type ReceiptSeat } from "@/lib/receipt-seat";
 import { planClassChangeFor } from "@/lib/class-change-db";
 import { classChangeLog } from "@/lib/class-change";
 
@@ -247,19 +247,24 @@ export async function submitVerification(input: { filePath: string }): Promise<S
   const { user, admin } = guarded;
   const filePath = String(input.filePath);
 
-  const [sections, { data: profile }, auto, twoWeekSlots] = await Promise.all([
-    getOpenEnrollSections(),
+  const [openSections, { data: profile }, auto, twoWeekSlots] = await Promise.all([
+    readMyOpenEnrollSections(),
     admin.from("profiles").select("name").eq("id", user.id).maybeSingle(),
     // 긴급 스위치 (2026-09-22) — 꺼져 있으면(읽지 못해도) 기계가 판정하지 않는다: 자동 거절도 자동 승인도 없이 전부 검토 대기
     readAutoVerify(admin),
     // 2주완성이 열리는 자리 (2026-10-05) — 그 자리의 수강증은 기간 숫자(4주 · 2주)까지 읽고, 못 읽은 한 달 수강증은 사람이 본다
     fetchTwoWeekSlots(admin),
   ]);
+  // 열린 반을 읽지 못했다 (잠깐의 DB 오류) — 빈 목록을 '열린 반이 없다' 로 읽으면 이번 달 수강증이 "N월 반을 열면 배정해 드려요" 로
+  // 받아 둬지고 스태프에게도 알리지 않아, 반을 새로 열 때까지 아무도 몰랐다 (2026-10-29). 받아 두지 않고 사람이 보게 한다
+  const sectionsUnread = openSections == null;
+  const sections = openSections ?? [];
   const spots = twoWeekSpots(sections, twoWeekSlots);
 
   const outcome = await readReceipt(admin, filePath, profile?.name ?? null, spots);
   const read = outcome.ok ? outcome : null;
-  const decision = decideVerification(read?.parsed ?? null, openTermsOf(sections), todayKST());
+  const decided = decideVerification(read?.parsed ?? null, openTermsOf(sections), todayKST());
+  const decision: VerifyDecision = sectionsUnread && decided.kind === "upcoming" ? { kind: "review" } : decided;
   // 수강증 이름 ≠ 가입 실명 — 거절하지 않고(오인식일 수 있다) 검토로 보내되, 학생에게 팝업으로 알린다 (2026-09-30 Alan)
   const nameMismatch = read ? nameMismatchOf(read.nameMatches, receiptStudentName(read.parsed.text), profile?.name) : undefined;
   const rejected = decision.kind === "reject" && auto.on;
@@ -299,8 +304,9 @@ export async function submitVerification(input: { filePath: string }): Promise<S
   const alreadyApproved = !rejected && !!flags && flags.decidedBefore === "approved" && flags.alreadyEnrolled.length > 0;
 
   // 같은 등록을 다시 낸 것이면 확인 중인 옛 수강증을 지우고 바꿔 넣는다 (2026-09-18 → 2026-10-06 같은 등록일 때만).
-  // 바로 거절한 것은 바꿔 넣지 않는다 — 접수되지 않았으니 확인 중이던 수강증을 대신하지 못한다
-  if (!rejected) await replacePendingReceipts(admin, user.id, filePath, uploadSeat(filePath, outcome, sections, matched?.sectionIds ?? []));
+  // 바로 거절한 것 · 이미 승인돼 바로 닫는 것은 바꿔 넣지 않는다 — 접수되지 않았으니 확인 중이던 수강증을 대신하지 못한다.
+  // (2026-10-29 — 승인된 캡처를 또 올리면 같은 그림으로 낸 "반이 달라요" 정정 요청까지 지워져 강사가 영영 못 봤다)
+  if (!rejected && !alreadyApproved) await replacePendingReceipts(admin, user.id, filePath, uploadSeat(filePath, outcome, sections, matched?.sectionIds ?? []));
 
   const { data: inserted, error } = await admin
     .from("enrollment_verifications")
@@ -327,6 +333,8 @@ export async function submitVerification(input: { filePath: string }): Promise<S
               ...(blockers ? { blockers } : {}),
               ...(changeLog ? { classChange: changeLog } : {}),
               ...(held != null ? { hold: held } : {}),
+              // 열린 반을 읽지 못해 대조 · 받아 두기를 하지 않았다 — 승인 화면이 까닭을 적는다 (2026-10-29)
+              ...(sectionsUnread ? { sectionsUnread: true } : {}),
               // 스위치가 꺼져 있을 때 올라온 것 — 켜져 있었다면 거절했을 건은 그 사유를 스태프에게 보여 준다
               ...(auto.on ? {} : { autoOff: auto.reason, ...(decision.kind === "reject" ? { wouldReject: { code: decision.code, reason: decision.reason } } : {}) }),
             }
@@ -422,11 +430,14 @@ export async function submitManualVerification(input: {
   const { user, admin } = guarded;
   const filePath = String(input.filePath);
 
-  const [sections, { data: profile }, twoWeekSlots] = await Promise.all([
-    getOpenEnrollSections(),
+  const [openSections, { data: profile }, twoWeekSlots] = await Promise.all([
+    readMyOpenEnrollSections(),
     admin.from("profiles").select("name").eq("id", user.id).maybeSingle(),
     fetchTwoWeekSlots(admin),
   ]);
+  // 열린 반을 읽지 못하면 고른 반을 풀 수 없다 — "그 반이 없어요" 로 잘못 말하지 않고 다시 해 보게 한다 (2026-10-29)
+  if (openSections == null) return { ok: false, error: "열린 반 목록을 읽지 못했어요. 잠시 후 다시 시도해 주세요." };
+  const sections = openSections;
   const resolved = resolveEnrollChoice(sections, {
     term: String(input?.term ?? ""),
     courseId: Number(input?.courseId) || undefined,
@@ -436,13 +447,6 @@ export async function submitManualVerification(input: {
   });
   if (!resolved.ok) return { ok: false, error: resolved.reason };
 
-  // 자동 승인된 뒤 "반이 달라요" 로 온 정정 요청인가 (2026-09-18 Alan 팝업). 그 달 반으로 이미 승인된 수강증이 있으면 그 id 를 남겨
-  // 스태프가 새로 승인하지 않고 기존 승인의 '배정 수정' 에서 고치게 한다 — 새로 승인하면 등록이 두 건 생긴다.
-  const termSectionIds = sections.filter((s) => s.term && `${s.term.year}-${String(s.term.month).padStart(2, "0")}` === String(input.term)).map((s) => s.id);
-  const { data: prior } = termSectionIds.length
-    ? await admin.from("enrollment_verifications").select("id").eq("user_id", user.id).eq("result", "approved").in("matched_section", termSectionIds).order("id", { ascending: false }).limit(1).maybeSingle()
-    : { data: null };
-
   // **수동 신청도 같은 수강증 검사를 한다** (2026-09-22). 예전에는 수동 신청에 아무 검사가 없어서, 위조 신호 네 가지가
   // 자동 승인만 막고 **수동 등업신청으로 내면 파일 중복 · 같은 초 캡처 · 색 검사를 모두 비껴갔다** — 셋 다 스태프가 그림을 봐서는
   // 알 수 없는 신호다. 판정(거절 · 자동 승인)은 하지 않고 승인 화면에만 적는다 — 수동 신청은 늘 스태프가 본다.
@@ -450,6 +454,23 @@ export async function submitManualVerification(input: {
   const outcome = await readReceipt(admin, filePath, profile?.name ?? null, twoWeekSpots(sections, twoWeekSlots));
   const read = outcome.ok ? outcome : null;
   const flags = await receiptFlags(admin, flagInput(user.id, outcome, resolved.sectionIds));
+
+  // 자동 승인된 뒤 "반이 달라요" 로 온 정정 요청인가 (2026-09-18 Alan 팝업). **같은 수강증**(같은 파일 · 같은 그림 · 같은 초 캡처)이
+  // 그 달 반으로 승인돼 있으면 그 id 를 남겨 스태프가 새로 승인하지 않고 기존 승인의 '배정 수정' 에서 고치게 한다 — 새로 승인하면 등록이 두 건 생긴다.
+  // 다른 수강증은 정정 요청이 아니다 (2026-10-29) — 예전에는 그 달 승인된 수강증이 하나라도 있으면 정정 요청으로 봐서, 단과를 둘 산 학생의
+  // 둘째 수강증에 "기존 승인의 배정 수정에서 고쳐 주세요" 가 떠 첫째 단과 반을 바꿔 버리게 됐다
+  const termSectionIds = sections.filter((s) => s.term && `${s.term.year}-${String(s.term.month).padStart(2, "0")}` === String(input.term)).map((s) => s.id);
+  const { data: approvedRows } = termSectionIds.length
+    ? await admin
+        .from("enrollment_verifications")
+        .select("id, file_path, file_hash, parsed")
+        .eq("user_id", user.id)
+        .eq("result", "approved")
+        .in("matched_section", termSectionIds)
+        .order("id", { ascending: false })
+        .limit(20)
+    : { data: null };
+  const prior = sameCaptureRow(approvedRows ?? [], { path: filePath, hash: outcome.hash, capturedAt: read?.parsed.capturedAt ?? null });
 
   // 같은 등록(같은 그림 · 같은 반 · 같은 시간)을 다시 낸 것만 바꿔 넣는다 — 단과를 둘 산 학생이 수동 신청을 두 번 내도 첫째가 남는다 (2026-10-06)
   await replacePendingReceipts(admin, user.id, filePath, uploadSeat(filePath, outcome, sections, resolved.sectionIds));

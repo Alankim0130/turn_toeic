@@ -1,11 +1,12 @@
 import { cache } from "react";
+import { readAll } from "@/lib/read-all";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionUser } from "@/lib/auth";
 import { sortByWay, todayKST } from "@/lib/utils";
 import { week5SectionIds } from "@/lib/week5";
 import { materialVisibleTo } from "@/lib/study";
 import type { EnrollSection } from "@/lib/enroll-options";
-import { fetchOpenEnrollSections } from "@/lib/open-sections";
+import { fetchOpenEnrollSections, readOpenEnrollSections } from "@/lib/open-sections";
 import { isMaterialSubject, materialAccess, materialLinks, sortMaterialFiles, type MaterialSubject } from "@/lib/class-materials";
 import { cellKey, cellLevels, isRoundOpen, isRoundSet, roundCells, roundDates, roundKey } from "@/lib/class-rounds";
 import { clipToOwnRange } from "@/lib/two-week";
@@ -130,6 +131,11 @@ export function myTermEnds(orders: readonly MyOrder[]): Map<number, string> {
  */
 export async function getOpenEnrollSections(): Promise<EnrollSection[]> {
   return fetchOpenEnrollSections(await createClient());
+}
+
+/** 같은 목록 — 읽지 못하면 null (등업신청 판정이 쓴다 — 빈 목록을 '열린 반 없음' 으로 읽지 않게, `readOpenEnrollSections`) */
+export async function readMyOpenEnrollSections(): Promise<EnrollSection[] | null> {
+  return readOpenEnrollSections(await createClient());
 }
 
 export async function getMyVerifications() {
@@ -564,16 +570,23 @@ export async function getMyHomework(filter?: { level?: number; subject?: string 
   const user = await getSessionUser();
   if (!user) return [];
   const supabase = await createClient();
-  let q = supabase
-    .from("homework_submissions")
-    .select("id, level, subject, class_date, question, feedback, status, created_at, checked_at, homework_files(id, file_name, file_size, content_type, created_at)")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(60);
-  if (filter?.level) q = q.eq("level", filter.level);
-  if (filter?.subject) q = q.eq("subject", filter.subject);
-  const { data } = await q;
-  return data ?? [];
+  // 전부 읽는다 (2026-10-29) — 예전에는 최근 60건만 읽어서, 속성반(하루 RC · LC × 두 레벨 = 넷)이면 한 달 안에도 앞쪽 수업일의 제출이
+  // 달력의 `제출 N` 과 그 날 칸에서 사라졌고 '지금까지 낸 숙제 전체 보기' 도 60건에서 끊겼다. 1,000줄씩 나눠 읽는다
+  const { rows } = await readAll((from, to, count) => {
+    let q = supabase
+      .from("homework_submissions")
+      .select(
+        "id, level, subject, class_date, question, feedback, status, created_at, checked_at, homework_files(id, file_name, file_size, content_type, created_at)",
+        count ? { count: "exact" } : undefined,
+      )
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
+    if (filter?.level) q = q.eq("level", filter.level);
+    if (filter?.subject) q = q.eq("subject", filter.subject);
+    return q.range(from, to);
+  });
+  return rows;
 }
 export type MyHomework = Awaited<ReturnType<typeof getMyHomework>>[number];
 

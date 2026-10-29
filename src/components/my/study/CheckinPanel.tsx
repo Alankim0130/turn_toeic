@@ -59,8 +59,10 @@ export function CheckinPanel({ materialId, userId, checkin }: { materialId: numb
     setBusy(true);
     setError(null);
     const uploaded: UploadedFile[] = [];
-    const fail = async (message: string) => {
-      await removeUploaded(CHECKIN_BUCKET, uploaded.map((u) => u.path));
+    // 인증을 보낸 뒤에 끊기면 서버가 이미 저장했을 수 있다 — 그때는 올린 사진을 지우지 않는다 (2026-10-29 점검 — 숙제 제출과 같은 까닭)
+    let sent = false;
+    const fail = async (message: string, keepFiles = false) => {
+      if (!keepFiles) await removeUploaded(CHECKIN_BUCKET, uploaded.map((u) => u.path));
       setError(message);
       setBusy(false);
       setProgress(null);
@@ -72,6 +74,7 @@ export function CheckinPanel({ materialId, userId, checkin }: { materialId: numb
         uploaded.push(await uploadFile(CHECKIN_BUCKET, `${folder}/${objectName(photos[i].file)}`, photos[i].file));
       }
       setProgress("인증하는 중…");
+      sent = true;
       const res = await submitStudyCheckin({ materialId, note: note.trim(), files: uploaded });
       if (!res.ok) return await fail(res.error ?? "인증하지 못했어요.");
       photos.forEach((p) => URL.revokeObjectURL(p.url));
@@ -82,6 +85,11 @@ export function CheckinPanel({ materialId, userId, checkin }: { materialId: numb
       setProgress(null);
       router.refresh();
     } catch (err) {
+      if (sent) {
+        await fail("인터넷이 끊겨 인증됐는지 확인하지 못했어요. 화면을 새로 받았으니 '인증함' 이 보이는지 먼저 봐 주세요.", true);
+        router.refresh();
+        return;
+      }
       await fail(err instanceof Error ? err.message : "인증하지 못했어요.");
     }
   }
@@ -90,9 +98,13 @@ export function CheckinPanel({ materialId, userId, checkin }: { materialId: numb
     if (!checkin || busy) return;
     if (!window.confirm("이 날짜의 인증을 지우고 다시 올릴까요? 올린 사진도 함께 지워져요.")) return;
     setBusy(true);
-    const res = await deleteStudyCheckin(checkin.id);
+    // 답 없이 끝나도(연결 끊김) 단추가 잠긴 채 남지 않게 (2026-10-29 점검)
+    const res = await deleteStudyCheckin(checkin.id).catch(() => ({ ok: false as const, error: "지우지 못했어요. 인터넷 연결을 확인하고 다시 해 주세요." }));
     setBusy(false);
-    if (!res.ok) return setError(res.error ?? "지우지 못했어요.");
+    if (!res.ok) {
+      router.refresh();
+      return setError(res.error ?? "지우지 못했어요.");
+    }
     router.refresh();
   }
 

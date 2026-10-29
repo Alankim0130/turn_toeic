@@ -61,12 +61,14 @@ describe("③ 서버 쪽 — 로그인 확인과 차례로 묻기 줄이기", ()
     expect(src).not.toMatch(/supabase\.auth\.getUser\(/);
   });
 
-  it("화면의 로그인 확인도 getClaims 한 번 (getSessionUser) — getUser 는 토큰에 없는 마지막 로그인 시각(getLastSignInAt) 하나뿐", () => {
+  it("화면의 로그인 확인도 getClaims 한 번 (getSessionUser) — getUser 는 서버 액션(쓰기) 요청 · 토큰에 없는 마지막 로그인 시각(getLastSignInAt) 둘뿐", () => {
     const src = read("src/lib/auth.ts");
     expect(src).toMatch(/export const getSessionUser = cache\(async \(\)[\s\S]*?auth\.getClaims\(\)/);
     expect(src).toMatch(/export const getSessionProfile = cache\(async \(\) => \{\s*const user = await getSessionUser\(\);/);
     // 머리말(주석)의 `auth.getUser()` 는 세지 않는다 — 부르는 곳만
-    expect(src.match(/supabase\.auth\.getUser\(/g)).toHaveLength(1);
+    expect(src.match(/supabase\.auth\.getUser\(/g)).toHaveLength(2);
+    // 화면(GET)에서는 getUser 를 부르지 않는다 — 서버 액션 요청일 때만 (2026-10-29 — 쓰기는 로그인 서버에 묻는다)
+    expect(src).toMatch(/if \(await isActionRequest\(\)\) \{[\s\S]{0,120}?supabase\.auth\.getUser\(\)/);
     expect(src).toMatch(/export const getLastSignInAt = cache\(async \(\) => \{[\s\S]*?auth\.getUser\(\)/);
   });
 

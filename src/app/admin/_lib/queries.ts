@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { readAll } from "@/lib/read-all";
 import type { Database } from "@/lib/supabase/database.types";
 import type { HeadcountBlock, HeadcountRow } from "@/lib/course-headcount";
 import { pickCurrentTerm } from "@/lib/term-window";
@@ -204,10 +205,16 @@ export type RosterSets = {
  * (상태 열은 DB 트리거가 날짜로 맞추지만, 여기서도 날짜를 직접 보아 DB 권한 판정과 같은 기준을 쓴다)
  */
 export async function getRosterSets(supabase: DB, today: string): Promise<RosterSets> {
-  const { data } = await supabase
-    .from("enrollment_orders")
-    .select("user_id, status, activates_on, access_until, profile:profiles!enrollment_orders_user_id_fkey(role)")
-    .gte("access_until", today);
+  // 1,000줄씩 나눠 읽는다 (2026-10-29) — 방학에 600명이 이번 달 · 다음 달 등록을 함께 가지면 1,000줄(PostgREST 상한)을 넘어,
+  // 넘친 학생이 등록생 · 예비등록생 탭과 숫자에서 조용히 빠졌다
+  const { rows: data } = await readAll((from, to, count) =>
+    supabase
+      .from("enrollment_orders")
+      .select("id, user_id, status, activates_on, access_until, profile:profiles!enrollment_orders_user_id_fkey(role)", count ? { count: "exact" } : undefined)
+      .gte("access_until", today)
+      .order("id")
+      .range(from, to),
+  );
   const active = new Set<string>();
   const prelim = new Set<string>();
   const ordersByUser = new Map<string, { status: string; activates_on: string; access_until: string }[]>();

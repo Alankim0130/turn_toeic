@@ -120,6 +120,10 @@ export function MobileMenu({
           open ? "translate-x-0" : "-translate-x-full",
         )}
         style={{ paddingTop: "env(safe-area-inset-top, 0px)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+        // 링크를 누르면 닫는다 — 주소가 바뀔 때 닫는 것(위)만으로는 지금 보는 화면 · 같은 화면의 #칸으로 가는 줄을 누르면 서랍이 그대로 남았다 (2026-10-29 점검)
+        onClick={(e) => {
+          if ((e.target as Element).closest?.("a[href]")) setOpen(false);
+        }}
       >
         {/* 머리: 내 정보 (첫토익처럼 맨 위에 프로필) */}
         <div className="shrink-0 border-b border-line bg-gradient-to-br from-brand-50 to-paper px-4 pb-4 pt-2">

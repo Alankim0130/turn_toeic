@@ -14,7 +14,8 @@ export function StaffPostDeleteButton({ id, others }: { id: number; /** 남의 �
     if (!confirm(`${others ? "다른 직원이 쓴 글이에요. " : ""}이 글을 지울까요? 넣은 사진 · 첨부 파일도 함께 지워져요.`)) return;
     setBusy(true);
     setError(null);
-    const res = await deleteStaffPost(id);
+    // 답 없이 끝나도(연결 끊김) '지우는 중…' 에 멈추지 않게 (2026-10-29 점검)
+    const res = await deleteStaffPost(id).catch(() => ({ ok: false as const, error: "지우지 못했어요. 인터넷 연결을 확인하고 다시 해 주세요." }));
     setBusy(false);
     if (!res.ok) return setError(res.error ?? "지우지 못했어요.");
     router.push("/admin/board");

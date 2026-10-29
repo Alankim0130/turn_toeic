@@ -181,6 +181,9 @@ export type BulkChoice = MoveTarget | { kind: "origin" };
 export type BulkStep = { id: number; title: string; target: MoveTarget | null; skip: string | null };
 
 /** 건너뛰는 까닭 — 목록 한 줄에 들어가게 짧게 */
+/** 옮기기 서버 액션이 답 없이 끝났을 때(연결 끊김 · 시간 초과) — 서버에서는 끝났을 수 있어 확인부터 하게 한다 */
+export const MOVE_THROWN = "옮기지 못했어요. 인터넷 연결을 확인해 주세요 — 화면을 새로 받았으니 이미 옮겨졌는지 본 뒤 다시 해 주세요.";
+
 export const BULK_SKIP = {
   photo: "본문에 사진이 있어 회차 자료로는 못 가요 (공지사항으로는 돼요).",
   empty: "본문 · 파일 · 링크가 없어 회차 자료로는 못 가요.",

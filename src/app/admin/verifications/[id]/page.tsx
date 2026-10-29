@@ -146,6 +146,8 @@ export default async function VerificationDetailPage({
     /** 다음 달 수강증을 받아 뒀다 — 그 달 반이 열리면 다시 맞춘다 (2026-09-22). 다시 맞춘 뒤에는 heldFor */
     hold?: number;
     heldFor?: number;
+    /** 올릴 때 열린 반 목록을 읽지 못했다 — 반 대조 · 받아 두기를 하지 않고 검토로 넘겼다 (2026-10-29) */
+    sectionsUnread?: boolean;
     /** 긴급 스위치가 꺼져 있을 때(또는 읽지 못했을 때) 올라왔다. 켜져 있었다면 거절했을 사유는 wouldReject */
     autoOff?: "off" | "unreadable";
     wouldReject?: { code?: string; reason?: string };
@@ -244,6 +246,9 @@ export default async function VerificationDetailPage({
         : null;
   const systemNotes = [
     changeNote,
+    matchLog?.sectionsUnread && v.result === null
+      ? "올릴 때 열린 반 목록을 읽지 못해 기계가 반을 찾지 않았어요 — 수강증을 보고 반을 골라 승인해 주세요."
+      : null,
     matchLog?.autoOff
       ? `자동 판정이 ${matchLog.autoOff === "off" ? "멈춰" : "읽히지 않아 멈춰"} 있어 기계가 승인도 거절도 하지 않았어요.${
           matchLog.wouldReject?.reason ? ` 켜져 있었다면 이 사유로 자동 거절했을 거예요: “${matchLog.wouldReject.reason}”` : ""

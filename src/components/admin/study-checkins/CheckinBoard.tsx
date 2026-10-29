@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { PhotoViewer, type ViewerPhoto } from "@/components/admin/PhotoViewer";
 import { CheckinCheckForm } from "@/components/admin/study-checkins/CheckinCheckForm";
@@ -106,10 +106,12 @@ function CheckinDetail({ row, onClose }: { row: CheckinRow; onClose: () => void 
     () => false,
   );
 
+  // 열 때 한 번만 닫기 버튼에 포커스 — `onClose` 에 묶으면 목록이 다시 그려질 때마다(점검 취소 뒤 새 목록) 포커스가 튀었다 (2026-10-29 점검, Dialog 와 같은 규칙)
+  const close = useEffectEvent(() => onClose());
   useEffect(() => {
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") close();
     };
     window.addEventListener("keydown", onKey);
     const { overflow } = document.body.style;
@@ -118,7 +120,7 @@ function CheckinDetail({ row, onClose }: { row: CheckinRow; onClose: () => void 
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = overflow;
     };
-  }, [onClose]);
+  }, []);
 
   if (!mounted) return null;
 

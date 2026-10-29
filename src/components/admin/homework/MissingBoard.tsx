@@ -9,6 +9,7 @@ import { Icon } from "@/components/ui/Icon";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { SUBJECT_LABEL, type HomeworkSubject } from "@/lib/homework";
 import {
+  autoPickable,
   countsAsStudent,
   dayFlaggedCount,
   dueLabel,
@@ -82,6 +83,18 @@ const MARK_CLASS: Record<MissingCell, string> = { done: "hw-mark-done", missing:
  */
 function AssistantChip() {
   return <StatusBadge status="assistant" className="!px-1.5 !py-0.5 !text-[10px]" />;
+}
+
+/**
+ * 수업 기간이 끝난 학생 (2026-10-29 — `MissingRow.ended`). 더는 숙제를 낼 수 없어 '미제출 전체선택' · '이 날 안 낸 학생 고르기' 가 저절로 고르지 않는다
+ * (자동 알림과 같은 규칙). 손으로는 고른다
+ */
+function EndedChip() {
+  return (
+    <span title="수업 기간이 끝나 더는 숙제를 낼 수 없어요 — 저절로 고르지 않아요" className="whitespace-nowrap rounded-md bg-paper px-1.5 py-0.5 text-[10px] font-bold text-slate ring-1 ring-line">
+      수업 끝
+    </span>
+  );
 }
 
 function CellMark({ kind, label }: { kind: MissingCell; label?: string }) {
@@ -250,11 +263,14 @@ export function MissingBoard({
               <path d="M4.6 8.2l2.2 2.2 4.6-4.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             {/* 고를 학생이 없는 까닭이 둘이다 — 다 냈거나, 안 낸 숙제를 모두 이미 알렸다 (마지막 알림 뒤에 새로 기한이 지난 것이 없다) */}
+            {/* 셋째 — 안 낸 학생이 다 수업 기간이 끝난 학생이다 (2026-10-29, `autoPickable`) */}
             {picks.length > 0
               ? `미제출 전체선택 (${picks.length}명)`
-              : groups.some((g) => g.rows.some((r) => countsAsStudent(r) && r.missing.length > 0))
+              : groups.some((g) => g.rows.some((r) => autoPickable(r) && r.missing.length > 0))
                 ? "안 낸 숙제는 모두 알렸어요"
-                : "안 낸 학생이 없어요"}
+                : groups.some((g) => g.rows.some((r) => countsAsStudent(r) && r.missing.length > 0))
+                  ? "안 낸 학생은 수업 기간이 끝났어요"
+                  : "안 낸 학생이 없어요"}
           </button>
         </div>
       </div>
@@ -406,9 +422,9 @@ const DayCard = memo(function DayCard({
 }) {
   const selected = useMemo(() => new Set(picked ? picked.split(",") : []), [picked]);
   // '이 날 안 낸 학생 고르기' — 알림을 받고 · 이 날 숙제를 아직 알리지 않은 학생 (미제출 전체선택과 같은 규칙. 이미 알린 학생은 손으로 고른다)
-  // 조교 줄은 저절로 고르지 않는다 (`countsAsStudent`) — 손으로는 고른다
-  const pickable = day.overdue ? day.missing.filter((m) => countsAsStudent(m) && !m.alerted).map((m) => m.id) : [];
-  const allAlerted = day.overdue && pickable.length === 0 && day.missing.some(countsAsStudent);
+  // 조교 줄 · 수업 기간이 끝난 학생은 저절로 고르지 않는다 (`autoPickable`) — 손으로는 고른다
+  const pickable = day.overdue ? day.missing.filter((m) => autoPickable(m) && !m.alerted).map((m) => m.id) : [];
+  const allAlerted = day.overdue && pickable.length === 0 && day.missing.some(autoPickable);
   const allPicked = pickable.length > 0 && pickable.every((id) => selected.has(id));
   const twoSubjects = day.subjects.length > 1;
   // 머리의 '안 낸 학생 N명' 은 알림을 받는 학생만 — 학생별 카드 · 레벨 탭과 같은 수 (끈 학생은 '보기' 를 켜야 회색으로 선다)
@@ -437,6 +453,7 @@ const DayCard = memo(function DayCard({
               const chips = (
                 <>
                   {m.assistant && <AssistantChip />}
+                  {m.ended && <EndedChip />}
                   {twoSubjects && (
                     <span className="flex shrink-0 gap-1">
                       {m.subjects.map((s) => (
@@ -663,6 +680,7 @@ const GroupCard = memo(function GroupCard({ group, picked, onToggle }: { group: 
                         <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[status])} title={MISSING_STATUS_LABEL[status]} aria-hidden />
                         <span className="whitespace-nowrap font-bold text-ink">{r.name || "이름 없음"}</span>
                         {r.assistant && <AssistantChip />}
+                        {r.ended && <EndedChip />}
                       </label>
                     ) : (
                       // '알림 안 받기' 를 누른 학생 — 볼 수만 있다 (체크박스 자리는 비워 이름 줄을 맞춘다)
@@ -671,6 +689,7 @@ const GroupCard = memo(function GroupCard({ group, picked, onToggle }: { group: 
                         <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[status])} title={MISSING_STATUS_LABEL[status]} aria-hidden />
                         <span className="whitespace-nowrap font-bold text-ink-soft">{r.name || "이름 없음"}</span>
                         {r.assistant && <AssistantChip />}
+                        {r.ended && <EndedChip />}
                         <span className="whitespace-nowrap rounded-md bg-paper px-1.5 py-0.5 text-[10px] font-bold text-slate ring-1 ring-line">알림 안 받음</span>
                       </span>
                     )}

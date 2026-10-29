@@ -4,7 +4,7 @@ import { useState } from "react";
 import { MonthCalendar, type CalendarMark } from "@/components/my/MonthCalendar";
 import { Icon } from "@/components/ui/Icon";
 import { classDayLabel, HOMEWORK_SUBJECTS, homeworkLabel, SUBJECT_DESC, SUBJECT_LABEL, type HomeworkSubject } from "@/lib/homework";
-import { dueLabel, HOMEWORK_DUE_LABEL } from "@/lib/homework-missing";
+import { dueLabel, HOMEWORK_DUE_LABEL, shortDay } from "@/lib/homework-missing";
 import { cn, formatDate } from "@/lib/utils";
 import { HomeworkUploadForm } from "./HomeworkUploadForm";
 import { SubmissionCard, type SubmissionLite } from "./SubmissionCard";
@@ -16,7 +16,8 @@ export type HomeworkMonth = { year: number; month: number; marks: CalendarMark[]
  * 그리고 **제출 기한** — 같은 트랙의 다음 수업일 오후 5시 (2026-10-14 Alan). 기한 날짜를 못 읽었으면 `due` 가 없다 (줄을 그리지 않는다),
  * 다음 수업일이 아직 달력에 없으면 null.
  */
-export type HomeworkDay = { date: string; course: string; levels: number[]; due?: string | null; overdue?: boolean };
+/** capped — 수업 기간이 기한(다음 수업일)보다 먼저 끝나 `due` 가 수업 기간 마지막 날이다 (그 날 하루가 끝날 때까지 낸다, 2026-10-29) */
+export type HomeworkDay = { date: string; course: string; levels: number[]; due?: string | null; overdue?: boolean; capped?: boolean };
 
 /**
  * 숙제업로드 — **달력에서 수업 날짜를 고르고 RC·LC 를 낸다** (2026-09-19 Alan —
@@ -103,7 +104,11 @@ export function HomeworkCalendar({
                 <p className="mt-0.5 truncate text-xs text-slate">{day.course}</p>
                 {day.due !== undefined && (
                   <p className={cn("mt-1 text-xs font-bold", day.overdue ? "text-amber-700" : "text-ink-soft")}>
-                    {day.due ? `제출 기한 ${dueLabel(day.due)}까지${day.overdue ? " · 지났어요" : ""}` : `제출 기한 다음 수업일 ${HOMEWORK_DUE_LABEL}까지`}
+                    {day.due
+                      ? day.capped
+                        ? `제출 기한 ${shortDay(day.due)}까지 · 수업 기간 마지막 날이에요`
+                        : `제출 기한 ${dueLabel(day.due)}까지${day.overdue ? " · 지났어요" : ""}`
+                      : `제출 기한 다음 수업일 ${HOMEWORK_DUE_LABEL}까지`}
                   </p>
                 )}
               </div>

@@ -74,6 +74,9 @@ export function PushSetup({ publicKey, audience = "staff" }: { publicKey: string
       await disablePush(actions.remove);
       setState("off");
       router.refresh();
+    } catch {
+      // 연결이 끊기면 아무 말 없이 그대로였다 (2026-10-29 점검)
+      setNotice({ kind: "warning", text: "알림을 끄지 못했어요. 인터넷 연결을 확인하고 다시 눌러 주세요." });
     } finally {
       setBusy(false);
     }
@@ -86,6 +89,8 @@ export function PushSetup({ publicKey, audience = "staff" }: { publicKey: string
       const res = await actions.test();
       setNotice(res.ok ? { kind: "success", text: res.message ?? "보냈어요." } : { kind: "warning", text: res.error });
       router.refresh();
+    } catch {
+      setNotice({ kind: "warning", text: "테스트 알림을 보내지 못했어요. 인터넷 연결을 확인하고 다시 눌러 주세요." });
     } finally {
       setBusy(false);
     }

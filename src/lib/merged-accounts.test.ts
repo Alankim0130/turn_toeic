@@ -143,3 +143,53 @@ describe("반 상세 담당 강사 고르기 — 지금 담당이 목록에 없�
     expect(html.match(/selected=""/g)).toHaveLength(1);
   });
 });
+
+// 2026-10-29 전체 점검 — 계정을 합치면 숙제 · 비대면 인증 줄은 남길 계정으로 옮겨지지만 파일은 옛 계정 폴더({옛 uid}/…)에 그대로 있다.
+// 저장소 정책이 '내 폴더' 만 봐서 남긴 계정의 학생에게 옛 숙제 사진 · 음성이 다 404 였고, 그 숙제를 취소하면 파일이 영영 남았다 (재생 DB 로 재현).
+describe("합친 계정 — 옛 계정 폴더의 숙제 · 인증 파일도 내 파일이다 (마이그레이션을 순서대로 재생한 마지막 모양)", () => {
+  const DIR = "supabase/migrations";
+  const files = fs.readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
+  const sqlOf = (f: string) =>
+    fs
+      .readFileSync(path.join(DIR, f), "utf8")
+      .split("\n")
+      .map((l) => (l.trim().startsWith("--") ? "" : l))
+      .join("\n");
+  const storagePolicies = (bucket: string) => {
+    const live = new Map<string, string>();
+    for (const f of files) {
+      for (const [, verb, name, body] of sqlOf(f).matchAll(/(create|drop) policy (?:if exists )?"([^"]+)" on storage\.objects([^;]*);/g)) {
+        if (!name.startsWith(`${bucket}:`)) continue;
+        if (verb === "create") live.set(name, body.replace(/\s+/g, " "));
+        else live.delete(name);
+      }
+    }
+    return live;
+  };
+
+  it("private.my_merged_folders — 나에게 합쳐진 계정을 끝까지(A → B → C) 따라간다", () => {
+    let fn = "";
+    for (const f of files) for (const m of sqlOf(f).matchAll(/create or replace function private\.my_merged_folders\(\)[\s\S]*?\$\$([\s\S]*?)\$\$/g)) fn = m[1];
+    const body = fn.replace(/\s+/g, " ");
+    expect(body).toContain("with recursive");
+    expect(body).toContain("p.merged_into = (select auth.uid())");
+    expect(body).toContain("join m on p.merged_into = m.id");
+  });
+
+  for (const bucket of ["homework", "study-checkins"]) {
+    it(`${bucket} — 조회 · 삭제 정책이 합쳐진 옛 폴더를 함께 보고, 삭제는 여전히 점검 · 확인 전 파일만`, () => {
+      const live = [...storagePolicies(bucket)];
+      const select = live.filter(([, b]) => /for select/.test(b));
+      const del = live.filter(([, b]) => /for delete/.test(b));
+      expect(select.length).toBe(1);
+      expect(del.length).toBe(1);
+      for (const [, body] of [...select, ...del]) {
+        expect(body).toContain("(storage.foldername(name))[1] = (select auth.uid())::text");
+        expect(body).toContain("array[(storage.foldername(name))[1]] <@ (select private.my_merged_folders())");
+      }
+      expect(select[0][1]).toContain("private.is_crew()");
+      expect(del[0][1]).toContain("not exists");
+      expect(del[0][1]).toMatch(/status = 'checked'/);
+    });
+  }
+});

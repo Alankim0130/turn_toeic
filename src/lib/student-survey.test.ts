@@ -495,7 +495,8 @@ describe("화면 · 서버 — 문 · 내기 · 점수 고치기", () => {
   it("설문 답은 강사 · 관리자 화면에만 — 학생 관리(requireStaff) · 마케팅 분석(requireStaff). 조교 화면(requireCrew)에서는 읽지 않는다", () => {
     expect(read("src/app/admin/students/[id]/page.tsx")).toContain('supabase.from("student_surveys")');
     expect(read("src/app/admin/students/[id]/page.tsx")).toContain("requireStaff()");
-    expect(read("src/app/admin/analytics/page.tsx")).toContain('supabase.from("student_surveys")');
+    // 1,000줄씩 읽게 되며(2026-10-29 — readAll) 줄이 나뉘었다
+    expect(read("src/app/admin/analytics/page.tsx")).toMatch(/supabase\s*\.from\("student_surveys"\)/);
     expect(read("src/app/admin/analytics/page.tsx")).toContain("requireStaff()");
     const walk = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : /\.tsx?$/.test(e.name) ? [join(dir, e.name)] : []));

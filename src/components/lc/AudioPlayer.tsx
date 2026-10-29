@@ -125,8 +125,10 @@ export function AudioPlayer({
     try {
       a.playbackRate = rate;
       await a.play();
-    } catch {
+    } catch (e) {
       setLoading(false);
+      // 불러오는 동안 멈췄다(일시정지 · 다른 음원을 눌러 이 음원이 멈춤) — 고장이 아니다 (2026-10-29 점검 — 예전에는 '재생하지 못했어요' 가 떴다)
+      if ((e as { name?: string } | null)?.name === "AbortError") return;
       // 형식을 못 트는 파일이면 onError 와 이 catch 가 함께 온다 — 숙제 음성은 둘 다 `받기` 를 권한다 (다시 눌러도 같다)
       setError(download ? CANT_PLAY_DOWNLOAD : "재생하지 못했어요. 잠시 뒤 다시 눌러 주세요.");
     }

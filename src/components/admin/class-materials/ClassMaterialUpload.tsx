@@ -77,6 +77,7 @@ export function ClassMaterialUpload({
 
     setBusy(true);
     const uploaded: UploadedFile[] = [];
+    let sent = false;
     try {
       // 하나씩 올린다 — 큰 파일 여럿을 한꺼번에 보내면 휴대폰에서 다 같이 느려진다
       for (const [k, p] of files.entries()) {
@@ -84,6 +85,8 @@ export function ClassMaterialUpload({
         uploaded.push(await uploadFile(CLASS_MATERIAL_BUCKET, materialObjectPath(level, subject, p.file), p.file));
       }
       setProgress("저장하는 중…");
+      // 이 뒤에 끊기면 서버가 저장했을 수 있다 — 그때는 올린 파일을 지우지 않는다 (아래 catch)
+      sent = true;
       const res = await saveClassMaterial({
         level,
         subject,
@@ -95,15 +98,17 @@ export function ClassMaterialUpload({
         links: parsed.links,
       });
       if (!res.ok) {
-        await removeUploaded(CLASS_MATERIAL_BUCKET, uploaded.map((u) => u.path));
+        // 새 파일 행까지 저장된 뒤 멈췄으면(파일 빼기 · 순서) 지우지 않는다 — 지우면 저장된 첨부가 깨진다 (2026-10-29)
+        if (!res.filesSaved) await removeUploaded(CLASS_MATERIAL_BUCKET, uploaded.map((u) => u.path));
         setError(res.error ?? "올리지 못했어요.");
         return;
       }
       onClose();
       router.refresh();
     } catch (err) {
-      // 중간에 끊기면 그때까지 올린 파일을 지운다 — 어느 자료에도 붙지 않은 파일이 저장소에 남지 않게
-      if (uploaded.length) await removeUploaded(CLASS_MATERIAL_BUCKET, uploaded.map((u) => u.path));
+      // 올리는 중에 끊기면 그때까지 올린 파일을 지운다 — 어느 자료에도 붙지 않은 파일이 저장소에 남지 않게.
+      // 저장 요청을 보낸 뒤 끊겼으면 서버가 저장했을 수 있어 그대로 둔다 (지우면 저장된 자료의 파일이 깨진다)
+      if (uploaded.length && !sent) await removeUploaded(CLASS_MATERIAL_BUCKET, uploaded.map((u) => u.path));
       setError(err instanceof Error ? err.message : "올리지 못했어요.");
     } finally {
       setBusy(false);

@@ -33,6 +33,11 @@ import { HOMEWORK_SUBJECTS, type HomeworkSubject, homeworkLabel, isSubject } fro
 export const HOMEWORK_DUE_TIME = "17:00";
 export const HOMEWORK_DUE_LABEL = "오후 5시";
 
+/** 종강일(YYYY-MM-DD) 다음 날 0시(KST) — 이때부터 그 반의 숙제를 낼 수 없다 (RLS 는 오늘 ≤ 종강일까지 연다). 날짜 꼴이 틀리면 NaN */
+export function classOverAt(closes: string): number {
+  return /^\d{4}-\d{2}-\d{2}$/.test(closes) ? Date.parse(`${closes}T00:00:00+09:00`) + 86_400_000 : NaN;
+}
+
 /** 기한 날짜(YYYY-MM-DD)의 오후 5시 — 견줄 수 있는 시각(ms). 날짜 꼴이 틀리면 NaN */
 export function dueAt(due: string): number {
   return /^\d{4}-\d{2}-\d{2}$/.test(due) ? Date.parse(`${due}T${HOMEWORK_DUE_TIME}:00+09:00`) : NaN;
@@ -43,6 +48,16 @@ export function isOverdue(due: string | null | undefined, now: number = Date.now
   if (!due) return false;
   const at = dueAt(due);
   return Number.isFinite(at) && now > at;
+}
+
+/**
+ * 학생 숙제 달력의 그 날 기한 (2026-10-29) — 같은 트랙 다음 수업일 오후 5시(`due`), 단 **내 수업 기간이 그보다 먼저 끝나면 그 마지막 날까지**다.
+ * `until` = 그 기수 내 반(직접 배정)의 가장 늦은 종강일 — 그 다음 날부터는 그 날짜 숙제를 낼 수 없다(RLS `has_term_access` · 제출 액션의 `my_section_ids()`).
+ * 예전에는 2주완성의 앞 절반 마지막 수업 · 그 달 마지막 수업의 기한이 수업 기간 뒤(다음 수업일)로 적혔다. capped 면 그 날 하루가 끝날 때까지다
+ */
+export function studentDue(due: string | null, until: string | null, now: number = Date.now()): { due: string | null; overdue: boolean; capped?: true } {
+  if (due && until && due > until) return { due: until, overdue: now >= classOverAt(until), capped: true };
+  return { due, overdue: isOverdue(due, now) };
 }
 
 /** "10/16(금) 오후 5시" — 학생 달력 · 관리자 칸 설명에 쓴다 */
@@ -145,6 +160,11 @@ export type MissingRow = {
   assistant: boolean;
   /** 숙제 미제출 알림을 받는가 — 숙제제출 화면에서 '알림 안 받기' 를 눌렀으면 거짓, 고를 수도 보낼 수도 없다 (2026-10-15 Alan) */
   alerts: boolean;
+  /**
+   * 수업 기간이 끝났다 — 직접 배정된 반이 모두 종강해(마지막 종강일 다음 날 0시부터) 더는 숙제를 낼 수 없다 (2주완성은 앞 절반 마지막 날).
+   * 줄은 그대로 서되(`수업 끝`) **저절로 고르지 않는다** — 자동 알림이 그런 학생을 빼는 것(`openUntil`)과 같은 규칙 (2026-10-29). 손으로는 고른다
+   */
+  ended: boolean;
   /** 열마다 · 그 열의 과목마다 */
   cells: MissingCell[][];
   /** 기한이 지난 숙제 칸 수 · 그중 낸 칸 수 */
@@ -272,11 +292,16 @@ export function buildMissingBoard(input: {
         }),
       );
       const person = input.people.get(id);
+      const lastCloses = (byStudent.get(id) ?? []).reduce((max, e) => {
+        const closes = sections.get(e.sectionId)?.closes ?? "";
+        return closes > max ? closes : max;
+      }, "");
       return {
         id,
         name: person?.name ?? "",
         assistant: person?.assistant ?? false,
         alerts: !input.optedOut.has(id),
+        ended: lastCloses !== "" && now >= classOverAt(lastCloses),
         cells,
         past,
         done: doneCount,
@@ -322,6 +347,12 @@ export function onlyAlerted(groups: readonly MissingGroup[]): MissingGroup[] {
  * '미제출 전체선택' · '이 날 안 낸 학생 고르기' 가 모두 이것으로 가른다. 조교 줄은 손으로는 고를 수 있다 (2026-10-16)
  */
 export const countsAsStudent = (r: Pick<MissingRow, "alerts" | "assistant">): boolean => r.alerts && !r.assistant;
+
+/**
+ * 저절로 고르는 줄인가 — 세는 학생(`countsAsStudent`) 중 **수업 기간이 아직 끝나지 않은** 학생 (2026-10-29). '미제출 전체선택' · '이 날 안 낸 학생 고르기' 가 쓴다.
+ * 수업이 끝난 학생(2주완성 앞 절반이 끝남 · 지난 기수)은 숙제를 더 낼 수 없어, 알림을 보내도 '숙제 내러 가기' 가 잠긴 화면으로 간다
+ */
+export const autoPickable = (r: Pick<MissingRow, "alerts" | "assistant" | "ended">): boolean => countsAsStudent(r) && !r.ended;
 
 /** 레벨 탭의 숫자 — **알림을 받는 학생 중** 기한이 지난 숙제를 안 낸 학생 수 (한 사람은 한 번, 조교 빼고) */
 export function missingStudentCount(groups: readonly MissingGroup[]): number {
@@ -377,7 +408,7 @@ export const MISSING_STATUS_LABEL: Record<MissingStatus, string> = { perfect: "�
  */
 export function defaultPicks(groups: readonly MissingGroup[], lastSent: ReadonlyMap<string, number> = new Map()): string[] {
   const ids = new Set<string>();
-  for (const g of groups) for (const r of g.rows) if (countsAsStudent(r) && newMissingOf(r, lastSent.get(r.id)).length > 0) ids.add(r.id);
+  for (const g of groups) for (const r of g.rows) if (autoPickable(r) && newMissingOf(r, lastSent.get(r.id)).length > 0) ids.add(r.id);
   return [...ids];
 }
 
@@ -411,7 +442,7 @@ export function lectureNumbers(sections: Iterable<Pick<MissingSection, "track" |
 }
 
 /** 날짜별 보기의 학생 한 명 — 그 날 다 내지 않은 학생과 안 낸 과목 */
-export type MissingDayStudent = Pick<MissingRow, "id" | "name" | "assistant" | "alerts"> & {
+export type MissingDayStudent = Pick<MissingRow, "id" | "name" | "assistant" | "alerts" | "ended"> & {
   /** 이 학생이 선 카드(직접 배정된 반 묶음) — 화면이 반 이름을 붙인다 */
   groupKey: string;
   /** 그 날 안 낸 과목 (RC 먼저) */
@@ -483,7 +514,7 @@ export function buildMissingDays(groups: readonly MissingGroup[], opts: { until?
           if (!r.assistant) day.submitted++;
           continue;
         }
-        day.missing.push({ id: r.id, name: r.name, assistant: r.assistant, alerts: r.alerts, groupKey: g.key, subjects: open });
+        day.missing.push({ id: r.id, name: r.name, assistant: r.assistant, alerts: r.alerts, ended: r.ended, groupKey: g.key, subjects: open });
       }
     });
   });

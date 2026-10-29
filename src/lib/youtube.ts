@@ -63,14 +63,24 @@ export async function myChannel(accessToken: string): Promise<{ id: string; titl
   return ch?.id ? { id: ch.id, title: ch.snippet?.title ?? "" } : null;
 }
 
-/** 지금 진행 중인 내 방송 (일부공개 포함 — 채널 주인의 토큰이라 보인다) */
+/**
+ * 지금 진행 중인 내 방송 (일부공개 포함 — 채널 주인의 토큰이라 보인다).
+ * 닿지 않거나 10초 안에 답이 없으면 던지지 않고 `status: 0` 을 준다 (2026-10-29 점검 — 던지면 크론이 다른 강사 채널까지 그 회차에 못 봤다).
+ */
 export async function activeBroadcasts(accessToken: string): Promise<{ status: number; json: unknown }> {
-  const res = await fetch(
-    "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status&broadcastStatus=active&broadcastType=all&maxResults=10",
-    { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store", signal: AbortSignal.timeout(10_000) },
-  );
-  return { status: res.status, json: await res.json().catch(() => null) };
+  try {
+    const res = await fetch(
+      "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status&broadcastStatus=active&broadcastType=all&maxResults=10",
+      { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store", signal: AbortSignal.timeout(10_000) },
+    );
+    return { status: res.status, json: await res.json().catch(() => null) };
+  } catch {
+    return { status: 0, json: null };
+  }
 }
+
+/** 방송 조회가 실패한 까닭 (화면 · 연결 상태에 남는 글) */
+export const broadcastFailure = (status: number) => (status === 0 ? "유튜브 조회 실패 (응답 없음)" : `유튜브 조회 실패 (HTTP ${status})`);
 
 /** 연결을 끊을 때 구글 쪽 권한도 거둔다 (실패해도 우리 쪽 연결은 지운다) */
 export async function revokeToken(token: string) {
@@ -94,21 +104,28 @@ export type ChannelRow = {
   last_error: string | null;
 };
 
+/** 연결이 끊겼을 때(invalid_grant) 남기는 글 — 강사에게 알리는 것은 이 까닭뿐이다 */
+export const LINK_BROKEN = "유튜브 연결이 끊겼어요. 유튜브 자동 연결 화면에서 다시 연결해 주세요.";
+
 /**
- * 이 채널의 access token. 만료 5분 전이면 새로 받는다. 연결이 끊겼으면(invalid_grant) 오류를 남기고
- * **처음 끊겼을 때 한 번** 강사에게 알린 뒤 null.
+ * 이 채널의 access token. 만료 5분 전이면 새로 받는다. 받지 못하면 까닭을 남기고 null.
+ * **강사에게 알리는 것은 연결이 정말 끊겼을 때(invalid_grant) 처음 한 번뿐이다** (2026-10-29 점검) — 예전에는 구글이 잠깐 답하지 않거나
+ * 500 을 줄 때도 "유튜브 연결을 확인해 주세요" 가 갔고(다음 성공에서 지워져 그럴 때마다), 토큰 요청이 시간 초과로 던지면 크론이 통째로 멈췄다.
  */
 export async function channelAccessToken(row: ChannelRow, force = false): Promise<string | null> {
   const fresh = row.access_token && row.access_token_expires_at && new Date(row.access_token_expires_at).getTime() - Date.now() > 5 * 60_000;
   if (fresh && !force) return row.access_token;
 
   const admin = createAdminClient();
-  const t = await tokenRequest({ refresh_token: row.refresh_token, grant_type: "refresh_token" });
+  const t = await tokenRequest({ refresh_token: row.refresh_token, grant_type: "refresh_token" }).catch(
+    (): TokenResponse => ({ error: "응답 없음" }),
+  );
   if (!t.access_token) {
-    const reason =
-      t.error === "invalid_grant" ? "유튜브 연결이 끊겼어요. 유튜브 자동 연결 화면에서 다시 연결해 주세요." : `토큰을 받지 못했어요 (${t.error ?? "알 수 없음"})`;
+    const broken = t.error === "invalid_grant";
+    const reason = broken ? LINK_BROKEN : `토큰을 받지 못했어요 (${t.error ?? "알 수 없음"})`;
     await admin.from("youtube_channels").update({ last_error: reason, last_error_at: new Date().toISOString() }).eq("user_id", row.user_id);
-    if (!row.last_error) {
+    // 이미 '끊겼어요' 를 남겼으면(알렸으면) 다시 알리지 않는다 — 그 사이의 다른 오류(조회 실패 등)는 막지 않는다
+    if (broken && row.last_error !== LINK_BROKEN) {
       await notifyUser(row.user_id, "live_detected", {
         title: "유튜브 연결을 확인해 주세요",
         body: `${reason} 그동안은 녹화본을 다시보기 등록에서 직접 붙여 주세요.`,

@@ -519,6 +519,36 @@ describe("비대면스터디 인증 게시판 — 조교도 확인하고, 알림
     expect(fileDel[0][1]).toContain("c.status = 'submitted'");
   });
 
+  // 2026-10-29 전체 점검 — 표 전체 insert 권한이라 학생이 처음부터 '확인 완료 · 코멘트' 인 인증을 넣을 수 있었다 (재생 DB 로 재현)
+  it("학생은 자료 · 본인 · 메모 칸만 넣는다 — 확인 칸(status · checked_by · checked_at · feedback)은 못 쓴다", () => {
+    const grants: string[] = [];
+    for (const f of files) for (const m of sqlOf(f).matchAll(/(grant|revoke) ([^;]*?) on public\.study_checkins (to|from) authenticated;/g)) grants.push(`${m[1]} ${m[2].replace(/\s+/g, " ")}`);
+    const lastInsert = [...grants].reverse().find((g) => /\binsert\b/.test(g));
+    expect(lastInsert).toBe("grant insert (material_id, user_id, note)");
+    expect(grants).toContain("revoke insert");
+    const inserts = [...livePolicies("public.study_checkins")].filter(([, b]) => /for insert/.test(b));
+    expect(inserts.map(([n]) => n)).toEqual(["study_checkins: 본인 인증"]);
+    for (const part of ["status = 'submitted'", "checked_by is null", "checked_at is null", "feedback is null", "(m.level = 0 or m.level = sg.level)"]) expect(inserts[0][1]).toContain(part);
+  });
+
+  it("사진 줄은 확인 전 인증에만 더하고, 확인된 인증의 사진은 저장소에서도 못 지운다", () => {
+    const fileAdd = [...livePolicies("public.study_checkin_files")].filter(([, b]) => /for insert/.test(b));
+    expect(fileAdd.length).toBe(1);
+    expect(fileAdd[0][1]).toContain("c.status = 'submitted'");
+    const live = new Map<string, string>();
+    for (const f of files) {
+      for (const [, verb, name, body] of sqlOf(f).matchAll(/(create|drop) policy (?:if exists )?"([^"]+)" on storage\.objects([^;]*);/g)) {
+        if (!name.startsWith("study-checkins")) continue;
+        if (verb === "create") live.set(name, body.replace(/\s+/g, " "));
+        else live.delete(name);
+      }
+    }
+    const deletes = [...live].filter(([, b]) => /for delete/.test(b));
+    expect(deletes.length).toBe(1);
+    expect(deletes[0][1]).toContain("not exists");
+    expect(deletes[0][1]).toContain("c.status = 'checked'");
+  });
+
   it("조교 발송 정책 — 인증 확인 알림은 '받는 학생의 확인된 인증' 일 때만", () => {
     const crew = [...livePolicies("public.student_messages")].filter(([, b]) => /private\.is_assistant\(\)/.test(b) && /for insert/.test(b));
     expect(crew.length).toBe(1);

@@ -38,3 +38,21 @@ export const shouldRefresh = (distance: number, scrollY: number) => distance >= 
 
 /** 당김 표시를 얼마나 내릴 것인가 — 임계점을 넘으면 거의 멈춘다 (여기까지라는 신호) */
 export const pullOffset = (distance: number) => Math.min(distance, PULL_THRESHOLD + 16);
+
+/**
+ * 이 손가락은 당김으로 보지 않는다 — 새로고침이 쓰던 것을 날리는 곳에서 시작했다 (2026-10-29 점검).
+ * 예전에는 화면이 맨 위이기만 하면 어디서 시작했든 당김이라, 팝업 · 서랍 안의 목록이나 글쓰기 칸 안을 거슬러 올리려고
+ * 아래로 끌면 `location.reload()` 로 쓰던 공지 · 코멘트 · 표가 사라졌다.
+ *  - 열린 팝업 · 서랍 안 (`aria-modal`)
+ *  - 글을 쓰는 칸 (textarea · contenteditable · input · select)
+ *  - 안쪽 스크롤이 내려가 있는 상자 (끌면 그 상자가 올라간다)
+ */
+export function pullBlockedAt(target: EventTarget | null): boolean {
+  let el = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
+  if (!el) return false;
+  if (el.closest('[aria-modal="true"], textarea, input, select, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]')) return true;
+  for (; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+    if (el.scrollTop > 0) return true;
+  }
+  return false;
+}

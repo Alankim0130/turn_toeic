@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { removeMyAvatar, setMyAvatar, type AvatarState } from "./actions";
 import { ProfilePhoto } from "@/components/layout/ProfilePhoto";
 import { Alert } from "@/components/ui/Alert";
@@ -13,21 +13,23 @@ import { AVATAR_BUCKET, AVATAR_MAX_BYTES } from "@/lib/avatar";
  *
  * 경로는 숨은 input 에 넣고 폼을 보내지 않는다 — state 가 DOM 에 반영되기 전에 `requestSubmit()` 이 돌아 빈 경로가 서버로 갔다.
  * 올린 결과로 FormData 를 직접 만들어 액션을 부른다.
+ *
+ * 알림 줄은 **마지막으로 한 일의 결과 하나**다 (2026-10-29 점검 — 예전에는 올리기 결과를 늘 먼저 보여 줘서, 올린 뒤 지우면
+ * "프로필 사진을 바꿨어요." 가 그대로 남고 지우기 결과 · 오류가 보이지 않았다). 저장이 실패하면 미리 보기를 거둔다 — 저장되지 않은 사진이 내 사진처럼 서 있었다.
  */
 export function AvatarEditor({ uid, photo, uploaded, social }: { uid: string; photo: string | null; uploaded: boolean; social: boolean }) {
-  const [state, action, saving] = useActionState<AvatarState, FormData>(setMyAvatar, {});
-  const [removeState, setRemoveState] = useState<AvatarState>({});
+  const [shown, setShown] = useState<AvatarState>({});
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [removing, startRemove] = useTransition();
-  const [, startSave] = useTransition();
+  const [saving, startSave] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
-  const shown = state.error || state.message ? state : removeState;
   const busy = uploading || saving;
 
   async function onPick(file: File | null) {
     setError(null);
+    setShown({});
     if (!file) return;
     if (!file.type.startsWith("image/")) return setError("사진 파일만 올릴 수 있어요.");
     if (file.size > AVATAR_MAX_BYTES) return setError("5MB 이하 사진만 올릴 수 있어요.");
@@ -38,7 +40,11 @@ export function AvatarEditor({ uid, photo, uploaded, social }: { uid: string; ph
       setPreview(URL.createObjectURL(file));
       const fd = new FormData();
       fd.set("path", up.path);
-      startSave(() => action(fd));
+      startSave(async () => {
+        const result = await setMyAvatar({}, fd);
+        setShown(result);
+        if (result.error) setPreview(null);
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "사진을 올리지 못했어요. 잠시 후 다시 시도해 주세요.");
     } finally {
@@ -70,12 +76,14 @@ export function AvatarEditor({ uid, photo, uploaded, social }: { uid: string; ph
             <button
               type="button"
               disabled={removing}
-              onClick={() =>
+              onClick={() => {
+                setError(null);
                 startRemove(async () => {
-                  setRemoveState(await removeMyAvatar());
-                  setPreview(null);
-                })
-              }
+                  const result = await removeMyAvatar();
+                  setShown(result);
+                  if (!result.error) setPreview(null);
+                });
+              }}
               className="btn-secondary !py-2 text-sm disabled:opacity-60"
             >
               {removing ? "지우는 중…" : "사진 지우기"}

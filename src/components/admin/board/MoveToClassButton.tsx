@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Dialog } from "@/components/ui/Dialog";
 import { ChoiceChip } from "@/components/admin/ChoiceChip";
 import { moveStaffPostToClass } from "@/app/admin/board/move-actions";
-import { classPlaceLabel, type MoveDraft, type MoveTarget } from "@/lib/board-move";
+import { classPlaceLabel, MOVE_THROWN, type MoveDraft, type MoveTarget } from "@/lib/board-move";
 import type { MaterialSubject } from "@/lib/class-materials";
 import { NoticeScopeChips, noticeWho, RoundSelects, roundMissing, type RoundPick } from "./MoveFields";
 
@@ -52,7 +52,16 @@ export function MoveToClassButton({
     if (!target || busy) return;
     setBusy(true);
     setError(null);
-    const res = await moveStaffPostToClass({ id, target });
+    let res: Awaited<ReturnType<typeof moveStaffPostToClass>>;
+    try {
+      res = await moveStaffPostToClass({ id, target });
+    } catch {
+      // 연결이 끊기거나 시간이 다 됐다 — '옮기는 중…' 에 멈추지 않게 (2026-10-29 점검). 서버에서는 끝났을 수 있어 화면을 새로 받는다
+      setBusy(false);
+      setError(MOVE_THROWN);
+      router.refresh();
+      return;
+    }
     if (!res.ok) {
       setBusy(false);
       return setError(res.error ?? "옮기지 못했어요.");

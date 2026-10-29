@@ -136,6 +136,7 @@ export function StaffPostForm({
     setBusy(true);
     setError(null);
     const uploaded: UploadedFile[] = [];
+    let sent = false;
     try {
       // 새 첨부 파일은 저장을 누를 때 하나씩 올린다 (서버 액션 본문 1MB 한도 — 파일은 브라우저가 저장소에 바로)
       for (const [k, p] of added.entries()) {
@@ -144,6 +145,8 @@ export function StaffPostForm({
       }
       setProgress("저장하는 중…");
       const pathByKey = new Map(added.map((p, k) => [p.key, uploaded[k]?.path]));
+      // 이 뒤에 끊기면 서버가 저장했을 수 있다 — 그때는 올린 파일을 지우지 않는다 (아래 catch)
+      sent = true;
       const res = await saveStaffPost({
         id: post?.id ?? null,
         title,
@@ -157,14 +160,15 @@ export function StaffPostForm({
         links: parsed.links,
       });
       if (!res.ok || !res.id) {
-        await removeUploaded(STAFF_BOARD_BUCKET, uploaded.map((u) => u.path));
+        // 새 파일 행까지 저장된 뒤 멈췄으면(파일 빼기 · 순서) 지우지 않는다 — 지우면 저장된 첨부가 깨진다 (2026-10-29)
+        if (!res.filesSaved) await removeUploaded(STAFF_BOARD_BUCKET, uploaded.map((u) => u.path));
         setError(res.error ?? "저장하지 못했어요.");
         return;
       }
       router.push(staffPostHref(res.id, boardTabFor({ levels: picked, subject, set }, from)));
       router.refresh();
     } catch (err) {
-      if (uploaded.length) await removeUploaded(STAFF_BOARD_BUCKET, uploaded.map((u) => u.path));
+      if (uploaded.length && !sent) await removeUploaded(STAFF_BOARD_BUCKET, uploaded.map((u) => u.path));
       setError(err instanceof Error ? err.message : "저장하지 못했어요.");
     } finally {
       setBusy(false);

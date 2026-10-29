@@ -169,6 +169,7 @@ export function ClassMaterialRow({
 
     setBusy(true);
     const uploaded: UploadedFile[] = [];
+    let sent = false;
     try {
       // 새 파일은 옮겨 갈 칸의 폴더에 올린다 — 서버가 경로를 그 칸으로 다시 본다. 하나씩 올린다
       for (const [k, p] of added.entries()) {
@@ -179,6 +180,8 @@ export function ClassMaterialRow({
       // 파일 순서 — 남긴 파일은 id, 새 파일은 올린 경로 (uploaded 는 added 와 같은 순서다)
       const pathByKey = new Map(added.map((p, k) => [p.key, uploaded[k]?.path]));
       const fileOrder = fileOrderItems(order, removed, pathByKey);
+      // 이 뒤에 끊기면 서버가 저장했을 수 있다 — 그때는 올린 파일을 지우지 않는다 (아래 catch)
+      sent = true;
       const res = await saveClassMaterial({
         id: item.id,
         level,
@@ -193,14 +196,15 @@ export function ClassMaterialRow({
         fileOrder,
       });
       if (!res.ok) {
-        await removeUploaded(CLASS_MATERIAL_BUCKET, uploaded.map((u) => u.path));
+        // 새 파일 행까지 저장된 뒤 멈췄으면(파일 빼기 · 순서) 지우지 않는다 — 지우면 저장된 첨부가 깨진다 (2026-10-29)
+        if (!res.filesSaved) await removeUploaded(CLASS_MATERIAL_BUCKET, uploaded.map((u) => u.path));
         setError(res.error ?? "저장하지 못했어요.");
         return;
       }
       setMode("view");
       router.refresh();
     } catch (err) {
-      if (uploaded.length) await removeUploaded(CLASS_MATERIAL_BUCKET, uploaded.map((u) => u.path));
+      if (uploaded.length && !sent) await removeUploaded(CLASS_MATERIAL_BUCKET, uploaded.map((u) => u.path));
       setError(err instanceof Error ? err.message : "저장하지 못했어요.");
     } finally {
       setBusy(false);

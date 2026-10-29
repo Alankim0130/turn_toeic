@@ -7,7 +7,7 @@ import type { CalendarMark } from "@/components/my/MonthCalendar";
 import { requireUser } from "@/lib/auth";
 import { initialDay, initialMonth } from "@/lib/class-day";
 import { levelsOfDay } from "@/lib/homework";
-import { isOverdue } from "@/lib/homework-missing";
+import { studentDue } from "@/lib/homework-missing";
 import { formatDate, todayKST } from "@/lib/utils";
 import { getHomeworkDueDates, getHomeworkLevels, getMyHomework, getMyHomeworkAlert, getMySessions, getMyStudyEligibility } from "../_lib/queries";
 
@@ -25,7 +25,7 @@ type Course = { target_score?: number | null; includes_levels?: number[] | null 
  * 넘길 수 있더라도 반·기수 전체를 실어 보낼 이유가 없다 (내 시간표와 같은 규칙).
  */
 export default async function HomeworkPage() {
-  const [{ user }, sessions, levels, mine, { opensOn }, alertOn] = await Promise.all([
+  const [{ user }, sessions, levels, mine, { opensOn, untilByTerm }, alertOn] = await Promise.all([
     requireUser("/my/homework"),
     getMySessions(),
     getHomeworkLevels(),
@@ -36,13 +36,17 @@ export default async function HomeworkPage() {
   const today = todayKST();
 
   // 같은 날 여러 반이 내려온다 (주5일 60분 둘 · 스파르타 셋) — 날짜로 묶어 레벨을 모은다
-  const byDate = new Map<string, { courses: Set<string>; list: Course[]; track: string }>();
+  // until = 그 날짜를 낼 수 있는 마지막 날 — 그 기수 내 반(직접 배정)의 가장 늦은 종강일. 그 다음 날부터는 그 날짜 숙제를 낼 수 없다
+  // (RLS `has_term_access` · 제출 서버 액션의 `my_section_ids()`). 2주완성은 앞 절반 마지막 날 (2026-10-29)
+  const byDate = new Map<string, { courses: Set<string>; list: Course[]; track: string; until: string | null }>();
   for (const s of sessions) {
     const sec = s.section;
     if (!sec) continue;
-    const b = byDate.get(s.date) ?? { courses: new Set<string>(), list: [], track: sec.track };
+    const b = byDate.get(s.date) ?? { courses: new Set<string>(), list: [], track: sec.track, until: null };
     if (sec.course?.name) b.courses.add(sec.course.name);
     b.list.push(sec.course ?? null);
+    const until = untilByTerm.get(sec.term_id) ?? null;
+    if (until && (!b.until || until > b.until)) b.until = until;
     byDate.set(s.date, b);
   }
 
@@ -54,7 +58,8 @@ export default async function HomeworkPage() {
       course: [...b.courses].join(" · ") || "수업",
       // lc_levels 에 없는 레벨은 뺀다 — 제출이 FK(23503)로 튕긴다
       levels: levelsOfDay(b.list).filter((l) => levels.includes(l)),
-      ...(due ? { due: due.get(date) ?? null, overdue: isOverdue(due.get(date)) } : {}),
+      // 기한 — 내 수업 기간이 먼저 끝나면 그 마지막 날까지 (`studentDue`, 2026-10-29)
+      ...(due ? studentDue(due.get(date) ?? null, b.until) : {}),
     }))
     .filter((d) => d.levels.length > 0)
     .sort((a, b) => a.date.localeCompare(b.date));

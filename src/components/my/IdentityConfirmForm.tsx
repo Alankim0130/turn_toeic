@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { confirmIdentity, type AccountState } from "@/app/my/account/actions";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
+import { submitWithoutReset } from "@/lib/form-submit";
 
 /**
  * 수강증 인증 뒤 **이름·전화번호 확인** (2026-09-18 Alan 요청 — 동명이인 방지).
@@ -17,7 +18,8 @@ export function IdentityConfirmForm({ phone, done = false }: { phone: string | n
   const [state, action] = useActionState<AccountState, FormData>(confirmIdentity, {});
 
   return (
-    <form action={action} className="space-y-3">
+    // 보내기는 직접 한다 (2026-10-29) — 오류 뒤 React 가 폼을 초기화해 적은 이름 · 고친 번호가 지워졌다 (`form-submit.ts`)
+    <form action={action} onSubmit={submitWithoutReset(action)} className="space-y-3">
       {state.error && <Alert kind="warning">{state.error}</Alert>}
       {/* 합칠 계정이 있으면 이 폼 바로 옆 카드가 뜬다 (등업신청·내 계정 둘 다) —
           여기서 "내 계정에서 합칠 수 있어요" 라고 미리 말하지 않는다. 계정이 하나뿐인 학생에게는 없는 이야기다 */}

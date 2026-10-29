@@ -6,6 +6,7 @@ import { updateMyProfile, type AccountState } from "../account/actions";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
 import { FormError, GenderField, NameField, PhoneField, SchoolFields } from "@/app/(auth)/ProfileFields";
+import { submitWithoutReset } from "@/lib/form-submit";
 
 type ProfileValues = { name: string; phone: string; university: string; department: string; gender: string };
 
@@ -18,7 +19,8 @@ export function ProfileForm({ profile, canRename, suggestedName }: { profile: Pr
   const suggest = canRename && suggestedName && suggestedName.replace(/\s/g, "") !== profile.name.replace(/\s/g, "") ? suggestedName : undefined;
 
   return (
-    <form action={action} className="space-y-4">
+    // 보내기는 직접 한다 — 오류 뒤 React 가 폼을 초기화해 고쳐 적던 칸이 처음 값으로 돌아갔다 (2026-10-29, `form-submit.ts`)
+    <form action={action} onSubmit={submitWithoutReset(action)} className="space-y-4">
       <FormError error={state.error} stateKey={state} />
       {state.message && (
         <Alert kind="success">

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { readAll } from "@/lib/read-all";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cn, todayKST, formatDate, formatTimeRange } from "@/lib/utils";
 import { Icon, type IconName } from "@/components/ui/Icon";
@@ -69,7 +70,8 @@ export default async function AdminDashboardPage() {
       .order("created_at", { ascending: false })
       .limit(5),
     supabase.from("textbook_orders").select("id", { count: "exact", head: true }).eq("status", "requested"),
-    supabase.from("profiles").select("gender, university"),
+    // 마케팅 분석 위젯 — 1,000줄씩 나눠 읽는다 (2026-10-29: 그냥 읽으면 PostgREST 상한 1,000명에서 조용히 잘렸다)
+    readAll((from, to, count) => supabase.from("profiles").select("id, gender, university", count ? { count: "exact" } : undefined).order("id").range(from, to)),
     // 받아 둔 다음 달 수강증(반 개설 대기)은 뺀다 — 그 달 반이 열려야 할 일이 생긴다 (2026-09-22)
     // candidates 는 학생이 못 읽는 칸이라(2026-10-09, 마이그레이션 20261009110000) 서비스 롤로 센다 — 위의 requireStaff 가 먼저다
     createAdminClient().from("enrollment_verifications").select("id", { count: "exact", head: true }).is("result", null).is("candidates->hold", null),
@@ -144,8 +146,8 @@ export default async function AdminDashboardPage() {
   // 맨 아래 시간대별 합계 줄은 없앴다 (2026-10-06 Alan "수업시간대별 인원수에서 합계는 빼줘") — 시간마다 · 트랙마다 앉는 자리를 더한 수라
   // 120분 · 주5일 · 속성반 학생이 여러 번 세어져 위 등록생 총인원과 맞지 않는다. 되살리지 말 것
 
-  const genderData = countBy(profiles.data ?? [], (p) => (p.gender ? GENDER_LABEL[p.gender] ?? p.gender : "미응답"), "미응답");
-  const univData = countBy(profiles.data ?? [], (p) => p.university).slice(0, 5);
+  const genderData = countBy(profiles.rows, (p) => (p.gender ? GENDER_LABEL[p.gender] ?? p.gender : "미응답"), "미응답");
+  const univData = countBy(profiles.rows, (p) => p.university).slice(0, 5);
 
   // 오늘 현황 — 등록생 위젯 · 네이버 예약 위젯 (2026-09-23 Alan: 예비등록생 · 졸업생 칸은 뺐다)
   const headcounts = courseRows && !courseList.error ? courseHeadcounts(courseList.data ?? [], courseRows, courseBlocks) : null;

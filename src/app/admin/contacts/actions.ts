@@ -21,8 +21,9 @@ export async function updateContactStatus(formData: FormData) {
   // 로그인한 사람의 세션으로만 바꾼다 — RLS("contact: 스태프 처리")가 한 번 더 막는다. 막히면 서비스 롤로 다시 쓰지 않는다
   // (2026-10-09 보안 검토 — 그전에는 세션이 막히면 서비스 롤로 다시 써서, 테스트 등급을 켠 스태프처럼 RLS 가 막은 경우를 그대로 비껴갔다)
   const supabase = await createClient();
-  const { error } = await supabase.from("contact_messages").update({ status }).eq("id", id);
-  if (error) redirect(`${returnTo}${sep}error=save`);
+  // 바뀐 줄을 센다 (2026-10-29) — RLS 가 막으면(테스트 등급을 켠 스태프 · 지워진 문의) 오류 없이 0줄이라 예전에는 "바꿨어요" 가 떴다
+  const { data: changed, error } = await supabase.from("contact_messages").update({ status }).eq("id", id).select("id");
+  if (error || !changed?.length) redirect(`${returnTo}${sep}error=save`);
 
   revalidatePath("/admin");
   revalidatePath("/admin/contacts");

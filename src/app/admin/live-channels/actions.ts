@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { toBroadcasts } from "@/lib/live-detect";
-import { activeBroadcasts, channelAccessToken, revokeToken, youtubeConfigured, type ChannelRow } from "@/lib/youtube";
+import { activeBroadcasts, broadcastFailure, channelAccessToken, revokeToken, youtubeConfigured, type ChannelRow } from "@/lib/youtube";
 
 /** 내 유튜브 채널 연결 끊기 — 구글 쪽 권한도 거둔다. **본인 연결만** 끊는다 */
 export async function disconnectYoutube() {
@@ -51,7 +51,7 @@ export async function checkMyBroadcasts(): Promise<BroadcastCheckState> {
     if (!token) return { error: ch.last_error ?? "구글에서 권한을 받지 못했어요. 다시 연결해 주세요." };
     res = await activeBroadcasts(token);
   }
-  if (res.status !== 200) return { error: `유튜브 조회에 실패했어요 (HTTP ${res.status}). 잠시 뒤 다시 눌러 주세요.` };
+  if (res.status !== 200) return { error: `${broadcastFailure(res.status)}. 잠시 뒤 다시 눌러 주세요.` };
 
   const now = new Date().toISOString();
   await admin.from("youtube_channels").update({ last_checked_at: now, last_error: null, last_error_at: null }).eq("user_id", user.id);

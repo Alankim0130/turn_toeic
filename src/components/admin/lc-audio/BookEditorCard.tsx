@@ -33,9 +33,12 @@ export function BookEditorCard({ book, trackCount, selected, manageHref }: { boo
     if (file.size > 10 * MB) return setCoverError("10MB 이하 이미지만 올릴 수 있어요.");
     setBusy(true);
     let path: string | null = null;
+    // 저장을 보낸 뒤에 끊기면 서버가 이미 저장했을 수 있다 — 그때는 올린 표지를 지우지 않는다 (2026-10-29 점검)
+    let sent = false;
     try {
       const uploaded = await uploadFile(BUCKET, `${book.level}/${book.book_set}-${objectName(file)}`, file);
       path = uploaded.path;
+      sent = true;
       const res = await setBookCover(book.id, uploaded);
       if (!res.ok) {
         await removeUploaded(BUCKET, [uploaded.path]);
@@ -44,6 +47,11 @@ export function BookEditorCard({ book, trackCount, selected, manageHref }: { boo
       }
       router.refresh();
     } catch (e) {
+      if (sent) {
+        setCoverError("인터넷이 끊겨 저장됐는지 확인하지 못했어요. 화면을 새로 받았으니 표지가 바뀌었는지 먼저 봐 주세요.");
+        router.refresh();
+        return;
+      }
       if (path) await removeUploaded(BUCKET, [path]);
       setCoverError(e instanceof Error ? e.message : "표지를 올리지 못했어요.");
     } finally {

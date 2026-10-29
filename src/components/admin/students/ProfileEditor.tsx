@@ -5,6 +5,7 @@ import { updateStudentProfile, type StudentActionState } from "@/app/admin/stude
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
 import { FormError, GenderField, NameField, PhoneField, SchoolFields } from "@/app/(auth)/ProfileFields";
+import { submitWithoutReset } from "@/lib/form-submit";
 
 export type EditableProfile = { id: string; name: string; phone: string | null; university: string | null; department: string | null; gender: string | null };
 
@@ -30,7 +31,8 @@ export function ProfileEditor({ profile }: { profile: EditableProfile }) {
   }
 
   return (
-    <form action={action} className="mt-4 space-y-4 rounded-xl border border-brand-200 bg-brand-50/40 p-4">
+    // 보내기는 직접 한다 (2026-10-29) — 오류(번호 꼴 등) 뒤 React 가 폼을 초기화해 고쳐 적던 칸이 처음 값으로 돌아갔다 (`form-submit.ts`)
+    <form action={action} onSubmit={submitWithoutReset(action)} className="mt-4 space-y-4 rounded-xl border border-brand-200 bg-brand-50/40 p-4">
       <input type="hidden" name="id" value={profile.id} />
       <FormError error={state.error} stateKey={state} />
       {state.message && <Alert kind="success">{state.message}</Alert>}

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
+import { readAll } from "@/lib/read-all";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { DonutChart } from "@/components/admin/charts/DonutChart";
@@ -24,12 +26,28 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const scope = scopeParam === "students" ? "students" : "all";
   const supabase = await createClient();
 
-  const [{ data: profiles }, { data: orders }, { data: surveyRows }] = await Promise.all([
-    supabase.from("profiles").select("id, gender, university, department, created_at, role").limit(5000),
-    scope === "students" ? supabase.from("enrollment_orders").select("user_id") : Promise.resolve({ data: [] as { user_id: string }[] }),
+  // 1,000줄씩 나눠 읽는다 (2026-10-29) — 예전 `.limit(5000)` 은 PostgREST 상한 1,000줄에 잘려, 가입 회원이 1,000명을 넘으면 넘친 회원이 차트에서 조용히 빠졌다
+  const [{ rows: profiles, ok: profilesOk }, { rows: orders, ok: ordersOk }, { rows: surveyRows, ok: surveysOk }] = await Promise.all([
+    readAll((from, to, count) =>
+      supabase
+        .from("profiles")
+        .select("id, gender, university, department, created_at, role", count ? { count: "exact" } : undefined)
+        .order("id")
+        .range(from, to),
+    ),
+    scope === "students"
+      ? readAll((from, to, count) => supabase.from("enrollment_orders").select("id, user_id", count ? { count: "exact" } : undefined).order("id").range(from, to))
+      : Promise.resolve({ rows: [] as { user_id: string }[], ok: true }),
     // 수강생 설문 (2026-10-28) — 수강 계기 · 지금 하는 일 · 공부 이유. 강사 · 관리자 세션으로 읽는다 (정책이 강사 · 관리자 · 본인만)
-    supabase.from("student_surveys").select("occupation, reasons, sources, user:profiles!student_surveys_user_id_fkey(role, merged_into)").limit(5000),
+    readAll((from, to, count) =>
+      supabase
+        .from("student_surveys")
+        .select("occupation, reasons, sources, user:profiles!student_surveys_user_id_fkey(role, merged_into)", count ? { count: "exact" } : undefined)
+        .order("user_id")
+        .range(from, to),
+    ),
   ]);
+  const partial = !profilesOk || !ordersOk || !surveysOk;
 
   let rows = (profiles ?? []).filter((p) => p.role !== "instructor" && p.role !== "admin");
   if (scope === "students") {
@@ -76,6 +94,12 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <PageHeader icon="analytics" title="마케팅 분석" description="회원가입 때 입력한 대학·학과·성별 통계입니다. 강사·관리자 계정은 제외됩니다." />
+      {/* 일부만 읽었으면 숫자가 모자라다 — 말해 준다 (2026-10-29) */}
+      {partial && (
+        <Alert kind="warning" className="mb-4">
+          회원 · 설문 기록을 다 읽지 못해 아래 숫자가 실제보다 적을 수 있어요. 잠시 후 새로고침해 주세요.
+        </Alert>
+      )}
       <FilterTabs basePath="/admin/analytics" paramKey="scope" current={scope} tabs={SCOPES} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-4">

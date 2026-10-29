@@ -469,8 +469,14 @@ export async function upsertSessionLiveLink(_prev: ActionState, formData: FormDa
 
   const supabase = await createClient();
   if (url === "") {
-    const { error } = await supabase.from("session_live_links").delete().eq("session_date_id", sessionDateId);
+    const { data: gone, error } = await supabase.from("session_live_links").delete().eq("session_date_id", sessionDateId).select("session_date_id");
     if (error) return { error: rlsMessage(error.code) };
+    if (!gone?.length) {
+      // 지운 줄이 없다 (2026-10-29) — 원래 없었으면 그대로 성공이지만, 아직 있으면 RLS 가 막은 것이다(본인 반이 아님 · 테스트 등급).
+      // 예전에는 그때도 "지웠어요" 가 떠서 학생 화면에 링크가 그대로 남은 줄 몰랐다. 남았는지는 서버 권한으로 본다(읽기만 — 세션은 그 줄을 못 볼 수 있다)
+      const { data: still } = await createAdminClient().from("session_live_links").select("session_date_id").eq("session_date_id", sessionDateId).maybeSingle();
+      if (still) return { error: "권한이 없어요. 본인 반만 수정할 수 있습니다." };
+    }
     revalidateLive(sectionId);
     return { ok: true, message: "회차 불라방 링크를 지웠어요." };
   }

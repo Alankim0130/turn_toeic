@@ -47,6 +47,8 @@ type Session = {
   timer: number;
   discard: boolean;
   auto: boolean;
+  /** 멈추라고 한 번 했다 — 두 번째 누름은 받지 않는다 (아래 stopRecording) */
+  stopping: boolean;
   finished: boolean;
 };
 
@@ -137,12 +139,17 @@ export function HomeworkRecorder({
   const startToken = useRef(0);
   /** 녹음이 끝나는 때의 최신 함수를 부른다 — 녹음을 시작한 때의 것을 부르면 그 사이 바뀐 목록을 못 본다 */
   const recordedRef = useRef(onRecorded);
+  const activeChangeRef = useRef(onActiveChange);
   useEffect(() => {
     recordedRef.current = onRecorded;
+    activeChangeRef.current = onActiveChange;
   });
 
   const active = phase === "starting" || phase === "recording" || phase === "saving";
+  /** 폼에 마지막으로 알린 값 — 녹음 중에 이 칸이 사라지면(다섯째 음성이 들어가 칸을 숨김) 사라지며 '끝났다' 를 알린다 */
+  const reported = useRef(false);
   useEffect(() => {
+    reported.current = active;
     onActiveChange(active);
   }, [active, onActiveChange]);
 
@@ -156,11 +163,18 @@ export function HomeworkRecorder({
         s.discard = true;
         halt(s);
       }
+      // 폼은 남아 있을 수 있다 — 녹음이 담기는 순간 다섯째 음성이 되어 이 칸만 사라지면 '녹음 끝내기' 뒤의 알림이 안 가서
+      // 제출이 '녹음을 끝내면 낼 수 있어요' 로 잠긴 채 남았다 (2026-10-29 점검)
+      if (reported.current) activeChangeRef.current(false);
     };
   }, []);
 
-  /** 녹음을 끝낸다 — 녹음기가 onstop 을 주면 거기서, 못 주면 여기서 담는다 */
+  /** 녹음을 끝낸다 — 녹음기가 onstop 을 주면 거기서, 못 주면 여기서 담는다.
+   * **한 번만** (2026-10-29 점검): 예전에는 `녹음 끝내기` 를 두 번 누르면 둘째 누름이 이미 멈춘 녹음기를 보고 마지막 조각이 오기 전에 담아
+   * '녹음된 소리가 없어요' 로 녹음을 잃었다 (녹음기는 멈출 때 한 번에 조각을 넘긴다). 취소는 그 전에 `discard` 를 켜 두므로 그대로 먹는다 */
   function stopRecording(s: Session) {
+    if (s.stopping || s.finished) return;
+    s.stopping = true;
     if (!halt(s)) void finish(s);
   }
 
@@ -232,7 +246,7 @@ export function HomeworkRecorder({
         return;
       }
     }
-    const s: Session = { rec, stream, chunks: [], type: rec.mimeType || wanted, startedAt: performance.now(), timer: 0, discard: false, auto: false, finished: false };
+    const s: Session = { rec, stream, chunks: [], type: rec.mimeType || wanted, startedAt: performance.now(), timer: 0, discard: false, auto: false, stopping: false, finished: false };
     rec.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) s.chunks.push(e.data);
     };

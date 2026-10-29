@@ -4,6 +4,7 @@ import { useActionState, useEffect } from "react";
 import { createCourse, type ActionState } from "@/app/admin/sections/actions";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
+import { submitWithoutReset } from "@/lib/form-submit";
 
 export function NewCourseForm({ onDone }: { onDone?: () => void }) {
   const [state, action] = useActionState<ActionState, FormData>(createCourse, {});
@@ -17,7 +18,8 @@ export function NewCourseForm({ onDone }: { onDone?: () => void }) {
   }, [state.ok, onDone]);
 
   return (
-    <form action={action} className="space-y-3">
+    // 보내기는 직접 한다 (2026-10-29) — 오류(코드 겹침 등) 뒤 초기화되면 유형이 '종합' 으로 돌아가, 코드만 고쳐 다시 추가하면 단과 강좌가 종합으로 생겼다
+    <form action={action} onSubmit={submitWithoutReset(action)} className="space-y-3">
       <p className="text-sm font-bold text-ink">새 강좌 추가</p>
       {state.error && <Alert kind="warning">{state.error}</Alert>}
       {state.ok && <Alert kind="success">{state.message} 위의 강좌 목록에서 선택할 수 있어요.</Alert>}

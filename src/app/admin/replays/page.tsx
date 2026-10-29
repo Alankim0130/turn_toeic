@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireStaff } from "@/lib/auth";
+import { isAdmin, requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert } from "@/components/ui/Alert";
@@ -121,7 +121,9 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
     };
   });
 
-  const canManage = selected ? profile.role === "admin" || selected.instructor_id === user.id : false;
+  // DB 의 private.can_manage_section 과 같은 집합 — 강사 · 관리자 전부 + 담당 강사 (2026-10-29 점검 — 예전에는 `role === "admin"` 이라
+  // 강사 두 분은 남의 반 · 담당이 빈 반(방학달 통짜 반)에서 DB 가 허락하는데도 '열람만' 이었다)
+  const canManage = selected ? isAdmin(profile.role) || selected.instructor_id === user.id : false;
   const registered = (sessions ?? []).filter((s) => (s.replays?.length ?? 0) > 0).length;
   const selectedParts = selected ? (packages.get(selected.id)?.parts ?? []) : [];
 
@@ -168,7 +170,7 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
           </section>
 
           {selected && !canManage && (
-            <Alert kind="warning" title="열람만 가능해요">이 반의 담당 강사만 다시보기를 등록·수정할 수 있어요.</Alert>
+            <Alert kind="warning" title="열람만 가능해요">이 반의 다시보기는 강사 · 관리자만 등록 · 수정할 수 있어요.</Alert>
           )}
 
           {selectedParts.length > 0 && (
