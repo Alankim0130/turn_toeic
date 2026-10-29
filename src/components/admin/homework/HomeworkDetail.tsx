@@ -69,6 +69,7 @@ export function HomeworkDetail({ row, onClose }: { row: HomeworkRow; onClose: ()
               <b className="text-base font-black text-ink">{row.name}</b>
               {row.label && <span className="rounded-full bg-ink px-2 py-0.5 text-[11px] font-black text-white">{row.label}</span>}
               {row.checked && <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[11px] font-bold text-brand-700">점검완료</span>}
+              {row.early && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">수업 전에 냄</span>}
             </p>
             <p className="mt-0.5 text-xs text-mist">
               {row.meta}
@@ -81,6 +82,9 @@ export function HomeworkDetail({ row, onClose }: { row: HomeworkRow; onClose: ()
                 </>
               )}
             </p>
+            {row.early && (
+              <p className="mt-1 text-xs font-bold text-amber-800">이 수업 전에 낸 숙제예요 — 지난 수업 숙제를 이 날짜로 잘못 냈을 수 있어요.</p>
+            )}
           </div>
           <button
             ref={closeRef}

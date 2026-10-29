@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { homeworkFilesError, homeworkFolder, isSubject, levelsOfDay, MAX_QUESTION } from "@/lib/homework";
+import { isFutureClass } from "@/lib/homework-day";
+import { todayKST } from "@/lib/utils";
 import { isSafeObjectPath, type UploadedFile } from "@/lib/upload";
 
 export type HomeworkResult = { ok: boolean; error?: string; id?: number };
@@ -47,6 +49,9 @@ export async function submitHomework(input: {
   const files = Array.isArray(input.files) ? input.files : [];
   if (!Number.isInteger(level) || !isSubject(subject)) return { ok: false, error: "레벨과 과목을 다시 골라 주세요." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(classDate)) return { ok: false, error: "수업 날짜를 달력에서 골라 주세요." };
+  // **아직 오지 않은 수업 날짜로는 받지 않는다** (2026-10-30 문라경 학생 — 수업이 없는 날 열면 달력이 다음 수업일을 골라 두어, 지난 수업 숙제가
+  // 그 날짜로 저장되고 원래 수업은 '안 냄' 이 되어 미제출 알림이 갔다). 숙제는 수업에서 내 준다 — 화면도 같은 규칙으로 그 날의 제출 칸을 닫는다
+  if (isFutureClass(classDate, todayKST())) return { ok: false, error: "아직 수업 전인 날짜예요. 숙제를 낼 수업 날짜를 달력에서 다시 골라 주세요." };
   const badFiles = homeworkFilesError(files);
   if (badFiles) return { ok: false, error: badFiles };
   if (question.length > MAX_QUESTION) return { ok: false, error: `질문은 ${MAX_QUESTION}자 이내로 적어 주세요.` };

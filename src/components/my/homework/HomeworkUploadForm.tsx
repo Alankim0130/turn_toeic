@@ -11,6 +11,7 @@ import {
   homeworkAudioType,
   homeworkFilesError,
   homeworkFolder,
+  homeworkLabel,
   MAX_AUDIO_MB,
   MAX_AUDIOS,
   MAX_PHOTO_MB,
@@ -18,6 +19,7 @@ import {
   MAX_QUESTION,
   type HomeworkSubject,
 } from "@/lib/homework";
+import { shortDay } from "@/lib/homework-missing";
 import { recordingName } from "@/lib/homework-recorder";
 import { formatBytes } from "@/lib/study";
 import { contentTypeOf, MB, objectName, type UploadedFile } from "@/lib/upload";
@@ -333,8 +335,12 @@ export function HomeworkUploadForm({
         ) : recording ? (
           "녹음을 끝내면 낼 수 있어요"
         ) : (
-          // 좁은 화면(320px)에서 두 줄이 되면 `음성` / `2개` 처럼 쪼개지지 않게 덩어리마다 묶는다
+          // 좁은 화면(320px)에서 두 줄이 되면 `음성` / `2개` 처럼 쪼개지지 않게 덩어리마다 묶는다.
+          // **어느 수업의 숙제인지 버튼에 적는다** (2026-10-30 — 날짜를 안 보고 내 지난 수업 숙제가 다른 날짜로 저장됐다): `10/23(금) 650 RC 숙제 제출하기`
           <span className="text-center">
+            <span className="whitespace-nowrap">
+              {shortDay(classDate)} {homeworkLabel(level, subject)}
+            </span>{" "}
             <span className="whitespace-nowrap">숙제 제출하기</span>
             {counts.map((c) => (
               <Fragment key={c}>

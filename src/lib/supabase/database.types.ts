@@ -3045,6 +3045,10 @@ export type Database = {
         Args: { p_ids: string[] }
         Returns: { user_id: string; name: string; role: string }[]
       }
+      homework_student_search: {
+        Args: { p_q: string }
+        Returns: { user_id: string; name: string; role: string }[]
+      }
       subject_instructors: {
         Args: never
         Returns: { subject: string; name: string }[]
