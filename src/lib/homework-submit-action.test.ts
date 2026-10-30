@@ -46,7 +46,7 @@ vi.mock("@/lib/supabase/server", () => {
 const { submitHomework } = await import("@/app/my/homework/actions");
 
 const photo = { path: "u1/650-rc/a1.jpg", name: "a.jpg", size: 1000, type: "image/jpeg" };
-const submit = (classDate: string) => submitHomework({ level: 650, subject: "rc", classDate, question: "", files: [photo] });
+const submit = (classDate: string) => submitHomework({ level: 650, subject: "rc", classDate, files: [photo] });
 
 beforeEach(() => {
   h.rpcs.length = 0;
@@ -79,5 +79,14 @@ describe("submitHomework — 수업 날짜", () => {
     vi.setSystemTime(new Date("2026-11-02T08:00:00Z")); // 한국 11/2(월) 17:00
     expect((await submit("2026-11-02")).ok).toBe(true);
     expect(h.inserted.filter((x) => (x as { name: string }).name === "homework_submissions")).toHaveLength(2);
+  });
+});
+
+describe("submitHomework — 질문(코멘트)은 받지 않는다", () => {
+  it("옛 화면이 질문을 보내도 저장하지 않는다 (2026-10-30 — 질문이나 문의사항은 개인톡으로)", async () => {
+    const r = await submitHomework({ level: 650, subject: "rc", classDate: "2026-10-30", files: [photo], question: "이 문제 왜 B예요?" } as Parameters<typeof submitHomework>[0]);
+    expect(r.ok).toBe(true);
+    const row = (h.inserted.find((x) => (x as { name: string }).name === "homework_submissions") as { row: Record<string, unknown> }).row;
+    expect(row).not.toHaveProperty("question");
   });
 });

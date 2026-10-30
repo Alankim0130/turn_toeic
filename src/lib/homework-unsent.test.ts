@@ -116,6 +116,12 @@ describe("올리기 폼 — 고른 파일은 아직 제출 전이다", () => {
     expect(states.at(-1)).toBe("idle");
   });
 
+  it("질문 칸은 없고 '개인톡으로' 안내만 선다 (2026-10-30)", () => {
+    act(() => root!.render(h(HomeworkUploadForm, { userId: "u1", level: 750, subject: "lc", classDate: "2026-10-27" })));
+    expect(document.querySelector("textarea")).toBeNull();
+    expect(text()).toContain("질문이나 문의사항은 개인톡으로 보내주세요~");
+  });
+
   it("오류 글도 막대 안에 선다 (위로 올려 둔 학생도 본다)", async () => {
     hoisted.submit.mockImplementation(async () => ({ ok: false, error: "올린 파일을 찾을 수 없어요. 다시 시도해 주세요." }));
     act(() => root!.render(h(HomeworkUploadForm, { userId: "u1", level: 750, subject: "lc", classDate: "2026-10-27" })));

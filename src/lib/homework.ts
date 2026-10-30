@@ -107,8 +107,6 @@ export function homeworkFilesError(files: { type?: string | null; size: number }
   if (audios.some((f) => !(f.size > 0 && f.size <= MAX_AUDIO_MB * MB))) return `음성 파일은 한 개에 ${MAX_AUDIO_MB}MB 이하만 올릴 수 있어요.`;
   return null;
 }
-/** 질문 글자 수 — DB check 제약과 같다 */
-export const MAX_QUESTION = 500;
 /** 강사 코멘트 글자 수 — DB check 제약과 같다 */
 export const MAX_FEEDBACK = 1000;
 

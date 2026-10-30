@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { homeworkFilesError, homeworkFolder, isSubject, levelsOfDay, MAX_QUESTION } from "@/lib/homework";
+import { homeworkFilesError, homeworkFolder, isSubject, levelsOfDay } from "@/lib/homework";
 import { isFutureClass } from "@/lib/homework-day";
 import { todayKST } from "@/lib/utils";
 import { isSafeObjectPath, type UploadedFile } from "@/lib/upload";
@@ -33,7 +33,6 @@ export async function submitHomework(input: {
   level: number;
   subject: string;
   classDate: string;
-  question: string;
   files: UploadedFile[];
 }): Promise<HomeworkResult> {
   const supabase = await createClient();
@@ -45,7 +44,6 @@ export async function submitHomework(input: {
   const level = Number(input.level);
   const subject = String(input.subject ?? "");
   const classDate = String(input.classDate ?? "").trim();
-  const question = String(input.question ?? "").trim();
   const files = Array.isArray(input.files) ? input.files : [];
   if (!Number.isInteger(level) || !isSubject(subject)) return { ok: false, error: "레벨과 과목을 다시 골라 주세요." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(classDate)) return { ok: false, error: "수업 날짜를 달력에서 골라 주세요." };
@@ -54,7 +52,6 @@ export async function submitHomework(input: {
   if (isFutureClass(classDate, todayKST())) return { ok: false, error: "아직 수업 전인 날짜예요. 숙제를 낼 수업 날짜를 달력에서 다시 골라 주세요." };
   const badFiles = homeworkFilesError(files);
   if (badFiles) return { ok: false, error: badFiles };
-  if (question.length > MAX_QUESTION) return { ok: false, error: `질문은 ${MAX_QUESTION}자 이내로 적어 주세요.` };
 
   // 내 수업일이 맞는지 + 그 날 내 반의 레벨이 맞는지 — 판정은 화면과 같은 `levelsOfDay` 한곳이다
   const { data: sectionIds, error: idsError } = await supabase.rpc("my_section_ids");
@@ -88,7 +85,7 @@ export async function submitHomework(input: {
 
   const { data: created, error } = await supabase
     .from("homework_submissions")
-    .insert({ user_id: user.id, level, subject, class_date: classDate, question: question || null })
+    .insert({ user_id: user.id, level, subject, class_date: classDate })
     .select("id")
     .single();
   if (error || !created) {
