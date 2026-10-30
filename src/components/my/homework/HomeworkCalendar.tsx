@@ -11,7 +11,7 @@ import { HomeworkUploadForm, type UploadState } from "./HomeworkUploadForm";
 import { SubmissionCard, type SubmissionLite } from "./SubmissionCard";
 
 /** 고른 사진 · 음성을 아직 안 냈는데 다른 날짜 · 과목 · 달로 바꾸려 할 때 (2026-10-30) */
-const LEAVE_CONFIRM = "아직 내지 않은 숙제가 있어요. 바꾸면 고른 사진 · 음성 · 질문이 지워져요. 바꿀까요?";
+const LEAVE_CONFIRM = "아직 내지 않은 숙제가 있어요. 바꾸면 고른 사진 · 음성이 지워져요. 바꿀까요?";
 
 /** 달력 한 달치 — 서버가 만들어서 넘긴다 */
 export type HomeworkMonth = { year: number; month: number; marks: CalendarMark[]; initial: string | null };

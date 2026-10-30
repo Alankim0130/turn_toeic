@@ -16,7 +16,6 @@ import {
   MAX_AUDIOS,
   MAX_PHOTO_MB,
   MAX_PHOTOS,
-  MAX_QUESTION,
   type HomeworkSubject,
 } from "@/lib/homework";
 import { shortDay } from "@/lib/homework-missing";
@@ -38,13 +37,15 @@ const SENT_UNKNOWN = "인터넷이 끊겨 제출됐는지 확인하지 못했어
 
 /**
  * 올리기 폼의 지금 상태 — 부모(달력)가 날짜 · 과목을 바꾸기 전에 본다 (2026-10-30 문라경 학생 "분명 제출하고 확인했는데 그 이후에 들어갔을 때 제출란에 아무것도 없었습니다").
- * `picked` = 고른 사진 · 음성 · 적은 질문 · 녹음 중인 것이 있는데 아직 안 냈다 · `busy` = 올리는 중
+ * `picked` = 고른 사진 · 음성 · 녹음 중인 것이 있는데 아직 안 냈다 · `busy` = 올리는 중
  */
 export type UploadState = "idle" | "picked" | "busy";
 
 /**
  * 사진 고르기(여러 장, 최대 `MAX_PHOTOS` 장 — 2026-10-12 부터 30장, 그전 10장) + **음성 파일 고르기**(최대 5개, 2026-10-07 Alan — "학생들이 숙제제출할때 음성파일도
- * 올릴수 있도록 부탁해!") + 질문(선택) → 브라우저에서 Storage 로 바로 올린 뒤 서버 액션에 등록.
+ * 올릴수 있도록 부탁해!") → 브라우저에서 Storage 로 바로 올린 뒤 서버 액션에 등록.
+ * **질문 칸은 없다** (2026-10-30 — "숙제 제출할때 코멘트 안달게 해주세요 ㅋㅋ 코멘트 다 확인하기 힘들어서 질문이나 문의사항은 개인톡으로 보내주세요~").
+ * 그 자리에 그 안내 한 줄만 둔다. 예전에 낸 숙제의 질문은 학생 카드 · 강사 팝업에 그대로 보인다.
  * `classDate` 는 학생이 달력에서 고른 **수업 날짜**다 (2026-09-19 Alan).
  *
  * 사진과 음성은 **고르는 칸이 따로다** — 한 칸에 둘 다 받으면 아이폰이 사진 보관함부터 열어 음성을 고를 수 있는지 안 보인다.
@@ -54,7 +55,7 @@ export type UploadState = "idle" | "picked" | "busy";
  * 같은 길(미리 듣기 · 빼기 · 올리기)을 탄다. 녹음하는 동안은 파일 고르기 칸을 숨기고 제출을 잠근다 (끝내지 않은 녹음이 빠진 채 나가지 않게).
  *
  * **고른 파일은 아직 제출이 아니다 — 그렇게 보이게 한다** (2026-10-30 문라경 학생 — "분명 제출하고 확인했는데 그 이후에 들어갔을 때 제출란에 아무것도 없었습니다").
- * 사진을 고르면 번호 붙은 칸이 서서 올라간 것처럼 보이는데, 휴대폰에서는 제출 버튼이 그 아래 음성 · 질문 칸을 지나 **한 화면 아래**에 있었다 (393px 실측 — 사진을 고른 화면의 바닥보다 830px 아래).
+ * 사진을 고르면 번호 붙은 칸이 서서 올라간 것처럼 보이는데, 휴대폰에서는 제출 버튼이 그 아래 음성 칸을 지나 **한 화면 아래**에 있었다 (393px 실측 — 사진을 고른 화면의 바닥보다 830px 아래).
  * 그대로 다른 과목 · 날짜를 누르거나 화면을 떠나면 고른 것이 **아무 말 없이** 사라졌다. 그래서:
  * - 고른 것이 있으면 제출 버튼이 **화면 바닥에 붙는 막대**(`bar-above-nav` — 하단 메뉴 위)가 되고 "아직 제출 전이에요" 를 적는다 (오류 글도 막대 안에)
  * - 지금 상태(`UploadState`)를 부모에게 알린다 — 달력이 날짜 · 과목을 바꾸기 전에 묻고, 올리는 중에는 바꾸지 않는다
@@ -83,14 +84,13 @@ export function HomeworkUploadForm({
   const [recording, setRecording] = useState(false);
   /** 바로 녹음한 순서 — 이름 `녹음 N` 에 쓴다 (뺀 녹음의 번호를 다시 쓰지 않는다) */
   const recordCount = useRef(0);
-  const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // 아직 안 낸 것이 있나 — 부모가 날짜 · 과목을 바꾸기 전에 묻는다 (머리말)
   const hasFiles = photos.length + audios.length > 0;
-  const state: UploadState = busy ? "busy" : hasFiles || recording || question.trim() !== "" ? "picked" : "idle";
+  const state: UploadState = busy ? "busy" : hasFiles || recording ? "picked" : "idle";
   const report = useEffectEvent((s: UploadState) => onStateChange?.(s));
   useEffect(() => {
     report(state);
@@ -168,8 +168,6 @@ export function HomeworkUploadForm({
     const picked = [...photos, ...audios];
     const filesError = homeworkFilesError(picked.map((p) => ({ type: p.type, size: p.file.size })));
     if (filesError) return setError(filesError);
-    const q = question.trim();
-    if (q.length > MAX_QUESTION) return setError(`질문은 ${MAX_QUESTION}자 이내로 적어 주세요.`);
 
     setBusy(true);
     const uploaded: UploadedFile[] = [];
@@ -190,7 +188,7 @@ export function HomeworkUploadForm({
       }
       setProgress("제출하는 중…");
       sent = true;
-      const res = await submitHomework({ level, subject, classDate, question: q, files: uploaded });
+      const res = await submitHomework({ level, subject, classDate, files: uploaded });
       if (!res.ok || !res.id) return await fail(res.error ?? "제출하지 못했어요.");
 
       // 같은 화면에서 목록만 새로 받는다 (달력·고른 날짜는 그대로 둔다)
@@ -198,7 +196,6 @@ export function HomeworkUploadForm({
       picked.forEach((p) => URL.revokeObjectURL(p.url));
       setPhotos([]);
       setAudios([]);
-      setQuestion("");
       router.refresh();
       onDone?.(res.id);
       setBusy(false);
@@ -338,25 +335,8 @@ export function HomeworkUploadForm({
         )}
       </section>
 
-      <section className="card p-4 sm:p-5">
-        <label htmlFor="question" className="label">
-          질문 <span className="font-normal text-mist">(선택)</span>
-        </label>
-        <textarea
-          id="question"
-          name="question"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          maxLength={MAX_QUESTION}
-          rows={3}
-          disabled={busy}
-          placeholder="헷갈리는 문제나 궁금한 점이 있으면 적어 주세요. 없으면 비워 두어도 돼요."
-          className="input min-h-24 resize-y"
-        />
-        <p className="mt-1 text-right text-xs text-mist tabular-nums">
-          {question.length} / {MAX_QUESTION}
-        </p>
-      </section>
+      {/* 질문 칸 대신 (2026-10-30 — 코멘트를 다 확인하기 힘들어서) */}
+      <p className="rounded-xl bg-brand-50 px-4 py-3 text-center text-sm font-semibold text-ink-soft">질문이나 문의사항은 개인톡으로 보내주세요~</p>
 
       {/* 고른 것이 있으면 제출 버튼이 화면 바닥(하단 메뉴 위)에 붙는다 — 사진을 고른 자리에서 보이게 (머리말). 오류 글도 막대 안에 둔다 */}
       <div
