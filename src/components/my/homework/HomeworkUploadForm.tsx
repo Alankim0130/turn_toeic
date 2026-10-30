@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitHomework } from "@/app/my/homework/actions";
 import { HomeworkRecorder, type Recording } from "@/components/my/homework/HomeworkRecorder";
@@ -37,6 +37,12 @@ type Picked = { key: string; file: File; url: string; type: string; quiet?: bool
 const SENT_UNKNOWN = "인터넷이 끊겨 제출됐는지 확인하지 못했어요. 아래 낸 숙제 목록에 있는지 먼저 보고, 없으면 다시 내 주세요.";
 
 /**
+ * 올리기 폼의 지금 상태 — 부모(달력)가 날짜 · 과목을 바꾸기 전에 본다 (2026-10-30 문라경 학생 "분명 제출하고 확인했는데 그 이후에 들어갔을 때 제출란에 아무것도 없었습니다").
+ * `picked` = 고른 사진 · 음성 · 적은 질문 · 녹음 중인 것이 있는데 아직 안 냈다 · `busy` = 올리는 중
+ */
+export type UploadState = "idle" | "picked" | "busy";
+
+/**
  * 사진 고르기(여러 장, 최대 `MAX_PHOTOS` 장 — 2026-10-12 부터 30장, 그전 10장) + **음성 파일 고르기**(최대 5개, 2026-10-07 Alan — "학생들이 숙제제출할때 음성파일도
  * 올릴수 있도록 부탁해!") + 질문(선택) → 브라우저에서 Storage 로 바로 올린 뒤 서버 액션에 등록.
  * `classDate` 는 학생이 달력에서 고른 **수업 날짜**다 (2026-09-19 Alan).
@@ -46,6 +52,13 @@ const SENT_UNKNOWN = "인터넷이 끊겨 제출됐는지 확인하지 못했어
  *
  * 음성은 **화면에서 바로 녹음**할 수도 있다 (2026-10-08 Alan — `HomeworkRecorder`). 녹음은 고른 파일과 같은 목록에 `녹음 N.wav` 로 들어가
  * 같은 길(미리 듣기 · 빼기 · 올리기)을 탄다. 녹음하는 동안은 파일 고르기 칸을 숨기고 제출을 잠근다 (끝내지 않은 녹음이 빠진 채 나가지 않게).
+ *
+ * **고른 파일은 아직 제출이 아니다 — 그렇게 보이게 한다** (2026-10-30 문라경 학생 — "분명 제출하고 확인했는데 그 이후에 들어갔을 때 제출란에 아무것도 없었습니다").
+ * 사진을 고르면 번호 붙은 칸이 서서 올라간 것처럼 보이는데, 휴대폰에서는 제출 버튼이 그 아래 음성 · 질문 칸을 지나 **한 화면 아래**에 있었다 (393px 실측 — 사진을 고른 화면의 바닥보다 830px 아래).
+ * 그대로 다른 과목 · 날짜를 누르거나 화면을 떠나면 고른 것이 **아무 말 없이** 사라졌다. 그래서:
+ * - 고른 것이 있으면 제출 버튼이 **화면 바닥에 붙는 막대**(`bar-above-nav` — 하단 메뉴 위)가 되고 "아직 제출 전이에요" 를 적는다 (오류 글도 막대 안에)
+ * - 지금 상태(`UploadState`)를 부모에게 알린다 — 달력이 날짜 · 과목을 바꾸기 전에 묻고, 올리는 중에는 바꾸지 않는다
+ * - 창을 닫거나 새로고침하면 브라우저가 한 번 묻는다 (`beforeunload` — 아이폰 사파리는 묻지 않는다)
  */
 export function HomeworkUploadForm({
   userId,
@@ -53,12 +66,14 @@ export function HomeworkUploadForm({
   subject,
   classDate,
   onDone,
+  onStateChange,
 }: {
   userId: string;
   level: number;
   subject: HomeworkSubject;
   classDate: string;
   onDone?: (id: number) => void;
+  onStateChange?: (state: UploadState) => void;
 }) {
   const router = useRouter();
   const photoRef = useRef<HTMLInputElement>(null);
@@ -72,6 +87,26 @@ export function HomeworkUploadForm({
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // 아직 안 낸 것이 있나 — 부모가 날짜 · 과목을 바꾸기 전에 묻는다 (머리말)
+  const hasFiles = photos.length + audios.length > 0;
+  const state: UploadState = busy ? "busy" : hasFiles || recording || question.trim() !== "" ? "picked" : "idle";
+  const report = useEffectEvent((s: UploadState) => onStateChange?.(s));
+  useEffect(() => {
+    report(state);
+  }, [state]);
+  // 폼이 사라지면(냈거나 · 다른 칸으로 바꿨다) 남은 것이 없다
+  useEffect(() => () => report("idle"), []);
+  // 창을 닫거나 새로고침하면 한 번 묻는다 (반 편성 달력과 같다)
+  useEffect(() => {
+    if (state === "idle") return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [state]);
 
   /** 사진 · 음성이 같은 길로 고른다 — 형식 · 크기 · 개수만 다르다 */
   function pick(kind: "photo" | "audio", list: FileList | null) {
@@ -323,34 +358,41 @@ export function HomeworkUploadForm({
         </p>
       </section>
 
-      {error && (
-        <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-          {error}
-        </p>
-      )}
-
-      <button type="submit" disabled={busy || recording || (photos.length === 0 && audios.length === 0)} className="btn-primary w-full text-base">
-        {busy ? (
-          (progress ?? "올리는 중…")
-        ) : recording ? (
-          "녹음을 끝내면 낼 수 있어요"
-        ) : (
-          // 좁은 화면(320px)에서 두 줄이 되면 `음성` / `2개` 처럼 쪼개지지 않게 덩어리마다 묶는다.
-          // **어느 수업의 숙제인지 버튼에 적는다** (2026-10-30 — 날짜를 안 보고 내 지난 수업 숙제가 다른 날짜로 저장됐다): `10/23(금) 650 RC 숙제 제출하기`
-          <span className="text-center">
-            <span className="whitespace-nowrap">
-              {shortDay(classDate)} {homeworkLabel(level, subject)}
-            </span>{" "}
-            <span className="whitespace-nowrap">숙제 제출하기</span>
-            {counts.map((c) => (
-              <Fragment key={c}>
-                {" "}
-                <span className="whitespace-nowrap">· {c}</span>
-              </Fragment>
-            ))}
-          </span>
+      {/* 고른 것이 있으면 제출 버튼이 화면 바닥(하단 메뉴 위)에 붙는다 — 사진을 고른 자리에서 보이게 (머리말). 오류 글도 막대 안에 둔다 */}
+      <div
+        data-submit-bar={hasFiles ? "" : undefined}
+        className={cn("space-y-2", hasFiles && "bar-above-nav z-20 rounded-xl2 border border-line bg-paper/95 p-2.5 shadow-soft backdrop-blur sm:p-3")}
+      >
+        {error && (
+          <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+            {error}
+          </p>
         )}
-      </button>
+        {hasFiles && !busy && !recording && <p className="text-center text-xs font-bold text-amber-800">아직 제출 전이에요 — 이 버튼을 눌러야 선생님께 가요</p>}
+
+        <button type="submit" disabled={busy || recording || !hasFiles} className="btn-primary w-full text-base">
+          {busy ? (
+            (progress ?? "올리는 중…")
+          ) : recording ? (
+            "녹음을 끝내면 낼 수 있어요"
+          ) : (
+            // 좁은 화면(320px)에서 두 줄이 되면 `음성` / `2개` 처럼 쪼개지지 않게 덩어리마다 묶는다.
+            // **어느 수업의 숙제인지 버튼에 적는다** (2026-10-30 — 날짜를 안 보고 내 지난 수업 숙제가 다른 날짜로 저장됐다): `10/23(금) 650 RC 숙제 제출하기`
+            <span className="text-center">
+              <span className="whitespace-nowrap">
+                {shortDay(classDate)} {homeworkLabel(level, subject)}
+              </span>{" "}
+              <span className="whitespace-nowrap">숙제 제출하기</span>
+              {counts.map((c) => (
+                <Fragment key={c}>
+                  {" "}
+                  <span className="whitespace-nowrap">· {c}</span>
+                </Fragment>
+              ))}
+            </span>
+          )}
+        </button>
+      </div>
       <p className="text-center text-xs text-mist">사진은 글씨가 잘 보이게 찍어 주세요. 사진과 음성 중 하나만 있어도 낼 수 있어요. 점검이 끝나면 제출을 바꿀 수 없어요.</p>
     </form>
   );
