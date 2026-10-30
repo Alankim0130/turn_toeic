@@ -12,6 +12,7 @@ import { cellKey, cellLevels, isRoundOpen, isRoundSet, roundCells, roundDates, r
 import { clipToOwnRange } from "@/lib/two-week";
 import { noticeAttachLabel, noticeVisible, scopeOf } from "@/lib/class-notices";
 import { sectionSubjects, type LectureWayRow } from "@/lib/lecture";
+import { groupLectureMaterials, type LectureMaterial } from "@/lib/lecture-materials";
 import type { Subject } from "@/lib/instructor-subject";
 import { nowKst, sessionStarted, sessionState } from "@/lib/live-links";
 
@@ -251,6 +252,22 @@ export async function getMyLectureSignups() {
 /** 내가 신청한 특강 id 집합 */
 export async function getMyLectureSignupIds() {
   return new Set((await getMyLectureSignups()).keys());
+}
+
+/**
+ * **특강 자료실** — 내가 신청한 특강의 자료 (2026-10-30 Alan — "특강신청한 사람들이 특강 신청한 곳에 들어가면 볼 수 있는 자료실 … 신청한 사람들만 보이는 자료실").
+ * 정책(`special_lecture_materials: 신청자·스태프 조회`)이 학생에게는 신청한 특강만 열지만 강사 · 관리자에게는 **전부** 열어서(등급 체계 10),
+ * 부른 쪽이 준 **내가 신청한 특강 id**(`getMyLectureSignups` 의 키)로 한 번 더 좁힌다. 파일 행은 자료와 함께 임베드로 읽는다 (부모 자료가 보이면).
+ * 표가 아직 없으면(배포 사이) 빈 Map — 특강 카드는 자료 칸 없이 선다.
+ */
+export async function getMyLectureMaterials(lectureIds: readonly number[]): Promise<Map<number, LectureMaterial[]>> {
+  if (lectureIds.length === 0) return new Map();
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("special_lecture_materials")
+    .select("id, lecture_id, title, note, links, sort_order, created_at, updated_at, files:special_lecture_material_files(id, file_name, file_size, content_type, sort_order)")
+    .in("lecture_id", [...lectureIds]);
+  return groupLectureMaterials(data);
 }
 
 /** 반의 상시 불라방 링크 — **내 반만** (링크 정책도 스태프에게 전부 열려 있다 — 머리말) */

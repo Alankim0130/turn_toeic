@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
  * 수업자료실 자료에 붙은 파일 목록 (2026-10-06 — 자료 하나에 파일 여러 개). 파일마다 종류 · 이름 · 크기 · 열기(PDF · 그림만) · 받기.
  * 학생 화면(`ClassMaterialsView`)과 관리자 줄(`ClassMaterialRow`)이 함께 쓴다. 주소의 숫자는 **파일 id** 다(`/files/class/{id}`) —
  * 자료가 보이는 사람에게만 열린다 (`class_material_files` 조회 정책). 공지 첨부 파일(2026-10-13)은 `base="/files/notice"` 로 같은 목록을 쓴다
- * (`class_notice_files` — 그 공지가 보이는 사람에게만), 직원 게시판 첨부 파일(2026-10-21)은 `base="/files/board"` (`staff_post_files` — 강사 · 관리자 · 조교만).
+ * (`class_notice_files` — 그 공지가 보이는 사람에게만), 직원 게시판 첨부 파일(2026-10-21)은 `base="/files/board"` (`staff_post_files` — 강사 · 관리자 · 조교만),
+ * 특강 자료실 파일(2026-10-30)은 `base="/files/lecture"` (`special_lecture_material_files` — 그 특강을 신청한 학생 · 강사 · 관리자만).
  * 이름은 길어도 줄을 넘겨 다 보인다 — 같은 회차에 `1강 스크립트.pdf` · `1강 해설.pdf` 처럼 앞이 같은 파일이 많다
  */
 export function MaterialFileList({
@@ -18,7 +19,7 @@ export function MaterialFileList({
   files: readonly MaterialFile[];
   className?: string;
   /** 파일 주소 앞부분 — 수업자료는 `/files/class`, 공지 첨부 파일은 `/files/notice` (2026-10-13), 직원 게시판은 `/files/board` (2026-10-21) */
-  base?: "/files/class" | "/files/notice" | "/files/board";
+  base?: "/files/class" | "/files/notice" | "/files/board" | "/files/lecture";
 }) {
   return (
     <ul aria-label="첨부 파일" className={cn("divide-y divide-line overflow-hidden rounded-xl border border-line bg-paper", className)}>
