@@ -45,12 +45,17 @@ describe("앱으로 넘기는 주소 (/auth/app-callback → winnertoeic://auth-
     expect(appCallbackPath(`${APP_AUTH_CALLBACK}?code=C1&next=%2Fmy%2Flive`)).toBe("/auth/callback?code=C1&next=%2Fmy%2Flive");
     expect(appCallbackPath(`${APP_AUTH_CALLBACK}?error=access_denied&error_description=email`)).toBe("/auth/callback?error=access_denied&error_description=email");
     expect(appCallbackPath(APP_AUTH_CALLBACK)).toBe("/auth/callback");
+    // iOS 가 빗금을 붙여 돌려줘도 같은 주소다
+    expect(appCallbackPath(`${APP_AUTH_CALLBACK}/?code=C2`)).toBe("/auth/callback?code=C2");
   });
 
   it("우리 앱 주소가 아니면 열지 않는다", () => {
     expect(appCallbackPath(`${APP_AUTH_CALLBACK}x?code=1`)).toBeNull();
     expect(appCallbackPath("https://winnertoeic.com/auth/callback?code=1")).toBeNull();
     expect(appCallbackPath("other://auth-callback?code=1")).toBeNull();
+    expect(appCallbackPath(`${APP_CALLBACK_SCHEME}://auth-callback/more?code=1`)).toBeNull();
+    expect(appCallbackPath(`${APP_CALLBACK_SCHEME}://user@auth-callback?code=1`)).toBeNull();
+    expect(appCallbackPath("not a url")).toBeNull();
     expect(appCallbackPath(null)).toBeNull();
   });
 

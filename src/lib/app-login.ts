@@ -51,13 +51,17 @@ export function appCallbackUrl(search: URLSearchParams): string {
  * 우리 앱 주소가 아니면 null.
  */
 export function appCallbackPath(url: string | null | undefined): string | null {
-  if (!url || !(url === APP_AUTH_CALLBACK || url.startsWith(`${APP_AUTH_CALLBACK}?`))) return null;
-  let search: URLSearchParams;
+  if (!url) return null;
+  let parsed: URL;
   try {
-    search = new URL(url).searchParams;
+    parsed = new URL(url);
   } catch {
     return null;
   }
+  // 우리 앱 주소만 — `winnertoeic://auth-callback?…` (iOS 가 `auth-callback/?…` 처럼 빗금을 붙여 줘도 같은 주소로 본다)
+  const expected = new URL(APP_AUTH_CALLBACK);
+  if (parsed.protocol !== expected.protocol || parsed.host !== expected.host || !["", "/"].includes(parsed.pathname) || parsed.username || parsed.password) return null;
+  const search = parsed.searchParams;
   const out = new URLSearchParams();
   for (const key of APP_CALLBACK_PARAMS) {
     const v = search.get(key);
