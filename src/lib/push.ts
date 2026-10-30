@@ -1,12 +1,15 @@
 import "server-only";
 
 import webpush from "web-push";
+import { apnsConfigured, sendApns } from "@/lib/apns";
+import { parseApnsEndpoint } from "@/lib/push-endpoint";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/database.types";
 import { studentPushMessage, type StudentPushRow } from "@/lib/student-push";
 
 /**
- * 웹 푸시. 알림은 기기마다 "알림 받기"를 눌러 둔 곳으로만 간다.
+ * 웹 푸시 · 아이폰 앱 알림(애플 푸시 — 2026-10-30, `apns.ts`). 알림은 기기마다 "알림 받기"를 눌러 둔 곳으로만 간다.
+ * 앱 기기는 같은 표에 `apns://…` 주소로 있어서 누구에게 보내나는 똑같고, 보낼 때(`deliver`)만 길이 갈린다.
  * - 관리자 알림(`notifyStaff` · `notifyUser`): 강사·관리자 — 종류마다 알림 설정으로 끈다.
  *   등업신청 접수 · 새 교재주문은 알림 설정에서 그 알림을 켠 조교에게도 (`CREW_ALERT_KINDS`, 2026-10-27 · 10-28)
  * - 학생 알림(`pushStudentMessages`, 2026-10-15): 숙제 미제출 · 불라방 시작만 — 학생 알림함 줄을 그대로 휴대폰으로 (`student-push.ts`)
@@ -33,10 +36,11 @@ const EMPTY: PushResult = { sent: 0, failed: 0, removed: 0 };
 
 /**
  * 알림 키(VAPID)가 다 있고 **쓸 수 있는 모양인가** — 아니면 보내지 못하므로 학생 알림 대기열을 가져가지 않는다 (가져가면 표시만 되고 사라진다).
- * 값이 있어도 모양이 틀리면(`mailto:` 없는 VAPID_SUBJECT · 키 길이) 보낼 때 던져서, 예전에는 가져간 줄을 다 잃었다 (2026-10-16 점검)
+ * 값이 있어도 모양이 틀리면(`mailto:` 없는 VAPID_SUBJECT · 키 길이) 보낼 때 던져서, 예전에는 가져간 줄을 다 잃었다 (2026-10-16 점검).
+ * 앱 알림 키(애플 .p8)만 있어도 참이다 — 그때는 앱 기기로만 간다.
  */
 export function pushConfigured() {
-  return configure();
+  return configure() || apnsConfigured();
 }
 
 function configure() {
@@ -59,14 +63,26 @@ function configure() {
 type SubscriptionRow = { id: number; endpoint: string; p256dh: string; auth: string };
 
 async function deliver(rows: SubscriptionRow[], message: PushMessage): Promise<PushResult> {
-  if (rows.length === 0 || !configure()) return EMPTY;
-  const payload = JSON.stringify({ title: message.title, body: message.body, url: message.url ?? "/admin", tag: message.tag });
+  if (rows.length === 0) return EMPTY;
+  // 아이폰 앱 기기는 애플 푸시로 (`apns.ts`) — 나머지는 웹 푸시
+  const appRows = rows.filter((r) => parseApnsEndpoint(r.endpoint));
+  const webRows = rows.filter((r) => !parseApnsEndpoint(r.endpoint));
   const delivered: number[] = [];
   const gone: number[] = [];
   let failed = 0;
 
+  if (appRows.length > 0) {
+    const app = await sendApns(appRows, message);
+    delivered.push(...app.delivered);
+    gone.push(...app.gone);
+    failed += app.failed;
+  }
+  // 웹 푸시 키(VAPID)가 없으면 웹 기기는 예전처럼 조용히 건너뛴다 (실패로 세지 않는다)
+  const webReady = webRows.length > 0 && configure();
+  const payload = JSON.stringify({ title: message.title, body: message.body, url: message.url ?? "/admin", tag: message.tag });
+
   await Promise.all(
-    rows.map(async (row) => {
+    (webReady ? webRows : []).map(async (row) => {
       try {
         await webpush.sendNotification({ endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } }, payload, {
           TTL: message.ttl ?? 60 * 60 * 24,

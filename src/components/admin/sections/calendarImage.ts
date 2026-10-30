@@ -1,4 +1,5 @@
 import { holidayNamesBetween } from "@/lib/holidays";
+import { isNativeApp, shareFileInApp } from "@/lib/native-app";
 import { WEEKDAY_KO, coveringGrid, weekdayOf } from "./dates";
 
 /**
@@ -192,10 +193,16 @@ export async function downloadCalendarImage({ year, month, mwf, ttf }: { year: n
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) throw new Error("image encode failed");
+  const name = `역전토익_${year}년${month}월_수업일정.png`;
+  // 아이폰 앱(mobile/)은 내려받기를 못 한다 — 공유 시트로 (사진에 저장 · 카카오톡, src/lib/native-app.ts)
+  if (isNativeApp()) {
+    if ((await shareFileInApp(blob, name)) === "failed") throw new Error("share failed");
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `역전토익_${year}년${month}월_수업일정.png`;
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   a.remove();

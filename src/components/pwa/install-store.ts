@@ -10,14 +10,18 @@
  * - 카카오톡 등 앱 안 브라우저: 설치 불가 → 외부 브라우저로 넘기고(?install=1) 거기서 안내를 이어서 연다.
  */
 
+import { isNativeApp } from "@/lib/native-app";
+
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
 export type InstallEnv = {
-  /** 이미 홈 화면 앱으로 열려 있음 */
+  /** 이미 홈 화면 앱으로 열려 있음 — 아이폰 앱(mobile/)도 여기에 든다: 설치 안내를 숨기고 당겨서 새로고침 · 새로고침 버튼을 켠다 */
   standalone: boolean;
+  /** 아이폰 앱(mobile/ — App Store) 안 */
+  native: boolean;
   ios: boolean;
   ipad: boolean;
   android: boolean;
@@ -109,8 +113,11 @@ export function getInstallEnv(): InstallEnv {
     else if (/Chrome\/\d+/.test(ua) && !/EdgA|OPR|Whale|YaBrowser|; wv\)/.test(ua)) browser = "chrome";
   }
   const version = ua.match(/Version\/(\d+)/);
+  const native = isNativeApp();
   env = {
+    native,
     standalone:
+      native ||
       window.matchMedia("(display-mode: standalone)").matches ||
       (navigator as Navigator & { standalone?: boolean }).standalone === true,
     ios,

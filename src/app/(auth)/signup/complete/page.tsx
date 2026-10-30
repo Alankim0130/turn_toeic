@@ -3,6 +3,7 @@ import { safeNextPath } from "@/lib/safe-next";
 import { redirect } from "next/navigation";
 import { Logo } from "@/components/ui/Logo";
 import { COMPLETE_PROFILE_PATH, PROFILE_UNREADABLE, getSessionProfile, isProfileIncomplete } from "@/lib/auth";
+import { APPLE_NAME_KEY } from "@/lib/apple-auth";
 import { CompleteProfileForm } from "./CompleteProfileForm";
 
 export const metadata: Metadata = {
@@ -14,6 +15,7 @@ export const metadata: Metadata = {
  * 구글 계정으로 처음 들어온 회원의 가입 정보 입력 (2026-09-17 Alan 요청).
  * 가입 트리거가 외부 로그인에는 이름을 비워 두므로 여기서 실명·휴대폰(대학·학과·성별은 선택)을 한 번 받는다.
  * requireUser() 가 미완성 계정을 여기로 보내므로 이 화면은 requireUser 를 쓰지 않는다 (되돌이 방지).
+ * Apple 로 처음 들어왔으면 애플이 준 이름을 실명 칸에 넣어 둔다 (`APPLE_NAME_KEY` — 2026-10-30). 구글 · 카카오의 표시 이름은 넣지 않는다.
  */
 export default async function CompleteProfilePage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
   const [{ next }, { user, profile, profileError }] = await Promise.all([searchParams, getSessionProfile()]);
@@ -38,7 +40,11 @@ export default async function CompleteProfilePage({ searchParams }: { searchPara
           수강증 대조에 쓰는 실명과 연락처를 적어 주세요.
         </p>
       </div>
-      <CompleteProfileForm next={target} lockedName={profile?.name?.trim() ? profile.name : null} />
+      <CompleteProfileForm
+        next={target}
+        lockedName={profile?.name?.trim() ? profile.name : null}
+        suggestedName={typeof user.user_metadata?.[APPLE_NAME_KEY] === "string" ? (user.user_metadata[APPLE_NAME_KEY] as string).slice(0, 20) : undefined}
+      />
     </>
   );
 }

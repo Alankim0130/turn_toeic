@@ -1,0 +1,36 @@
+{
+  "appId": "com.winnertoeic.app",
+  "appName": "역전토익",
+  "webDir": "www",
+  "server": {
+    "url": "https://winnertoeic.com",
+    "appStartPath": "/my",
+    "errorPath": "offline.html",
+    "cleartext": false
+  },
+  "ios": {
+    "contentInset": "never",
+    "appendUserAgent": "WinnerToeicApp/1",
+    "backgroundColor": "#ffffff",
+    "allowsLinkPreview": false,
+    "limitsNavigationsToAppBoundDomains": false,
+    "preferredContentMode": "mobile"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 4000,
+      "launchFadeOutDuration": 200,
+      "backgroundColor": "#ff2e88",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "overlaysWebView": false,
+      "style": "DARK",
+      "backgroundColor": "#ff2e88"
+    },
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    }
+  }
+}

@@ -49,7 +49,8 @@ export function PushPrompt({ publicKey, className }: { publicKey: string | null;
     };
   }, []);
 
-  if (!publicKey || !env || !(env.ios || env.android)) return null;
+  // 아이폰 앱(mobile/)은 애플 푸시라 웹 푸시 키가 없어도 된다 (push-client.ts)
+  if (!env || (!publicKey && !env.native) || !(env.ios || env.android)) return null;
   if (initiallyDismissed || dismissed) return null;
   // 앱 설치 카드가 떠 있으면 그쪽이 먼저다 (InstallApp 의 card 와 같은 조건)
   const installCardShown = !env.standalone && !installed && !installCardGone && getInstallPlan(env, canPrompt) !== null;
@@ -57,7 +58,7 @@ export function PushPrompt({ publicKey, className }: { publicKey: string | null;
   if (!done && state !== "off") return null;
 
   async function enable() {
-    if (!publicKey) return;
+    if (!publicKey && !env?.native) return;
     setBusy(true);
     setError(null);
     try {

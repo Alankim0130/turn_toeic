@@ -424,6 +424,7 @@ Vercel 에는 배포 · 환경변수 13개 · 자동 작업 3개 · 도메인 `w
 2. 개인정보처리방침의 책임자 (1-3).
 3. 선택 — 가입 · 로그인 봇 막기(CAPTCHA) 또는 IP 속도 제한. 학원 와이파이는 한 IP 로 보여 숫자를 넉넉히 잡는다.
 4. 정하지 않은 규칙 — 편성을 고쳤을 때의 녹화본 · YBM 후기 자동 수집 · 비대면 미인증 제재 · 등록생 명단 대조. `CLAUDE.md` 맨 아래 ‘미확정’에 있고, 정하기 전에는 만들지 않는다.
+5. **아이폰 앱을 냈다면 (2026-10-30 — `mobile/README.md`)** — 애플 개발자 계정(Apple Developer Program, 1년마다 갱신)과 App Store Connect 의 앱이 열두 번째 소유권이다. 인수자에게는 App Store Connect 의 **앱 이전**(App Transfer)으로 넘기고, 애플 키(.p8)는 인수자 계정에서 새로 만들어 부록의 앱 환경변수 다섯 개를 바꾼다. 갱신을 놓치면 앱이 App Store 에서 내려간다(웹사이트는 그대로다).
 
 ### 개발을 이어 갈 사람에게
 
@@ -454,6 +455,14 @@ Vercel 에는 배포 · 환경변수 13개 · 자동 작업 3개 · 도메인 `w
 | `YOUTUBE_CLIENT_ID` · `YOUTUBE_CLIENT_SECRET` | 유튜브 자동 연결 | 불라방 자동 연결 · 다시보기 자동 등록이 멈춘다 |
 
 개발용 세 개(`SUPABASE_PROJECT_REF` · `SUPABASE_DB_PASSWORD` · `SUPABASE_ACCESS_TOKEN`)는 Vercel 에 없어도 된다. 그 밖의 비밀은 Supabase 설정(구글 · 카카오 로그인 키)과 DB 안(`app_cron_secret`)에 있다.
+
+**아이폰 앱 · Apple 로 로그인 (2026-10-30 — 앱을 내기 전이면 비어 있어도 된다, `mobile/README.md`)** — 애플 개발자 계정의 키(.p8) 하나로 둘을 한다. Supabase 의 Apple 로그인(Client IDs)도 함께 켠다.
+
+| 이름 | 무엇 | 빠지면 |
+| --- | --- | --- |
+| `APPLE_TEAM_ID` · `APPLE_KEY_ID` · `APPLE_PRIVATE_KEY` | 애플 개발자 팀 · 키 ID · .p8 키 내용 | 웹의 Apple 로그인 버튼이 사라지고, 앱 알림이 안 오고, 탈퇴할 때 Apple 연결을 못 끊는다 |
+| `APPLE_SERVICES_ID` | 웹 Apple 로그인의 Services ID | 웹의 Apple 로그인 버튼이 사라진다 (앱은 그대로) |
+| `APPLE_BUNDLE_ID` | 앱 번들 ID (비우면 `com.winnertoeic.app`) | 앱 알림의 주제가 틀려 알림이 안 간다 (번들 ID 를 바꿨을 때만) |
 
 ### 저절로 도는 작업 12개
 

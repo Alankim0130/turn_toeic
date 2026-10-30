@@ -12,6 +12,7 @@ import {
   shareFailure,
   type FileKind,
 } from "@/lib/file-download";
+import { isNativeApp, shareFileInApp } from "@/lib/native-app";
 import { cn } from "@/lib/utils";
 
 type Phase = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; file: File; at: number } | { kind: "error"; text: string };
@@ -41,6 +42,8 @@ function shareSheetReady(kind: FileKind): boolean {
  * - **아이폰 · 아이패드**: 아이폰은 attachment 를 무시하고 PDF 를 화면에 띄우기만 한다 — 홈 화면 앱은 띄운 PDF 에서 저장할 길도 돌아갈 길도 없다.
  *   그래서 누르면 파일을 받아 **공유 시트**(파일에 저장 · 프린트 · 카카오톡 · Word 앱)를 연다. 파일을 만드는 동안 '누른 순간' 이 지나가면
  *   브라우저가 시트를 막으므로(NotAllowedError) 만든 파일을 들고 `저장 · 인쇄 창 열기` 로 바꿔 **한 번 더 누르게** 한다.
+ * - **아이폰 앱(mobile/)**: 앱 화면은 내려받기를 못 하고 PDF 를 띄우기만 한다 — 파일을 받아 앱의 공유 시트로 넘긴다 (`shareFileInApp`, 2026-10-30).
+ *   앱의 시트는 '누른 순간' 이 지나도 열리므로 한 번 더 누를 일이 없다.
  * - 글 오류(400 · 404 · 503)는 버튼 아래에 그 글을, 로그인 · 권한으로 튕겼으면 지금 화면을 다시 연다 (그쪽으로 간다).
  * - **주소가 바뀌면 처음부터다**(`key={href}`, 2026-10-16 점검) — 달 칩 · 보기 · 탭처럼 물음표 뒤만 바뀌는 이동은 Next 가 이 조각을 다시 만들지 않아서,
  *   10월 PDF 를 든 `저장 · 인쇄 창 열기` 가 11월 화면에 남아 누르면 10월 파일이 저장됐다. 바뀐 순간 만들던 파일도 버린다 (조각이 내려가 `alive` 가 꺼진다).
@@ -143,7 +146,26 @@ function DownloadButton({ href, fileName, kind = "pdf", className, title, align 
     await openSheet(file, true);
   }
 
+  async function fetchAndShareInApp() {
+    if (working.current) return;
+    working.current = true;
+    setPhase({ kind: "loading" });
+    try {
+      const file = await fetchFile();
+      if (!file || !alive.current) return;
+      const result = await shareFileInApp(file, file.name);
+      if (alive.current) setPhase(result === "failed" ? { kind: "error", text: text.failed } : { kind: "idle" });
+    } finally {
+      working.current = false;
+    }
+  }
+
   function onLinkClick(e: MouseEvent<HTMLAnchorElement>) {
+    if (isNativeApp()) {
+      e.preventDefault();
+      void fetchAndShareInApp();
+      return;
+    }
     if (!shareSheetReady(kind)) return; // PC · 안드로이드 · 옛 아이폰 — 링크 그대로 받는다
     e.preventDefault();
     void fetchAndShare();

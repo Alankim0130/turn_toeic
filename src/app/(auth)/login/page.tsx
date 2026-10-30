@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Alert } from "@/components/ui/Alert";
 import { Logo } from "@/components/ui/Logo";
+import { appleWebReady } from "@/lib/apple-auth";
 import { getSocialLogins } from "@/lib/auth-providers";
+import { isAppRequest } from "@/lib/native-app-server";
 import { SocialLogin } from "../SocialLogin";
 import { LoginForm } from "./LoginForm";
 
@@ -18,10 +20,11 @@ const LOGIN_ERRORS: Record<string, string> = {
   social: "간편 로그인이 아직 준비되지 않았어요. 이메일로 로그인해 주세요.",
   // 카카오에서 이메일 제공에 동의하지 않으면 계정을 만들 수 없다 (이메일로 기존 계정과 이어 붙인다)
   email: "이메일 제공에 동의해야 로그인할 수 있어요. 다시 시도해서 이메일 항목에 동의해 주세요.",
+  apple: "Apple 로그인을 마치지 못했어요. 다시 시도하거나 다른 방법으로 로그인해 주세요.",
 };
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
-  const [{ next, error }, social] = await Promise.all([searchParams, getSocialLogins()]);
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string; bye?: string }> }) {
+  const [{ next, error, bye }, social, inApp] = await Promise.all([searchParams, getSocialLogins(), isAppRequest()]);
   const notice = error ? LOGIN_ERRORS[error] : undefined;
   return (
     <>
@@ -31,7 +34,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <p className="text-sm text-slate">등업신청 · 불라방 · 다시보기는 로그인 후 이용할 수 있어요.</p>
       </div>
       {notice && <Alert kind="warning" className="mb-4">{notice}</Alert>}
-      <SocialLogin enabled={social} next={next} mode="login" />
+      {/* 회원 탈퇴 뒤 (`deleteMyAccount`) */}
+      {bye === "1" && <Alert kind="success" className="mb-4">탈퇴가 끝났어요. 계정과 기록을 모두 지웠어요. 그동안 이용해 주셔서 고마워요.</Alert>}
+      <SocialLogin enabled={social} appleWeb={appleWebReady()} inApp={inApp} next={next} mode="login" />
       <LoginForm next={next} />
       <p className="mt-6 text-center text-sm text-slate">
         아직 회원이 아니신가요?{" "}

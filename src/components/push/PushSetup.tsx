@@ -7,6 +7,7 @@ import { Icon } from "@/components/ui/Icon";
 import { startInstall } from "@/components/pwa/install-store";
 import { deletePushSubscription, ownsPushDevice, savePushSubscription, sendTestPush } from "@/app/admin/notifications/actions";
 import { deleteStudentPushSubscription, ownsStudentPushDevice, saveStudentPushSubscription, sendStudentTestPush } from "@/app/my/notifications/push-actions";
+import { isNativeApp } from "@/lib/native-app";
 import { detectPush, disablePush, enablePush, type PushState } from "./push-client";
 
 /**
@@ -46,7 +47,8 @@ export function PushSetup({ publicKey, audience = "staff" }: { publicKey: string
   }, [actions.owns]);
 
   async function enable() {
-    if (!publicKey) {
+    // 아이폰 앱은 애플 푸시라 웹 푸시 키가 없어도 켠다 (push-client.ts)
+    if (!publicKey && !isNativeApp()) {
       setNotice({ kind: "warning", text: "서버에 알림 키가 설정되지 않았어요. 관리자에게 알려 주세요." });
       return;
     }

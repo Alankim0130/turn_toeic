@@ -1,0 +1,21 @@
+{
+  "name": "winnertoeic-ios",
+  "private": true,
+  "description": "역전토익 아이폰 앱 — 웹사이트(winnertoeic.com)를 띄우는 Capacitor 껍데기. 웹사이트 빌드와 따로 설치한다 (mobile/README.md)",
+  "scripts": {
+    "sync": "cap sync ios",
+    "open": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "8.6.0",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/ios": "8.6.0",
+    "@capacitor/push-notifications": "8.1.3",
+    "@capacitor/share": "8.0.3",
+    "@capacitor/splash-screen": "8.0.2",
+    "@capacitor/status-bar": "8.0.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.0"
+  }
+}

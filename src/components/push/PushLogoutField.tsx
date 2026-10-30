@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { isNativeApp } from "@/lib/native-app";
+import { nativeEndpoint } from "./push-client";
 
 /**
  * 로그아웃 폼 안에 이 기기의 알림 주소를 숨겨 넣는다 — 서버(`signOut`)가 이 기기를 그 계정의 알림 기기에서 지운다 (2026-10-16 점검).
@@ -13,6 +15,12 @@ export function PushLogoutField() {
     let alive = true;
     (async () => {
       try {
+        // 아이폰 앱이면 애플 푸시로 켠 이 기기의 주소 (push-client.ts — 켤 때 기기에 적어 둔다)
+        if (isNativeApp()) {
+          const endpoint = nativeEndpoint();
+          if (alive && endpoint) setEndpoint(endpoint);
+          return;
+        }
         if (!("serviceWorker" in navigator)) return;
         const reg = await navigator.serviceWorker.getRegistration("/");
         const sub = await reg?.pushManager?.getSubscription();

@@ -20,6 +20,7 @@ import { orderPhase } from "@/lib/enrollment-window";
 import { heldMonth } from "@/lib/verify-decision";
 import { needsVerifyCard } from "@/lib/verify-card";
 import { collapseWeek5, pairKey, studentTrackLabel, week5SectionIds, type Week5Section } from "@/lib/week5";
+import { isAppRequest } from "@/lib/native-app-server";
 import { getMySchedule } from "./_lib/schedule";
 import {
   getMyVerifications,
@@ -95,7 +96,7 @@ function recordedTracksOf(
 }
 
 export default async function MyPage({ searchParams }: { searchParams: Promise<{ welcome?: string; denied?: string }> }) {
-  const [{ profile, user }, uploadedPhoto, sp, verifications, accessibleWeek5, schedule, mergeRequests, unread, attendance, survey] = await Promise.all([
+  const [{ profile, user }, uploadedPhoto, sp, verifications, accessibleWeek5, schedule, mergeRequests, unread, attendance, survey, inApp] = await Promise.all([
     requireUser("/my"),
     // 직접 올린 사진의 주소는 프로필을 받자마자 이어서 만든다 — 다른 조회가 끝나기를 기다리지 않게 (2026-10-09 화면 전환 속도)
     getSessionProfile().then(async ({ profile }) => signedAvatarUrl(await createClient(), profile?.avatar_path)),
@@ -109,6 +110,8 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
     createClient().then((s) => s.rpc("my_attendance_summary")).then((r) => r.data ?? []),
     // 지금 점수 · 목표 (수강생 설문 — 레이아웃이 이미 물었다, 같은 요청이라 다시 묻지 않는다)
     getMySurvey(),
+    // 아이폰 앱이면 앱 밖 결제(YBM 수강 신청) 안내를 빼고 적는다 (App Store 심사 3.1.1 — src/lib/native-app.ts)
+    isAppRequest(),
   ]);
 
   // 내가 신청하지 않은 통합 요청 = 이 계정에서 확인해야 합쳐진다 (2026-09-18 Alan)
@@ -298,7 +301,9 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
         <EmptyState
           icon="verify"
           title="아직 등록 내역이 없어요"
-          description="YBM 공식 사이트에서 수강 신청 후 받은 수강증을 올리면 수강생으로 자동 등업됩니다."
+          description={
+            inApp ? "수강증을 올리면 수강생으로 자동 등업됩니다." : "YBM 공식 사이트에서 수강 신청 후 받은 수강증을 올리면 수강생으로 자동 등업됩니다."
+          }
           action={{ href: "/my/verify", label: "수강증 올리고 등업하기" }}
         />
       ) : (

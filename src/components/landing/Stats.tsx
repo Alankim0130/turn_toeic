@@ -44,7 +44,8 @@ export function Stats({ stats }: { stats: YbmReviewStatsRow | null }) {
             </p>
             <p className="mt-3 text-xs text-mist">YBM 공식 홈페이지 기준 · {updated} 갱신 · 매일 자동으로 가져와요</p>
           </div>
-          <a href={site.academy.ybmReviewUrl} target="_blank" rel="noopener noreferrer" className="btn-primary shrink-0 !px-6 !py-3.5 text-base">
+          {/* 앱에서는 숨긴다 — YBM 강좌 페이지(수강 신청 버튼이 있다)로 가는 링크 (App Store 심사 3.1.1, hide-in-app) */}
+          <a href={site.academy.ybmReviewUrl} target="_blank" rel="noopener noreferrer" className="hide-in-app btn-primary shrink-0 !px-6 !py-3.5 text-base">
             후기 바로보기
             <ExternalMark className="text-white/80" />
             <span className="sr-only">(새 창)</span>

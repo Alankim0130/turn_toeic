@@ -2,7 +2,8 @@ import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { devicesOverLimit, isPushKeyPair, isPushServiceEndpoint } from "@/lib/push-endpoint";
+import { APNS_KEY_MARK, devicesOverLimit, isPushKeyPair, isPushServiceEndpoint, parseApnsEndpoint } from "@/lib/push-endpoint";
+import { apnsConfigured } from "@/lib/apns";
 
 /**
  * 기기의 푸시 구독 저장 · 지우기 — 관리자 알림 설정(`/admin/notifications`)과 학생 알림(`/my/notifications`, 2026-10-15)이 함께 쓴다.
@@ -14,31 +15,37 @@ export type SubscriptionInput = { endpoint: string; p256dh: string; auth: string
 export type SubscriptionResult = { ok: true } | { ok: false; error: string };
 
 export async function saveSubscription(userId: string, input: SubscriptionInput): Promise<SubscriptionResult> {
-  let endpoint: URL;
-  try {
-    endpoint = new URL(String(input?.endpoint ?? ""));
-  } catch {
-    return { ok: false, error: "구독 정보가 올바르지 않아요. 다시 시도해 주세요." };
+  const raw = String(input?.endpoint ?? "");
+  let row: { endpoint: string; p256dh: string; auth: string };
+  if (parseApnsEndpoint(raw)) {
+    // 아이폰 앱 기기 (애플 푸시 — 2026-10-30). 웹 푸시 키가 없다. 애플 키가 서버에 없으면 받아도 보낼 수 없으니 켜지 않는다 (화면이 '받고 있어요' 라고 하지 않게)
+    if (!apnsConfigured()) return { ok: false, error: "앱 알림을 아직 보낼 수 없어요. 선생님께 알려 주세요 (서버 설정이 필요해요)." };
+    row = { endpoint: raw, p256dh: APNS_KEY_MARK, auth: APNS_KEY_MARK };
+  } else {
+    let endpoint: URL;
+    try {
+      endpoint = new URL(raw);
+    } catch {
+      return { ok: false, error: "구독 정보가 올바르지 않아요. 다시 시도해 주세요." };
+    }
+    if (endpoint.protocol !== "https:") return { ok: false, error: "안전하지 않은 구독 주소예요." };
+    // 브라우저 회사의 푸시 서비스 주소만 — 아무 주소나 받으면 우리 서버가 그 주소로 요청을 보내게 된다 (push-endpoint.ts)
+    if (!isPushServiceEndpoint(endpoint.href)) return { ok: false, error: "이 브라우저의 알림 주소는 받을 수 없어요. 크롬 · 사파리(홈 화면 앱)에서 다시 켜 주세요." };
+    const p256dh = String(input?.p256dh ?? "");
+    const auth = String(input?.auth ?? "");
+    if (!p256dh || !auth || p256dh.length > 200 || auth.length > 100 || !isPushKeyPair(p256dh, auth)) return { ok: false, error: "구독 키가 올바르지 않아요." };
+    row = { endpoint: endpoint.href, p256dh, auth };
   }
-  if (endpoint.protocol !== "https:") return { ok: false, error: "안전하지 않은 구독 주소예요." };
-  // 브라우저 회사의 푸시 서비스 주소만 — 아무 주소나 받으면 우리 서버가 그 주소로 요청을 보내게 된다 (push-endpoint.ts)
-  if (!isPushServiceEndpoint(endpoint.href)) return { ok: false, error: "이 브라우저의 알림 주소는 받을 수 없어요. 크롬 · 사파리(홈 화면 앱)에서 다시 켜 주세요." };
-  const p256dh = String(input?.p256dh ?? "");
-  const auth = String(input?.auth ?? "");
-  if (!p256dh || !auth || p256dh.length > 200 || auth.length > 100 || !isPushKeyPair(p256dh, auth)) return { ok: false, error: "구독 키가 올바르지 않아요." };
 
   const admin = createAdminClient();
   const { error } = await admin
     .from("push_subscriptions")
-    .upsert(
-      { user_id: userId, endpoint: endpoint.href, p256dh, auth, user_agent: String(input?.userAgent ?? "").slice(0, 300) || null },
-      { onConflict: "endpoint" },
-    );
+    .upsert({ user_id: userId, ...row, user_agent: String(input?.userAgent ?? "").slice(0, 300) || null }, { onConflict: "endpoint" });
   if (error) return { ok: false, error: "저장하지 못했어요. 잠시 후 다시 시도해 주세요." };
 
   // 기기 수의 끝 — 넘친 만큼 오래된 기기를 지운다. 지우다 실패해도 켜기는 된 것이다 (다음에 켤 때 다시 정리한다)
   const { data: mine } = await admin.from("push_subscriptions").select("id, endpoint").eq("user_id", userId).order("id", { ascending: false });
-  const drop = devicesOverLimit(mine ?? [], endpoint.href);
+  const drop = devicesOverLimit(mine ?? [], row.endpoint);
   if (drop.length > 0) await admin.from("push_subscriptions").delete().in("id", drop).eq("user_id", userId);
   return { ok: true };
 }

@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // 아이폰 앱 껍데기 (Capacitor · Xcode) — 웹사이트 코드가 아니다
+    "mobile/**",
   ]),
 ]);
 

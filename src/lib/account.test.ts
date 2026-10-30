@@ -13,7 +13,12 @@ describe("loginLabel — 로그인 방식", () => {
   });
 
   it("모르는 provider 는 그대로 둔다 — 새 로그인을 켜도 빈칸이 되지 않는다", () => {
-    expect(loginLabel(["apple"])).toBe("apple");
+    expect(loginLabel(["naver"])).toBe("naver");
+  });
+
+  it("Apple 로 로그인 (2026-10-30 — 아이폰 앱 · 웹)", () => {
+    expect(loginLabel(["apple"])).toBe("Apple");
+    expect(loginLabel(["email", "apple"])).toBe("이메일 · Apple");
   });
 
   it("없으면 빈 문자열 (화면에서 칸이 사라진다)", () => {

@@ -8,6 +8,9 @@ import { TestModeBanner } from "@/components/layout/TestModeBanner";
 import { PwaRegister } from "@/components/pwa/PwaRegister";
 import { PullToRefresh } from "@/components/pwa/PullToRefresh";
 import { VisibleViewportVars } from "@/components/layout/VisibleViewportVars";
+import { NativeAppBridge } from "@/components/native/NativeAppBridge";
+import { APP_HTML_ATTRIBUTE } from "@/lib/native-app";
+import { isAppRequest } from "@/lib/native-app-server";
 import { AppSplash } from "@/components/pwa/AppSplash";
 import { IOS_STARTUP_IMAGES } from "@/lib/ios-startup";
 import { getSessionProfile, getStudentAccess } from "@/lib/auth";
@@ -67,10 +70,12 @@ export const metadata: Metadata = {
 export const viewport: Viewport = BASE_VIEWPORT;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const [{ user, profile }, access] = await Promise.all([getSessionProfile(), getStudentAccess()]);
+  const [{ user, profile }, access, inApp] = await Promise.all([getSessionProfile(), getStudentAccess(), isAppRequest()]);
 
   return (
-    <html lang="ko">
+    // 아이폰 앱(mobile/)에서 열렸으면 표시를 단다 — CSS `.hide-in-app` 이 앱에서만 숨긴다 (src/lib/native-app.ts).
+    // 이 레이아웃은 로그인 쿠키를 읽어 원래 요청마다 그리므로 사용자 에이전트를 읽어도 미리 만들던 화면이 바뀌지 않는다
+    <html lang="ko" {...(inApp ? { [APP_HTML_ATTRIBUTE]: "ios" } : {})}>
       <head>
         <link
           rel="stylesheet"
@@ -91,6 +96,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <PwaRegister />
         {/* 아이폰 홈 화면 앱에서 키보드를 닫은 뒤 화면이 짧게 남을 때 막대 · 머리줄 · 팝업을 보이는 화면에 맞춘다 (2026-10-22, src/lib/bottom-nav.ts) */}
         <VisibleViewportVars />
+        {/* 아이폰 앱에서만 — 시작 화면 걷기 · 상태 표시줄 색 · 알림을 누르면 그 화면으로 (웹에서는 아무것도 하지 않는다) */}
+        <NativeAppBridge />
       </body>
     </html>
   );

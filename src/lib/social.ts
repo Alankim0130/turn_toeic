@@ -12,3 +12,10 @@ export const isSocialProvider = (v: unknown): v is SocialProvider =>
   typeof v === "string" && (SOCIAL_PROVIDERS as readonly string[]).includes(v);
 
 export const NO_SOCIAL_LOGINS: SocialLogins = { kakao: false, google: false };
+
+/**
+ * 로그인 화면이 그릴 간편 로그인 — 카카오 · 구글에 **Apple** 을 더한 것 (2026-10-30 아이폰 앱 — App Store 심사 4.8).
+ * Apple 은 Supabase OAuth 가 아니라 애플이 준 신분 토큰으로 들어가서(`src/lib/apple-auth.ts`) `SOCIAL_PROVIDERS` 에 넣지 않는다 —
+ * 넣으면 `signInWithSocial` 이 Apple 을 OAuth 로 보내 Supabase 의 Secret Key(6개월마다 바꿔야 한다)를 요구한다.
+ */
+export type LoginOptions = SocialLogins & { apple: boolean };

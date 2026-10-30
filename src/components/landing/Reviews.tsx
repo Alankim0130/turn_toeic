@@ -86,7 +86,7 @@ export function Reviews({ kind }: { kind: ReviewKind }) {
         <p className="mt-3 text-sm text-slate">{copy.desc}</p>
         {/* YBM 페이지의 후기 탭으로 (2026-10-01 Alan 제공 "후기 바로보기 링크") — 캡쳐 몇 장이 아니라 전체 후기를 볼 수 있는 곳 */}
         {kind === "ybm" && (
-          <a href={site.academy.ybmReviewUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary mt-5 !py-2.5 text-sm">
+          <a href={site.academy.ybmReviewUrl} target="_blank" rel="noopener noreferrer" className="hide-in-app btn-secondary mt-5 !py-2.5 text-sm">
             YBM 홈페이지에서 후기 바로보기
             <ExternalMark className="text-mist" />
             <span className="sr-only">(새 창)</span>

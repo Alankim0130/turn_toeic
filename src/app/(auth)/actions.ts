@@ -1,11 +1,28 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { after } from "next/server";
 import { isAuthWeakPasswordError } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { COMPLETE_PROFILE_PATH, isAdmin } from "@/lib/auth";
+import { afterLoginPath } from "@/lib/after-login";
+import {
+  APPLE_STATE_COOKIE,
+  APPLE_STATE_PATH,
+  appleAppClientId,
+  appleAuthorizeUrl,
+  appleRedirectUri,
+  appleServicesId,
+  appleWebReady,
+  keepAppleRefreshToken,
+  packAppleState,
+  randomToken,
+  rememberAppleName,
+  sha256Hex,
+} from "@/lib/apple-auth";
+import { APP_LOGIN_START } from "@/lib/app-login";
 import { CREW_ALERT_KINDS } from "@/lib/push";
 import { deleteSubscription } from "@/lib/push-subscription";
 import { getSocialLogins } from "@/lib/auth-providers";
@@ -65,6 +82,92 @@ export async function signInWithSocial(formData: FormData) {
   });
   if (error || !data.url) redirect(back);
   redirect(data.url);
+}
+
+// ─── Apple 로 로그인 · 아이폰 앱의 간편 로그인 (2026-10-30 — src/lib/apple-auth.ts · src/lib/native-app.ts) ───
+
+/**
+ * Apple 로 로그인 — 웹. 애플 로그인 화면으로 보내고, 애플이 `/auth/apple/callback` 으로 폼을 보내 끝난다 (form_post).
+ * state · nonce · 돌아갈 곳은 쿠키에 둔다 — 애플이 다른 사이트에서 폼을 보내므로 SameSite=None 이어야 그 요청에 실린다.
+ * 애플에 등록한 돌아올 주소가 정본 주소(site.url) 하나라, 다른 주소(프리뷰 · www)로 들어왔으면 정본 주소의 로그인 화면으로 보낸다 —
+ * 쿠키가 그 주소에 있어야 돌아왔을 때 읽힌다.
+ */
+export async function signInWithAppleWeb(formData: FormData) {
+  const next = safeNextPath(formData.get("next"));
+  const clientId = appleServicesId();
+  if (!clientId || !appleWebReady() || !(await getSocialLogins()).apple) redirect(`/login?error=apple&next=${encodeURIComponent(next)}`);
+  const home = new URL(site.url).origin;
+  if ((await requestOrigin()) !== home) redirect(`${home}/login?next=${encodeURIComponent(next)}`);
+
+  const state = randomToken();
+  const nonce = randomToken();
+  (await cookies()).set(APPLE_STATE_COOKIE, packAppleState({ state, nonce, next }), {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    path: APPLE_STATE_PATH,
+    maxAge: 600,
+  });
+  redirect(appleAuthorizeUrl({ clientId, redirectUri: appleRedirectUri(), state, nonceHash: sha256Hex(nonce) }));
+}
+
+export type AppLoginResult = { ok: true; to: string } | { ok: false; error: string };
+
+const APPLE_FAILED = "Apple 로그인을 마치지 못했어요. 다시 시도하거나 다른 방법으로 로그인해 주세요.";
+const SOCIAL_FAILED = "간편 로그인을 시작하지 못했어요. 잠시 후 다시 시도하거나 이메일로 로그인해 주세요.";
+const text = (v: unknown, max: number) => (typeof v === "string" && v.length > 0 && v.length <= max ? v : null);
+
+/**
+ * Apple 로 로그인 — 아이폰 앱. 앱의 Apple 로그인 창(`WinnerToeicPlugin.signInWithApple`)이 준 신분 토큰으로 이 기기(앱 화면)에 로그인한다.
+ * nonce 는 원래 값이 온다 — 애플에는 그 SHA-256 을 줬고 Supabase 가 대조한다. 돌아갈 곳을 돌려주면 앱 화면이 그리로 다시 연다.
+ * authorization code 는 탈퇴할 때 애플 연결을 끊으려고 refresh token 으로 바꿔 둔다 (응답 뒤에 — 못 해도 로그인은 된다).
+ */
+export async function signInWithAppleApp(input: {
+  identityToken: string;
+  authorizationCode?: string | null;
+  nonce: string;
+  givenName?: string | null;
+  familyName?: string | null;
+  next?: string | null;
+}): Promise<AppLoginResult> {
+  const token = text(input?.identityToken, 8000);
+  const nonce = text(input?.nonce, 200);
+  if (!token || !nonce || nonce.length < 16) return { ok: false, error: APPLE_FAILED };
+  const next = safeNextPath(input.next);
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.signInWithIdToken({ provider: "apple", token, nonce });
+  if (error || !data.user) {
+    console.error("[apple] 앱 로그인 실패", error?.message ?? "user 없음");
+    return { ok: false, error: APPLE_FAILED };
+  }
+  await rememberAppleName(supabase, data.user, text(input.givenName, 100), text(input.familyName, 100));
+  const code = text(input.authorizationCode, 4000);
+  if (code) {
+    const userId = data.user.id;
+    after(() => keepAppleRefreshToken(userId, code, appleAppClientId()));
+  }
+  revalidatePath("/", "layout");
+  return { ok: true, to: await afterLoginPath(supabase, data.user.id, next) };
+}
+
+/**
+ * 카카오 · 구글 로그인 — 아이폰 앱. 앱 화면(WKWebView) 안에서는 구글이 로그인을 막아서(disallowed_useragent) 앱 안 브라우저 창
+ * (ASWebAuthenticationSession)으로 연다. PKCE 검증값 쿠키는 **이 요청으로 앱 화면에** 두고, 로그인 창이 끝나면 `/auth/app-callback` 이
+ * code 를 앱(`winnertoeic://`)으로 넘긴다 → 앱 화면이 `/auth/callback` 으로 가져가 세션으로 바꾼다 (검증값이 있는 곳에서).
+ * 로그인 창은 우리 주소(`/auth/app-start`)에서 연다 — 아이폰이 "역전토익이(가) 로그인을 위해 'winnertoeic.com' 을 사용하려고 합니다" 로 묻는다.
+ */
+export async function startAppSocialLogin(provider: unknown, nextRaw: unknown): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  if (!isSocialProvider(provider) || !(await getSocialLogins())[provider]) return { ok: false, error: SOCIAL_FAILED };
+  const next = safeNextPath(nextRaw);
+  const origin = await requestOrigin();
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: { redirectTo: `${origin}/auth/app-callback?next=${encodeURIComponent(next)}` },
+  });
+  if (error || !data.url) return { ok: false, error: SOCIAL_FAILED };
+  return { ok: true, url: `${origin}${APP_LOGIN_START}?to=${encodeURIComponent(data.url)}` };
 }
 
 // 폼이 보내는 값만 받는다 — 화면에 없는 `other` 는 새로 저장하지 않는다 (2026-09-17 Alan: 여자·남자만).

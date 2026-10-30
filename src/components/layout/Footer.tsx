@@ -13,7 +13,8 @@ export function Footer() {
           <p className="mt-4 max-w-sm text-sm leading-relaxed text-slate">
             {site.academy.name} 역전토익. 이혜영(LC) · 이영수(RC) 강사가 함께하는 토익 전문 프로그램입니다.
           </p>
-          <p className="mt-3 text-xs text-mist">
+          {/* 앱(App Store)에서는 숨긴다 — 앱 밖 결제로 이끄는 링크 (hide-in-app, src/lib/native-app.ts) */}
+          <p className="hide-in-app mt-3 text-xs text-mist">
             수강 신청과 결제는{" "}
             <a href={site.academy.ybmUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-brand-600 underline-offset-2 hover:underline">
               YBM어학원 공식 사이트

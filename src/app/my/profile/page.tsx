@@ -6,8 +6,10 @@ import { Reveal } from "@/components/ui/Reveal";
 import { loginLabel } from "@/lib/account";
 import { pickPhoto, profilePhotoUrl } from "@/lib/avatar";
 import { signedAvatarUrl } from "@/lib/avatar-url";
+import { NON_DELETABLE_ROLES } from "@/lib/account-deletion";
 import { ProfileForm } from "./ProfileForm";
 import { AvatarEditor } from "./AvatarEditor";
+import { DeleteAccount } from "./DeleteAccount";
 
 export const metadata: Metadata = {
   title: "내 정보",
@@ -20,6 +22,7 @@ export const metadata: Metadata = {
  * 휴대폰 · 대학 · 학과 · 성별은 언제든 고친다. **실명은 등업 전까지만** 본인이 고친다 (`can_rename_self` —
  * 승인된 수강증·등록이 생기면 잠기고 선생님이 고친다). 등업신청의 이름 불일치 안내가 `?name=수강증이름` 으로
  * 보내면 그 이름을 칸에 미리 넣어 준다. 로그인 이메일·방법은 여기서 바꾸지 않는다.
+ * 맨 아래 **회원 탈퇴** (2026-10-30 — 웹 · 앱 같은 자리. App Store 심사 5.1.1(v) 가 앱 안에서 찾기 쉬운 탈퇴를 요구한다). 강사 · 관리자 · 조교 계정은 안내만.
  */
 export default async function ProfilePage({ searchParams }: { searchParams: Promise<{ name?: string }> }) {
   const [{ user, profile }, { name: suggested }] = await Promise.all([requireUser("/my/profile"), searchParams]);
@@ -76,6 +79,31 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
               suggestedName={typeof suggested === "string" ? suggested.trim().slice(0, 20) : undefined}
             />
           </div>
+        </section>
+      </Reveal>
+
+      <Reveal delay={90}>
+        <section className="card p-5 sm:p-6">
+          <h2 className="text-base font-black text-ink">회원 탈퇴</h2>
+          {NON_DELETABLE_ROLES.includes(profile?.role ?? "") ? (
+            <p className="mt-2 text-sm text-slate">강사 · 관리자 · 조교 계정은 여기서 탈퇴할 수 없어요. 계정을 없애려면 관리자에게 말씀해 주세요.</p>
+          ) : (
+            <>
+              <p className="mt-2 text-sm text-slate">탈퇴하면 계정과 이 사이트의 기록이 바로 모두 지워지고 되돌릴 수 없어요.</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate">
+                <li>내 정보(이름 · 연락처 · 학교)와 로그인 계정 — 하나로 합친 옛 계정도 함께</li>
+                <li>등업신청 기록과 올린 수강증, 숙제 · 비대면 스터디 인증 사진과 음성</li>
+                <li>출석 · 스터디 · 특강 신청 · 불라방 교재주문 · 알림 · 문의 · 수강생 설문</li>
+              </ul>
+              <p className="mt-2 text-xs text-mist">
+                YBM 수강 등록은 그대로예요 — 이 사이트의 기록만 지워져요. 다시 쓰려면 새로 가입하고 수강증을 올리면 돼요. 배송 전인 교재주문도 함께 지워지니 받을 교재가
+                있으면 받은 뒤에 탈퇴해 주세요.
+              </p>
+              <div className="mt-4">
+                <DeleteAccount />
+              </div>
+            </>
+          )}
         </section>
       </Reveal>
     </div>

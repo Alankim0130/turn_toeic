@@ -2,6 +2,8 @@
 
 # dependencies
 /node_modules
+# 아이폰 앱 (mobile/) 의존성 — 맥에서 `cd mobile && npm install` 로 받는다
+/mobile/node_modules
 /.pnp
 .pnp.*
 .yarn/*

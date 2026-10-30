@@ -1,9 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { safeNextPath } from "@/lib/safe-next";
 import { createClient } from "@/lib/supabase/server";
-import { COMPLETE_PROFILE_PATH, isProfileIncomplete } from "@/lib/auth";
+import { afterLoginPath } from "@/lib/after-login";
 
-/** 이메일 인증 링크 · 간편 로그인(구글·카카오, PKCE) → 세션 교환 */
+/**
+ * 이메일 인증 링크 · 간편 로그인(구글·카카오, PKCE) → 세션 교환.
+ * 아이폰 앱의 카카오 · 구글 로그인도 여기서 끝난다 — 앱 안 로그인 창이 `/auth/app-callback` 으로 앱에 넘긴 code 를 앱 화면이 이리로 가져온다
+ * (PKCE 검증값 쿠키는 앱 화면에 있다 — `startAppSocialLogin`).
+ */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
@@ -14,13 +18,8 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      // 간편 로그인으로 처음 들어온 계정은 실명·휴대폰이 없다 → 가입 정보부터 받는다 (requireUser 와 같은 판정)
-      const { data: profile, error: profileError } = await supabase.from("profiles").select("name, phone").eq("id", data.user.id).maybeSingle();
-      // 못 읽었으면(잠깐의 DB 오류) 가던 곳으로 — 그 화면의 requireUser 가 다시 보고, 정말 미완성이면 그때 입력 화면으로 보낸다 (2026-10-29 점검)
-      if (!profileError && isProfileIncomplete(profile)) {
-        return NextResponse.redirect(`${origin}${COMPLETE_PROFILE_PATH}?next=${encodeURIComponent(next)}`);
-      }
-      return NextResponse.redirect(`${origin}${next}`);
+      // 간편 로그인으로 처음 들어온 계정은 실명·휴대폰이 없다 → 가입 정보부터 받는다 (after-login.ts)
+      return NextResponse.redirect(`${origin}${await afterLoginPath(supabase, data.user.id, next)}`);
     }
   }
 

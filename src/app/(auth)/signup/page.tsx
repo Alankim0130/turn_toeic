@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Logo } from "@/components/ui/Logo";
+import { appleWebReady } from "@/lib/apple-auth";
 import { getSocialLogins } from "@/lib/auth-providers";
+import { isAppRequest } from "@/lib/native-app-server";
 import { SocialLogin } from "../SocialLogin";
 import { SignupForm } from "./SignupForm";
 
@@ -12,7 +14,7 @@ export const metadata: Metadata = {
 };
 
 export default async function SignupPage() {
-  const social = await getSocialLogins();
+  const [social, inApp] = await Promise.all([getSocialLogins(), isAppRequest()]);
   return (
     <>
       <div className="mb-6 flex flex-col items-center gap-3 text-center">
@@ -20,7 +22,7 @@ export default async function SignupPage() {
         <h1 className="text-xl font-black text-ink">회원가입</h1>
         <p className="text-sm text-slate">가입 후 수강증을 올리면 수강생으로 자동 등업됩니다.</p>
       </div>
-      <SocialLogin enabled={social} mode="signup" />
+      <SocialLogin enabled={social} appleWeb={appleWebReady()} inApp={inApp} mode="signup" />
       <SignupForm />
       <p className="mt-6 text-center text-sm text-slate">
         이미 회원이신가요?{" "}

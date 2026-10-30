@@ -42,7 +42,7 @@ export default async function ContactInquiryPage() {
               </span>
               <h2 className="mt-4 text-lg font-black text-ink">{site.academy.name}</h2>
               <p className="mt-1 text-sm text-slate">{site.academy.address}</p>
-              <a href={site.academy.ybmUrl} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex text-sm font-bold text-brand-600 hover:underline">
+              <a href={site.academy.ybmUrl} target="_blank" rel="noopener noreferrer" className="hide-in-app mt-4 inline-flex text-sm font-bold text-brand-600 hover:underline">
                 YBM 공식 페이지에서 수강 신청 →
               </a>
             </article>

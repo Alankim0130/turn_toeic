@@ -33,6 +33,19 @@ export function isPushServiceEndpoint(endpoint: string): boolean {
   return PUSH_SERVICE_HOSTS.some((suffix) => hostMatches(host, suffix));
 }
 
+/**
+ * 아이폰 앱(애플 푸시 APNs) 기기 주소 — `apns://production/<토큰>` · `apns://sandbox/<토큰>` (2026-10-30, `src/lib/native-app.ts` 의 `apnsEndpoint`).
+ * 토큰은 애플이 준 기기 토큰의 16진수(소문자, 지금은 64자 — 길이는 애플이 바꿀 수 있어 200자까지). 이 꼴이 아니면 null.
+ * 이 주소로는 우리 서버가 애플 서버(api.push.apple.com)에만 보낸다 — 아무 곳으로나 요청을 보내게 하는 길이 아니다 (`apns.ts`).
+ */
+export function parseApnsEndpoint(endpoint: string): { sandbox: boolean; token: string } | null {
+  const m = /^apns:\/\/(production|sandbox)\/([0-9a-f]{64,200})$/.exec(String(endpoint ?? ""));
+  return m ? { sandbox: m[1] === "sandbox", token: m[2] } : null;
+}
+
+/** 앱 기기 줄의 p256dh · auth 칸 — 웹 푸시 키가 없어서 이 글자를 둔다 (칸이 not null 이다) */
+export const APNS_KEY_MARK = "apns";
+
 /** URL 안전 base64 (브라우저가 주는 모양 — 끝의 = 는 있어도 된다) → 바이트. 다른 글자가 섞였으면 null */
 function base64UrlBytes(value: string): Buffer | null {
   if (!/^[A-Za-z0-9_-]+={0,2}$/.test(value)) return null;

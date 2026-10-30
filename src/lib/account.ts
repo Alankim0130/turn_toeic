@@ -7,10 +7,14 @@
  */
 
 /** Supabase provider → 사람이 읽는 이름. 목록은 src/lib/social.ts 의 SOCIAL_PROVIDERS 와 이메일 가입 */
+/** 회원 탈퇴 확인 칸에 적는 말 (`/my/profile` — `src/lib/account-deletion.ts`) */
+export const DELETE_CONFIRM_WORD = "탈퇴";
+
 export const LOGIN_LABEL: Record<string, string> = {
   email: "이메일",
   kakao: "카카오",
   google: "구글",
+  apple: "Apple",
 };
 
 /**

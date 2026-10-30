@@ -1,9 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AVATAR_BUCKET, isOwnAvatarPath } from "@/lib/avatar";
+import { DELETE_CONFIRM_WORD } from "@/lib/account";
+import { DELETION_ERROR, deleteAccount } from "@/lib/account-deletion";
 
 export type AvatarState = { error?: string; message?: string };
 
@@ -54,4 +58,30 @@ export async function removeMyAvatar(): Promise<AvatarState> {
   revalidatePath("/my", "layout");
   revalidatePath("/admin/students", "layout");
   return { message: "프로필 사진을 지웠어요." };
+}
+
+export type DeleteState = { error?: string };
+
+/**
+ * 회원 탈퇴 (2026-10-30 Alan "전부 지우기" — `src/lib/account-deletion.ts`). 확인 칸에 "탈퇴" 를 적어야 한다.
+ * **로그인 서버에 물어(getUser) 지금 로그인한 본인만** 지운다 — 화면이 보낸 id 를 받지 않는다. 계정을 지우는 일이라 서비스 롤을 쓴다.
+ * 끝나면 이 기기의 로그인을 지우고 로그인 화면으로 (`?bye=1` — 탈퇴했다는 안내).
+ */
+export async function deleteMyAccount(_prev: DeleteState, formData: FormData): Promise<DeleteState> {
+  if (String(formData.get("confirm") ?? "").trim() !== DELETE_CONFIRM_WORD) return { error: `확인 칸에 "${DELETE_CONFIRM_WORD}" 라고 적어 주세요.` };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "로그인이 필요합니다. 다시 로그인해 주세요." };
+
+  const result = await deleteAccount(createAdminClient(), user.id);
+  if (!result.ok) return { error: DELETION_ERROR[result.reason] };
+
+  // 계정이 없어졌으니 로그인 서버는 404 로 답한다 — supabase-js 는 그래도 이 기기의 세션을 지운다. 혹시 남으면 쿠키를 직접 지운다
+  await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+  const jar = await cookies();
+  for (const c of jar.getAll()) if (c.name.startsWith("sb-")) jar.delete(c.name);
+  revalidatePath("/", "layout");
+  redirect("/login?bye=1");
 }

@@ -224,7 +224,9 @@ describe("구독 키 · 기기 수 · 보내기 · 로그아웃 (2026-10-16 점�
   it("저장할 때 키를 보고, 기기 수를 정리한다 — 내 기기만 지운다", () => {
     const src = readFileSync("src/lib/push-subscription.ts", "utf8");
     expect(src).toMatch(/!isPushKeyPair\(p256dh, auth\)/);
-    expect(src).toMatch(/devicesOverLimit\(mine \?\? \[\], endpoint\.href\)/);
+    // 저장한 주소로 센다 — 웹 기기는 new URL().href, 아이폰 앱 기기는 apns://… 그대로 (2026-10-30)
+    expect(src).toMatch(/devicesOverLimit\(mine \?\? \[\], row\.endpoint\)/);
+    expect(src).toMatch(/row = \{ endpoint: endpoint\.href, p256dh, auth \};/);
     expect(src).toMatch(/\.delete\(\)\.in\("id", drop\)\.eq\("user_id", userId\)/);
   });
 
@@ -237,7 +239,8 @@ describe("구독 키 · 기기 수 · 보내기 · 로그아웃 (2026-10-16 점�
 
   it("알림 키가 틀린 모양이면 학생 알림을 가져가지 않는다 — 키를 실제로 넣어 보고 정한다 (예전에는 가져간 뒤 던져서 다 잃었다)", () => {
     const src = readFileSync("src/lib/push.ts", "utf8");
-    expect(src).toMatch(/export function pushConfigured\(\) \{\s*return configure\(\);\s*\}/);
+    // 앱 알림 키(애플 .p8)만 있어도 참 — 그때는 앱 기기로만 간다 (2026-10-30). 둘 다 못 쓰면 거짓이라 대기열을 가져가지 않는다
+    expect(src).toMatch(/export function pushConfigured\(\) \{\s*return configure\(\) \|\| apnsConfigured\(\);\s*\}/);
     expect(src).toMatch(/try \{\s*webpush\.setVapidDetails\(subject, publicKey, privateKey\);\s*return true;\s*\} catch/);
   });
 

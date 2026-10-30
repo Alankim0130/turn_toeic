@@ -6,6 +6,7 @@ import { InstructorCameo } from "@/components/ui/InstructorCameo";
 import { FeatureCard } from "@/components/student/FeatureCard";
 import { UnlockActions, unlockState } from "@/components/student/unlock";
 import { getStudentAccess, type StudentAccess } from "@/lib/auth";
+import { isAppRequest } from "@/lib/native-app-server";
 import { site, STUDENT_FEATURES, STUDENT_HUB } from "@/lib/site";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -23,9 +24,10 @@ export const metadata: Metadata = {
   },
 };
 
-const UNLOCK_STEPS: { icon: IconName; title: string; desc: string }[] = [
+/** webOnly — 아이폰 앱(App Store)에서는 빼는 단계 (앱 밖 결제로 이끄는 안내, 심사 3.1.1 — src/lib/native-app.ts) */
+const UNLOCK_STEPS: { icon: IconName; title: string; desc: string; webOnly?: boolean }[] = [
   { icon: "profile", title: "회원가입", desc: "실명으로 가입해요. 수강증의 이름과 같아야 해요." },
-  { icon: "location", title: "YBM에서 수강 신청", desc: "수강 신청과 결제는 YBM어학원 공식 사이트에서 해요." },
+  { icon: "location", title: "YBM에서 수강 신청", desc: "수강 신청과 결제는 YBM어학원 공식 사이트에서 해요.", webOnly: true },
   { icon: "upload", title: "수강증 올리기", desc: "등업신청에 수강증 사진이나 PDF를 올려요." },
   { icon: "success", title: "수강생전용 열림", desc: "확인이 끝나면 개강일부터 모든 기능이 열려요." },
 ];
@@ -64,7 +66,7 @@ function StatusBanner({ access }: { access: StudentAccess }) {
 }
 
 export default async function StudentHubPage({ searchParams }: { searchParams: Promise<{ feature?: string }> }) {
-  const [access, sp] = await Promise.all([getStudentAccess(), searchParams]);
+  const [access, sp, inApp] = await Promise.all([getStudentAccess(), searchParams, isAppRequest()]);
   const locked = !access.active;
   // 메뉴에서 잠긴 기능을 눌러 왔으면 그 카드를 강조한다
   const highlight = STUDENT_FEATURES.some((f) => f.key === sp.feature) ? sp.feature : null;
@@ -130,10 +132,10 @@ export default async function StudentHubPage({ searchParams }: { searchParams: P
               <h2 id="unlock-title" className="text-2xl font-black tracking-tight text-ink sm:text-3xl">
                 수강생이 되는 방법
               </h2>
-              <p className="mt-2 text-slate">결제는 YBM 공식 사이트에서, 등업은 이 사이트에서 수강증 한 장이면 끝나요.</p>
+              <p className="mt-2 text-slate">{inApp ? "등업은 수강증 한 장이면 끝나요." : "결제는 YBM 공식 사이트에서, 등업은 이 사이트에서 수강증 한 장이면 끝나요."}</p>
             </Reveal>
             <ol className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {UNLOCK_STEPS.map((s, i) => (
+              {UNLOCK_STEPS.filter((s) => !(inApp && s.webOnly)).map((s, i) => (
                 <Reveal key={s.title} as="li" delay={i * 90} className="card p-5">
                   <div className="flex items-center gap-3">
                     <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50">
@@ -148,7 +150,7 @@ export default async function StudentHubPage({ searchParams }: { searchParams: P
             </ol>
             <div className="mt-6 flex flex-wrap gap-2">
               <UnlockActions access={access} />
-              <a href={site.academy.ybmUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost">
+              <a href={site.academy.ybmUrl} target="_blank" rel="noopener noreferrer" className="hide-in-app btn-ghost">
                 YBM 공식 사이트 바로가기
               </a>
             </div>

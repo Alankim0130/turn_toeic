@@ -19,11 +19,12 @@ export function CTA() {
             <h2 id="cta-title" className="text-3xl font-black tracking-tight sm:text-4xl">
               이번 달, 점수를 뒤집을 차례
             </h2>
-            <p className="mt-3 text-white/85">
+            {/* 앱(App Store)에서는 앱 밖 결제로 이끄는 문구 · 버튼을 숨긴다 — hide-in-app (src/lib/native-app.ts) */}
+            <p className="hide-in-app mt-3 text-white/85">
               수강 신청과 결제는 YBM어학원 공식 사이트에서 진행됩니다. 신청 후 수강증을 올리면 이 사이트의 불라방·다시보기가 열립니다.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <a href={site.academy.ybmUrl} target="_blank" rel="noopener noreferrer" className="btn bg-white text-brand-700 hover:bg-brand-50 !px-6 !py-3.5 text-base">
+              <a href={site.academy.ybmUrl} target="_blank" rel="noopener noreferrer" className="hide-in-app btn bg-white text-brand-700 hover:bg-brand-50 !px-6 !py-3.5 text-base">
                 YBM 공식 사이트에서 수강 신청
               </a>
               <Link href="/my/verify" className="btn border border-white/50 text-white hover:bg-white/10 !px-6 !py-3.5 text-base">

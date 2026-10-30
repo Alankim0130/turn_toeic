@@ -9,3 +9,6 @@
 /supabase/
 /.claude/
 *.log
+
+# 아이폰 앱 (Capacitor · Xcode 프로젝트) — 웹사이트 배포에 쓰지 않는다. 맥에서 따로 빌드한다 (mobile/README.md)
+/mobile/
