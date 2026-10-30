@@ -58,7 +58,8 @@ export const NOTE_PREVIEW_CHARS = 200;
 
 /**
  * 안내를 접을지와 접었을 때 보일 앞부분. 글자는 코드 포인트로 센다(이모지를 반으로 자르지 않는다).
- * 줄 수 · 글자 수 둘 다 기준 안이면 접지 않는다 — 다섯 줄짜리 짧은 안내를 "전체 보기" 뒤에 숨기지 않게
+ * 줄 수 · 글자 수 둘 다 기준 안이면 접지 않는다 — 다섯 줄짜리 짧은 안내를 "전체 보기" 뒤에 숨기지 않게.
+ * **표(· 사진)가 들어 있으면 늘 접고, 앞부분은 표 앞에서 끊는다** (아래 `foldPlain`)
  */
 export function notePreview(note: string): { folded: boolean; preview: string; chars: number } {
   return foldPlain(runsText(trimRuns(parseNote(note))));
@@ -66,19 +67,36 @@ export function notePreview(note: string): { folded: boolean; preview: string; c
 
 /**
  * 서식(`note-format.ts`)을 살린 채 접기 — 접을지 · 몇 자인지 · 앞부분은 **학생에게 보이는 글자**로 정하고(태그는 세지 않는다),
- * 앞부분을 그만큼 서식째 자른다. `MaterialNote` 가 그린다
+ * 앞부분을 그만큼 서식째 자른다. `MaterialNote` 가 그린다. `tables` · `images` 는 접힌 글에 든 표 · 사진 수 — `전체 보기` 옆에 적는다
  */
-export function noteView(note: string): { folded: boolean; preview: NoteRun[]; full: NoteRun[]; aligns: NoteAlign[]; chars: number } {
+export function noteView(note: string): {
+  folded: boolean;
+  preview: NoteRun[];
+  full: NoteRun[];
+  aligns: NoteAlign[];
+  chars: number;
+  tables: number;
+  images: number;
+} {
   const { runs: full, aligns } = trimDoc(parseDoc(note));
   const { folded, preview, chars } = foldPlain(runsText(full));
-  return { folded, preview: folded ? sliceRuns(full, Array.from(preview).length) : full, full, aligns, chars };
+  const tables = full.filter((r) => r.style.table).length;
+  const images = full.filter((r) => r.style.img).length;
+  return { folded, preview: folded ? sliceRuns(full, Array.from(preview).length) : full, full, aligns, chars, tables, images };
 }
 
+/**
+ * 표 · 사진(글에서 한 글자 `OBJ`)이 하나라도 있으면 짧아도 접는다 (2026-10-30 — 강사님 "표가 있는경우는 접어서 보기를 해도 접히지가 않아서
+ * 파일올린거를 한눈에 보기가 좀 힘든데"). 표는 한 글자로 세어져 짧은 안내로 펼쳐 두거나, 앞 네 줄 안에 표 줄이 통째로 들어가
+ * 큰 표가 회차 자료 목록을 화면 몇 장씩 밀어냈다. 그래서 앞부분은 **첫 표 앞에서** 끊는다 — 표는 `전체 보기` 를 눌러야 보인다
+ */
 function foldPlain(text: string): { folded: boolean; preview: string; chars: number } {
   const chars = charCount(text);
   const lines = text.split("\n");
-  if (lines.length <= NOTE_FOLD_LINES && chars <= NOTE_FOLD_CHARS) return { folded: false, preview: text, chars };
-  const head = Array.from(lines.slice(0, NOTE_PREVIEW_LINES).join("\n")).slice(0, NOTE_PREVIEW_CHARS).join("").trimEnd();
+  const hasObj = text.includes(OBJ);
+  if (!hasObj && lines.length <= NOTE_FOLD_LINES && chars <= NOTE_FOLD_CHARS) return { folded: false, preview: text, chars };
+  const beforeObj = hasObj ? text.slice(0, text.indexOf(OBJ)) : text;
+  const head = Array.from(beforeObj.split("\n").slice(0, NOTE_PREVIEW_LINES).join("\n")).slice(0, NOTE_PREVIEW_CHARS).join("").trimEnd();
   return { folded: true, preview: head, chars };
 }
 
