@@ -271,10 +271,12 @@ describe("표 (2026-10-07 Alan — 다른 블로그에서 붙여 넣은 표)", (
     expect(defaultMaterialTitle([], tableToNote(ALAN))).toBe("수업 자료");
   });
 
-  it("접기 — 표는 한 줄 · 한 글자로 세어 짧은 안내 + 표는 펼쳐 둔다", () => {
+  it("접기 — 표가 있으면 짧은 안내여도 접고 앞부분은 표 앞까지 (2026-10-30 — 2026-10-07 ~ 10-30 에는 펼쳐 뒀다) · 글자 수는 표를 한 글자로", () => {
     const v = noteView(`아래 표를 외워 오세요\n${tableToNote(ALAN)}`);
-    expect(v.folded).toBe(false);
+    expect(v.folded).toBe(true);
+    expect(v.preview).toEqual([{ text: "아래 표를 외워 오세요", style: {} }]);
     expect(v.full[1].style.table).toEqual(ALAN);
+    expect(v.tables).toBe(1);
     expect(v.chars).toBe("아래 표를 외워 오세요\n".length + 1);
   });
 });

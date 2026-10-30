@@ -12,6 +12,8 @@ import { FoldButton } from "./FoldButton";
  * - **짧은 안내는 예전처럼 늘 펼쳐 둔다** ("수업 전에 출력해 오세요" 를 접어 두면 아무도 안 연다).
  * - **길면(스크립트) 앞 네 줄만 보이고 `전체 보기` 로 편다** (`notePreview`) — 다 펴 두면 자료 하나가 화면 몇 장을 먹어
  *   다음 회차 자료가 한참 아래로 밀린다.
+ * - **표가 들어 있으면 짧아도 접고, 앞부분은 표 앞에서 끊는다** (2026-10-30 — 강사님 "표가 있는경우는 접어서 보기를 해도 접히지가 않아서
+ *   파일올린거를 한눈에 보기가 좀 힘든데"). `전체 보기` 옆에 `표 1개` 를 적어 펼치면 표가 있다는 것을 알린다 (학생 · 관리자 모두).
  * - 접기는 `<details>` 라 펼치는 데 자바스크립트가 없다 — 서버 컴포넌트(학생 화면) · 클라이언트 컴포넌트(관리자 줄) 어디서든 쓴다.
  *   펼친 글 끝의 `접기`(`FoldButton`)만 클라이언트다 — 긴 스크립트를 다 읽고 위의 `접기` 까지 거슬러 올라가지 않게.
  * - 줄바꿈은 적은 그대로다 — 스크립트의 화자 줄(M: · W:)이 한 덩어리로 뭉개지지 않게. 줄마다 정렬이 다를 수 있다.
@@ -25,6 +27,7 @@ import { FoldButton } from "./FoldButton";
 export function MaterialNote({ note, className, showCount = false, linkify = false }: { note: string; className?: string; showCount?: boolean; linkify?: boolean }) {
   const view = noteView(note);
   const { folded, aligns, chars } = view;
+  const extras = [view.tables > 0 && `표 ${view.tables}개`, view.images > 0 && `사진 ${view.images}장`, showCount && `${chars.toLocaleString("ko-KR")}자`].filter(Boolean);
   const full = linkify ? linkRuns(view.full) : view.full;
   const preview = !linkify ? view.preview : folded ? sliceRuns(full, runsLength(view.preview)) : full;
   const box = cn("rounded-xl px-3 py-2 text-sm leading-relaxed text-ink-soft", className);
@@ -42,7 +45,7 @@ export function MaterialNote({ note, className, showCount = false, linkify = fal
             <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <span className="group-open:hidden">
-            전체 보기{showCount && <> · {chars.toLocaleString("ko-KR")}자</>}
+            전체 보기{extras.map((x) => ` · ${x}`).join("")}
           </span>
           <span className="hidden group-open:inline">접기</span>
         </span>
