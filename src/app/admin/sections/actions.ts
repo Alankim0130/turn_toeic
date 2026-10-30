@@ -11,6 +11,7 @@ import type { Database } from "@/lib/supabase/database.types";
 import { isYmd, labelKo } from "@/components/admin/sections/dates";
 import { isLectureKind, sortLectureKinds, todayKST } from "@/lib/utils";
 import { restoreLectureIds } from "@/lib/lecture";
+import { LECTURE_MATERIAL_BUCKET } from "@/lib/lecture-materials";
 import { SUBJECT_LABEL } from "@/lib/instructor-subject";
 import { timetableRowOf } from "@/lib/timetable-row";
 import type { AutoOpenSummary } from "@/lib/month-open";
@@ -101,6 +102,30 @@ const listDates = (csv?: string | null) =>
     .map((d) => labelKo(d))
     .join(", ");
 
+/**
+ * 달력 저장으로 빠질 특강(그 달 특강 중 이번에 보내지 않는 id)의 특강 자료실 파일 경로 — 저장이 끝난 뒤 저장소에서 지운다.
+ * 특강이 지워지면 자료 · 파일 행은 cascade 로 사라지지만 저장소 파일은 남기 때문이다. 못 읽으면 빈 목록(지우지 않는다)
+ */
+async function lectureMaterialPathsToDrop(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  year: number,
+  month: number,
+  toSave: readonly { id: number | null }[],
+): Promise<string[]> {
+  const { data: term } = await supabase.from("terms").select("id").eq("year", year).eq("month", month).maybeSingle();
+  if (!term) return [];
+  const { data: existing, error } = await supabase.from("special_lectures").select("id").eq("term_id", term.id);
+  if (error || !existing?.length) return [];
+  const keep = new Set(toSave.map((l) => l.id).filter((id): id is number => id !== null));
+  const dropping = existing.map((l) => l.id).filter((id) => !keep.has(id));
+  if (dropping.length === 0) return [];
+  const { data: files } = await supabase
+    .from("special_lecture_material_files")
+    .select("file_path, material:special_lecture_materials!inner(lecture_id)")
+    .in("material.lecture_id", dropping);
+  return (files ?? []).map((f) => f.file_path);
+}
+
 export async function saveTermSchedule(input: TermScheduleInput): Promise<TermScheduleResult> {
   await requireStaff();
 
@@ -183,6 +208,10 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
       ).map(({ id, date, lecturer_id, content, kinds }) => ({ id, date, lecturer_id, content, kinds }));
     }
   }
+  // 달력에서 빠지는 특강의 **특강 자료실 파일**(2026-10-30) — 자료 · 파일 행은 특강과 함께 지워지지만(on delete cascade) 저장소 파일은 남는다.
+  // 저장이 성공한 뒤에 지우려고 경로를 먼저 읽어 둔다. 못 읽으면 지우지 않는다 (가리키는 행이 없어 아무에게도 안 보인다)
+  const orphanPaths = parts.includes("lectures") ? await lectureMaterialPathsToDrop(supabase, year, month, toSave) : [];
+
   const { data, error } = await supabase.rpc("save_term_schedule", {
     p_year: year,
     p_month: month,
@@ -219,6 +248,7 @@ export async function saveTermSchedule(input: TermScheduleInput): Promise<TermSc
     return { ok: false, error: RPC_ERROR[error.message] ?? rlsMessage(error.code) };
   }
 
+  if (orphanPaths.length) await supabase.storage.from(LECTURE_MATERIAL_BUCKET).remove(orphanPaths);
   revalidateSchedule();
   const res = (data ?? {}) as { mwf?: number; ttf?: number; lectures?: number; sections?: number };
   // 평달은 반이 저절로 열린다 (2026-10-22 Alan "방학달 1,2,7,8월만 강사가 직접 반을 열어야하고 나머지는 자동으로") — 그 달 반이 하나도 없을 때만.

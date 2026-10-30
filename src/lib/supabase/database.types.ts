@@ -1903,6 +1903,98 @@ export type Database = {
           },
         ]
       }
+      special_lecture_material_files: {
+        Row: {
+          content_type: string | null
+          created_at: string
+          file_name: string
+          file_path: string
+          file_size: number | null
+          id: number
+          material_id: number
+          sort_order: number
+        }
+        Insert: {
+          content_type?: string | null
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          id?: number
+          material_id: number
+          sort_order?: number
+        }
+        Update: {
+          content_type?: string | null
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          id?: number
+          material_id?: number
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "special_lecture_material_files_material_id_fkey"
+            columns: ["material_id"]
+            isOneToOne: false
+            referencedRelation: "special_lecture_materials"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      special_lecture_materials: {
+        Row: {
+          created_at: string
+          id: number
+          lecture_id: number
+          links: Json
+          note: string | null
+          sort_order: number
+          title: string
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          lecture_id: number
+          links?: Json
+          note?: string | null
+          sort_order?: number
+          title: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          lecture_id?: number
+          links?: Json
+          note?: string | null
+          sort_order?: number
+          title?: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "special_lecture_materials_lecture_id_fkey"
+            columns: ["lecture_id"]
+            isOneToOne: false
+            referencedRelation: "special_lectures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "special_lecture_materials_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       special_lecture_ways: {
         Row: {
           applied_count: number

@@ -11,6 +11,8 @@ import { TermChips } from "@/components/admin/TermChips";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { LectureOpenButton } from "@/components/admin/lectures/LectureOpenButton";
 import { LectureSettingsForm } from "@/components/admin/lectures/LectureSettingsForm";
+import { LectureMaterialsPanel } from "@/components/admin/lectures/LectureMaterialsPanel";
+import { groupLectureMaterials } from "@/lib/lecture-materials";
 import { LECTURE_STATE_CLASS, LECTURE_STATE_LABEL, lectureState, lectureTitle } from "@/lib/lecture";
 import { termParam } from "@/lib/study";
 import { pickTerm } from "../../_lib/queries";
@@ -24,6 +26,7 @@ export const metadata: Metadata = { title: "특강 설정", robots: { index: fal
  * 특강 신청 화면의 `특강 설정` 버튼이 여기로 온다. 맨 위 종류 버튼(RC특강 · LC특강 · 1차 · 2차 모의고사)으로 고르고, 특강마다
  * **신청 받기 · 취소**(누르는 순간) · **신청 방식마다 받기 · 신청 조건 · 정원** · **안내**(저장)를 정한다.
  * 날짜 · 강사 · 무슨 특강 · 메모는 반 편성 달력에서 정한다.
+ * **특강 자료실**(2026-10-30 Alan — "신청한 사람들만 보이는 자료실")도 특강마다 여기서 올린다 — 그 특강을 신청한 학생만 특강 신청 화면에서 본다.
  */
 export default async function LectureSettingsPage({ searchParams }: { searchParams: Promise<{ term?: string; type?: string }> }) {
   await requireStaff();
@@ -58,6 +61,18 @@ export default async function LectureSettingsPage({ searchParams }: { searchPara
   const { lectures, error } = await getTermLectures(supabase, term.id);
   const type = pickLectureType(lectures, sp.type, today);
   const ofType = lectures.filter((l) => lectureTypeOf(l) === type);
+  // 특강 자료실 — 보고 있는 종류의 특강 자료 (강사 · 관리자는 정책이 전부 연다). 표가 아직 없으면(배포 사이) 빈 채로 — 자료 칸만 "읽지 못했어요"
+  const materialsRes =
+    ofType.length > 0
+      ? await supabase
+          .from("special_lecture_materials")
+          .select("id, lecture_id, title, note, links, sort_order, created_at, updated_at, files:special_lecture_material_files(id, file_name, file_size, content_type, sort_order)")
+          .in(
+            "lecture_id",
+            ofType.map((l) => l.id),
+          )
+      : { data: [], error: null };
+  const materialsByLecture = groupLectureMaterials(materialsRes.data);
 
   return (
     <>
@@ -122,6 +137,11 @@ export default async function LectureSettingsPage({ searchParams }: { searchPara
                   }))}
                   notice={l.notice}
                 />
+                {materialsRes.error ? (
+                  <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">특강 자료실을 읽지 못했어요. 데이터베이스 업데이트가 아직 적용되지 않았거나 잠깐 연결이 끊겼어요.</p>
+                ) : (
+                  <LectureMaterialsPanel lectureId={l.id} materials={materialsByLecture.get(l.id) ?? []} signups={l.applied_count} />
+                )}
               </div>
             </section>
           );

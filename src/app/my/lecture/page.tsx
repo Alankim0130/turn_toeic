@@ -30,7 +30,8 @@ import { MaterialNote } from "@/components/class-materials/MaterialNote";
 import { InstructorCameo } from "@/components/ui/InstructorCameo";
 import { LectureCancelButton, LectureSignupFlow, type WayChoice } from "@/components/my/LectureSignup";
 import { BreakableUrl, YBM_REVIEW_GUIDE_ID, YbmReviewGuide } from "@/components/my/YbmReviewGuide";
-import { getMyLectures, getMyLectureSignups, getMyStudyEligibility } from "../_lib/queries";
+import { LectureMaterials } from "@/components/my/LectureMaterials";
+import { getMyLectureMaterials, getMyLectures, getMyLectureSignups, getMyStudyEligibility } from "../_lib/queries";
 
 export const metadata: Metadata = { title: "특강 신청", robots: { index: false } };
 
@@ -40,6 +41,8 @@ export default async function MyLecturePage() {
   if (g.locked) return g.locked;
   const [lectures, mySignups, { subjectsByTerm, untilByTerm }] = g.data;
   const today = todayKST();
+  // 특강 자료실 — 내가 신청한 특강의 자료만 (2026-10-30 Alan "신청한 사람들만 보이는 자료실"). 정책이 막지만 신청한 특강 id 로 한 번 더 좁힌다
+  const materialsByLecture = await getMyLectureMaterials([...mySignups.keys()]);
   // 단과 학생은 제 과목 특강만 (2026-10-12 Alan — "RC 단과반은 LC특강신청이 안되고, LC단과는 RC특강신청이 안되도록"). 막는 것은 DB 트리거이고 여기서는 버튼을 그리지 않는다
   const blockedFor = (l: (typeof lectures)[number]) => (mySignups.has(l.id) ? [] : lectureSubjectBlock(l.kinds, subjectsByTerm.get(l.term_id) ?? new Set<string>()));
   // 내 수업이 끝난 뒤의 특강 — 2주완성은 앞 절반 수업 기간의 특강만 (2026-10-22 오류 점검, DB private.lecture_in_my_term). 버튼 대신 까닭을 적는다
@@ -182,6 +185,8 @@ export default async function MyLecturePage() {
                         </div>
                       ))}
                       {!canCancel && <p className="text-right text-xs text-slate">신청이 마감돼 직접 취소할 수 없어요. 강사에게 말씀해 주세요.</p>}
+                      {/* 특강 자료실 — 강사가 올린 시험지 · 해설 · 영상 링크. 신청한 학생에게만 (2026-10-30) */}
+                      <LectureMaterials materials={materialsByLecture.get(l.id) ?? []} />
                     </div>
                   ) : state === "open" || state === "full" ? (
                     <div className="mt-auto">

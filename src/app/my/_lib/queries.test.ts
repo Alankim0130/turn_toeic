@@ -64,6 +64,9 @@ const WIDE_OPEN_TABLES = [
   "class_notices",
   // 공지 첨부 파일 (2026-10-13 — 공지 하나에 0 ~ 20개) — 부모 공지가 보이는 사람에게 열리므로 강사 · 관리자에게는 전부다. 학생 화면은 공지와 함께 임베드로 읽는다
   "class_notice_files",
+  // 특강 자료실 (2026-10-30 — 그 특강을 신청한 학생 · 강사 · 관리자) — 강사 · 관리자에게는 전부다. 학생 화면은 내가 신청한 특강 id 로 좁히고 파일은 자료와 함께 임베드로 읽는다
+  "special_lecture_materials",
+  "special_lecture_material_files",
   // 사람으로 열리는 것 — 정책이 `본인 or 스태프(조교)` 라 스태프에게는 **모든 학생의 행**이 내려온다
   "homework_submissions",
   "enrollment_orders",
@@ -93,6 +96,7 @@ const NARROWERS: [RegExp, string][] = [
   [/\.eq\("id", (?:data\.)?user(?:\.id|Id)\)/, "내 프로필"],
   [/from_user\.eq\./, "내 계정이 걸린 통합 신청 (from_user · to_user)"],
   [/\.in\("(?:section_id|study_id)"/, "부른 쪽이 준 내 반 · 내 스터디 목록"],
+  [/\.in\("lecture_id", \[\.\.\.lectureIds\]\)/, "부른 쪽이 준 내가 신청한 특강 목록 (getMyLectureSignups 의 키 — 특강 자료실)"],
   [/signupTerms/, "내 등록에서 뽑은 기수 (getMyStudyEligibility)"],
   [/\broundCells\(|\bcellLevels\(|\broundDates\(/, "내 과정 칸 · 열린 회차 (class-rounds — DB private.my_round_cells · my_open_rounds)"],
 ];
