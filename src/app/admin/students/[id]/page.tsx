@@ -19,11 +19,13 @@ import { pickPhoto, safePhotoUrl } from "@/lib/avatar";
 import { signedAvatarUrl } from "@/lib/avatar-url";
 import { StudentReceipts, type StudentReceipt } from "@/components/admin/students/StudentReceipts";
 import { StudentSurveyCard } from "@/components/admin/students/StudentSurveyCard";
+import { StudentHomeworkRates } from "@/components/admin/students/StudentHomeworkRates";
 import { receiptFacts, receiptNameMismatch, receiptVerdict } from "@/lib/receipt-history";
 import type { PickerSection } from "@/components/admin/SectionPicker";
 import { enrollmentLines, enrollmentPhases, GENDER_LABEL, pickTerm, termLabel, TERM_COLUMNS } from "../../_lib/queries";
 import { orderPhase } from "@/lib/enrollment-window";
 import { termParam } from "@/lib/study";
+import { loadStudentHomeworkRates } from "../_lib/homework-rates";
 
 export const metadata: Metadata = { title: "학생 관리", robots: { index: false } };
 
@@ -57,7 +59,7 @@ export default async function StudentDetailPage({
     .maybeSingle();
   if (!student) notFound();
 
-  const [{ data: enrollments }, { data: orders }, { data: terms }, { data: verifications }, survey, optout] = await Promise.all([
+  const [{ data: enrollments }, { data: orders }, { data: terms }, { data: verifications }, survey, optout, homework] = await Promise.all([
     supabase
       .from("enrollments")
       .select(
@@ -78,6 +80,8 @@ export default async function StudentDetailPage({
     // 수강생 설문 (2026-10-28) — 강사 · 관리자 세션으로 읽는다 (정책이 강사 · 관리자 · 본인만 연다) · 지금 숙제 미제출 알림 스위치
     supabase.from("student_surveys").select("*").eq("user_id", id).maybeSingle(),
     supabase.from("homework_missing_optouts").select("user_id").eq("user_id", id).maybeSingle(),
+    // 숙제 제출률 — 달마다 (2026-10-30) · 숙제 미제출 알림과 같은 셈 (`src/lib/homework-rate.ts`)
+    loadStudentHomeworkRates(supabase, id),
   ]);
 
   // 수강증 그림 — 로그인한 사람의 세션으로 서명 URL (storage receipts 정책이 crew 에게 열려 있다). 지운 원본은 만들지 않는다
@@ -242,6 +246,20 @@ export default async function StudentDetailPage({
               테스터 계정이에요. 진짜 등급을 학생으로 내리면 관리자 화면을 잃어요 — 테스트는 아래 <b>테스트 등급</b>으로 하세요.
             </p>
           )}
+        </section>
+
+        {/* 숙제 제출률 — 달마다 (2026-10-30 Alan 이 받은 연락 "이 학생이 이떄까지 숙제를 어떻게 했는지 보이고/ 숙제 제출률 … 퍼센트로 보이게, 각 달별루요!") */}
+        <section aria-labelledby="homework-rate-title" className="card p-5 lg:col-span-2">
+          <h2 id="homework-rate-title" className="mb-1 text-lg font-black text-ink">
+            숙제 제출률
+          </h2>
+          <p className="mb-4 text-sm text-slate">달마다 기한이 지난 숙제 중 몇 개를 냈는지예요. 최근 달부터 보여 줘요.</p>
+          <StudentHomeworkRates
+            months={homework.months}
+            ok={homework.ok}
+            today={today}
+            searchHref={student.name?.trim() ? `/admin/homework?q=${encodeURIComponent(student.name.trim().slice(0, 40))}` : null}
+          />
         </section>
 
         {/* 수강생 설문 (2026-10-28 Alan — OT 설문을 웹으로, "볼 수 있는사람은 관리자, 강사만") */}

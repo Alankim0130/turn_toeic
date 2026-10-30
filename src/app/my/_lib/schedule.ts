@@ -167,6 +167,9 @@ export async function getMySchedule() {
     // (주5일 판정은 넘기지 않는다: 여기 `week5` 는 **등록한 반**으로만 잡은 것이고,
     //  화면이 쓰는 `getMyWeek5()` 는 **접근 가능한 반 전체**로 잡아 서로 다른 집합이다)
     orders,
+    // 마이페이지의 이번 달 숙제 제출률(2026-10-30)이 그대로 쓴다 — 내 반 수업일과 품는 관계를 다시 묻지 않게
+    sessionRows: rows,
+    includes,
     signupLectures,
     mySignups,
     total: sessions.length,

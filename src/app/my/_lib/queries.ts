@@ -591,6 +591,24 @@ export async function getMyHomework(filter?: { level?: number; subject?: string 
 export type MyHomework = Awaited<ReturnType<typeof getMyHomework>>[number];
 
 /**
+ * 숙제 제출률(마이페이지 카드, 2026-10-30)에 쓰는 내 숙제 — 수업일 · 레벨 · 과목만 (사진 · 질문 · 코멘트는 읽지 않는다).
+ * **`user_id` 로 좁힌다** — 정책 `homework_submissions: 본인·스태프 조회` 는 스태프에게 모든 학생의 제출을 연다 (머리말). 1,000줄씩 나눠 읽는다
+ */
+export async function getMyHomeworkSlots() {
+  const user = await getSessionUser();
+  if (!user) return { rows: [] as { class_date: string | null; level: number; subject: string }[], ok: true };
+  const supabase = await createClient();
+  return readAll<{ class_date: string | null; level: number; subject: string }>((from, to, count) =>
+    supabase
+      .from("homework_submissions")
+      .select("class_date, level, subject", count ? { count: "exact" } : undefined)
+      .eq("user_id", user.id)
+      .order("id")
+      .range(from, to),
+  );
+}
+
+/**
  * 숙제 미제출 알림을 받는가 — **기본은 받는다**, 숙제제출 화면에서 '알림 안 받기' 를 누른 학생만 거짓 (2026-10-15 Alan —
  * "숙제 미제출알림 신청하는거 반대로 부탁해! 알림 안받기를 신청하는걸로 하자").
  * **`user_id` 로 좁힌다** — 정책 `homework_missing_optouts: 본인·스태프·조교 조회` 는 강사 · 관리자 · 조교에게 모든 학생의 안 받기를 연다 (머리말).

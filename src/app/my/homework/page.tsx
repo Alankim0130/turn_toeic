@@ -3,6 +3,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { HomeworkAlertCard } from "@/components/my/homework/HomeworkAlertCard";
 import { HomeworkCalendar, type HomeworkDay, type HomeworkMonth } from "@/components/my/homework/HomeworkCalendar";
 import { SubmissionCard } from "@/components/my/homework/SubmissionCard";
+import { HomeworkRateCard } from "@/components/my/homework/HomeworkRateCard";
 import type { CalendarMark } from "@/components/my/MonthCalendar";
 import { requireUser } from "@/lib/auth";
 import { initialMonth } from "@/lib/class-day";
@@ -10,7 +11,8 @@ import { levelsOfDay } from "@/lib/homework";
 import { classNotStartedYet, type DaySection, expectedSlotsOfDay, firstClassStart, homeworkStartDay, kstDayMinute, minuteLabel, sentKey } from "@/lib/homework-day";
 import { studentDue } from "@/lib/homework-missing";
 import { formatDate, todayKST } from "@/lib/utils";
-import { getHomeworkDueDates, getHomeworkLevels, getMyHomework, getMyHomeworkAlert, getMyOrders, getMySessions, getMyStudyEligibility } from "../_lib/queries";
+import { getHomeworkDueDates, getHomeworkLevels, getMyHomework, getMyHomeworkAlert, getMyOrders, getMySectionIncludes, getMySessions, getMyStudyEligibility } from "../_lib/queries";
+import { myHomeworkRates } from "../_lib/homework-rate";
 
 export const metadata: Metadata = {
   title: "숙제업로드",
@@ -26,14 +28,17 @@ type Course = { target_score?: number | null; includes_levels?: number[] | null 
  * 넘길 수 있더라도 반·기수 전체를 실어 보낼 이유가 없다 (내 시간표와 같은 규칙).
  */
 export default async function HomeworkPage() {
-  const [{ user }, sessions, levels, mine, { opensOn, untilByTerm }, alertOn, orders] = await Promise.all([
+  // 이번 달 숙제 제출률(2026-10-30)에 쓰는 품는 관계 — 지금 수강 중인 기수만, 다른 조회와 함께 묻는다
+  const eligibilityP = getMyStudyEligibility();
+  const [{ user }, sessions, levels, mine, { opensOn, untilByTerm, accessTerms }, alertOn, orders, includes] = await Promise.all([
     requireUser("/my/homework"),
     getMySessions(),
     getHomeworkLevels(),
     getMyHomework(),
-    getMyStudyEligibility(),
+    eligibilityP,
     getMyHomeworkAlert(),
     getMyOrders(),
+    eligibilityP.then((e) => getMySectionIncludes([...e.accessTerms])),
   ]);
   const today = todayKST();
 
@@ -56,6 +61,8 @@ export default async function HomeworkPage() {
 
   // 숙제 기한 = 같은 트랙의 다음 수업일 오후 5시 (2026-10-14 Alan) — 날짜는 반 편성 달력에서. 못 읽으면 기한 줄을 그리지 않는다
   const due = await getHomeworkDueDates([...byDate.keys()]);
+  // 이번 달 숙제 제출률 — 선생님 화면(학생 관리 · 숙제 미제출 알림)과 같은 셈. 기한을 못 읽으면 그리지 않는다 (틀린 % 를 적느니)
+  const rates = due ? myHomeworkRates({ sessions, orders, includes, submissions: mine, due, levels, terms: accessTerms }) : [];
   // 그 날 낼 숙제 칸 ("레벨|과목") — 처음 고르는 날(`homeworkStartDay`)이 "다 냈나" 를 본다. 화면으로는 넘기지 않는다
   const expectOf = new Map<string, string[]>();
   const days: HomeworkDay[] = [...byDate.entries()]
@@ -154,8 +161,12 @@ export default async function HomeworkPage() {
 
   return (
     <div className="space-y-8">
-      {/* 숙제 미제출 알림 (2026-10-15 Alan) — 기본으로 받고, 스위치로 끈 학생만 선생님의 미제출 알림 명단에서 빠진다 (2026-10-23 부터 켜고 끄는 스위치) */}
-      <HomeworkAlertCard on={alertOn} />
+      <div className="space-y-3">
+        {/* 숙제 미제출 알림 (2026-10-15 Alan) — 기본으로 받고, 스위치로 끈 학생만 선생님의 미제출 알림 명단에서 빠진다 (2026-10-23 부터 켜고 끄는 스위치) */}
+        <HomeworkAlertCard on={alertOn} />
+        {/* 이번 달 숙제 제출률 (2026-10-30 — "본인이 이번달에 얼마나 열씨미 했는지도 볼수있게") — 달력을 밀어내지 않게 작은 카드 */}
+        <HomeworkRateCard rows={rates} compact />
+      </div>
 
       <HomeworkCalendar
         userId={user.id}

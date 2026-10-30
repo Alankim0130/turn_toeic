@@ -22,9 +22,10 @@ import {
   type MissingDay,
   type MissingDayStudent,
   type MissingRow,
-  type MissingStatus,
 } from "@/lib/homework-missing";
 import { cn, TRACK_LABEL } from "@/lib/utils";
+// 제출률 단계의 색 — 학생 관리의 숙제 제출률과 함께 쓴다 (2026-10-30)
+import { STATUS_BADGE, STATUS_DOT } from "./status-tone";
 
 export type MissingColumnView = {
   date: string;
@@ -60,15 +61,6 @@ export type MissingDayView = Omit<MissingDay, "missing"> & {
   missing: (MissingDayStudent & { sent: string | null; alerted: boolean })[];
 };
 
-/** 제출률 단계의 색 — 구조는 첫토익, 색은 우리 핫핑크 */
-const STATUS_DOT: Record<MissingStatus, string> = { perfect: "bg-brand-500", good: "bg-brand-300", warn: "bg-amber-400", risk: "bg-red-500", none: "bg-line" };
-const STATUS_BADGE: Record<MissingStatus, string> = {
-  perfect: "bg-brand-500 text-white",
-  good: "bg-brand-100 text-brand-700",
-  warn: "bg-amber-100 text-amber-800",
-  risk: "bg-red-100 text-red-700",
-  none: "bg-surface text-mist",
-};
 const CELL_LABEL: Record<MissingCell, string> = { done: "냄", missing: "안 냄 (기한 지남)", upcoming: "아직 (기한 전)", none: "해당 없음 (반에 들어오기 전)" };
 const MARK_CLASS: Record<MissingCell, string> = { done: "hw-mark-done", missing: "hw-mark-missing", upcoming: "hw-mark-upcoming", none: "hw-mark-none" };
 

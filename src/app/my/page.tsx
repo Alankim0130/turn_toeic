@@ -8,6 +8,7 @@ import { InstallApp } from "@/components/pwa/InstallApp";
 import { PushPrompt } from "@/components/push/PushPrompt";
 import { MonthSchedule } from "@/components/my/MonthSchedule";
 import { AttendanceRate } from "@/components/my/AttendanceRate";
+import { HomeworkRateCard } from "@/components/my/homework/HomeworkRateCard";
 import { ProfilePhoto } from "@/components/layout/ProfilePhoto";
 import { MyScoreCard } from "@/components/my/MyScoreCard";
 import { createClient } from "@/lib/supabase/server";
@@ -21,6 +22,7 @@ import { heldMonth } from "@/lib/verify-decision";
 import { needsVerifyCard } from "@/lib/verify-card";
 import { collapseWeek5, pairKey, studentTrackLabel, week5SectionIds, type Week5Section } from "@/lib/week5";
 import { getMySchedule } from "./_lib/schedule";
+import { myHomeworkRates } from "./_lib/homework-rate";
 import {
   getMyVerifications,
   monthOf,
@@ -31,6 +33,10 @@ import {
   getMyMergeRequests,
   getUnreadMessageCount,
   getMySurvey,
+  getHomeworkDueDates,
+  getHomeworkLevels,
+  getMyHomeworkSlots,
+  getMyStudyEligibility,
 } from "./_lib/queries";
 
 export const metadata: Metadata = {
@@ -95,20 +101,36 @@ function recordedTracksOf(
 }
 
 export default async function MyPage({ searchParams }: { searchParams: Promise<{ welcome?: string; denied?: string }> }) {
-  const [{ profile, user }, uploadedPhoto, sp, verifications, accessibleWeek5, schedule, mergeRequests, unread, attendance, survey] = await Promise.all([
+  const scheduleP = getMySchedule();
+  /**
+   * 이번 달 숙제 제출률 (2026-10-30 — "본인이 이번달에 얼마나 열씨미 했는지도 볼수있게") — 내 시간표가 이미 읽은 내 수업일 · 품는 관계 · 등록을 그대로 쓰고
+   * 내 숙제(수업일 · 레벨 · 과목만) · 교재 레벨 목록은 함께, 기한만 수업일을 받은 뒤에 묻는다. 무엇이든 못 읽으면 카드를 그리지 않는다 (틀린 % 를 적느니)
+   */
+  const slotsP = getMyHomeworkSlots();
+  const levelsP = getHomeworkLevels();
+  const homeworkRateP = scheduleP.then(async (sch) => {
+    const { accessTerms } = await getMyStudyEligibility(sch.orders);
+    const dates = sch.sessionRows.filter((r) => r.section && accessTerms.has(r.section.term_id)).map((r) => r.date);
+    if (dates.length === 0) return [];
+    const [due, slots, levels] = await Promise.all([getHomeworkDueDates(dates), slotsP, levelsP]);
+    if (!due || !slots.ok) return [];
+    return myHomeworkRates({ sessions: sch.sessionRows, orders: sch.orders, includes: sch.includes, submissions: slots.rows, due, levels, terms: accessTerms });
+  });
+  const [{ profile, user }, uploadedPhoto, sp, verifications, accessibleWeek5, schedule, mergeRequests, unread, attendance, survey, homeworkRates] = await Promise.all([
     requireUser("/my"),
     // 직접 올린 사진의 주소는 프로필을 받자마자 이어서 만든다 — 다른 조회가 끝나기를 기다리지 않게 (2026-10-09 화면 전환 속도)
     getSessionProfile().then(async ({ profile }) => signedAvatarUrl(await createClient(), profile?.avatar_path)),
     searchParams,
     getMyVerifications(),
     getMyWeek5(),
-    getMySchedule(),
+    scheduleP,
     getMyMergeRequests(),
     getUnreadMessageCount(),
     // 이번 기수 내 출석률 (2026-09-22 Alan — "마이페이지에서 확인하면 동기부여"). 현장 반이 없으면 빈 배열
     createClient().then((s) => s.rpc("my_attendance_summary")).then((r) => r.data ?? []),
     // 지금 점수 · 목표 (수강생 설문 — 레이아웃이 이미 물었다, 같은 요청이라 다시 묻지 않는다)
     getMySurvey(),
+    homeworkRateP,
   ]);
 
   // 내가 신청하지 않은 통합 요청 = 이 계정에서 확인해야 합쳐진다 (2026-09-18 Alan)
@@ -337,6 +359,13 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
           {attendance.length > 0 && (
             <Reveal delay={60}>
               <AttendanceRate rows={attendance} />
+            </Reveal>
+          )}
+
+          {/* 이번 달 숙제 제출률 (2026-10-30) — 지금 수강 중인 달이 있을 때만. 불라방 학생도 숙제를 내므로 출석률과 따로 선다 */}
+          {homeworkRates.length > 0 && (
+            <Reveal delay={75}>
+              <HomeworkRateCard rows={homeworkRates} link />
             </Reveal>
           )}
 
