@@ -263,13 +263,16 @@ describe("소스 — 보이는 화면에 붙는 것은 전부 보정값을 쓴�
   it("바닥에 붙는 막대는 전부 .bar-above-nav — 'sticky bottom-…' 을 손으로 적지 않는다", () => {
     const hand = files.filter((f) => /\bsticky\b[^"'`]*\bbottom-/.test(read(f)) || /\bbottom-[^"'`]*\bsticky\b/.test(read(f)));
     expect(hand).toEqual([]);
-    const users = files.filter((f) => /className="[^"]*\bbar-above-nav\b/.test(read(f))).sort();
+    // 클래스 글자 어디든 (`cn("…", 조건 && "bar-above-nav …")` 처럼 조건에 따라 붙이는 막대도 센다)
+    const users = files.filter((f) => /"[^"\n]*\bbar-above-nav\b[^"\n]*"/.test(read(f))).sort();
     expect(users).toEqual(
       [
         "src/components/admin/board/BulkSelect.tsx",
         "src/components/admin/homework/MissingBoard.tsx",
         "src/components/admin/sections/BulkCreateSections.tsx",
         "src/components/admin/sections/TermCalendar.tsx",
+        // 숙제 제출 막대 — 고른 사진 · 음성이 있을 때만 (2026-10-30)
+        "src/components/my/homework/HomeworkUploadForm.tsx",
       ].sort(),
     );
   });

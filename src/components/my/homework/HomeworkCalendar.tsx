@@ -7,8 +7,11 @@ import { classDayLabel, HOMEWORK_SUBJECTS, homeworkLabel, SUBJECT_DESC, SUBJECT_
 import { isFutureClass } from "@/lib/homework-day";
 import { dueLabel, HOMEWORK_DUE_LABEL, shortDay } from "@/lib/homework-missing";
 import { cn, formatDate } from "@/lib/utils";
-import { HomeworkUploadForm } from "./HomeworkUploadForm";
+import { HomeworkUploadForm, type UploadState } from "./HomeworkUploadForm";
 import { SubmissionCard, type SubmissionLite } from "./SubmissionCard";
+
+/** 고른 사진 · 음성을 아직 안 냈는데 다른 날짜 · 과목 · 달로 바꾸려 할 때 (2026-10-30) */
+const LEAVE_CONFIRM = "아직 내지 않은 숙제가 있어요. 바꾸면 고른 사진 · 음성 · 질문이 지워져요. 바꿀까요?";
 
 /** 달력 한 달치 — 서버가 만들어서 넘긴다 */
 export type HomeworkMonth = { year: number; month: number; marks: CalendarMark[]; initial: string | null };
@@ -32,6 +35,10 @@ export type HomeworkDay = { date: string; course: string; levels: number[]; due?
  * 아무 레벨이나 낼 수 있었다. 이제 **내가 그 날 실제로 듣는 반**이 레벨을 정한다 — 3단계로 되돌리지 말 것.
  *
  * **비대면 스터디 인증과는 완전히 다른 화면이다** — 그쪽은 `/my/study` 의 `CheckinPanel` 이다.
+ *
+ * **고른 것을 아직 안 냈으면 날짜 · 과목 · 달을 바꾸기 전에 묻는다** (2026-10-30 문라경 학생 — "분명 제출하고 확인했는데 그 이후에 들어갔을 때 제출란에 아무것도 없었습니다").
+ * 예전에는 LC 사진을 고른 채 RC 제출을 누르거나 다른 날짜를 누르면 고른 사진이 **아무 말 없이** 사라졌다 (올리기 폼이 새로 그려진다).
+ * 올리는 중에는 바꾸지 않는다 — 폼이 사라져도 올리기는 끝까지 가서, 끝나며 새로 연 칸까지 닫아 버린다. 내고 나면 그 날짜 · 과목으로 **"냈어요"** 를 적고 그 카드를 강조한다.
  */
 export function HomeworkCalendar({
   userId,
@@ -52,6 +59,11 @@ export function HomeworkCalendar({
   const month = months[mi];
   const [picked, setPicked] = useState<string | null>(month?.initial ?? null);
   const [target, setTarget] = useState<{ level: number; subject: HomeworkSubject } | null>(null);
+  /** 열린 올리기 폼의 상태 — 아직 안 낸 것이 있나 · 올리는 중인가 */
+  const [upload, setUpload] = useState<UploadState>("idle");
+  /** 방금 낸 숙제 — "냈어요" 줄과 카드 강조 (다른 날짜 · 과목을 고르면 지운다) */
+  const [sent, setSent] = useState<{ id: number; date: string; label: string } | null>(null);
+  const busy = upload === "busy";
 
   if (!month) return null;
 
@@ -60,23 +72,33 @@ export function HomeworkCalendar({
   const ofDay = submissions.filter((s) => s.class_date === picked);
   const countOf = (level: number, subject: string) => ofDay.filter((s) => s.level === level && s.subject === subject).length;
 
+  /** 바꿔도 되나 — 올리는 중이면 안 되고, 고른 것을 아직 안 냈으면 묻는다 (머리말) */
+  const canLeave = () => !busy && (upload !== "picked" || window.confirm(LEAVE_CONFIRM));
   const goMonth = (next: number) => {
     const m = months[next];
-    if (!m) return;
+    if (!m || !canLeave()) return;
     setMi(next);
     setPicked(m.initial);
     setTarget(null);
+    setSent(null);
   };
   const pickDay = (date: string) => {
+    if (!canLeave()) return;
     setPicked(date);
     setTarget(null);
+    setSent(null);
+  };
+  const pickTarget = (next: { level: number; subject: HomeworkSubject } | null) => {
+    if (!canLeave()) return;
+    setTarget(next);
+    setSent(null);
   };
 
   return (
     <div className="space-y-5">
       {months.length > 1 && (
         <div className="flex items-center justify-center gap-2">
-          <button type="button" onClick={() => goMonth(mi - 1)} disabled={mi === 0} className="btn-ghost !px-3 !py-1.5 disabled:opacity-30" aria-label="지난달">
+          <button type="button" onClick={() => goMonth(mi - 1)} disabled={mi === 0 || busy} className="btn-ghost !px-3 !py-1.5 disabled:opacity-30" aria-label="지난달">
             ‹
           </button>
           <span className="min-w-28 text-center font-black text-ink">
@@ -85,7 +107,7 @@ export function HomeworkCalendar({
           <button
             type="button"
             onClick={() => goMonth(mi + 1)}
-            disabled={mi === months.length - 1}
+            disabled={mi === months.length - 1 || busy}
             className="btn-ghost !px-3 !py-1.5 disabled:opacity-30"
             aria-label="다음달"
           >
@@ -97,7 +119,8 @@ export function HomeworkCalendar({
       <div className="grid items-start gap-4 lg:grid-cols-[1.1fr_1fr]">
         <MonthCalendar year={month.year} month={month.month} marks={month.marks} today={today} selected={picked} onSelect={pickDay} />
 
-        <section className="card overflow-hidden" aria-label="고른 날짜의 숙제">
+        {/* overflow-clip — hidden 이면 그 안의 제출 막대(bar-above-nav)가 화면 바닥에 붙지 못한다 */}
+        <section className="card overflow-clip" aria-label="고른 날짜의 숙제">
           {!day ? (
             <p className="px-5 py-10 text-center text-sm text-slate">달력에서 수업이 있는 날을 눌러 주세요.</p>
           ) : (
@@ -134,6 +157,16 @@ export function HomeworkCalendar({
                   )
                 )}
 
+                {/* 방금 낸 숙제 — 어느 날짜 · 과목으로 들어갔는지 그 자리에서 보인다 */}
+                {sent && sent.date === day.date && !target && (
+                  <p role="status" className="flex items-center gap-1.5 rounded-xl2 border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-bold text-brand-700">
+                    <Icon name="success" size={18} />
+                    <span className="min-w-0">
+                      {classDayLabel(sent.date)} 수업 · {sent.label} 숙제를 냈어요. 아래 목록에서 확인할 수 있어요.
+                    </span>
+                  </p>
+                )}
+
                 {/* 레벨마다 RC·LC 두 칸. 중급속성·실전속성이면 레벨이 둘이라 네 칸이 된다 */}
                 {!future && day.levels.map((level) => (
                   <div key={level}>
@@ -147,9 +180,10 @@ export function HomeworkCalendar({
                             key={subject}
                             type="button"
                             aria-pressed={on}
-                            onClick={() => setTarget(on ? null : { level, subject })}
+                            disabled={busy}
+                            onClick={() => pickTarget(on ? null : { level, subject })}
                             className={cn(
-                              "flex items-center gap-2 rounded-xl2 border px-3 py-2.5 text-left transition",
+                              "flex items-center gap-2 rounded-xl2 border px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-60",
                               on ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200" : "border-line bg-paper hover:border-brand-300 hover:bg-brand-50/50",
                             )}
                           >
@@ -178,7 +212,11 @@ export function HomeworkCalendar({
                       level={target.level}
                       subject={target.subject}
                       classDate={day.date}
-                      onDone={() => setTarget(null)}
+                      onStateChange={setUpload}
+                      onDone={(id) => {
+                        setSent({ id, date: day.date, label: homeworkLabel(target.level, target.subject) });
+                        setTarget(null);
+                      }}
                     />
                   </div>
                 )}
@@ -202,7 +240,7 @@ export function HomeworkCalendar({
           <ul className="grid gap-4 lg:grid-cols-2">
             {ofDay.map((s) => (
               <li key={s.id}>
-                <SubmissionCard submission={s} />
+                <SubmissionCard submission={s} highlight={s.id === sent?.id} />
               </li>
             ))}
           </ul>
