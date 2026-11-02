@@ -101,7 +101,24 @@ function compare(a: ReplaySection, b: ReplaySection): number {
   );
 }
 
-export const replayTargets = { isSparta, isContainer, isPackage, isEvening, uploadable, levelOf, levels, groupLabel, compare };
+/**
+ * **처음 여는 달(기수) = 다음 수업이 남은 달** (2026-11-02 Alan — 10월 반이 열린 화면을 보고
+ * "지난달 영상기록이 아직 남아있는것 같은데? 지난달껀 다 내려가고 11월달에 새로 올라가는것들이 업로드 작업이 되어야지!").
+ *
+ * 예전에는 개강일~종강일 안인 반을 먼저 골랐다. 그런데 종강일은 **다시보기를 여는 날짜**라 마지막 수업보다 뒤로 잡는다(10월 반 — 종강 11/2) —
+ * 수업이 다 끝나 올릴 것이 없는 지난달이 그동안 계속 먼저 열렸고, 드롭다운에도 지난달 · 지지난달 반이 함께 쌓였다.
+ * 그래서 학생 관리의 '반 배정 추가' 와 같은 규칙으로 **다음 수업일(오늘 포함)의 기수**를 먼저 연다. 오늘 수업이 있는 달이면 그 달이다.
+ * 다음 수업일을 못 읽으면 지금 수업 중인 달, 그것도 없으면 가장 최근 달. **지난 달은 지우지 않는다** — 달 칩으로 그대로 연다.
+ *
+ * @param termIds 목록에 있는 기수 id — 최근 달이 앞
+ */
+function defaultTerm(termIds: readonly number[], opts: { upcoming: number | null; running: number | null }): number | null {
+  if (opts.upcoming != null && termIds.includes(opts.upcoming)) return opts.upcoming;
+  if (opts.running != null && termIds.includes(opts.running)) return opts.running;
+  return termIds[0] ?? null;
+}
+
+export const replayTargets = { isSparta, isContainer, isPackage, isEvening, uploadable, levelOf, levels, groupLabel, compare, defaultTerm };
 
 /** 화면이 쓰는 트랙 이름표의 타입만 빌려 온다 (값은 utils 한곳) */
 export type TrackLabel = typeof TRACK_LABEL;

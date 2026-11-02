@@ -112,3 +112,26 @@ describe("묶음 이름 · 순서", () => {
     expect([SPARTA, MWF_1000].sort(replayTargets.compare).map((s: { id: number }) => s.id)).toEqual([3, 7]);
   });
 });
+
+describe("처음 여는 달 — 다음 수업이 남은 달 (2026-11-02 Alan: '지난달껀 다 내려가고 11월달에 새로 올라가는것들이')", () => {
+  // 최근 달이 앞: 11월 · 10월 · 9월
+  const terms = [11, 10, 9];
+
+  it("10월 수업이 다 끝나고 종강일(다시보기)만 남았으면 — 다음 수업이 있는 11월", () => {
+    expect(replayTargets.defaultTerm(terms, { upcoming: 11, running: 10 })).toBe(11);
+  });
+
+  it("오늘 10월 수업이 있으면(다음 수업일이 오늘) 10월", () => {
+    expect(replayTargets.defaultTerm(terms, { upcoming: 10, running: 10 })).toBe(10);
+  });
+
+  it("다음 수업일을 못 읽으면 지금 수업 중인 달, 그것도 없으면 가장 최근 달", () => {
+    expect(replayTargets.defaultTerm(terms, { upcoming: null, running: 10 })).toBe(10);
+    expect(replayTargets.defaultTerm(terms, { upcoming: null, running: null })).toBe(11);
+  });
+
+  it("다음 수업의 달에 올릴 반이 없으면(목록에 없음) 그 달을 고르지 않는다", () => {
+    expect(replayTargets.defaultTerm([10, 9], { upcoming: 11, running: 10 })).toBe(10);
+    expect(replayTargets.defaultTerm([], { upcoming: 11, running: null })).toBeNull();
+  });
+});

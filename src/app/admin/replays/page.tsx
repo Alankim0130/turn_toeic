@@ -13,15 +13,18 @@ import { SUBJECT_LABEL, subjectOf } from "@/lib/instructor-subject";
 import { replayTargets } from "@/lib/replay-targets";
 import { timeBlockOf } from "@/components/admin/sections/bulk";
 import { FilterTabs } from "@/components/admin/FilterTabs";
+import { TermChips } from "@/components/admin/TermChips";
+import { termParam } from "@/lib/study";
 
 export const metadata: Metadata = { title: "다시보기 등록", robots: { index: false } };
 
-export default async function AdminReplaysPage({ searchParams }: { searchParams: Promise<{ section?: string; level?: string }> }) {
+export default async function AdminReplaysPage({ searchParams }: { searchParams: Promise<{ section?: string; level?: string; term?: string }> }) {
   const { user, profile } = await requireStaff();
-  const { section: sectionParam, level: levelParam } = await searchParams;
+  const { section: sectionParam, level: levelParam, term: termKeyParam } = await searchParams;
   const supabase = await createClient();
+  const today = todayKST();
 
-  const [{ data: sections }, { data: usedRows }, { data: slots }] = await Promise.all([
+  const [{ data: sections }, { data: usedRows }, { data: slots }, { data: nextClass }] = await Promise.all([
     supabase
       .from("class_sections")
       .select(
@@ -33,6 +36,8 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
     supabase.from("session_dates").select("section_id, replays!inner(id)"),
     // 저녁 줄 = 시간표에서 `화목금 인강` 이 켜진 시간대. **시각을 코드에 적지 않는다** (도메인 규칙 1)
     supabase.from("timetable_slots").select("start_time, end_time, ttf_recorded").eq("ttf_recorded", true),
+    // 다음 수업일(오늘 포함)의 기수 — 처음 여는 달 (2026-11-02, `replayTargets.defaultTerm`). 못 읽으면 지금 수업 중인 달
+    supabase.from("term_class_dates").select("term_id").gte("date", today).order("date").limit(1).maybeSingle(),
   ]);
 
   const list = sections ?? [];
@@ -51,22 +56,44 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
    * 주소로 들어온 반이 있으면 **그 반의 레벨**을 켜 준다 (인강 반 안내의 오전 짝 링크가 다른 레벨일 수 있다).
    */
   const listable = list.filter((s) => canUpload(s) || hasReplay.has(s.id));
-  const levelTabs = replayTargets.levels(listable);
+  const running = (s: (typeof list)[number]) => s.enrollment_opens_at <= today && today <= s.closes_at;
+
+  /**
+   * **달(기수) 칩 — 처음에는 다음 수업이 남은 달** (2026-11-02 Alan "지난달껀 다 내려가고 11월달에 새로 올라가는것들이 업로드 작업이 되어야지!").
+   * 예전에는 모든 달의 반이 드롭다운 하나에 쌓이고 종강일(다시보기를 여는 날 — 마지막 수업보다 뒤)까지 지난달 반이 먼저 열렸다.
+   * 지난 달은 지우지 않는다 — 칩으로 그대로 연다 (녹화본을 고치거나 지울 길이 남아야 한다). 주소로 들어온 반은 그 반의 달이다.
+   */
+  const termById = new Map<number, { id: number; year: number; month: number }>();
+  for (const s of [...listable, ...(requestedSection ? [requestedSection] : [])]) {
+    if (s.term_id != null && s.term) termById.set(s.term_id, { id: s.term_id, year: s.term.year, month: s.term.month });
+  }
+  const termList = [...termById.values()].sort((a, b) => b.year * 12 + b.month - (a.year * 12 + a.month));
+  const currentTermId =
+    requestedSection?.term_id ??
+    termList.find((t) => termParam(t.year, t.month) === termKeyParam)?.id ??
+    replayTargets.defaultTerm(
+      termList.map((t) => t.id),
+      { upcoming: nextClass?.term_id ?? null, running: listable.find(running)?.term_id ?? null },
+    );
+  const currentTerm = currentTermId != null ? (termById.get(currentTermId) ?? null) : null;
+  const currentTermKey = currentTerm ? termParam(currentTerm.year, currentTerm.month) : null;
+  const inTerm = (s: (typeof list)[number]) => currentTermId == null || s.term_id === currentTermId;
+  const termListable = listable.filter(inTerm);
+
+  const levelTabs = replayTargets.levels(termListable);
   const currentLevel = levelTabs.includes(Number(levelParam))
     ? Number(levelParam)
     : (requestedSection && replayTargets.levelOf(requestedSection)) || levelTabs[0] || null;
   const inLevel = (s: (typeof list)[number]) => currentLevel == null || replayTargets.levelOf(s) === currentLevel;
 
-  // 기본으로 여는 반은 **지금 개강일~종강일 안인 반** 먼저 — 다음 달 반을 미리 열어 두면 id 가 더 커서
-  // 아직 시작도 안 한 다음 달 반이 먼저 열렸다 (2026-09-22 점검)
-  const today = todayKST();
-  const running = (s: (typeof list)[number]) => s.enrollment_opens_at <= today && today <= s.closes_at;
+  // 그 달 안에서 기본으로 여는 반은 **지금 개강일~종강일 안인 반** 먼저, 그다음 모집 중인 반 — 둘 다 목록 순서(레벨 → 시간 → 트랙)로
+  const ordered = termListable.slice().sort(replayTargets.compare);
   const selected =
     requestedSection ||
-    listable.find((s) => running(s) && s.status === "open" && canUpload(s) && inLevel(s)) ||
-    listable.find((s) => s.status === "open" && canUpload(s) && inLevel(s)) ||
-    listable.find((s) => inLevel(s)) ||
-    list.find((s) => inLevel(s)) ||
+    ordered.find((s) => running(s) && s.status === "open" && canUpload(s) && inLevel(s)) ||
+    ordered.find((s) => s.status === "open" && canUpload(s) && inLevel(s)) ||
+    ordered.find((s) => inLevel(s)) ||
+    list.find((s) => inTerm(s) && inLevel(s)) ||
     null;
 
   const [{ data: sessions }, { data: pairRows }] = await Promise.all([
@@ -99,7 +126,7 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
    * 단 **이미 녹화본이 붙은 반은 남긴다** — 목록에서 빼면 그 기록을 고치거나 지울 길이 없어진다.
    */
   // 고른 반은 레벨이 달라도 늘 목록에 둔다 — 안 그러면 드롭다운이 빈 값을 가리킨다
-  const shown = list.filter((s) => s.id === selected?.id || (inLevel(s) && (canUpload(s) || hasReplay.has(s.id)))).sort(replayTargets.compare);
+  const shown = list.filter((s) => s.id === selected?.id || (inTerm(s) && inLevel(s) && (canUpload(s) || hasReplay.has(s.id)))).sort(replayTargets.compare);
 
   const options = shown.map((s) => {
     const pkg = replayTargets.isPackage(s, packages);
@@ -145,11 +172,21 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
       ) : (
         <>
           <section className="card p-5">
-            {/* 레벨 버튼 — 누르면 `section` 은 버린다. 안 버리면 다른 레벨 반이 고른 채로 남는다 */}
+            {/* 달 칩 — 처음에는 다음 수업이 남은 달. 지난 달은 칩으로 연다 (2026-11-02). 누르면 `section` 은 버리고 레벨은 남긴다 */}
+            {termList.length > 1 && (
+              <TermChips
+                basePath="/admin/replays"
+                terms={termList}
+                current={currentTermKey}
+                keep={{ level: currentLevel != null ? String(currentLevel) : undefined }}
+              />
+            )}
+            {/* 레벨 버튼 — 누르면 `section` 은 버린다. 안 버리면 다른 레벨 반이 고른 채로 남는다. 달은 남긴다 */}
             {levelTabs.length > 1 && (
               <FilterTabs
                 basePath="/admin/replays"
                 paramKey="level"
+                keep={{ term: currentTermKey ?? undefined }}
                 current={String(currentLevel ?? "")}
                 tabs={levelTabs.map((n) => ({ value: String(n), label: `${n}` }))}
               />
@@ -161,7 +198,9 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
                 <span>
                   종강일 <strong className="text-ink">{formatDate(selected.closes_at)}</strong>
                 </span>
-                <span className="text-xs">종강일까지 수강생이 시청할 수 있어요</span>
+                <span className="text-xs">
+                  {selected.closes_at < today ? "종강해서 수강생에게는 더 보이지 않아요 — 기록만 남아 있어요" : "종강일까지 수강생이 시청할 수 있어요"}
+                </span>
                 <span className="ml-auto text-xs font-bold text-brand-600">
                   등록 {registered} / {sessions?.length ?? 0}회차
                 </span>
