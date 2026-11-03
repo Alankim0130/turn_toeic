@@ -19,7 +19,7 @@ export function MaterialFileList({
   files: readonly MaterialFile[];
   className?: string;
   /** 파일 주소 앞부분 — 수업자료는 `/files/class`, 공지 첨부 파일은 `/files/notice` (2026-10-13), 직원 게시판은 `/files/board` (2026-10-21) */
-  base?: "/files/class" | "/files/notice" | "/files/board" | "/files/lecture";
+  base?: "/files/class" | "/files/notice" | "/files/board" | "/files/lecture" | "/files/teacher";
 }) {
   return (
     <ul aria-label="첨부 파일" className={cn("divide-y divide-line overflow-hidden rounded-xl border border-line bg-paper", className)}>

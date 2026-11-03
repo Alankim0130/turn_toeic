@@ -67,6 +67,11 @@ const WIDE_OPEN_TABLES = [
   // 특강 자료실 (2026-10-30 — 그 특강을 신청한 학생 · 강사 · 관리자) — 강사 · 관리자에게는 전부다. 학생 화면은 내가 신청한 특강 id 로 좁히고 파일은 자료와 함께 임베드로 읽는다
   "special_lecture_materials",
   "special_lecture_material_files",
+  // 강사 자료 게시판 (2026-11-03 — 폴더를 쓰는 달 · 과정 칸의 학생, 그 회차 수업일부터 · private.my_term_cells · my_open_term_rounds). 강사 · 관리자에게는 전부다.
+  // 학생 화면(getMyClassMaterials)은 내 기수 · 과정 칸(termCellKey)과 열린 회차(splitRoundDates)로 좁히고 파일은 자료와 함께 임베드로 읽는다
+  "teacher_folder_uses",
+  "teacher_folder_items",
+  "teacher_folder_files",
   // 사람으로 열리는 것 — 정책이 `본인 or 스태프(조교)` 라 스태프에게는 **모든 학생의 행**이 내려온다
   "homework_submissions",
   "enrollment_orders",
@@ -99,6 +104,7 @@ const NARROWERS: [RegExp, string][] = [
   [/\.in\("lecture_id", \[\.\.\.lectureIds\]\)/, "부른 쪽이 준 내가 신청한 특강 목록 (getMyLectureSignups 의 키 — 특강 자료실)"],
   [/signupTerms/, "내 등록에서 뽑은 기수 (getMyStudyEligibility)"],
   [/\broundCells\(|\bcellLevels\(|\broundDates\(/, "내 과정 칸 · 열린 회차 (class-rounds — DB private.my_round_cells · my_open_rounds)"],
+  [/\btermCellKey\(|\bsplitRoundDates\(/, "내 기수 · 과정 칸 · 열린 회차 (teacher-board — DB private.my_term_cells · my_open_term_rounds)"],
 ];
 
 /** 좁히지 않아도 되는 곳 — **까닭을 적어야** 들어올 수 있다 */

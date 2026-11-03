@@ -406,6 +406,9 @@ export const NAV_ADMIN_SECTIONS: NavSection[] = [
       { href: "/admin/live-channels", label: "유튜브 자동 연결", icon: "live" },
       // 수업자료실 — 레벨 × RC/LC 로 자료를 올린다 (2026-10-05 Alan). 강사·관리자만 (crew 를 붙이지 말 것 — 조교 화면은 Alan 이 정한 것만, 등급 체계 9-1)
       { href: "/admin/class-materials", label: "수업자료실", icon: "download" },
+      // 강사 자료 게시판 — 폴더에 정리해 두고 몇월 · 어느 과정 자료로 쓸지 고르면 그 반 학생에게 회차 수업일마다 열린다 (2026-11-03 Alan).
+      // RC · LC 강사게시판으로 나뉜다. 강사·관리자만 (crew 를 붙이지 말 것)
+      { href: "/admin/teacher-board", label: "강사 자료 게시판", icon: "download" },
       { href: "/admin/lc-audio", label: "LC 음원", icon: "headphones" },
     ],
   },

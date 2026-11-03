@@ -7,8 +7,9 @@ import { week5SectionIds } from "@/lib/week5";
 import { materialVisibleTo } from "@/lib/study";
 import type { EnrollSection } from "@/lib/enroll-options";
 import { fetchOpenEnrollSections, readOpenEnrollSections } from "@/lib/open-sections";
-import { isMaterialSubject, materialAccess, materialLinks, sortMaterialFiles, type MaterialSubject } from "@/lib/class-materials";
-import { cellKey, cellLevels, isRoundOpen, isRoundSet, roundCells, roundDates, roundKey } from "@/lib/class-rounds";
+import { isMaterialSubject, materialAccess, materialLinks, sortMaterialFiles, type MaterialFile, type MaterialLink, type MaterialSubject } from "@/lib/class-materials";
+import { cellKey, cellLevels, cellsOfSection, isRoundOpen, isRoundSet, roundCells, roundDates, roundKey, type RoundSet } from "@/lib/class-rounds";
+import { splitRoundDates, termCellKey, termRoundKey } from "@/lib/teacher-board";
 import { clipToOwnRange } from "@/lib/two-week";
 import { noticeAttachLabel, noticeVisible, scopeOf } from "@/lib/class-notices";
 import { sectionSubjects, type LectureWayRow } from "@/lib/lecture";
@@ -718,6 +719,26 @@ export async function getMyLcAudio() {
  * 레벨 순서는 교재 레벨 목록(lc_levels) 그대로 — 그 목록을 못 읽으면 숫자 순서 (`materialAccess`).
  * `dates`(회차 → 내 수업일)는 화면이 일정표(열린 회차 · 다음 수업일)를 그리는 데 쓴다.
  */
+/** 학생 수업자료실의 자료 한 건 — 수업자료실(class_materials) 자료와 강사 자료 게시판(teacher_folder_items) 자료가 같은 꼴로 섞인다 (2026-11-03) */
+export type MyMaterialRow = {
+  id: number;
+  /** 화면 key — 두 표의 id 가 겹칠 수 있다 (`c12` · `t12`) */
+  uid: string;
+  level: number;
+  subject: MaterialSubject;
+  book_set: RoundSet;
+  seq: number;
+  title: string;
+  note: string | null;
+  links: MaterialLink[];
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  files: MaterialFile[] | null;
+  /** 파일 주소 — 수업자료실 `/files/class` · 강사 자료 게시판 `/files/teacher` */
+  fileBase: "/files/class" | "/files/teacher";
+};
+
 export async function getMyClassMaterials() {
   const supabase = await createClient();
   const [{ data: levelRows }, sections, sessions] = await Promise.all([
@@ -729,21 +750,70 @@ export async function getMyClassMaterials() {
   const dates = roundDates(sessions);
   const bySubject: Record<MaterialSubject, number[]> = { rc: cellLevels(cells, "rc"), lc: cellLevels(cells, "lc") };
   const access = materialAccess(bySubject, (levelRows ?? []).map((l) => l.level));
-  if (access.length === 0) return { access, dates, materials: [] };
-  const { data } = await supabase
-    .from("class_materials")
-    // 파일은 자료마다 0 ~ 20개 (class_material_files, 2026-10-06) — 자료가 보이는 사람에게만 내려온다 (조회 정책이 부모 자료를 본다).
-    // 링크(links)는 자료 행의 칸이라 자료와 같은 날 함께 열린다 (같은 날 Alan "유튜브 링크를 … 여러개")
-    .select("id, level, subject, book_set, seq, title, note, links, sort_order, created_at, updated_at, files:class_material_files(id, file_name, file_size, content_type, sort_order)")
-    .in("level", [...new Set([...bySubject.rc, ...bySubject.lc])])
-    .order("created_at", { ascending: false });
+  const materials: MyMaterialRow[] = [];
+  if (access.length === 0) return { access, dates, materials };
+
+  // 강사 자료 게시판 (2026-11-03) — 내 기수 · 과정 칸에 쓰는 폴더. RLS 가 강사 · 관리자에게 모든 칸을 열어서 **내 칸으로 한 번 더 좁힌다** (등급 체계 10).
+  // 못 읽으면(배포 사이 표가 없음 · 오류) 폴더가 없는 것으로 본다 — 그래도 DB 가 그 칸의 수업자료실 자료를 닫았으면 그 칸은 비어 보인다(넓게 보지 않는다)
+  const termCells = new Set(sections.flatMap((s) => cellsOfSection(s).map((c) => termCellKey(s.term_id, c.level, c.subject, c.set))));
+  const myTerms = [...new Set(sections.map((s) => s.term_id))];
+  const [{ data }, { data: useRows }] = await Promise.all([
+    supabase
+      .from("class_materials")
+      // 파일은 자료마다 0 ~ 20개 (class_material_files, 2026-10-06) — 자료가 보이는 사람에게만 내려온다 (조회 정책이 부모 자료를 본다).
+      // 링크(links)는 자료 행의 칸이라 자료와 같은 날 함께 열린다 (같은 날 Alan "유튜브 링크를 … 여러개")
+      .select("id, level, subject, book_set, seq, title, note, links, sort_order, created_at, updated_at, files:class_material_files(id, file_name, file_size, content_type, sort_order)")
+      .in("level", [...new Set([...bySubject.rc, ...bySubject.lc])])
+      .order("created_at", { ascending: false }),
+    myTerms.length > 0
+      ? supabase.from("teacher_folder_uses").select("folder_id, term_id, level, subject, book_set").in("term_id", myTerms)
+      : Promise.resolve({ data: [] as { folder_id: number; term_id: number; level: number; subject: string; book_set: string }[] }),
+  ]);
+  const uses = (useRows ?? []).filter((u) => termCells.has(termCellKey(u.term_id, u.level, u.subject, u.book_set)));
+  // 폴더를 쓰는 (기수 · 칸)은 그 달 **폴더 자료만** (Alan "그 달은 폴더 자료만") — 수업자료실 자료는 그 칸 밖의 회차 날짜로만 연다. DB 의 my_open_class_rounds 와 같다
+  const { classDates, folderDates } = splitRoundDates(sessions, new Set(uses.map((u) => termCellKey(u.term_id, u.level, u.subject, u.book_set))));
   const today = todayKST();
   // 과정 · 회차가 정해지고, 그 회차의 내 수업일이 오늘이거나 지난 자료만 (과정 · 회차가 없는 옛 자료는 학생에게 보이지 않는다)
-  const materials = (data ?? []).flatMap((m) =>
-    isMaterialSubject(m.subject) && isRoundSet(m.book_set) && m.seq != null && isRoundOpen(dates.get(roundKey(m.level, m.subject, m.book_set, m.seq)), today)
-      ? [{ ...m, subject: m.subject, book_set: m.book_set, seq: m.seq, links: materialLinks(m.links) }]
-      : [],
-  );
+  for (const m of data ?? []) {
+    if (!isMaterialSubject(m.subject) || !isRoundSet(m.book_set) || m.seq == null) continue;
+    if (!isRoundOpen(classDates.get(roundKey(m.level, m.subject, m.book_set, m.seq)), today)) continue;
+    materials.push({ ...m, subject: m.subject, book_set: m.book_set, seq: m.seq, links: materialLinks(m.links), uid: `c${m.id}`, fileBase: "/files/class" });
+  }
+
+  if (uses.length > 0) {
+    // 폴더 자료 — 그 폴더를 쓰는 (기수 · 칸)에서 그 회차의 내 수업일이 오늘이거나 지났다. 레벨 · 과목 · 과정은 쓰는 달이 정한다
+    const { data: items } = await supabase
+      .from("teacher_folder_items")
+      .select("id, folder_id, seq, title, note, links, sort_order, created_at, updated_at, files:teacher_folder_files(id, file_name, file_size, content_type, sort_order)")
+      .in("folder_id", [...new Set(uses.map((u) => u.folder_id))]);
+    const seen = new Set<string>();
+    for (const u of uses) {
+      if (!isMaterialSubject(u.subject) || !isRoundSet(u.book_set)) continue;
+      for (const it of items ?? []) {
+        if (it.folder_id !== u.folder_id) continue;
+        if (!isRoundOpen(folderDates.get(termRoundKey(u.term_id, u.level, u.subject, u.book_set, it.seq)), today)) continue;
+        const once = `${roundKey(u.level, u.subject, u.book_set, it.seq)}#${it.id}`;
+        if (seen.has(once)) continue;
+        seen.add(once);
+        materials.push({
+          id: it.id,
+          uid: `t${it.id}`,
+          level: u.level,
+          subject: u.subject,
+          book_set: u.book_set,
+          seq: it.seq,
+          title: it.title,
+          note: it.note,
+          links: materialLinks(it.links),
+          sort_order: it.sort_order,
+          created_at: it.created_at,
+          updated_at: it.updated_at,
+          files: it.files,
+          fileBase: "/files/teacher",
+        });
+      }
+    }
+  }
   return { access, dates, materials };
 }
 
