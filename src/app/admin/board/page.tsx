@@ -6,7 +6,7 @@ import { StaffBoardPager, StaffPostList, type BoardTab, type StaffPostListItem }
 import { BoardBulkMove } from "@/components/admin/board/BoardBulkMove";
 import { isStaff, requireCrew } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { MATERIAL_SUBJECT_LABEL, materialLinks } from "@/lib/class-materials";
+import { MATERIAL_SUBJECT_LABEL, isMaterialSubject, materialLinks } from "@/lib/class-materials";
 import {
   BOARD_CELLS,
   boardCell,
@@ -64,7 +64,12 @@ export default async function StaffBoardPage({ searchParams }: { searchParams: P
   }
 
   const supabase = await createClient();
-  const { data: levelRows } = await supabase.from("lc_levels").select("level").order("sort_order").order("level");
+  const [{ data: levelRows }, { data: folderRows }] = await Promise.all([
+    supabase.from("lc_levels").select("level").order("sort_order").order("level"),
+    // 강사 자료 게시판 폴더 — 여러 개 옮기기의 '강사 자료 게시판으로' (2026-11-03). 강사 · 관리자만 읽힌다 (조교에게는 정책이 0줄 — 버튼도 없다)
+    staff ? supabase.from("teacher_folders").select("id, subject, name").order("sort_order").order("id") : Promise.resolve({ data: [] as { id: number; subject: string; name: string }[] }),
+  ]);
+  const teacherFolders = (folderRows ?? []).flatMap((f) => (isMaterialSubject(f.subject) ? [{ id: f.id, subject: f.subject, name: f.name }] : []));
   const levels = (levelRows ?? []).map((l) => l.level);
   // 레벨 목록을 못 읽으면 레벨로는 거르지 않고 다 보여 준다 (레벨 탭도 그리지 않는다). 칸(과목 × 과정)은 늘 있다
   const level = boardLevel(sp.level, levels);
@@ -170,7 +175,7 @@ export default async function StaffBoardPage({ searchParams }: { searchParams: P
         <p className="-mt-1 mb-3 text-xs text-mist">내 과목({MATERIAL_SUBJECT_LABEL[cell.subject]}) 글부터 보여 주고 있어요. 위에서 레벨 · 과목 · 과정을 바꿀 수 있어요.</p>
       )}
       {staff && !listError && levels.length > 0 ? (
-        <BoardBulkMove items={items.map((p) => ({ key: `post:${p.id}`, id: p.id, title: p.title }))} levels={levels} tab={tab}>
+        <BoardBulkMove items={items.map((p) => ({ key: `post:${p.id}`, id: p.id, title: p.title }))} levels={levels} tab={tab} folders={teacherFolders}>
           {body}
         </BoardBulkMove>
       ) : (

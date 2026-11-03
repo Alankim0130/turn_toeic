@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   BULK_SKIP,
@@ -15,6 +16,8 @@ import {
   originTargetOf,
   pathMap,
   type BulkPost,
+  teacherMoveBlock,
+  teacherSteps,
 } from "./board-move";
 import { noteImagePaths, rewriteNoteImages } from "./note-format";
 
@@ -276,5 +279,44 @@ describe("끝난 뒤 한 줄 (bulkSummary)", () => {
     expect(bulkSummary({ moved: 5, failed: 0, skipped: 0, notRun: 0 })).toBe("5개를 옮겼어요.");
     expect(bulkSummary({ moved: 3, failed: 1, skipped: 2, notRun: 0 })).toBe("3개를 옮겼어요. 1개는 옮기지 못했어요. 2개는 건너뛰었어요.");
     expect(bulkSummary({ moved: 0, failed: 1, skipped: 0, notRun: 4 })).toBe("옮긴 것이 없어요. 1개는 옮기지 못했어요. 멈춰서 4개는 옮기지 않았어요.");
+  });
+});
+
+describe("직원 게시판 → 강사 자료 게시판 (2026-11-03 Alan — 'RC/LC 선택하고 … 어느 폴더로 … 선택해서 전체이동')", () => {
+  const post = (id: number, issue: BulkPost["materialIssue"] = null): BulkPost => ({ id, title: `글 ${id}`, levels: [], subject: null, set: null, movedFrom: null, materialIssue: issue });
+
+  it("모두 한 회차에 — 사진 · 빈 글은 건너뛴다", () => {
+    const steps = teacherSteps([post(1), post(2, "photo"), post(3), post(4, "empty")], 5, false);
+    expect(steps.map((s) => [s.id, s.seq])).toEqual([
+      [1, 5],
+      [2, null],
+      [3, 5],
+      [4, null],
+    ]);
+    expect(steps[1].skip).toContain("사진");
+    expect(steps[3].skip).toContain("못 가요");
+  });
+
+  it("글마다 다음 회차로 — 건너뛴 글은 회차를 쓰지 않고, 30회차를 넘으면 건너뛴다", () => {
+    const steps = teacherSteps([post(1), post(2, "photo"), post(3), post(4)], 29, true, 30);
+    expect(steps.map((s) => [s.id, s.seq])).toEqual([
+      [1, 29],
+      [2, null],
+      [3, 30],
+      [4, null],
+    ]);
+    expect(steps[3].skip).toContain("30회차");
+  });
+
+  it("서버 액션은 강사 · 관리자만 · 폴더 · 회차를 다시 본다 · 사진 글은 막는다 · 원래 글은 새 자료를 만든 뒤에 지운다", () => {
+    const src = readFileSync("src/app/admin/board/move-actions.ts", "utf8");
+    const fn = src.slice(src.indexOf("export async function moveStaffPostToTeacherFolder"), src.indexOf("async function insertBoardPost"));
+    expect(fn).toMatch(/const \{ user, profile \} = await requireStaff\(\);\n {2}if \(profile\.test_role\) return TESTING_STOP;/);
+    expect(fn).toMatch(/seq < 1 \|\| seq > ROUND_MAX/);
+    expect(fn).toMatch(/from\("teacher_folders"\)\.select\("id, subject"\)\.eq\("id", folderId\)/);
+    expect(fn).toMatch(/teacherMoveBlock/);
+    expect(fn).toMatch(/teacherFilePath/);
+    expect(fn.indexOf('from("teacher_folder_items")\n    .insert')).toBeLessThan(fn.indexOf('dropSource(supabase, "staff_posts", id)'));
+    expect(teacherMoveBlock({ body: "[img=images/a.png w=50]", files: 0, links: 0 })).toContain("강사 자료 게시판");
   });
 });
