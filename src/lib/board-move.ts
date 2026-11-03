@@ -274,3 +274,42 @@ export function bulkSummary(r: { moved: number; failed: number; skipped: number;
   ];
   return parts.filter(Boolean).join(" ");
 }
+
+/* ─── 직원 게시판 → 강사 자료 게시판 (2026-11-03) ─────────────────────────────── */
+
+const TEACHER_BLOCK: Record<MaterialIssue, string> = {
+  photo: "본문에 사진이 있어 강사 자료 게시판으로는 옮길 수 없어요 — 폴더 자료 안내에는 사진을 넣을 수 없어요.",
+  empty: "본문 · 파일 · 링크가 없는 글은 강사 자료 게시판으로 옮길 수 없어요.",
+};
+
+/** 강사 자료 게시판 폴더로 못 가는 까닭 (서버 액션의 말) — 회차 자료와 같은 규칙(`materialMoveIssue`) */
+export function teacherMoveBlock(post: { body: string; files: number; links: number }): string | null {
+  const issue = materialMoveIssue(post);
+  return issue ? TEACHER_BLOCK[issue] : null;
+}
+
+/** 여러 개 옮기기 목록의 건너뛸 까닭 — 짧게 */
+export const TEACHER_SKIP = {
+  photo: "본문에 사진이 있어 강사 자료 게시판으로는 못 가요 (공지사항으로는 돼요).",
+  empty: "본문 · 파일 · 링크가 없어 못 가요.",
+  overflow: "30회차를 넘어 못 가요 — 시작 회차를 앞으로 당겨 주세요.",
+} as const;
+
+/** 글 하나의 회차 — `seq` 가 null 이면 건너뛰고 `skip` 이 까닭이다 */
+export type TeacherStep = { id: number; title: string; seq: number | null; skip: string | null };
+
+/**
+ * 고른 글마다 들어갈 회차 (2026-11-03 Alan — "RC/LC 선택하고 그중에서도 어느 폴더로 … 선택해서 전체이동").
+ * - `sequential` 이 거짓이면 모두 `seq` 회차에 (그 회차 안에서는 옮긴 순서대로)
+ * - 참이면 옮길 수 있는 글이 `seq` 회차부터 한 회차씩 (건너뛰는 글은 회차를 쓰지 않는다). 30회차를 넘는 글은 건너뛴다
+ * 순서는 받은 그대로 — 서버가 오래된 글부터 준다.
+ */
+export function teacherSteps(posts: readonly BulkPost[], seq: number, sequential: boolean, max = 30): TeacherStep[] {
+  let next = seq;
+  return posts.map((p) => {
+    if (p.materialIssue) return { id: p.id, title: p.title, seq: null, skip: TEACHER_SKIP[p.materialIssue] };
+    const at = sequential ? next++ : seq;
+    if (at > max) return { id: p.id, title: p.title, seq: null, skip: TEACHER_SKIP.overflow };
+    return { id: p.id, title: p.title, seq: at, skip: null };
+  });
+}

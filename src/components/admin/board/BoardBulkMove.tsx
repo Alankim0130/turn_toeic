@@ -4,8 +4,10 @@ import { useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Dialog } from "@/components/ui/Dialog";
 import { ChoiceChip } from "@/components/admin/ChoiceChip";
-import { moveStaffPostToClass, planStaffPostsMove } from "@/app/admin/board/move-actions";
-import { BULK_SKIP, bulkDraftOf, bulkSteps, classPlaceLabel, type BulkChoice, type BulkPost } from "@/lib/board-move";
+import { moveStaffPostToClass, moveStaffPostToTeacherFolder, planStaffPostsMove } from "@/app/admin/board/move-actions";
+import { BULK_SKIP, bulkDraftOf, bulkSteps, classPlaceLabel, teacherSteps, type BulkChoice, type BulkPost } from "@/lib/board-move";
+import { ROUND_MAX } from "@/lib/class-rounds";
+import { BOARD_LABEL } from "@/lib/teacher-board";
 import type { MaterialSubject } from "@/lib/class-materials";
 import { cellValue } from "@/lib/staff-board";
 import { BulkBar, BulkProgress, BulkProvider, BulkResult, useBulkRunner, useBulkSelection, type BulkNote } from "./BulkSelect";
@@ -13,6 +15,10 @@ import { NoticeScopeChips, noticeWho, RoundSelects, roundMissing, type RoundPick
 import type { BoardTab } from "./StaffPostList";
 
 type Kind = "notice" | "material" | "origin";
+/** 어디로 옮기나 — 수업자료실 · 강사 자료 게시판 (2026-11-03) */
+type Dest = "class" | "teacher";
+/** 강사 자료 게시판 폴더 — 옮길 곳 고르기에 쓰는 것만 */
+export type TeacherFolderOption = { id: number; subject: MaterialSubject; name: string };
 type Plan = { phase: "loading" } | { phase: "error"; error: string } | { phase: "ready"; posts: BulkPost[]; gone: BulkNote[] };
 
 /**
@@ -26,6 +32,7 @@ export function BoardBulkMove({
   items,
   levels,
   tab,
+  folders = [],
   children,
 }: {
   /** 이 쪽에 선 글 — 고를 수 있는 것 (열쇠 `post:id`) */
@@ -34,6 +41,8 @@ export function BoardBulkMove({
   levels: number[];
   /** 보던 레벨 탭 · 칸(과목 × 과정) */
   tab: BoardTab;
+  /** 강사 자료 게시판 폴더 (2026-11-03 — "직원게시판 자료를 강사자료게시판으로 이동"). 비면 그 버튼을 그리지 않는다 */
+  folders?: TeacherFolderOption[];
   children: ReactNode;
 }) {
   const keys = items.map((i) => i.key);
@@ -47,14 +56,21 @@ export function BoardBulkMove({
   const [picked, setPicked] = useState<number[]>([]);
   const [subject, setSubject] = useState<MaterialSubject | null>(null);
   const [round, setRound] = useState<RoundPick>({ level: null, subject: null, set: null, seq: null });
+  const [dest, setDest] = useState<Dest>("class");
+  // 강사 자료 게시판 — RC/LC · 폴더 · 회차 · 글마다 다음 회차로
+  const [tSubject, setTSubject] = useState<MaterialSubject>(tab.cell?.subject ?? "rc");
+  const [tFolder, setTFolder] = useState<number | null>(null);
+  const [tSeq, setTSeq] = useState(1);
+  const [tSequential, setTSequential] = useState(false);
   // 대화창을 닫았다 다시 열면 앞 요청의 늦은 답을 버린다
   const request = useRef(0);
   const running = runner.state.phase === "running";
 
-  async function openDialog() {
+  async function openDialog(to: Dest = "class") {
     const ids = items.filter((i) => sel.selected.has(i.key)).map((i) => i.id);
     if (ids.length === 0) return;
     const ticket = ++request.current;
+    setDest(to);
     setCount(ids.length);
     runner.reset();
     setPlan({ phase: "loading" });
@@ -74,6 +90,13 @@ export function BoardBulkMove({
     setPicked(draft.notice.levels);
     setSubject(draft.notice.subjects.length === 1 ? draft.notice.subjects[0] : null);
     setRound({ ...draft.material, level: draft.material.level ?? levels[0] ?? null });
+    // 강사 자료 게시판 — 글의 과목이 모두 같으면 그 과목, 아니면 보던 칸의 과목. 폴더는 그 과목의 첫 폴더
+    const subjects = [...new Set(res.posts.map((p) => p.subject).filter((s): s is MaterialSubject => !!s))];
+    const firstSubject = subjects.length === 1 ? subjects[0] : (tab.cell?.subject ?? "rc");
+    setTSubject(firstSubject);
+    setTFolder(folders.find((f) => f.subject === firstSubject)?.id ?? null);
+    setTSeq(1);
+    setTSequential(false);
     setPlan({ phase: "ready", posts: res.posts, gone });
   }
 
@@ -96,18 +119,25 @@ export function BoardBulkMove({
           ? { kind: "material", level: round.level, subject: round.subject, set: round.set, seq: round.seq }
           : null;
   const steps = choice ? bulkSteps(posts, choice, levels) : [];
-  const movable = steps.filter((s) => s.target);
-  const skipped = steps.filter((s) => !s.target);
-  const missing = kind === "material" && !choice ? roundMissing(round) : null;
+  const tFolders = folders.filter((f) => f.subject === tSubject);
+  const tFolderPick = tFolders.find((f) => f.id === tFolder) ?? null;
+  const tSteps = tFolderPick ? teacherSteps(posts, tSeq, tSequential, ROUND_MAX) : [];
+  const toTeacher = dest === "teacher";
+  const movable = toTeacher ? tSteps.filter((s) => s.seq != null) : steps.filter((s) => s.target);
+  const skipped = toTeacher ? tSteps.filter((s) => s.seq == null) : steps.filter((s) => !s.target);
+  const missing = toTeacher ? (tFolderPick ? null : "폴더를 골라 주세요") : kind === "material" && !choice ? roundMissing(round) : null;
   const gone = plan.phase === "ready" ? plan.gone : [];
 
   async function start() {
     if (running || movable.length === 0) return;
-    const jobs = movable.map((s) => ({
-      key: `post:${s.id}`,
-      title: s.title,
-      run: () => moveStaffPostToClass({ id: s.id, target: s.target }, { quiet: true }),
-    }));
+    const folderId = tFolderPick?.id ?? 0;
+    const jobs = toTeacher
+      ? tSteps
+          .filter((s) => s.seq != null)
+          .map((s) => ({ key: `post:${s.id}`, title: s.title, run: () => moveStaffPostToTeacherFolder({ id: s.id, folderId, seq: s.seq ?? 1 }, { quiet: true }) }))
+      : steps
+          .filter((s) => s.target)
+          .map((s) => ({ key: `post:${s.id}`, title: s.title, run: () => moveStaffPostToClass({ id: s.id, target: s.target }, { quiet: true }) }));
     const notes = [...skipped.map((s) => ({ key: `post:${s.id}`, title: s.title, why: s.skip ?? "" })), ...gone];
     const outcome = await runner.run(jobs, notes);
     sel.keepOnly([...outcome.failed, ...outcome.notRun, ...outcome.skipped].map((n) => n.key));
@@ -117,8 +147,9 @@ export function BoardBulkMove({
   const noticeLevel = picked[0] ?? tab.level;
   // 공지는 그 과목 칸에서 보인다 (과목을 안 골랐으면 보던 칸 — 전체 공지는 어느 칸에나)
   const noticeCell = subject ? `${subject}-${tab.cell?.set ?? "A"}` : tab.cell ? cellValue(tab.cell) : null;
-  const doneHref =
-    kind === "material" && round.level !== null && round.subject && round.set
+  const doneHref = toTeacher
+    ? `/admin/teacher-board?subject=${tSubject}${tFolderPick ? `&folder=${tFolderPick.id}` : ""}`
+    : kind === "material" && round.level !== null && round.subject && round.set
       ? `/admin/class-materials?level=${round.level}&cell=${round.subject}-${round.set}`
       : kind === "notice" && noticeLevel !== null
         ? `/admin/class-materials?level=${noticeLevel}${noticeCell ? `&cell=${noticeCell}` : ""}`
@@ -128,18 +159,23 @@ export function BoardBulkMove({
     <BulkProvider value={{ selected: sel.selected, toggle: sel.toggle, setMany: sel.setMany, busy: running }}>
       {children}
       <BulkBar count={sel.selected.size} onClear={sel.clear}>
-        <button type="button" onClick={openDialog} className="btn-primary !px-4 !py-2 text-sm">
+        <button type="button" onClick={() => openDialog("class")} className="btn-primary !px-4 !py-2 text-sm">
           수업자료실로 옮기기
         </button>
+        {folders.length > 0 && (
+          <button type="button" onClick={() => openDialog("teacher")} className="btn-secondary !px-4 !py-2 text-sm">
+            강사 자료 게시판으로
+          </button>
+        )}
       </BulkBar>
-      <Dialog open={open} title={`고른 글 ${count}개 수업자료실로 옮기기`} onClose={close} dismissible={false}>
+      <Dialog open={open} title={`고른 글 ${count}개 ${toTeacher ? "강사 자료 게시판" : "수업자료실"}으로 옮기기`} onClose={close} dismissible={false}>
         {runner.state.phase === "running" ? (
           <BulkProgress state={runner.state} onStop={runner.stop} />
         ) : runner.state.phase === "done" ? (
           <BulkResult outcome={runner.state.outcome}>
             {runner.state.outcome.moved.length > 0 && (
               <Link href={doneHref} className="btn-primary" onClick={close}>
-                수업자료실 보기
+                {toTeacher ? "그 폴더 보기" : "수업자료실 보기"}
               </Link>
             )}
             <button type="button" onClick={close} className="btn-secondary">
@@ -156,12 +192,110 @@ export function BoardBulkMove({
               {plan.error}
             </p>
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={openDialog} className="btn-primary">
+              <button type="button" onClick={() => openDialog(dest)} className="btn-primary">
                 다시 시도
               </button>
               <button type="button" onClick={close} className="btn-secondary">
                 닫기
               </button>
+            </div>
+          </div>
+        ) : toTeacher ? (
+          <div className="space-y-4">
+            <p className="text-ink-soft">
+              옮기면 <strong className="text-ink">직원 게시판에서는 빠지고</strong> 강사 자료 게시판 폴더에 들어가요. 학생에게는 그 폴더를 몇월 수업자료로 쓸 때, 회차 수업일부터 보여요.
+            </p>
+            <fieldset className="space-y-2">
+              <legend className="mb-1.5 text-sm font-bold text-ink">어느 게시판 · 폴더로 옮길까요</legend>
+              <div className="flex flex-wrap gap-1.5">
+                {(["rc", "lc"] as const).map((s) => (
+                  <ChoiceChip
+                    key={s}
+                    on={tSubject === s}
+                    onClick={() => {
+                      setTSubject(s);
+                      setTFolder(folders.find((f) => f.subject === s)?.id ?? null);
+                    }}
+                  >
+                    {BOARD_LABEL[s]}
+                  </ChoiceChip>
+                ))}
+              </div>
+              {tFolders.length > 0 ? (
+                <label className="block text-xs font-bold text-slate">
+                  폴더
+                  <select value={tFolderPick?.id ?? ""} onChange={(e) => setTFolder(Number(e.target.value))} className="input mt-1 !py-2 text-sm">
+                    {tFolders.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">{BOARD_LABEL[tSubject]}에 폴더가 없어요. 강사 자료 게시판에서 폴더를 먼저 더해 주세요.</p>
+              )}
+            </fieldset>
+            <fieldset className="space-y-2">
+              <legend className="mb-1.5 text-sm font-bold text-ink">어느 회차에 넣을까요</legend>
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={tSeq} onChange={(e) => setTSeq(Number(e.target.value))} aria-label="회차" className="input !w-32 !py-2 text-sm">
+                  {Array.from({ length: ROUND_MAX }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>
+                      {n}회차{tSequential ? "부터" : ""}
+                    </option>
+                  ))}
+                </select>
+                <ChoiceChip on={!tSequential} onClick={() => setTSequential(false)}>
+                  모두 이 회차에
+                </ChoiceChip>
+                <ChoiceChip on={tSequential} onClick={() => setTSequential(true)}>
+                  글마다 다음 회차로
+                </ChoiceChip>
+              </div>
+              <p className="rounded-xl bg-brand-50 px-3 py-2 text-ink-soft">
+                {tSequential ? (
+                  <>
+                    오래된 글부터 <strong className="text-brand-700">{tSeq}회차, {tSeq + 1}회차 …</strong> 차례로 들어가요.
+                  </>
+                ) : (
+                  <>
+                    모두 <strong className="text-brand-700">{tSeq}회차</strong>에 오래된 글부터 차례로 들어가요.
+                  </>
+                )}{" "}
+                회차는 폴더에서 자료마다 다시 고칠 수 있어요.
+              </p>
+            </fieldset>
+            {tFolderPick && (
+              <div className="space-y-1.5">
+                <p className="text-sm font-bold text-ink">
+                  옮길 글 <span className="tabular-nums text-brand-700">{movable.length}</span>개
+                  {skipped.length + gone.length > 0 && <span className="font-semibold text-amber-800"> · 건너뛸 글 {skipped.length + gone.length}개</span>}
+                </p>
+                <ul className="max-h-56 space-y-2 overflow-y-auto overscroll-contain rounded-xl border border-line p-2.5">
+                  {tSteps.map((s) => (
+                    <li key={s.id} className="min-w-0">
+                      <p className={s.seq != null ? "truncate text-sm font-bold text-ink" : "truncate text-sm font-bold text-mist line-through"}>{s.title}</p>
+                      {s.skip ? <p className="text-xs text-amber-800">{s.skip}</p> : <p className="text-xs text-slate">→ {tFolderPick.name} · {s.seq}회차</p>}
+                    </li>
+                  ))}
+                  {gone.map((g) => (
+                    <li key={g.key} className="min-w-0">
+                      <p className="truncate text-sm font-bold text-mist line-through">{g.title}</p>
+                      <p className="text-xs text-amber-800">{g.why}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button type="button" onClick={start} disabled={!tFolderPick || movable.length === 0} className="btn-primary">
+                {movable.length > 0 ? `${movable.length}개 옮기기` : "옮길 글이 없어요"}
+              </button>
+              <button type="button" onClick={close} className="btn-secondary">
+                취소
+              </button>
+              {missing && <span className="text-xs font-bold text-mist">{missing}</span>}
             </div>
           </div>
         ) : (

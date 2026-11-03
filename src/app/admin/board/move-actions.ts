@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { materialMoveBlock, materialMoveIssue, movedFromOf, moveTargetError, moveTargetOf, pathMap, type BulkPost, type CopyStep, type MovedFrom } from "@/lib/board-move";
+import { materialMoveBlock, materialMoveIssue, movedFromOf, moveTargetError, moveTargetOf, pathMap, teacherMoveBlock, type BulkPost, type CopyStep, type MovedFrom } from "@/lib/board-move";
 import {
   CLASS_MATERIAL_BUCKET,
   CLASS_MATERIAL_FILES_MAX,
@@ -32,6 +32,8 @@ import {
 } from "@/lib/staff-board";
 import { objectName } from "@/lib/upload";
 import { nextMaterialOrder } from "@/app/admin/class-materials/_lib/next-order";
+import { ROUND_MAX } from "@/lib/class-rounds";
+import { TEACHER_BOARD_BUCKET, teacherFilePath } from "@/lib/teacher-board";
 
 /**
  * 직원 게시판 ↔ 수업자료실 옮기기 (2026-10-21 Alan — "이 게시물을 수업게시판으로 옮길 수 있으면 좋겠어. 반대로 수업게시물에 있는 내용을
@@ -110,6 +112,7 @@ function revalidateAll(paths: string[], opts?: MoveOptions) {
   if (opts?.quiet === true) return;
   revalidatePath("/admin/board");
   revalidatePath("/admin/class-materials");
+  revalidatePath("/admin/teacher-board");
   revalidatePath("/my/materials");
   for (const p of paths) revalidatePath(p);
 }
@@ -253,6 +256,89 @@ export async function moveStaffPostToClass(input: { id: number; target: unknown 
   if (files.length) await supabase.storage.from(STAFF_BOARD_BUCKET).remove(files.map((f) => f.file_path));
   revalidateAll([`/admin/board/${id}`], opts);
   return { ok: true, href: `/admin/class-materials?level=${target.level}&cell=${target.subject}-${target.set}` };
+}
+
+/**
+ * 직원 글 → **강사 자료 게시판 폴더**의 회차 자료 (2026-11-03 Alan — "직원게시판 자료를 강사자료게시판으로 이동이 가능하면 좋겠어. RC/LC 선택하고
+ * 그중에서도 어느 폴더로 이동가능한지 선택해서 전체이동"). 폴더 자료는 그 폴더를 몇월 수업자료로 쓰는 반 학생에게 회차 수업일부터 보인다 (도메인 규칙 7-7).
+ * 회차 자료와 같은 규칙 — 사진이 든 글 · 빈 글은 못 간다 (폴더 자료 안내에도 사진을 넣을 수 없다). 첨부 파일은 수업자료실 버킷의 teacher/ 로 새 이름으로 복사하고,
+ * 그 폴더 · 회차의 끝에 선다(여러 개를 한 회차로 옮기면 옮긴 순서대로). 순서 · 되돌리기는 위 수업자료실 옮기기와 같다.
+ */
+export async function moveStaffPostToTeacherFolder(input: { id: number; folderId: number; seq: number }, opts?: MoveOptions): Promise<MoveResult> {
+  const { user, profile } = await requireStaff();
+  if (profile.test_role) return TESTING_STOP;
+  const id = Number(input?.id);
+  const folderId = Number(input?.folderId);
+  const seq = Number(input?.seq);
+  if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(folderId) || folderId <= 0) return { ok: false, error: BAD };
+  if (!Number.isInteger(seq) || seq < 1 || seq > ROUND_MAX) return { ok: false, error: `회차를 골라 주세요 (1 ~ ${ROUND_MAX}회차).` };
+
+  const supabase = await createClient();
+  const [{ data: folder, error: folderError }, { data: post }] = await Promise.all([
+    supabase.from("teacher_folders").select("id, subject").eq("id", folderId).maybeSingle(),
+    supabase
+      .from("staff_posts")
+      .select("id, title, body, links, staff_post_files(id, file_path, file_name, file_size, content_type, sort_order)")
+      .eq("id", id)
+      .maybeSingle(),
+  ]);
+  if (folderError) return fail(folderError, "폴더를 읽지 못했어요. 잠시 후 다시 시도해 주세요.");
+  if (!folder) return { ok: false, error: "폴더를 찾을 수 없어요. 새로고침해 주세요.", stop: true };
+  if (!post) return { ok: false, error: "글을 찾을 수 없어요. 새로고침해 주세요." };
+
+  const files = sortMaterialFiles(post.staff_post_files);
+  const links = materialLinks(post.links);
+  if (files.length > CLASS_MATERIAL_FILES_MAX) return { ok: false, error: `파일이 ${CLASS_MATERIAL_FILES_MAX}개를 넘어 옮길 수 없어요. 몇 개를 뺀 뒤 옮겨 주세요.` };
+  const block = teacherMoveBlock({ body: post.body, files: files.length, links: links.length });
+  if (block) return { ok: false, error: block };
+  const note = post.body.trim();
+  const tooLong = noteTooLong(note);
+  if (tooLong) return { ok: false, error: tooLong };
+
+  // 그 폴더 · 회차의 끝 — 못 읽으면 옮기지 않는다 (0 으로 넣으면 순서가 엉킨다)
+  const { data: last, error: lastError } = await supabase
+    .from("teacher_folder_items")
+    .select("sort_order")
+    .eq("folder_id", folderId)
+    .eq("seq", seq)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (lastError) return fail(lastError, "폴더 안 자료를 읽지 못했어요. 잠시 후 다시 시도해 주세요.");
+
+  const copied: Copied[] = [];
+  const fileSteps = files.map((f) => ({ from: f.file_path, to: teacherFilePath({ name: f.file_name }) }));
+  if (!(await copyAll(supabase, STAFF_BOARD_BUCKET, TEACHER_BOARD_BUCKET, fileSteps, copied))) {
+    await removeCopied(supabase, copied);
+    return { ok: false, error: COPY_FAIL };
+  }
+  const { data: item, error } = await supabase
+    .from("teacher_folder_items")
+    .insert({ folder_id: folderId, seq, title: post.title, note: note || null, links, sort_order: (last?.sort_order ?? -1) + 1, uploaded_by: user.id })
+    .select("id")
+    .single();
+  if (error || !item) {
+    await removeCopied(supabase, copied);
+    return fail(error, "강사 자료 게시판으로 옮기지 못했어요. 잠시 후 다시 시도해 주세요.");
+  }
+  const undo = async () => {
+    await supabase.from("teacher_folder_items").delete().eq("id", item.id);
+    await removeCopied(supabase, copied);
+  };
+  if (files.length > 0) {
+    const { error: filesError } = await supabase.from("teacher_folder_files").insert(fileRowsOf(files, fileSteps).map((r) => ({ ...r, item_id: item.id })));
+    if (filesError) {
+      await undo();
+      return fail(filesError, "강사 자료 게시판으로 옮기지 못했어요. 잠시 후 다시 시도해 주세요.");
+    }
+  }
+  if (!(await dropSource(supabase, "staff_posts", id))) {
+    await undo();
+    return { ok: false, error: "직원 게시판에서 글을 빼지 못해 옮기지 않았어요. 이미 지워졌거나 옮겨졌을 수 있어요 — 새로고침해 주세요." };
+  }
+  if (files.length) await supabase.storage.from(STAFF_BOARD_BUCKET).remove(files.map((f) => f.file_path));
+  revalidateAll([`/admin/board/${id}`], opts);
+  return { ok: true, href: `/admin/teacher-board?subject=${folder.subject}&folder=${folderId}` };
 }
 
 /**
@@ -454,6 +540,7 @@ export async function finishBoardMoves(): Promise<MoveResult> {
   await requireStaff();
   revalidatePath("/admin/board", "layout");
   revalidatePath("/admin/class-materials", "layout");
+  revalidatePath("/admin/teacher-board", "layout");
   revalidatePath("/my/materials", "layout");
   return { ok: true };
 }
