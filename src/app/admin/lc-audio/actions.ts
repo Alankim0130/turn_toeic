@@ -173,6 +173,41 @@ export async function setTrackLabel(id: number, label: string): Promise<AudioRes
   return { ok: true };
 }
 
+/**
+ * 같은 강 안에서 파일 순서 바꾸기 — 한 칸 위(-1) · 아래(1) (2026-11-03 Alan "LC 음성파일 올리는곳도 아래위로 파일이동 가능하도록").
+ * 같은 교재 · 종류 · 강의 파일을 0 부터 다시 매기고 달라진 것만 고친다. 학생 화면도 이 순서(sort_order)로 선다.
+ */
+export async function moveAudioTrack(id: number, step: number): Promise<AudioResult> {
+  await requireStaff();
+  if (!Number.isInteger(id) || (step !== -1 && step !== 1)) return { ok: false, error: "잘못된 요청이에요." };
+
+  const supabase = await createClient();
+  const { data: me, error: meError } = await supabase.from("lc_audio_tracks").select("id, book_id, kind, day").eq("id", id).maybeSingle();
+  if (meError) return { ok: false, error: studyErrorMessage(meError, "순서를 바꾸지 못했어요.") };
+  if (!me) return { ok: false, error: "음원을 찾을 수 없어요. 새로고침해 주세요." };
+  const { data: siblings, error } = await supabase
+    .from("lc_audio_tracks")
+    .select("id, sort_order")
+    .eq("book_id", me.book_id)
+    .eq("kind", me.kind)
+    .eq("day", me.day)
+    .order("sort_order")
+    .order("id");
+  if (error || !siblings) return { ok: false, error: studyErrorMessage(error, "순서를 바꾸지 못했어요.") };
+
+  const ids = siblings.map((t) => t.id);
+  const at = ids.indexOf(id);
+  const to = at + step;
+  if (at < 0 || to < 0 || to >= ids.length) return { ok: true };
+  [ids[at], ids[to]] = [ids[to], ids[at]];
+  const was = new Map(siblings.map((t) => [t.id, t.sort_order]));
+  const changed = ids.map((tid, i) => [tid, i] as const).filter(([tid, i]) => was.get(tid) !== i);
+  const results = await Promise.all(changed.map(([tid, i]) => supabase.from("lc_audio_tracks").update({ sort_order: i }).eq("id", tid).select("id")));
+  revalidateAudio();
+  if (results.some((r) => r.error || !r.data?.length)) return { ok: false, error: "순서를 다 적지 못했어요. 새로고침한 뒤 다시 옮겨 주세요." };
+  return { ok: true };
+}
+
 /** 교재의 시작 강 번호 (650B 는 11강부터라 10) */
 export async function setLessonOffset(bookId: number, offset: number): Promise<AudioResult> {
   const { user } = await requireStaff();

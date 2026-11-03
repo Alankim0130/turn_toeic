@@ -98,3 +98,8 @@
   File 이 아닌 본문에만 쓴다. 그래서 `uploadFile`(`src/lib/upload-client.ts`)이 정한 형식(기본은 확장자로 채운 `contentTypeOf`)이 파일의 형식과 다르면
   그 형식을 붙인 새 File 로 감싸 보낸다 (`upload-client.test.ts`). 그전에는 브라우저가 형식을 비워 준 파일(hwp · 일부 휴대폰 녹음)이 `application/octet-stream` 으로 올라가
   형식을 제한한 버킷(숙제 · 수강증 · LC 음원)에서 튕겼다.
+
+- **같은 강 안의 파일 순서를 위 · 아래로 바꾼다** (2026-11-03 Alan — "LC 음성파일 올리는곳도 아래위로 파일이동 가능하도록 부탁드립니다").
+  관리자 LC 음원 화면(`AudioDays`)에서 한 강에 파일이 둘 이상이면 줄마다 위 · 아래 단추(`MoveButtons` — 수업자료실과 같은 꼴)가 선다.
+  서버 액션 `moveAudioTrack(id, ±1)` 이 같은 교재 · 종류 · 강의 파일을 0 부터 다시 매기고 달라진 것만 고친다 (로그인한 세션 — 정책 `lc_audio: 스태프 수정`).
+  학생 화면도 그 순서(`sort_order` → `sortTracks`)로 선다. 강을 옮기는 것은 아니다 (다른 강으로 옮기려면 지우고 그 강에 다시 올린다).

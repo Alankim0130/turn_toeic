@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { folderNameError, nextSeq, splitRoundDates, termCellKey, termRoundKey, groupItemsBySeq } from "./teacher-board";
 import { roundKey } from "./class-rounds";
-import { NAV_ADMIN } from "./site";
+import { NAV_ADMIN, canEnterAdminPath } from "./site";
 
 /**
  * 강사 자료 게시판 (2026-11-03 Alan — "850반 자료는 매달 바뀌기 때문에 한번에 정리를 쫙 해놓고 원하는 과정의 자료를 오픈 …
@@ -115,6 +115,17 @@ describe("서버 액션 · 메뉴", () => {
     expect(fns.length).toBeGreaterThanOrEqual(8);
     for (const m of fns) expect(m[2], m[1]).toMatch(/await requireStaff\(\)/);
     expect(actions).not.toMatch(/service|createAdminClient/i);
+  });
+
+  it("입구 — 강사 · 관리자만 들어온다 (2026-11-03 Alan '강사게시판은 강사랑 관리자만 접근이 가능하도록'). 조교 · 학생 · 회원은 주소를 쳐도 막힌다", () => {
+    for (const path of ["/admin/teacher-board", "/admin/teacher-board?subject=lc&folder=3"]) {
+      expect(canEnterAdminPath("admin", path.split("?")[0]), path).toBe(true);
+      expect(canEnterAdminPath("instructor", path.split("?")[0]), path).toBe(true);
+      for (const role of ["assistant", "student", "member", "alumni", "guest", null]) expect(canEnterAdminPath(role, path.split("?")[0]), `${role} ${path}`).toBe(false);
+    }
+    const page = readFileSync("src/app/admin/teacher-board/page.tsx", "utf8");
+    expect(page).toMatch(/await requireStaff\(\)/);
+    expect(page).not.toMatch(/requireCrew/);
   });
 
   it("관리자 메뉴에 있고 조교에게는 열지 않는다", () => {

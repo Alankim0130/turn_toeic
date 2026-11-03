@@ -2,7 +2,8 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { deleteAudioTrack, setAudioTracks, setLessonOffset, setTrackLabel } from "@/app/admin/lc-audio/actions";
+import { deleteAudioTrack, moveAudioTrack, setAudioTracks, setLessonOffset, setTrackLabel } from "@/app/admin/lc-audio/actions";
+import { MoveButtons } from "@/components/admin/class-materials/MaterialFilePicker";
 import { AudioPlayer } from "@/components/lc/AudioPlayer";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
@@ -53,10 +54,11 @@ export function AudioDays({
   const [offset, setOffset] = useState(String(lessonOffset));
   const [savingOffset, startOffset] = useTransition();
   const [deleting, startDelete] = useTransition();
+  const [moving, startMove] = useTransition();
 
   const byDay = groupByDay(tracks, kind);
   const lesson = (day: number) => lessonLabel(day, lessonOffset);
-  const working = busy || deleting;
+  const working = busy || deleting || moving;
 
   const reset = () => {
     setError(null);
@@ -126,6 +128,19 @@ export function AudioDays({
       setConfirmId(null);
       if (res.ok) router.refresh();
       else setError(res.error ?? "삭제하지 못했어요.");
+    });
+
+  // 같은 강 안에서 한 칸 위 · 아래 (2026-11-03 Alan "LC 음성파일 올리는곳도 아래위로 파일이동 가능하도록")
+  const onMove = (id: number, step: -1 | 1) =>
+    startMove(async () => {
+      reset();
+      try {
+        const res = await moveAudioTrack(id, step);
+        if (res.ok) router.refresh();
+        else setError(res.error ?? "순서를 바꾸지 못했어요.");
+      } catch {
+        setError("연결이 끊겼어요. 새로고침한 뒤 다시 옮겨 주세요.");
+      }
     });
 
   const saveOffset = () =>
@@ -315,9 +330,12 @@ export function AudioDays({
 
               {list.length > 0 && (
                 <ul className="mt-3 space-y-3">
-                  {list.map((t) => (
+                  {list.map((t, i) => (
                     <li key={t.id}>
                       <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                        {list.length > 1 && (
+                          <MoveButtons name={t.file_name} first={i === 0} last={i === list.length - 1} disabled={working} onMove={(d) => onMove(t.id, d)} />
+                        )}
                         <p className="min-w-0 flex-1 truncate text-xs text-slate">
                           <span className="font-bold text-ink">{t.file_name}</span> · {formatBytes(t.file_size)}
                         </p>
