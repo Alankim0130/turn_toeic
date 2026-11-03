@@ -20,6 +20,7 @@ import {
 } from "@/lib/class-materials";
 import { ROUND_MAX, isRoundSet } from "@/lib/class-rounds";
 import { TEACHER_BOARD_BUCKET, TEACHER_BOARD_FOLDER, folderNameError } from "@/lib/teacher-board";
+import { readAll } from "@/lib/read-all";
 
 /**
  * 강사 자료 게시판 (2026-11-03 Alan) — 폴더 · 폴더 안 자료 · "몇월 수업자료로 쓰기". 강사 · 관리자만 (조교 화면이 아니다).
@@ -132,19 +133,21 @@ export async function deleteTeacherFolder(id: number): Promise<TeacherBoardResul
   if (!validId(id)) return { ok: false, error: "잘못된 요청이에요." };
 
   const supabase = await createClient();
-  const { data: items, error: itemsError } = await supabase.from("teacher_folder_items").select("id").eq("folder_id", id);
-  if (itemsError) return { ok: false, error: errorMessage(itemsError, "폴더 안 자료를 읽지 못했어요. 잠시 후 다시 시도해 주세요.") };
-  const itemIds = (items ?? []).map((i) => i.id);
-  let paths: string[] = [];
-  if (itemIds.length > 0) {
-    const { data: files, error: filesError } = await supabase.from("teacher_folder_files").select("file_path").in("item_id", itemIds);
-    if (filesError) return { ok: false, error: errorMessage(filesError, "파일 목록을 읽지 못했어요. 잠시 후 다시 시도해 주세요.") };
-    paths = (files ?? []).map((f) => f.file_path);
-  }
+  // 폴더의 모든 파일 경로 — 1,000줄이 넘을 수 있어(자료 60 × 파일 20) 나눠 다 읽는다. 다 못 읽으면 지우지 않는다 (저장소에 주인 없는 파일이 남는다)
+  const files = await readAll<{ file_path: string }>((from, to, count) =>
+    supabase
+      .from("teacher_folder_files")
+      .select("file_path, item:teacher_folder_items!inner(folder_id)", count ? { count: "exact" } : undefined)
+      .eq("item.folder_id", id)
+      .order("id")
+      .range(from, to),
+  );
+  if (!files.ok) return { ok: false, error: "파일 목록을 읽지 못했어요. 잠시 후 다시 시도해 주세요." };
+  const paths = files.rows.map((f) => f.file_path);
   const { data, error } = await supabase.from("teacher_folders").delete().eq("id", id).select("id");
   if (error) return { ok: false, error: errorMessage(error, "지우지 못했어요.") };
   if (!data?.length) return { ok: false, error: "폴더를 찾을 수 없어요. 새로고침해 주세요." };
-  if (paths.length > 0) await supabase.storage.from(TEACHER_BOARD_BUCKET).remove(paths);
+  for (let i = 0; i < paths.length; i += 100) await supabase.storage.from(TEACHER_BOARD_BUCKET).remove(paths.slice(i, i + 100));
   revalidateBoard();
   return { ok: true };
 }
@@ -366,8 +369,10 @@ export async function saveTeacherItem(input: {
     .eq("id", id)
     .select("id");
   if (error || !data?.length) {
-    if (added.length) await supabase.from("teacher_folder_files").delete().in("id", added);
-    return { ok: false, error: error ? errorMessage(error) : "자료를 찾을 수 없어요. 새로고침해 주세요." };
+    // 방금 넣은 파일 행을 되돌린다 — 되돌리지 못했으면 그 행이 파일을 가리키므로 화면이 올린 파일을 지우면 안 된다 (filesSaved)
+    const undone = added.length ? await supabase.from("teacher_folder_files").delete().in("id", added).select("id") : null;
+    const kept = !!undone && (!!undone.error || (undone.data?.length ?? 0) < added.length);
+    return { ok: false, filesSaved: kept || undefined, error: error ? errorMessage(error) : "자료를 찾을 수 없어요. 새로고침해 주세요." };
   }
 
   // 3) 뺀 파일 — 행을 지운 뒤 저장소에서도 지운다

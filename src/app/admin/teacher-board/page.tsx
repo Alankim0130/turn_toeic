@@ -44,8 +44,10 @@ export default async function TeacherBoardPage({ searchParams }: { searchParams:
   const all = folders ?? [];
   const list = all.filter((f) => f.subject === subject);
   const folder = list.find((f) => f.id === Number(sp.folder)) ?? null;
+  // 자료 수 — **못 읽으면 0 이 아니라 모름(null)** 이다. 0 으로 보이면 폴더 지우기 확인이 "안에 자료는 없어요" 라고 말한다 (읽기 오류를 빈 목록으로 판정하지 않는다)
   const itemCount = new Map<number, number>();
   for (const r of counts.rows) itemCount.set(r.folder_id, (itemCount.get(r.folder_id) ?? 0) + 1);
+  const countOf = (id: number): number | null => (counts.ok ? (itemCount.get(id) ?? 0) : null);
   const uses = (useRows ?? []).map((u) => ({ ...u, term: u.term as { year: number; month: number; closes_at: string | null } | null }));
   const usesOf = (id: number) => uses.filter((u) => u.folder_id === id).sort((a, b) => (b.term?.year ?? 0) * 12 + (b.term?.month ?? 0) - ((a.term?.year ?? 0) * 12 + (a.term?.month ?? 0)));
 
@@ -56,9 +58,11 @@ export default async function TeacherBoardPage({ searchParams }: { searchParams:
         .eq("folder_id", folder.id)
     : { data: [] as TeacherItemRow[], error: null };
 
-  // 쓸 수 있는 달 — 아직 종강하지 않은 기수 (지난 달 칸은 학생에게 이미 닫혔다)
+  // 쓸 수 있는 달 — 아직 종강하지 않은 기수 (지난 달 칸은 학생에게 이미 닫혔다). 종강일을 아직 안 정한 기수는 이번 달 이후만 —
+  // 날짜 없이 남은 옛 기수가 목록 맨 앞(처음 고른 값)에 서지 않게
+  const thisMonth = Number(today.slice(0, 4)) * 12 + Number(today.slice(5, 7));
   const termOptions: TermOption[] = (termRows ?? [])
-    .filter((t) => !t.closes_at || t.closes_at >= today)
+    .filter((t) => (t.closes_at ? t.closes_at >= today : t.year * 12 + t.month >= thisMonth))
     .sort((a, b) => a.year * 12 + a.month - (b.year * 12 + b.month))
     .map((t) => ({ id: t.id, label: `${t.year}년 ${t.month}월` }));
   const levels = (levelRows ?? []).map((l) => l.level);
@@ -113,7 +117,7 @@ export default async function TeacherBoardPage({ searchParams }: { searchParams:
                     <span className="min-w-0 flex-1">
                       <span className={cn("block font-bold leading-snug text-ink [overflow-wrap:anywhere]", active && "text-brand-700")}>{f.name}</span>
                       <span className="mt-0.5 block text-xs text-slate">
-                        자료 {itemCount.get(f.id) ?? 0}개
+                        {countOf(f.id) == null ? "자료 수를 읽지 못했어요" : `자료 ${countOf(f.id)}개`}
                         {fu.length > 0 && <> · {fu.map((u) => `${u.term?.month ?? "?"}월 ${u.level} ${u.book_set}`).join(" · ")}</>}
                       </span>
                     </span>
@@ -139,7 +143,7 @@ export default async function TeacherBoardPage({ searchParams }: { searchParams:
                   folder={{ id: folder.id, name: folder.name }}
                   first={list[0]?.id === folder.id}
                   last={list[list.length - 1]?.id === folder.id}
-                  itemCount={itemCount.get(folder.id) ?? 0}
+                  itemCount={countOf(folder.id)}
                   useCount={usesOf(folder.id).length}
                   backHref={listHref()}
                   disabled={testing}
