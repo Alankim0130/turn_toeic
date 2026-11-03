@@ -177,6 +177,190 @@ export type Database = {
           },
         ]
       }
+      teacher_folder_files: {
+        Row: {
+          content_type: string | null
+          created_at: string
+          file_name: string
+          file_path: string
+          file_size: number | null
+          id: number
+          item_id: number
+          sort_order: number
+        }
+        Insert: {
+          content_type?: string | null
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          id?: number
+          item_id: number
+          sort_order?: number
+        }
+        Update: {
+          content_type?: string | null
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          id?: number
+          item_id?: number
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "teacher_folder_files_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "teacher_folder_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teacher_folder_items: {
+        Row: {
+          created_at: string
+          folder_id: number
+          id: number
+          links: Json
+          note: string | null
+          seq: number
+          sort_order: number
+          title: string
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          folder_id: number
+          id?: number
+          links?: Json
+          note?: string | null
+          seq: number
+          sort_order?: number
+          title: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          folder_id?: number
+          id?: number
+          links?: Json
+          note?: string | null
+          seq?: number
+          sort_order?: number
+          title?: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "teacher_folder_items_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "teacher_folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "teacher_folder_items_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teacher_folder_uses: {
+        Row: {
+          book_set: string
+          created_at: string
+          created_by: string | null
+          folder_id: number
+          id: number
+          level: number
+          subject: string
+          term_id: number
+        }
+        Insert: {
+          book_set: string
+          created_at?: string
+          created_by?: string | null
+          folder_id: number
+          id?: number
+          level: number
+          subject: string
+          term_id: number
+        }
+        Update: {
+          book_set?: string
+          created_at?: string
+          created_by?: string | null
+          folder_id?: number
+          id?: number
+          level?: number
+          subject?: string
+          term_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "teacher_folder_uses_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "teacher_folder_uses_folder_id_subject_fkey"
+            columns: ["folder_id", "subject"]
+            isOneToOne: false
+            referencedRelation: "teacher_folders"
+            referencedColumns: ["id", "subject"]
+          },
+          {
+            foreignKeyName: "teacher_folder_uses_level_fkey"
+            columns: ["level"]
+            isOneToOne: false
+            referencedRelation: "lc_levels"
+            referencedColumns: ["level"]
+          },
+          {
+            foreignKeyName: "teacher_folder_uses_term_id_fkey"
+            columns: ["term_id"]
+            isOneToOne: false
+            referencedRelation: "terms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teacher_folders: {
+        Row: {
+          created_at: string
+          id: number
+          name: string
+          sort_order: number
+          subject: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          name: string
+          sort_order?: number
+          subject: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          name?: string
+          sort_order?: number
+          subject?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       youtube_channels: {
         Row: {
           access_token: string | null

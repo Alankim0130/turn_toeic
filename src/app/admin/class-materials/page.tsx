@@ -89,7 +89,7 @@ export default async function ClassMaterialsAdminPage({ searchParams }: { search
   // 파일은 자료마다 0 ~ 20개 (class_material_files, 2026-10-06) — 줄이 순서대로 정렬한다. 링크(links)는 자료 행의 칸 (같은 날)
   const cols = "id, level, subject, book_set, seq, title, note, links, sort_order, created_at, updated_at, files:class_material_files(id, file_name, file_size, content_type, sort_order)";
 
-  const [{ data: rows, error }, { data: loose }, levelCounts, cellCounts, { data: sectionRows }, { data: noticeRows }] = await Promise.all([
+  const [{ data: rows, error }, { data: loose }, levelCounts, cellCounts, { data: sectionRows }, { data: noticeRows }, { data: folderUse }] = await Promise.all([
     // 회차 안 순서는 sort_order → 올린 순서 (2026-10-12 — 강사가 ▲▼ 로 옮긴다. 학생 화면 sortClassMaterials 와 같은 순서)
     supabase.from("class_materials").select(cols).eq("level", level).eq("subject", subject).eq("book_set", set).order("seq").order("sort_order").order("created_at").order("id"),
     // 과정 · 회차를 정하기 전에 올린 자료 (2026-10-05 오전 — 칸이 생기기 전). 학생에게 보이지 않는다
@@ -111,6 +111,17 @@ export default async function ClassMaterialsAdminPage({ searchParams }: { search
       .select("id, title, levels, subjects, links, author_name, created_at, published, class_notice_files(id)")
       .order("created_at", { ascending: false })
       .limit(200),
+    // 그 달 이 칸이 강사 자료 게시판 폴더를 쓰나 (2026-11-03) — 쓰면 그 달 학생에게는 아래 자료 대신 폴더 자료가 열린다
+    term
+      ? supabase
+          .from("teacher_folder_uses")
+          .select("folder_id, folder:teacher_folders(name)")
+          .eq("term_id", term.id)
+          .eq("level", level)
+          .eq("subject", subject)
+          .eq("book_set", set)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
   // 공지 — 지금 보고 있는 레벨 · 과목 학생에게도 보이는 것 (전체 공지 포함). 다른 범위 공지는 그 레벨 · 과목에서 보인다.
   // 내린 공지(published = false)는 따로 모아 아래에 접어 둔다 (2026-10-06 Alan — 다음 달에 다시 올린다)
@@ -318,6 +329,16 @@ export default async function ClassMaterialsAdminPage({ searchParams }: { search
                 {termLabel(term)}에는 이 과정의 {level} {MATERIAL_SUBJECT_LABEL[subject]} 반이 없어요 — 자료는 올려 두면 이 과정이 돌아오는 달에 열려요.
               </p>
             ))}
+          {term && folderUse && (
+            <p className="flex flex-wrap items-center gap-1.5 rounded-xl bg-brand-50 px-3 py-2 text-brand-700">
+              <Icon name="download" size={16} />
+              {termLabel(term)} 이 과정은 강사 자료 게시판의{" "}
+              <strong>&lsquo;{(folderUse.folder as { name?: string } | null)?.name ?? "폴더"}&rsquo;</strong> 폴더를 써요 — 이 달 학생에게는 아래 자료 대신 그 폴더 자료가 열려요.
+              <Link href={`/admin/teacher-board?subject=${subject}&folder=${folderUse.folder_id}`} className="font-bold underline">
+                폴더 보기
+              </Link>
+            </p>
+          )}
         </section>
 
         {testing && (

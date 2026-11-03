@@ -349,7 +349,8 @@ describe("LC 교재 · 음원 · 수업자료실 조회는 내 과정 칸 · 열
     for (const [key, body] of selectsOf("class_materials")) {
       const flat = body.replace(/\s+/g, " ");
       expect(flat, `${key}`).toContain("book_set is not null and seq is not null");
-      expect(flat, `${key}`).toContain("array[format('%s:%s:%s:%s', level, subject, book_set, seq)] <@ (select private.my_open_rounds())");
+      // 2026-11-03 부터 my_open_class_rounds — my_open_rounds 에서 강사 자료 게시판 폴더를 쓰는 (기수 · 칸)을 뺀 것 (Alan "그 달은 폴더 자료만")
+      expect(flat, `${key}`).toContain("array[format('%s:%s:%s:%s', level, subject, book_set, seq)] <@ (select private.my_open_class_rounds())");
     }
   });
 

@@ -417,6 +417,13 @@ create table class_notice_files (          -- 공지 첨부 파일 0 ~ 20개 (20
   file_name text, file_size bigint, content_type text, sort_order int, created_at timestamptz
 );
 
+-- ─── 강사 자료 게시판 (마이그레이션 20261103100000 — 도메인 규칙 7-7 · d7-7-teacher-board.md) ───
+-- teacher_folders(id, subject rc|lc, name 60자, sort_order) — 강사 · 관리자만. unique(id, subject)
+-- teacher_folder_items(id, folder_id, seq 1~30, title, note, links, sort_order, uploaded_by) — 조회: 스태프 또는 쓰는 (기수 · 칸)의 그 회차가 나에게 열림(private.my_open_term_rounds)
+-- teacher_folder_files(id, item_id, file_path 'teacher/…', file_name, file_size, content_type, sort_order) — 부모 자료가 보이는 사람. /files/teacher/{id}
+-- teacher_folder_uses(id, folder_id, subject, term_id, level, book_set, created_by) — (folder_id, subject) → teacher_folders 복합 FK, unique(term_id, level, subject, book_set).
+--   조회: 스태프 또는 내 기수 · 칸(private.my_term_cells). 쓰는 (기수 · 칸)의 수업자료실 자료는 닫힌다 — class_materials 정책이 private.my_open_class_rounds()
+
 -- ─── 인수인계 체크리스트 (마이그레이션 20261004110000) ───
 create table handover_checks (            -- 끝낸 항목. 내용은 docs/HANDOVER.md, 이 표는 누가 · 언제만. 강사·관리자만 조회 · 체크 · 풀기
   item text primary key,                   -- 문서의 항목 번호 (0-1 · 3-B …, check 꼴 ^[0-9]{1,2}-[0-9A-Z]{1,2}$)

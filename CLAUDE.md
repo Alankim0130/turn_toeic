@@ -154,6 +154,8 @@
 - **교재주문**: 주문은 DB 함수 `create_textbook_order` 로만, 교재는 **내 반 교재 고정**(체크 칸으로 되돌리지 말 것), 금액확인은 강사 · 관리자, 조교는 상태 · 송장만. 받는 곳은 `PICKUP_PLACE` 한곳. (`d7-1-textbook.md`)
 - **출석**: 한 번 찍으면 출석, 수업 시작 뒤 1초라도 지각, 결석은 한 단어(`미출석` 금지). 규칙을 바꾸면 SQL · `attendance.ts` · 포스터 문구를 같이. (`d7-2-attendance.md`)
 - **수업자료실 · LC 음원**: 내 반의 과정 칸, 그 회차 수업일부터 열린다 — DB(`my_round_cells` · `my_open_rounds`)와 화면(`class-rounds.ts`)이 같은 규칙 (바꾸면 둘 다). (`d7-4-class-materials.md` · `d7-lc-audio.md`)
+- **강사 자료 게시판**: 폴더(RC · LC 강사게시판)를 몇월 · 레벨 · 과정 자료로 쓰면 그 칸 학생에게 회차 수업일마다 열리고 **그 달 그 칸은 폴더 자료만**(수업자료실 자료는 닫힘) —
+  DB(`my_open_term_rounds` · `my_open_class_rounds`)와 화면(`splitRoundDates`)이 같은 규칙 (바꾸면 둘 다). 강사 · 관리자만. (`d7-7-teacher-board.md`)
 - **알림은 웹 푸시만**(문자 · 이메일 · 카톡 없음). 네이버 예약은 응답을 기본값으로 메우지 않고 예약자를 조회하지 않는다. (`d8-notifications.md` · `d8-1-student-push.md`)
 
 ---
@@ -193,7 +195,7 @@
 | 도메인 7 숙제 · 미제출 알림 · 제출률 / LC 음원 | `d7-homework.md` · `d7-lc-audio.md` |
 | 도메인 7-1 교재주문 / 7-2 출석 / 7-3 문의 답변 | `d7-1-textbook.md` · `d7-2-attendance.md` · `d7-3-contact.md` |
 | 도메인 7-4 수업자료실 · 공지 / 글 편집기(붙여 넣기 · 표) | `d7-4-class-materials.md` · `note-editor.md` |
-| 도메인 7-5 직원 게시판 / 7-6 수강생 설문 | `d7-5-staff-board.md` · `d7-6-survey.md` |
+| 도메인 7-5 직원 게시판 / 7-6 수강생 설문 / 7-7 강사 자료 게시판 | `d7-5-staff-board.md` · `d7-6-survey.md` · `d7-7-teacher-board.md` |
 | 도메인 8 관리자 알림 · 네이버 예약 / 8-1 학생 휴대폰 알림 | `d8-notifications.md` · `d8-1-student-push.md` |
 | 수강증 OCR 파이프라인 · 표기 규칙 | `ocr.md` |
 | 데이터 모델 (표 · 칸 · DB 함수) / 상태 전이 · 월 넘김 점검 | `data-model.md` · `status-transition.md` |

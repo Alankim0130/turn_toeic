@@ -21,6 +21,10 @@ import { MaterialLinkList } from "@/components/class-materials/MaterialLinkList"
 
 export type MyClassMaterial = {
   id: number;
+  /** 화면 key — 수업자료실 자료와 강사 자료 게시판 자료의 id 가 겹칠 수 있다 (2026-11-03) */
+  uid?: string;
+  /** 파일 주소 — 강사 자료 게시판 자료는 `/files/teacher` (기본 `/files/class`) */
+  fileBase?: "/files/class" | "/files/teacher";
   title: string;
   note: string | null;
   /** 붙은 파일 0 ~ 20개 (2026-10-06) — 0이면 강사가 글만 올린 자료 */
@@ -162,7 +166,7 @@ export function ClassMaterialsView({
               </p>
               <ul className="space-y-2">
                 {r.items.map((m) => (
-                  <MaterialCard key={m.id} m={m} />
+                  <MaterialCard key={m.uid ?? m.id} m={m} />
                 ))}
               </ul>
             </li>
@@ -240,7 +244,7 @@ export function MaterialCard({ m }: { m: MyClassMaterial }) {
         <div className="space-y-3 px-4 pb-4 sm:px-5 sm:pb-5">
           {/* 강사가 적은 안내 · 스크립트 — 짧으면 펼쳐 두고, 길면 앞 네 줄 + 전체 보기 (2026-10-05) */}
           {m.note && <MaterialNote note={m.note} className="bg-brand-50" />}
-          {files.length > 0 && <MaterialFileList files={files} />}
+          {files.length > 0 && <MaterialFileList files={files} base={m.fileBase} />}
           {links.length > 0 && <MaterialLinkList links={links} />}
         </div>
       </details>
