@@ -25,6 +25,9 @@ vi.mock("@/app/admin/board/move-actions", () => ({
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {} }) }));
 
 const { BoardBulkMove } = await import("@/components/admin/board/BoardBulkMove");
+type BulkProps = Parameters<typeof BoardBulkMove>[0];
+/** 대화창을 그린다 — children 은 createElement 셋째 인자로 (react/no-children-prop) */
+const bulk = (props: Omit<BulkProps, "children">, ...children: React.ReactNode[]) => createElement(BoardBulkMove, props as BulkProps, ...children);
 const { BulkCheck } = await import("@/components/admin/board/BulkSelect");
 
 const post = (id: number, issue: BulkPost["materialIssue"] = null): BulkPost => ({ id, title: `글 ${id}`, levels: [850], subject: "lc", set: null, movedFrom: null, materialIssue: issue });
@@ -60,7 +63,10 @@ async function openTeacher() {
   const items = h.posts.map((p) => ({ key: `post:${p.id}`, id: p.id, title: p.title }));
   act(() =>
     root!.render(
-      createElement(BoardBulkMove, { items, levels: [650, 750, 850], tab: { level: 850, cell: { subject: "rc", set: "A" } }, folders }, items.map((i) => createElement(BulkCheck, { key: i.key, itemKey: i.key, label: i.title }))),
+      bulk(
+        { items, levels: [650, 750, 850], tab: { level: 850, cell: { subject: "rc", set: "A" } }, folders },
+        items.map((i) => createElement(BulkCheck, { key: i.key, itemKey: i.key, label: i.title })),
+      ),
     ),
   );
   for (const box of document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) await click(box);
@@ -106,7 +112,7 @@ describe("직원 게시판 → 강사 자료 게시판", () => {
 
   it("폴더가 없으면 버튼을 그리지 않는다", async () => {
     const items = [{ key: "post:1", id: 1, title: "글" }];
-    act(() => root!.render(createElement(BoardBulkMove, { items, levels: [850], tab: { level: 850, cell: null }, folders: [] }, createElement(BulkCheck, { itemKey: "post:1", label: "글" }))));
+    act(() => root!.render(bulk({ items, levels: [850], tab: { level: 850, cell: null }, folders: [] }, createElement(BulkCheck, { itemKey: "post:1", label: "글" }))));
     await click(document.querySelector('input[type="checkbox"]'));
     expect(button("강사 자료 게시판으로")).toBeUndefined();
     expect(button("수업자료실로 옮기기")).toBeTruthy();
