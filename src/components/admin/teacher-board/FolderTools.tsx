@@ -71,7 +71,8 @@ export function FolderControls({
   folder: { id: number; name: string };
   first: boolean;
   last: boolean;
-  itemCount: number;
+  /** 폴더 안 자료 수 — 못 읽었으면 null */
+  itemCount: number | null;
   useCount: number;
   backHref: string;
   disabled: boolean;
@@ -162,7 +163,7 @@ export function FolderControls({
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50/60 p-3 text-sm">
           <Icon name="warning" size={20} />
           <span className="min-w-0 flex-1 text-ink">
-            이 폴더를 지울까요? {itemCount > 0 ? <>안의 자료 {itemCount}개와 파일도 함께 지워져요.</> : "안에 자료는 없어요."}
+            이 폴더를 지울까요? {itemCount == null ? "안의 자료와 파일도 모두 함께 지워져요." : itemCount > 0 ? <>안의 자료 {itemCount}개와 파일도 함께 지워져요.</> : "안에 자료는 없어요."}
             {useCount > 0 && <> 이 폴더를 쓰는 달 {useCount}곳의 학생 화면에서도 빠져요.</>}
           </span>
           <span className="flex gap-1">

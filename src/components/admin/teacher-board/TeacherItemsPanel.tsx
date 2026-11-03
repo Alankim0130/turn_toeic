@@ -288,6 +288,11 @@ function TeacherItemRow({ item, folderId, disabled }: { item: TeacherItem; folde
       if (!res.ok) {
         if (!res.filesSaved) await removeUploaded(TEACHER_BOARD_BUCKET, uploaded.map((u) => u.path));
         setError(res.error ?? "저장하지 못했어요.");
+        // 새 파일은 이미 저장됐다 — 수정 칸을 그대로 두면 '저장' 을 다시 눌러 같은 파일이 한 번 더 올라간다. 닫고 지금 모양을 새로 받는다
+        if (res.filesSaved) {
+          setMode("view");
+          router.refresh();
+        }
         return;
       }
       setMode("view");
@@ -304,10 +309,14 @@ function TeacherItemRow({ item, folderId, disabled }: { item: TeacherItem; folde
   const onDelete = () =>
     startTransition(async () => {
       setError(null);
-      const res = await deleteTeacherItem(item.id);
-      if (!res.ok) return setError(res.error ?? "삭제하지 못했어요.");
-      setMode("view");
-      router.refresh();
+      try {
+        const res = await deleteTeacherItem(item.id);
+        if (!res.ok) return setError(res.error ?? "삭제하지 못했어요.");
+        setMode("view");
+        router.refresh();
+      } catch {
+        setError("연결이 끊겼어요. 새로고침한 뒤 다시 해 주세요.");
+      }
     });
 
   const changeAdded = (next: PickedFile[]) => {

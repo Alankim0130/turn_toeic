@@ -128,6 +128,21 @@ describe("서버 액션 · 메뉴", () => {
     expect(page).not.toMatch(/requireCrew/);
   });
 
+  it("2026-11-03 점검 — 폴더 지우기는 파일 경로를 다 읽고(1,000줄 넘게), 못 읽으면 지우지 않는다 · 자료 수를 못 읽으면 0 이 아니라 모름", () => {
+    const del = actions.slice(actions.indexOf("export async function deleteTeacherFolder"), actions.indexOf("// ─── 몇월 수업자료로 쓰기"));
+    expect(del).toMatch(/readAll<\{ file_path: string \}>/);
+    expect(del).toMatch(/if \(!files\.ok\) return \{ ok: false/);
+    expect(del.indexOf("!files.ok")).toBeLessThan(del.indexOf('.from("teacher_folders").delete()'));
+    const page = readFileSync("src/app/admin/teacher-board/page.tsx", "utf8");
+    expect(page).toMatch(/counts\.ok \? \(itemCount\.get\(id\) \?\? 0\) : null/);
+  });
+
+  it("2026-11-03 점검 — 파일 행까지 저장된 뒤 실패하면(filesSaved) 수정 칸을 닫는다 · 되돌리기를 못 하면 filesSaved", () => {
+    const panel = readFileSync("src/components/admin/teacher-board/TeacherItemsPanel.tsx", "utf8");
+    expect(panel).toMatch(/if \(res\.filesSaved\) \{\s*setMode\("view"\);\s*router\.refresh\(\);/);
+    expect(actions).toMatch(/const kept = !!undone && \(!!undone\.error \|\| \(undone\.data\?\.length \?\? 0\) < added\.length\);/);
+  });
+
   it("관리자 메뉴에 있고 조교에게는 열지 않는다", () => {
     const item = NAV_ADMIN.find((n) => n.href === "/admin/teacher-board");
     expect(item).toBeTruthy();
