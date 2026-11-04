@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { isStaff, requireCrew, requireStaff } from "@/lib/auth";
+import { isStaff, requireCrew } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 const BASE = "/admin/textbook-orders";
@@ -41,22 +41,24 @@ function refresh() {
  * 바꿀 줄이 없으면(이미 처리됐거나 학생이 취소) 성공이라고 하지 않는다 — `.select()` 로 바뀐 줄을 센다.
  */
 
-/** **금액확인** — 입금자명을 통장과 대조하고 누른다. 강사 · 관리자만 (교재비가 강사 통장으로 들어와 조교는 대조할 수 없다) */
+/**
+ * **금액확인** — 입금자명을 통장과 대조하고 누른다. 강사 · 관리자는 어느 주문이든 (교재비가 강사 통장으로 들어온다).
+ * **조교는 학생이 이체 화면 캡처를 올린 주문만** (2026-11-04 Alan — "학생이 이체를 하고 난 뒤에, 해당 화면을 스크린샷찍어서 올려주면 조교들이 바로 확인하고
+ * 배송을 시작") — 조회에 `transfer_path is not null` 을 걸고, DB 트리거(`guard_textbook_order_update`)가 같은 규칙으로 한 번 더 막는다.
+ */
 export async function confirmTextbookPayment(formData: FormData) {
-  await requireStaff();
+  const { profile } = await requireCrew();
+  const staff = isStaff(profile.role);
   const back = backOf(formData);
   const id = orderIdOf(formData);
   if (!id) go(back, "error=invalid");
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("textbook_orders")
-    .update({ status: "confirmed", updated_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("status", "requested")
-    .select("id");
-  if (error) go(back, "error=save");
-  if (!data || data.length === 0) go(back, "error=stale");
+  let query = supabase.from("textbook_orders").update({ status: "confirmed", updated_at: new Date().toISOString() }).eq("id", id).eq("status", "requested");
+  if (!staff) query = query.not("transfer_path", "is", null);
+  const { data, error } = await query.select("id");
+  if (error) go(back, error.message.includes("confirm_staff_only") ? "error=transfer" : "error=save");
+  if (!data || data.length === 0) go(back, staff ? "error=stale" : "error=transfer");
 
   refresh();
   go(back, `ok=${id}&did=confirmed`);
@@ -113,7 +115,7 @@ export async function markTextbookPickedUp(formData: FormData) {
 /**
  * 상태 직접 바꾸기 — 잘못 누른 것 되돌리기 · 취소 · 송장번호 고치기. 조교도 한다.
  * 단 **금액확인 전(또는 취소) → 배송 대기 · 배송완료** 는 강사 · 관리자만이다 — 배송완료로 바로 건너뛰면 금액확인을 비껴간다
- * (위 금액확인과 같은 규칙 — DB 트리거도 막는다).
+ * (위 금액확인과 같은 규칙 — DB 트리거도 막는다). 이체 캡처가 있는 금액확인 전 주문 → 배송 대기는 조교도 (2026-11-04, 금액확인과 같다).
  */
 export async function updateTextbookOrder(formData: FormData) {
   const { profile } = await requireCrew();
@@ -124,8 +126,9 @@ export async function updateTextbookOrder(formData: FormData) {
 
   const supabase = await createClient();
   if ((status === "confirmed" || status === "shipped") && !isStaff(profile.role)) {
-    const { data: current } = await supabase.from("textbook_orders").select("status").eq("id", id).maybeSingle();
-    if (current?.status !== "confirmed" && current?.status !== "shipped") go(back, "error=staff");
+    const { data: current } = await supabase.from("textbook_orders").select("status, transfer_path").eq("id", id).maybeSingle();
+    const confirmable = status === "confirmed" && current?.status === "requested" && !!current.transfer_path;
+    if (current?.status !== "confirmed" && current?.status !== "shipped" && !confirmable) go(back, "error=staff");
   }
 
   const { data, error } = await supabase

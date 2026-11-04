@@ -32,6 +32,7 @@ const ERROR_TEXT: Record<string, string> = {
   invalid: "잘못된 요청입니다.",
   stale: "이미 처리됐거나 학생이 취소한 주문이에요. 목록을 다시 확인해 주세요.",
   staff: "금액확인은 강사·관리자만 할 수 있어요 — 교재비가 강사님 통장으로 들어와요.",
+  transfer: "이체 캡처가 없는 주문은 강사·관리자만 금액확인할 수 있어요 (또는 이미 처리된 주문이에요). 학생이 캡처를 올리면 조교도 확인할 수 있어요.",
 };
 
 export default async function TextbookOrdersPage({
@@ -77,6 +78,8 @@ export default async function TextbookOrdersPage({
       .order("updated_at", { ascending: false })
       .limit(1000),
     ...["requested", "confirmed", "shipped", "cancelled"].map((s) => supabase.from("textbook_orders").select("id", { count: "exact", head: true }).eq("status", s)),
+    // 이체 캡처가 올라온 금액확인 전 주문 (2026-11-04) — 조교도 금액확인할 수 있는 것. 다른 탭을 보고 있어도 알려 준다
+    supabase.from("textbook_orders").select("id", { count: "exact", head: true }).eq("status", "requested").not("transfer_path", "is", null),
   ]);
   const today = todayKST();
   // 한 번 만들어 모든 줄에 같은 목록을 넘긴다 — 화면 데이터에는 한 번만 실린다
@@ -123,6 +126,7 @@ export default async function TextbookOrdersPage({
     shipped: countRes[2].count ?? 0,
     cancelled: countRes[3].count ?? 0,
   };
+  const withTransfer = countRes[4].count ?? 0;
   const back = `/admin/textbook-orders?status=${status}`;
 
   return (
@@ -130,7 +134,7 @@ export default async function TextbookOrdersPage({
       <PageHeader
         icon="orders"
         title="교재주문"
-        description="불라방 수강생의 교재 주문이에요. 강사님이 입금자명을 통장과 대조해 '금액확인'을 누르면 조교 화면의 배송 대기로 넘어가고, 보낸 뒤 '배송완료'를 누르면 학생 화면에 배송시작으로 보여요. 현장수령 주문은 학생이 고른 날짜 · 시각에 학원에서 건네고 '수령완료'를 눌러요."
+        description="불라방 수강생의 교재 주문이에요. 학생이 이체 화면 캡처를 올린 주문은 조교도 캡처를 보고 '금액확인'을 누를 수 있고, 캡처가 없는 주문은 강사님이 입금자명을 통장과 대조해 '금액확인'을 눌러요. 금액확인되면 배송 대기로 넘어가고, 보낸 뒤 '배송완료'를 누르면 학생 화면에 배송시작으로 보여요. 현장수령 주문은 학생이 고른 날짜 · 시각에 학원에서 건네고 '수령완료'를 눌러요."
       />
       {staff && (
         <div className="mb-4 flex justify-end">
@@ -165,6 +169,17 @@ export default async function TextbookOrdersPage({
           ) : (
             "강사님께 교재·입금 계좌 설정에서 계좌를 넣어 달라고 부탁해 주세요."
           )}
+        </Alert>
+      )}
+
+      {/* 이체 캡처가 올라온 금액확인 전 주문 (2026-11-04) — 조교도 바로 금액확인할 수 있다. 다른 탭에서도 보이게 */}
+      {withTransfer > 0 && status !== "requested" && (
+        <Alert kind="info" className="mb-4">
+          이체 캡처가 올라온 금액확인 전 주문이 {withTransfer}건 있어요.{" "}
+          <Link href="/admin/textbook-orders?status=requested" className="font-bold text-brand-700 underline decoration-brand-200 underline-offset-2 hover:decoration-brand-500">
+            금액확인 전 탭에서 캡처를 보고 금액확인
+          </Link>
+          할 수 있어요.
         </Alert>
       )}
 

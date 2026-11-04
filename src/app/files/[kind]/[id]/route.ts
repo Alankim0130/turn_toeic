@@ -18,6 +18,8 @@ import { COVER_REDIRECT_MAX_AGE, stableCoverUrl } from "@/lib/stable-signed-url"
  *    파일 행은 부모 자료(special_lecture_materials)가 보이는 사람 — 그 특강을 신청한 학생 · 강사 · 관리자 — 에게만 보여서, 신청하지 않은 특강의 id 는 404 다
  *  - teacher = 강사 자료 게시판 파일(teacher_folder_files, 2026-11-03). 저장소는 class-materials 의 teacher/ 폴더.
  *    파일 행은 부모 자료(teacher_folder_items)가 보이는 사람 — 그 폴더를 쓰는 달 · 과정 반의 그 회차 수업일이 된 학생 · 강사 · 관리자 — 에게만 보인다
+ *  - transfer = 교재주문의 이체 화면 캡처(textbook_orders.transfer_*, 2026-11-04 — **id 는 주문 id**). 저장소는 textbook-transfers 의 {학생 id}/ 폴더.
+ *    주문 행이 보이는 사람 — 본인 · 조교 · 강사 · 관리자 — 에게만 보인다. ?w=400 썸네일
  *  - 사용자 세션으로 행을 조회하므로 RLS 가 접근 권한을 정한다 (못 보면 404).
  *  - 저장소 서명 URL 도 사용자 세션으로 만들어 storage 정책을 한 번 더 통과한다.
  *    **LC 교재 표지만 예외** (2026-10-09 Alan "Lc음원듣기에서도 교재 이미지 불러오는게 시간이 쫌 걸려") — 하루 동안 모두가 같은 서명 주소를 쓴다
@@ -37,6 +39,7 @@ const BUCKET = {
   board: "staff-board",
   lecture: "class-materials",
   teacher: "class-materials",
+  transfer: "textbook-transfers",
 } as const;
 type Kind = keyof typeof BUCKET;
 
@@ -75,6 +78,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         ? await supabase.from("special_lecture_material_files").select(cols).eq("id", id).maybeSingle()
       : kind === "teacher"
         ? await supabase.from("teacher_folder_files").select(cols).eq("id", id).maybeSingle()
+      : kind === "transfer"
+        ? await supabase.from("textbook_orders").select("file_path:transfer_path, file_name:transfer_name, content_type:transfer_type").eq("id", id).maybeSingle()
       : kind === "homework"
         ? await supabase.from("homework_files").select(cols).eq("id", id).maybeSingle()
         : kind === "textbook"
@@ -84,7 +89,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   const sp = request.nextUrl.searchParams;
   const width = Number(sp.get("w"));
-  const thumb = (kind === "homework" || kind === "checkin" || kind === "textbook") && isImageType(row.content_type) && width >= 80 && width <= 1200;
+  const thumb = (kind === "homework" || kind === "checkin" || kind === "textbook" || kind === "transfer") && isImageType(row.content_type) && width >= 80 && width <= 1200;
   // LC 교재 표지 — 하루 동안 같은 서명 주소 · 브라우저가 12시간 기억 (stable-signed-url.ts 머리말). 위에서 로그인한 사람의 세션으로
   // 표지 행을 읽었다 = 볼 수 있다. 캐시나 서명이 실패하면 아래 예전 길(그 자리에서 서명)로 간다 — 표지가 깨지지 않게.
   // 크기는 정수만 — 480.0001 처럼 끝없이 다른 값으로 캐시 칸을 늘리지 못하게 (화면은 늘 정수를 쓴다)

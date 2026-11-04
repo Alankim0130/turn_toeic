@@ -2908,6 +2908,11 @@ export type Database = {
           term_id: number | null
           total_amount: number
           tracking_no: string | null
+          transfer_at: string | null
+          transfer_name: string | null
+          transfer_path: string | null
+          transfer_size: number | null
+          transfer_type: string | null
           updated_at: string
           user_id: string
         }
@@ -2936,6 +2941,11 @@ export type Database = {
           term_id?: number | null
           total_amount?: number
           tracking_no?: string | null
+          transfer_at?: string | null
+          transfer_name?: string | null
+          transfer_path?: string | null
+          transfer_size?: number | null
+          transfer_type?: string | null
           updated_at?: string
           user_id: string
         }
@@ -2964,6 +2974,11 @@ export type Database = {
           term_id?: number | null
           total_amount?: number
           tracking_no?: string | null
+          transfer_at?: string | null
+          transfer_name?: string | null
+          transfer_path?: string | null
+          transfer_size?: number | null
+          transfer_type?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -3258,6 +3273,10 @@ export type Database = {
           p_term_id: number
         }
         Returns: number
+      }
+      attach_textbook_transfer: {
+        Args: { p_id: number; p_path: string; p_type: string; p_size: number; p_name: string }
+        Returns: string
       }
       cancel_textbook_order: {
         Args: { p_id: number }

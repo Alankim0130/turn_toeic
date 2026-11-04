@@ -108,6 +108,11 @@ const order = (patch: Partial<AdminOrder> = {}): AdminOrder => ({
   pickup_time: null,
   tracking_no: null,
   received_at: null,
+  transfer_path: null,
+  transfer_type: null,
+  transfer_size: null,
+  transfer_name: null,
+  transfer_at: null,
   section_id: 5,
   section_ids: [5, 6],
   term_id: 3,
@@ -194,9 +199,24 @@ describe("휴대폰 카드 (src/components/admin/textbook-orders/OrderCard.tsx)"
     render(order(), { staff: true });
     expect(buttons()).toContain("금액확인");
     expect(content().textContent).toContain("상태 직접 바꾸기");
+    expect(content().textContent).toContain("이체 캡처 없음");
     render(order(), { staff: false });
     expect(buttons()).not.toContain("금액확인");
     expect(content().textContent).toContain("강사님 금액확인을 기다려요");
+  });
+
+  it("2026-11-04 이체 캡처가 있는 금액확인 전 주문 — 조교도 금액확인, 닫힌 줄에 '캡처', 열면 캡처 그림(주문 id 로 연다)", () => {
+    const o = order({ transfer_path: "00000000-0000-0000-0000-000000000001/a.png", transfer_type: "image/png", transfer_size: 1234, transfer_name: "a.png", transfer_at: "2026-11-04T01:00:00Z" });
+    render(o, { staff: false });
+    expect(summary().textContent).toContain("캡처");
+    expect(buttons()).toContain("금액확인");
+    expect(content().textContent).toContain("이체 캡처의 받는 계좌 · 금액이 맞는지 보고 눌러 주세요");
+    expect(content().textContent).not.toContain("이체 캡처 없음");
+    expect(content().querySelector('a[href="/files/transfer/41"] img')?.getAttribute("src")).toBe("/files/transfer/41?w=400");
+    // 금액확인이 끝난 주문은 캡처만 남고 버튼은 없다
+    render({ ...o, status: "confirmed" }, { staff: false });
+    expect(buttons()).not.toContain("금액확인");
+    expect(content().querySelector('a[href="/files/transfer/41"]')).toBeTruthy();
   });
 
   it("배송 대기(택배) — 송장 칸 + QR 찍기 + 배송완료. 칸은 16px 라 아이폰이 누를 때 화면을 확대하지 않는다", () => {

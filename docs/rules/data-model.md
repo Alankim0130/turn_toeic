@@ -543,6 +543,9 @@ create table textbook_settings (           -- 한 줄: shipping_fee · default_a
 --   트리거 private.guard_textbook_order_update: 조교 세션이 금액확인 전 · 취소 주문을 confirmed · shipped 로 넘기는 것을 막고,
 --   조교 세션은 status · tracking_no · updated_at · received_at 밖의 칸을 못 바꾸며(assistant_status_only, 20261003100000),
 --   shipped 가 아니게 되면 received_at 을 지운다
+--   transfer_path · transfer_type · transfer_size · transfer_name · transfer_at (20261104100000) — 학생이 올린 이체 화면 캡처 (버킷 textbook-transfers 의 {학생 id}/{무작위}.ext).
+--   학생은 public.attach_textbook_transfer(id, path, type, size, name) 로만 붙인다 (내 주문 · requested 만 · 되돌려주는 값은 바꾸기 전 경로). **캡처가 있는 requested 주문은
+--   조교 세션도 confirmed 로 넘긴다** (같은 트리거 — shipped 로 건너뛰기는 그대로 막는다). 파일은 /files/transfer/{주문 id}
 
 -- ─── 수강증 자동 판정 긴급 스위치 (마이그레이션 20260923000500 — 도메인 규칙 4-2) ───
 create table feature_flags (                -- 배포 없이 켜고 끄는 스위치. crew 조회, 스태프는 enabled·note 만 수정 (updated_* 는 트리거)

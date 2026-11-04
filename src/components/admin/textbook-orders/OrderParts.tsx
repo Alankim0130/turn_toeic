@@ -1,6 +1,7 @@
 import { confirmTextbookPayment, markTextbookPickedUp, markTextbookShipped, updateTextbookOrder } from "@/app/admin/textbook-orders/actions";
 import type { Database } from "@/lib/supabase/database.types";
 import { isPickup, pickupLabel, textbookAdminStatus } from "@/lib/textbook";
+import { crewCanConfirm } from "@/lib/textbook-transfer";
 import type { UsedTracking } from "@/lib/tracking-label";
 import { cn, formatDate, formatWon } from "@/lib/utils";
 import { TrackingNoField } from "./TrackingNoField";
@@ -68,7 +69,31 @@ export function OrderItemsSummary({ o }: { o: AdminOrder }) {
       <p className={cn("mt-1 inline-block rounded-full px-2 py-0.5 font-bold", o.depositor_name ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700")}>
         {o.depositor_name ? `입금자 ${o.depositor_name}` : "입금자 미입력"}
       </p>
+      <OrderTransfer o={o} />
     </>
+  );
+}
+
+/**
+ * 학생이 올린 **이체 화면 캡처** (2026-11-04 Alan — "스크린샷찍어서 올려주면 조교들이 바로 확인하고 배송을 시작") — 작은 그림, 누르면 원본이 새 탭에.
+ * 금액확인 전인데 없으면 '이체 캡처 없음' (조교는 이 주문을 금액확인하지 못한다 — 강사님 몫)
+ */
+export function OrderTransfer({ o }: { o: Pick<AdminOrder, "id" | "status" | "transfer_path" | "transfer_at"> }) {
+  if (!o.transfer_path) return o.status === "requested" ? <p className="mt-1 text-mist">이체 캡처 없음</p> : null;
+  return (
+    <a
+      href={`/files/transfer/${o.id}`}
+      target="_blank"
+      rel="noopener"
+      className="mt-1.5 inline-flex items-center gap-2 rounded-xl border border-line bg-white p-1 pr-2.5 text-xs text-slate hover:border-brand-300"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={`/files/transfer/${o.id}?w=400`} alt="학생이 올린 이체 화면 캡처" className="h-14 w-14 rounded-lg object-cover ring-1 ring-line" loading="lazy" />
+      <span>
+        <span className="block font-bold text-ink">이체 캡처</span>
+        {o.transfer_at && <span>{formatDate(o.transfer_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 올림</span>}
+      </span>
+    </a>
   );
 }
 
@@ -112,6 +137,7 @@ export function OrderStatusBadge({ o, className }: { o: AdminOrder; className?: 
 
 /**
  * 처리 — 할 일 한 단계(강사 · 관리자는 금액확인, 조교는 배송완료 · 수령완료, 2026-10-02 Alan) + 접어 둔 '상태 직접 바꾸기'.
+ * **이체 캡처가 있는 주문은 조교도 금액확인한다** (2026-11-04 Alan — 캡처를 보고 누른다, `crewCanConfirm`).
  * `size="md"` 는 휴대폰 카드 — 버튼 · 칸이 크고 글자 16px 라 아이폰이 칸을 누를 때 확대하지 않는다. 표는 예전 그대로 작다(`sm`)
  */
 export function OrderActions({
@@ -136,14 +162,17 @@ export function OrderActions({
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       {o.status === "requested" &&
-        (staff ? (
-          <form action={confirmTextbookPayment}>
+        (staff || crewCanConfirm(o) ? (
+          <form action={confirmTextbookPayment} className="flex flex-col gap-1.5">
             <input type="hidden" name="order_id" value={o.id} />
             <input type="hidden" name="back" value={back} />
             <button type="submit" className={cn("btn-primary", button)}>금액확인</button>
+            {!staff && <p className={hint}>이체 캡처의 받는 계좌 · 금액이 맞는지 보고 눌러 주세요 — 배송 대기로 넘어가요.</p>}
           </form>
         ) : (
-          <p className={cn("rounded-xl bg-amber-50 px-3 py-2 font-bold text-amber-800", md ? "text-sm" : "text-xs")}>강사님 금액확인을 기다려요</p>
+          <p className={cn("rounded-xl bg-amber-50 px-3 py-2 font-bold text-amber-800", md ? "text-sm" : "text-xs")}>
+            강사님 금액확인을 기다려요 — 학생이 이체 캡처를 올리면 조교도 확인할 수 있어요
+          </p>
         ))}
       {o.status === "confirmed" && pickup && (
         <form action={markTextbookPickedUp} className="flex flex-col gap-1.5">
@@ -194,7 +223,7 @@ export function OrderActions({
           <button type="submit" className={cn("btn-secondary", md ? "!py-2.5" : "!py-1.5 text-xs")}>저장</button>
           {!staff && (
             <p className={hint}>
-              금액확인 전 주문을 {textbookAdminStatus("confirmed", pickup)} · {textbookAdminStatus("shipped", pickup)}로 넘기는 것은 강사·관리자만 할 수 있어요 (금액확인).
+              금액확인 전 주문을 {textbookAdminStatus("confirmed", pickup)} · {textbookAdminStatus("shipped", pickup)}로 넘기는 것은 강사·관리자만 할 수 있어요 (금액확인). 이체 캡처가 있는 주문은 {textbookAdminStatus("confirmed", pickup)}까지 조교도 할 수 있어요.
             </p>
           )}
         </form>
