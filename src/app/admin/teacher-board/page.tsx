@@ -161,7 +161,13 @@ export default async function TeacherBoardPage({ searchParams }: { searchParams:
               {itemsError ? (
                 <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">폴더 안 자료를 읽지 못했어요. 잠시 뒤 새로고침해 주세요.</p>
               ) : (
-                <TeacherItemsPanel key={`items-${folder.id}`} folderId={folder.id} groups={groupItemsBySeq(itemRows as TeacherItemRow[] | null)} disabled={testing} />
+                <TeacherItemsPanel
+                  key={`items-${folder.id}`}
+                  folder={{ id: folder.id, subject, name: folder.name }}
+                  folders={all.filter((f): f is typeof f & { subject: RoundSubject } => f.subject === "rc" || f.subject === "lc").map((f) => ({ id: f.id, subject: f.subject, name: f.name }))}
+                  groups={groupItemsBySeq(itemRows as TeacherItemRow[] | null)}
+                  disabled={testing}
+                />
               )}
             </>
           ) : (

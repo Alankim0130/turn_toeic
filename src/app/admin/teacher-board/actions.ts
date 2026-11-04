@@ -19,8 +19,8 @@ import {
   type LinkInput,
 } from "@/lib/class-materials";
 import { ROUND_MAX, isRoundSet } from "@/lib/class-rounds";
-import { TEACHER_BOARD_BUCKET, TEACHER_BOARD_FOLDER, folderNameError } from "@/lib/teacher-board";
-import { readAll } from "@/lib/read-all";
+import { TEACHER_BOARD_BUCKET, TEACHER_BOARD_FOLDER, folderNameError, planItemMove, type MovingItem } from "@/lib/teacher-board";
+import { readAll, readAllIn } from "@/lib/read-all";
 
 /**
  * 강사 자료 게시판 (2026-11-03 Alan) — 폴더 · 폴더 안 자료 · "몇월 수업자료로 쓰기". 강사 · 관리자만 (조교 화면이 아니다).
@@ -28,7 +28,7 @@ import { readAll } from "@/lib/read-all";
  * 자료 저장은 특강 자료실 · 수업자료실과 같은 흐름이다 (`saveLectureMaterial`): 파일은 브라우저가 먼저 저장소(`class-materials/teacher/…`)에 올리고
  * 여기서는 행만 만든다. 새 파일 행까지 저장한 뒤 실패하면 `filesSaved` — 화면이 올린 파일을 지우면 안 된다 (2026-10-29).
  */
-export type TeacherBoardResult = { ok: boolean; error?: string; filesSaved?: boolean };
+export type TeacherBoardResult = { ok: boolean; error?: string; filesSaved?: boolean; moved?: number };
 
 const TESTING = "테스트 등급을 켠 동안에는 강사 자료 게시판을 고칠 수 없어요. 위 띠에서 테스트를 끝낸 뒤 해 주세요.";
 
@@ -426,4 +426,78 @@ export async function deleteTeacherItem(id: number): Promise<TeacherBoardResult>
   if (files?.length) await supabase.storage.from(TEACHER_BOARD_BUCKET).remove(files.map((f) => f.file_path));
   revalidateBoard();
   return { ok: true };
+}
+
+/** 한 번에 옮길 수 있는 자료 수 — 폴더 하나를 통째로 옮겨도 넉넉하게 */
+const MOVE_MAX = 500;
+
+/**
+ * **고른 자료를 다른 폴더 · 회차로** (2026-11-04 Alan — "R 자료를 A 폴더에 잘못 넣어버렸는데 R 로 옮기려는데 옮길수가 없네용. 이거 옮길수 있게좀 해주세요").
+ * `seq` 가 null 이면 회차 그대로, 숫자면 모두 그 회차로 — 같은 폴더를 고르면 회차만 바뀐다. 옮길 폴더의 그 회차 끝에 선다 (`planItemMove`).
+ * 자료 행의 폴더 · 회차 · 순서만 바꾼다 — 파일은 자료에 붙어 있어 저장소에서 옮길 것이 없다. 학생에게는 옮긴 폴더를 쓰는 달 · 과정에서 그 회차 수업일부터 보인다.
+ * 고른 자료를 다 읽지 못하면(지워졌거나 읽기 실패) 하나도 옮기지 않는다. 바꾼 줄을 센다 — RLS 는 막아도 오류 없이 0줄이다.
+ */
+export async function moveTeacherItems(input: { ids: number[]; folderId: number; seq: number | null }): Promise<TeacherBoardResult> {
+  const { profile } = await requireStaff();
+  if (profile.test_role) return { ok: false, error: TESTING };
+
+  const ids = [...new Set((Array.isArray(input.ids) ? input.ids : []).map(Number))].filter(validId);
+  const folderId = Number(input.folderId);
+  const seq = input.seq == null ? null : Number(input.seq);
+  if (ids.length === 0) return { ok: false, error: "옮길 자료를 골라 주세요." };
+  if (ids.length > MOVE_MAX) return { ok: false, error: `한 번에 ${MOVE_MAX}개까지 옮길 수 있어요.` };
+  if (!validId(folderId)) return { ok: false, error: "옮길 폴더를 골라 주세요." };
+  if (seq !== null && (!Number.isInteger(seq) || seq < 1 || seq > ROUND_MAX)) return { ok: false, error: `회차를 골라 주세요 (1 ~ ${ROUND_MAX}회차).` };
+
+  const supabase = await createClient();
+  const { data: folder, error: folderError } = await supabase.from("teacher_folders").select("id").eq("id", folderId).maybeSingle();
+  if (folderError) return { ok: false, error: errorMessage(folderError, "폴더를 읽지 못했어요. 잠시 후 다시 시도해 주세요.") };
+  if (!folder) return { ok: false, error: "옮길 폴더를 찾을 수 없어요. 새로고침해 주세요." };
+
+  const [items, target] = await Promise.all([
+    readAllIn<MovingItem, number>(ids, (chunk, from, to, count) =>
+      supabase
+        .from("teacher_folder_items")
+        .select("id, folder_id, seq, sort_order", count ? { count: "exact" } : undefined)
+        .in("id", chunk)
+        .order("id")
+        .range(from, to),
+    ),
+    readAll<{ seq: number; sort_order: number }>((from, to, count) =>
+      supabase
+        .from("teacher_folder_items")
+        .select("seq, sort_order", count ? { count: "exact" } : undefined)
+        .eq("folder_id", folderId)
+        .order("id")
+        .range(from, to),
+    ),
+  ]);
+  if (!items.ok || !target.ok) return { ok: false, error: "자료를 다 읽지 못했어요. 잠시 후 다시 시도해 주세요." };
+  if (items.rows.length < ids.length) return { ok: false, error: "고른 자료 중 이미 지워졌거나 옮겨진 것이 있어요. 새로고침한 뒤 다시 골라 주세요." };
+
+  const lastOrder = new Map<number, number>();
+  for (const r of target.rows) lastOrder.set(r.seq, Math.max(lastOrder.get(r.seq) ?? -1, r.sort_order));
+  const plan = planItemMove(items.rows, folderId, lastOrder, seq);
+  if (plan.length === 0) return { ok: false, error: "고른 자료가 이미 그 폴더 · 회차에 있어요. 다른 폴더나 회차를 골라 주세요." };
+
+  // 열 개씩 — 한꺼번에 수백 개를 보내지 않는다
+  let moved = 0;
+  for (let i = 0; i < plan.length; i += 10) {
+    const results = await Promise.all(
+      plan.slice(i, i + 10).map((p) =>
+        supabase.from("teacher_folder_items").update({ folder_id: folderId, seq: p.seq, sort_order: p.sort_order }).eq("id", p.id).select("id"),
+      ),
+    );
+    moved += results.filter((r) => !r.error && (r.data?.length ?? 0) > 0).length;
+  }
+
+  revalidateBoard();
+  if (moved < plan.length) {
+    return {
+      ok: false,
+      moved,
+      error: moved > 0 ? `${moved}개는 옮겼지만 ${plan.length - moved}개는 옮기지 못했어요. 새로고침한 뒤 남은 것을 다시 옮겨 주세요.` : "옮기지 못했어요. 새로고침한 뒤 다시 해 주세요.",
+    };
+  }
+  return { ok: true, moved };
 }

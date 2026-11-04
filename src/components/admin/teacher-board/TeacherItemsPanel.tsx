@@ -32,6 +32,8 @@ import { shortDateTimeKST } from "@/lib/study";
 import type { UploadedFile } from "@/lib/upload";
 import { removeUploaded, uploadFile } from "@/lib/upload-client";
 import { cn } from "@/lib/utils";
+import { BulkCheck, BulkSelectAll } from "@/components/admin/board/BulkSelect";
+import { TeacherItemsMove, itemKey, type MoveFolderOption } from "./TeacherItemsMove";
 
 /**
  * **강사 자료 게시판 — 폴더 안 자료** (2026-11-03 Alan — "한 폴더를 클릭해서 수업자료를 여러개 만들어 놓고 … 기존에 날짜별 오픈시스템도 그대로").
@@ -39,8 +41,31 @@ import { cn } from "@/lib/utils";
  * 이 폴더를 쓰는 달 · 과정 반 학생에게 그 회차 수업일부터 열린다. 회차마다 묶어 보여 준다.
  * 파일은 브라우저가 저장소(`class-materials/teacher/…`)에 하나씩 바로 올리고(서버 액션 본문 한도 1MB), 서버는 행만 만든다.
  * 등록이 실패하면 방금 올린 파일을 지운다 — 등록을 **보낸 뒤** 끊겼으면 지우지 않는다 (서버가 저장했을 수 있다, 2026-10-29).
+ * 줄마다 고르기 칸 · `전체 선택` → 아래 막대 `다른 폴더로 옮기기` (2026-11-04 Alan — "R 자료를 A 폴더에 잘못 넣어버렸는데 R 로 옮기려는데", `TeacherItemsMove`).
  */
-export function TeacherItemsPanel({ folderId, groups, disabled = false }: { folderId: number; groups: [number, TeacherItem[]][]; disabled?: boolean }) {
+export function TeacherItemsPanel({
+  folder,
+  folders,
+  groups,
+  disabled = false,
+}: {
+  folder: MoveFolderOption;
+  /** 옮길 곳 — RC · LC 강사게시판의 모든 폴더 */
+  folders: MoveFolderOption[];
+  groups: [number, TeacherItem[]][];
+  disabled?: boolean;
+}) {
+  const all = groups.flatMap(([, items]) => items);
+  const panel = <ItemsPanel folderId={folder.id} groups={groups} disabled={disabled} keys={all.map((m) => itemKey(m.id))} />;
+  if (disabled || all.length === 0) return panel;
+  return (
+    <TeacherItemsMove folder={folder} folders={folders} items={all.map((m) => ({ id: m.id, folder_id: m.folder_id, seq: m.seq, sort_order: m.sort_order, title: m.title }))}>
+      {panel}
+    </TeacherItemsMove>
+  );
+}
+
+function ItemsPanel({ folderId, groups, disabled, keys }: { folderId: number; groups: [number, TeacherItem[]][]; disabled: boolean; keys: string[] }) {
   const [adding, setAdding] = useState(false);
   const total = groups.reduce((n, [, items]) => n + items.length, 0);
   return (
@@ -60,6 +85,7 @@ export function TeacherItemsPanel({ folderId, groups, disabled = false }: { fold
         )}
       </div>
       {adding && <TeacherItemUpload folderId={folderId} defaultSeq={nextSeq(groups.map(([seq]) => seq))} onClose={() => setAdding(false)} />}
+      {groups.length > 0 && <BulkSelectAll keys={keys} className="mt-3" />}
       {groups.length > 0 ? (
         <div className="mt-4 space-y-4">
           {groups.map(([seq, items]) => (
@@ -335,6 +361,7 @@ function TeacherItemRow({ item, folderId, disabled }: { item: TeacherItem; folde
   return (
     <li className="rounded-xl border border-line bg-paper p-3">
       <div className="flex items-start gap-3">
+        <BulkCheck itemKey={itemKey(item.id)} label={item.title} className="self-center" />
         <span
           className={cn(
             "flex size-11 shrink-0 items-center justify-center rounded-xl text-[11px] font-black ring-1",
