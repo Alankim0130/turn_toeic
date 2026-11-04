@@ -119,3 +119,31 @@ export function folderUseLabel(u: { level: number; subject: string; book_set: st
 
 /** 새 자료의 회차 — 마지막 회차 다음 (끝 30). 아직 없으면 1회차 */
 export const nextSeq = (seqs: readonly number[]) => Math.min(30, Math.max(0, ...seqs) + 1);
+
+/** 옮길 자료 한 건 — 지금 자리 */
+export type MovingItem = { id: number; folder_id: number; seq: number; sort_order: number };
+
+/**
+ * **다른 폴더 · 회차로 옮기기** (2026-11-04 Alan — "R 자료를 A 폴더에 잘못 넣어버렸는데 R 로 옮기려는데 옮길수가 없네용").
+ * `seq` 가 null 이면 회차 그대로, 숫자면 모두 그 회차로. 옮길 폴더의 그 회차 **끝에** 지금 순서(회차 → 순서 → id)대로 선다 —
+ * `lastOrder` 는 옮길 폴더의 회차 → 가장 큰 순서 번호. 이미 그 자리(같은 폴더 · 같은 회차)인 자료는 빼고 돌려준다 (움직이지 않는다).
+ * 파일은 자료에 붙어 있어(`teacher_folder_files.item_id`) 저장소에서 옮길 것이 없다.
+ */
+export function planItemMove(
+  items: readonly MovingItem[],
+  folderId: number,
+  lastOrder: ReadonlyMap<number, number>,
+  seq: number | null,
+): { id: number; seq: number; sort_order: number }[] {
+  const next = new Map(lastOrder);
+  const sorted = [...items].sort((a, b) => a.seq - b.seq || a.sort_order - b.sort_order || a.id - b.id);
+  const out: { id: number; seq: number; sort_order: number }[] = [];
+  for (const it of sorted) {
+    const to = seq ?? it.seq;
+    if (it.folder_id === folderId && it.seq === to) continue;
+    const order = (next.get(to) ?? -1) + 1;
+    next.set(to, order);
+    out.push({ id: it.id, seq: to, sort_order: order });
+  }
+  return out;
+}

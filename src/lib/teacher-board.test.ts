@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
-import { folderNameError, nextSeq, splitRoundDates, termCellKey, termRoundKey, groupItemsBySeq } from "./teacher-board";
+import { folderNameError, nextSeq, splitRoundDates, termCellKey, termRoundKey, groupItemsBySeq, planItemMove } from "./teacher-board";
 import { roundKey } from "./class-rounds";
 import { NAV_ADMIN, canEnterAdminPath } from "./site";
 
@@ -143,6 +143,16 @@ describe("서버 액션 · 메뉴", () => {
     expect(actions).toMatch(/const kept = !!undone && \(!!undone\.error \|\| \(undone\.data\?\.length \?\? 0\) < added\.length\);/);
   });
 
+  it("2026-11-04 다른 폴더로 옮기기 — 고른 것을 다 읽지 못하면 하나도 안 옮기고, 바꾼 줄을 센다 · 옮길 폴더의 순서는 1,000줄 넘게 읽는다", () => {
+    const fn = actions.slice(actions.indexOf("export async function moveTeacherItems"));
+    expect(fn).toMatch(/readAllIn<MovingItem, number>\(ids,/);
+    expect(fn).toMatch(/readAll<\{ seq: number; sort_order: number \}>/);
+    expect(fn).toMatch(/if \(!items\.ok \|\| !target\.ok\) return \{ ok: false/);
+    expect(fn).toMatch(/if \(items\.rows\.length < ids\.length\) return \{ ok: false/);
+    expect(fn).toMatch(/\.update\(\{ folder_id: folderId, seq: p\.seq, sort_order: p\.sort_order \}\)\.eq\("id", p\.id\)\.select\("id"\)/);
+    expect(fn).toMatch(/revalidateBoard\(\);/);
+  });
+
   it("관리자 메뉴에 있고 조교에게는 열지 않는다", () => {
     const item = NAV_ADMIN.find((n) => n.href === "/admin/teacher-board");
     expect(item).toBeTruthy();
@@ -169,6 +179,28 @@ describe("작은 규칙", () => {
     expect(groups.map(([seq, items]) => [seq, items.map((i) => i.id)])).toEqual([
       [1, [3, 2]],
       [2, [1]],
+    ]);
+  });
+
+  it("다른 폴더로 옮기기 — 회차 그대로 / 모두 한 회차로, 옮길 폴더의 그 회차 끝에 지금 순서대로", () => {
+    const it_ = (id: number, folder_id: number, seq: number, sort_order: number) => ({ id, folder_id, seq, sort_order });
+    // A(2) 의 1회차 둘 · 2회차 하나 → R(5) 는 1회차에 이미 순서 0 · 3 이 있다
+    const moving = [it_(13, 2, 2, 0), it_(12, 2, 1, 1), it_(11, 2, 1, 0)];
+    expect(planItemMove(moving, 5, new Map([[1, 3]]), null)).toEqual([
+      { id: 11, seq: 1, sort_order: 4 },
+      { id: 12, seq: 1, sort_order: 5 },
+      { id: 13, seq: 2, sort_order: 0 },
+    ]);
+    expect(planItemMove(moving, 5, new Map(), 7)).toEqual([
+      { id: 11, seq: 7, sort_order: 0 },
+      { id: 12, seq: 7, sort_order: 1 },
+      { id: 13, seq: 7, sort_order: 2 },
+    ]);
+    // 같은 폴더 — 회차 그대로면 움직일 것이 없고, 2회차로면 이미 2회차인 것은 그대로 (그 뒤에 선다)
+    expect(planItemMove(moving, 2, new Map([[1, 1], [2, 0]]), null)).toEqual([]);
+    expect(planItemMove(moving, 2, new Map([[1, 1], [2, 0]]), 2)).toEqual([
+      { id: 11, seq: 2, sort_order: 1 },
+      { id: 12, seq: 2, sort_order: 2 },
     ]);
   });
 });
