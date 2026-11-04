@@ -2,6 +2,9 @@
 
 import { startTransition, useActionState, useState } from "react";
 import { submitTextbookOrder, type TextbookState } from "./actions";
+import { TransferPicker } from "./TransferPicker";
+import { TRANSFER_BUCKET, transferPath } from "@/lib/textbook-transfer";
+import { uploadFile } from "@/lib/upload-client";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
 import { CopyButton } from "@/components/ui/CopyButton";
@@ -44,6 +47,10 @@ const initialPick = (t: OrderTerm | undefined) => new Set(t && !t.locked && t.it
  * 화목금 수업일은 낮만. 3시 · 9시는 퇴근이라 마지막 칸은 2시 30분 · 8시 30분이다 (2026-10-27 Alan — "3시와 9시는 없애줘", `PICKUP_TIME_RANGES`).
  * 저녁에 받을 수 있는 날에는 날짜 옆에 '저녁 가능' 을 붙인다. 서버 액션이 같은 함수로 다시 본다.
  *
+ * **이체 화면 캡처** (2026-11-04 Alan — "학생이 이체를 하고 난 뒤에, 해당 화면을 스크린샷찍어서 올려주면 조교들이 바로 확인하고 배송을 시작"):
+ * 선택이다. 고른 캡처는 **보내기 직전에** 브라우저가 저장소(`textbook-transfers/{내 id}/`)에 올리고 폼에는 경로만 싣는다 (서버 액션 본문 한도 1MB) —
+ * 서버 액션이 주문을 넣은 뒤 그 주문에 붙인다. 올리기에 실패하면 주문을 보내지 않는다(캡처를 빼고 다시 누르면 된다). 주문 뒤에 내역 카드에서 올려도 된다.
+ *
  * @param pickupDays 받으러 올 수 있는 날 (오늘부터 60일 안의 수업일 · 트랙, DB `textbook_pickup_days`). null = 읽지 못했다 — 현장수령을 잠근다
  */
 export function TextbookForm({
@@ -52,14 +59,20 @@ export function TextbookForm({
   settings,
   defaults,
   pickupDays,
+  userId,
 }: {
   terms: OrderTerm[];
   accounts: TextbookAccount[];
   settings: TextbookSettings | null;
   defaults: { recipient_name: string; phone: string };
   pickupDays: PickupDay[] | null;
+  /** 내 id — 캡처를 올리는 저장소 폴더 */
+  userId: string;
 }) {
   const [state, action] = useActionState<TextbookState, FormData>(submitTextbookOrder, {});
+  const [transfer, setTransfer] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const v: Record<string, string | undefined> = { ...defaults, ...(state.values ?? {}) };
   const open = terms.filter((t) => !t.ordered);
   const [termId, setTermId] = useState<number>(Number(v.term_id) || open[0]?.id || 0);
@@ -101,11 +114,13 @@ export function TextbookForm({
                 : null;
 
   if (state.ok) {
+    const who = state.transfer === "attached" ? "올린 이체 캡처를 보고 조교 · 강사님이 금액을 확인해요" : "안내한 계좌로 입금하시면 강사님이 통장과 대조해 금액을 확인해요";
     return (
       <Alert kind="success" title="교재주문이 접수됐어요">
         {state.pickup
-          ? `안내한 계좌로 입금하시면 강사님이 통장과 대조해 금액을 확인해요(입금확인). ${state.pickup} ${PICKUP_PLACE}에서 교재를 받아 가세요. 진행 상태는 아래 내역에서 볼 수 있어요.`
-          : "안내한 계좌로 입금하시면 강사님이 통장과 대조해 금액을 확인하고(배송확인) 교재를 보내 드려요(배송시작). 진행 상태는 아래 내역에서 볼 수 있어요."}
+          ? `${who}(입금확인). ${state.pickup} ${PICKUP_PLACE}에서 교재를 받아 가세요. 진행 상태는 아래 내역에서 볼 수 있어요.`
+          : `${who}(배송확인). 확인되면 교재를 보내 드려요(배송시작). 진행 상태는 아래 내역에서 볼 수 있어요.`}
+        {state.transfer === "failed" && " 이체 캡처는 붙이지 못했어요 — 아래 내역에서 다시 올려 주세요."}
       </Alert>
     );
   }
@@ -120,14 +135,31 @@ export function TextbookForm({
       // 교재 체크 · 받는 방법 · 시각 칸이 처음 그린 모양으로 돌아간다 — 분홍 카드 · 합계는 고른 그대로인데 실제로 보내는 값은 비어,
       // 휴대폰 번호 오타 같은 오류 뒤 고쳐 다시 누르면 "주문할 교재를 하나 이상 골라 주세요" 가 떴다. 같은 이벤트 안에서 전환을 열면
       // React 는 초기화하지 않고 버튼의 '주문하는 중…'(useFormStatus)은 그대로 켠다. 자바스크립트가 아직 없을 때는 위 action 으로 보낸다
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
         const formData = new FormData(e.currentTarget);
+        setUploadError(null);
+        // 이체 캡처는 보내기 직전에 저장소에 올리고 경로만 싣는다 (2026-11-04). 못 올리면 주문을 보내지 않는다
+        if (transfer) {
+          setUploading(true);
+          try {
+            const up = await uploadFile(TRANSFER_BUCKET, transferPath(userId, transfer), transfer);
+            formData.set("transfer_path", up.path);
+            formData.set("transfer_name", up.name);
+            formData.set("transfer_size", String(up.size));
+            formData.set("transfer_type", up.type);
+          } catch (err) {
+            setUploadError(err instanceof Error ? err.message : "이체 캡처를 올리지 못했어요. 캡처를 빼고 주문한 뒤 내역에서 다시 올려도 돼요.");
+            return;
+          } finally {
+            setUploading(false);
+          }
+        }
         startTransition(() => action(formData));
       }}
       className="space-y-6"
     >
-      {state.error && <Alert kind="warning">{state.error}</Alert>}
+      {(state.error || uploadError) && <Alert kind="warning">{uploadError ?? state.error}</Alert>}
 
       {open.length > 1 ? (
         <div>
@@ -441,11 +473,14 @@ export function TextbookForm({
               />
               <p className="mt-1 text-xs text-slate">부모님 이름으로 입금하면 그 이름을 적어 주세요. 강사님이 통장과 대조해요.</p>
             </div>
+
+            {/* 이체 화면 캡처 (2026-11-04, 선택) — 있으면 조교도 바로 금액확인한다 */}
+            <TransferPicker file={transfer} onChange={setTransfer} disabled={uploading} />
           </section>
 
           <div className="flex flex-wrap items-center gap-3">
-            <SubmitButton pendingText="주문하는 중…" disabled={!!missing}>
-              {quote.total > 0 ? `${formatWon(quote.total)} 입금하고 주문하기` : "주문하기"}
+            <SubmitButton pendingText="주문하는 중…" disabled={!!missing || uploading}>
+              {uploading ? "캡처 올리는 중…" : quote.total > 0 ? `${formatWon(quote.total)} 입금하고 주문하기` : "주문하기"}
             </SubmitButton>
             {/* 버튼이 왜 잠겼는지 적는다 — 잠긴 버튼만 있으면 무엇을 해야 할지 모른다 */}
             {missing && <p className="text-sm font-bold text-slate">{missing}</p>}

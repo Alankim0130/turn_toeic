@@ -11,6 +11,7 @@ import { isPickup, orderHint, PICKUP_PLACE, pickupDaysFrom, pickupLabel, textboo
 import { formatDate, formatWon } from "@/lib/utils";
 import { getMyOrders, getMyTextbookOrders, termLabel } from "../_lib/queries";
 import { TextbookForm } from "./TextbookForm";
+import { TransferUpload } from "./TransferUpload";
 import { cancelTextbookOrder, receiveTextbookOrder } from "./actions";
 import { catalogOf, orderTermsOf, textbookCatalogQueries } from "./_lib/order-terms";
 import { OrderSteps } from "@/components/my/OrderSteps";
@@ -38,7 +39,7 @@ export default async function TextbookPage() {
     ]),
   );
   if (g.locked) return g.locked;
-  const [{ profile }, orders, myOrders, catalogRows, pickupDayRows] = g.data;
+  const [{ user, profile }, orders, myOrders, catalogRows, pickupDayRows] = g.data;
 
   // 학생이 받았다고 누른(배송완료) 주문은 내역에서 뺀다 — 지난 주문에서 받은 교재(ownedItemIds)는 그대로 센다
   const visibleOrders = myOrders.filter((o) => !o.received_at);
@@ -77,6 +78,7 @@ export default async function TextbookPage() {
             settings={catalog.settings}
             defaults={{ recipient_name: profile?.name ?? "", phone: profile?.phone ?? "" }}
             pickupDays={pickupDays}
+            userId={user.id}
           />
         </Reveal>
       )}
@@ -130,6 +132,18 @@ export default async function TextbookPage() {
                         {formatDate(o.created_at, { year: "numeric", month: "long", day: "numeric" })} 주문
                         {o.tracking_no ? ` · 송장번호 ${o.tracking_no}` : ""}
                       </p>
+                      {/* 이체 화면 캡처 (2026-11-04) — 올렸으면 작은 그림, 금액확인 전이면 올리기 · 다시 올리기 */}
+                      {o.transfer_path && (
+                        <a href={`/files/transfer/${o.id}`} target="_blank" rel="noopener" className="mt-2 inline-flex items-center gap-2 rounded-xl border border-line bg-white p-1.5 pr-3 text-xs text-slate hover:border-brand-300">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={`/files/transfer/${o.id}?w=400`} alt="올린 이체 화면 캡처" className="h-12 w-12 rounded-lg object-cover ring-1 ring-line" loading="lazy" />
+                          <span>
+                            <span className="block font-bold text-ink">이체 캡처</span>
+                            {o.transfer_at && <span>{formatDate(o.transfer_at, { month: "long", day: "numeric" })} 올림</span>}
+                          </span>
+                        </a>
+                      )}
+                      {o.status === "requested" && <TransferUpload orderId={o.id} userId={user.id} has={!!o.transfer_path} />}
                     </div>
                     {o.status === "requested" && (
                       <form action={cancelTextbookOrder}>

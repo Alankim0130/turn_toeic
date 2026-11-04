@@ -18,7 +18,7 @@ import {
  * Pc에서는 저렇게 보여도 괜찮은데, 모바일에서는 쫌 불편해. 한화면에서 직관적으로 처리하는게 안될까? 예를들면 학생의 교재주문신청을 간략하게 보여주고,
  * 그 학생을 클릭하면 상세정보가 나오도록!"). 그전에는 여덟 칸짜리 표라 휴대폰에서 처리 버튼까지 옆으로 한참 밀어야 했다.
  *
- * - **닫힌 채로 선다** — 이름 · 상태 / 교재 몇 권 · 합계 · 입금자 / 송장 · 받으러 올 날 · 주소 (`textbook-order-card.ts`) · 오른쪽에 주문한 날.
+ * - **닫힌 채로 선다** — 이름 · 상태 / 교재 몇 권 · 합계 · 입금자(+ 이체 캡처가 있으면 `캡처`) / 송장 · 받으러 올 날 · 주소 (`textbook-order-card.ts`) · 오른쪽에 주문한 날.
  *   누르면 그 카드만 열린다 — `<details>` 라 자바스크립트 없이 열리고 이 카드는 서버 컴포넌트다 (수업자료실 자료 카드와 같다)
  * - **열면 그 자리에서 처리한다** — 반 · 교재 · 받는 분 · 연락처 · 주소를 보고, 아래에서 금액확인 · QR 찍기 + 배송완료 · 수령완료 · 상태 직접 바꾸기.
  *   처리 조각은 표와 같은 `OrderActions` 다 (한 일에 길이 둘이면 갈라진다). 버튼 · 칸은 크고 글자 16px — 아이폰이 칸을 누를 때 확대하지 않는다
@@ -66,6 +66,8 @@ export function OrderCard({
             <span className="mt-1 block truncate text-xs text-slate">
               {orderMoneyText(o)} ·{" "}
               {o.depositor_name ? `입금자 ${o.depositor_name}` : <b className="font-bold text-red-700">입금자 미입력</b>}
+              {/* 이체 캡처가 있으면 — 조교가 금액확인할 수 있는 주문 (2026-11-04) */}
+              {o.transfer_path && <b className="ml-1.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[11px] font-bold text-emerald-800">캡처</b>}
             </span>
             <span className="mt-0.5 block truncate text-xs font-semibold text-ink">{orderDeliveryText(o)}</span>
           </span>

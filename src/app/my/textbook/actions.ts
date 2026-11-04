@@ -6,12 +6,17 @@ import { notifyStaff } from "@/lib/push";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { pickupDaysFrom, pickupLabel, pickupTimeError, pickupTimesFor, sameOrderItems, textbookOrderError } from "@/lib/textbook";
+import { TRANSFER_BUCKET, transferAttachError, transferUploadProblem } from "@/lib/textbook-transfer";
+import type { UploadedFile } from "@/lib/upload";
 import { formatWon } from "@/lib/utils";
 import { getMyOrders, getMyTextbookOrders } from "../_lib/queries";
 import { catalogOf, orderTermsOf, textbookCatalogQueries } from "./_lib/order-terms";
 
-/** `pickup` — 현장수령 주문이면 받으러 올 날짜 · 시각 한 줄 (접수 안내에 그대로 쓴다) */
-export type TextbookState = { ok?: boolean; pickup?: string; error?: string; values?: Record<string, string> };
+/**
+ * `pickup` — 현장수령 주문이면 받으러 올 날짜 · 시각 한 줄 (접수 안내에 그대로 쓴다).
+ * `transfer` — 주문과 함께 올린 이체 캡처가 붙었는지 (2026-11-04): `attached` · `failed`(주문은 됐고 캡처만 못 붙였다 — 내역에서 다시 올린다)
+ */
+export type TextbookState = { ok?: boolean; pickup?: string; transfer?: "attached" | "failed"; error?: string; values?: Record<string, string> };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -55,6 +60,8 @@ export async function submitTextbookOrder(_prev: TextbookState, formData: FormDa
     .map((x) => Number(x))
     .filter((n) => Number.isInteger(n) && n > 0);
   const pickup = values.delivery === "pickup";
+  // 이체 캡처 (2026-11-04, 선택) — 브라우저가 textbook-transfers/{내 id}/ 에 먼저 올리고 경로만 보낸다 (서버 액션 본문 한도 1MB)
+  const transfer: UploadedFile | null = v("transfer_path") ? { path: v("transfer_path"), name: v("transfer_name"), size: Number(v("transfer_size")), type: v("transfer_type") } : null;
 
   const termId = Number(values.term_id);
   if (!Number.isInteger(termId) || termId <= 0) return { error: "주문할 달을 골라 주세요.", values };
@@ -66,6 +73,14 @@ export async function submitTextbookOrder(_prev: TextbookState, formData: FormDa
   if (!values.depositor_name) return { error: textbookOrderError("depositor"), values };
 
   const supabase = await createClient();
+  if (transfer) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { error: "로그인이 필요해요.", values };
+    const problem = transferUploadProblem(user.id, transfer);
+    if (problem) return { error: problem, values };
+  }
   const [orders, myOrders, catalogRows, pickupDayRows] = await Promise.all([
     getMyOrders(),
     getMyTextbookOrders(),
@@ -107,6 +122,20 @@ export async function submitTextbookOrder(_prev: TextbookState, formData: FormDa
   });
   if (error || !orderId) return { error: textbookOrderError(error?.message), values };
 
+  // 캡처를 주문에 붙인다 — 못 붙이면 주문은 그대로 두고(이미 들어갔다) 올린 파일만 지운다. 학생은 내역 카드에서 다시 올린다
+  let transferResult: TextbookState["transfer"];
+  if (transfer) {
+    const { error: attachError } = await supabase.rpc("attach_textbook_transfer", {
+      p_id: orderId,
+      p_path: transfer.path,
+      p_type: transfer.type,
+      p_size: transfer.size,
+      p_name: transfer.name,
+    });
+    transferResult = attachError ? "failed" : "attached";
+    if (attachError) await supabase.storage.from(TRANSFER_BUCKET).remove([transfer.path]);
+  }
+
   const when = pickup ? pickupLabel(values.pickup_date, values.pickup_time) : null;
   // 응답을 보낸 뒤에 알린다 — 주문한 행을 서버 전용 클라이언트로 읽는다 (방금 함수가 넣은 행이라 권한 확인은 끝났다)
   after(async () => {
@@ -116,13 +145,65 @@ export async function submitTextbookOrder(_prev: TextbookState, formData: FormDa
       title: when ? "새 교재주문 · 현장수령" : "새 교재주문",
       body:
         `${o?.recipient_name ?? values.recipient_name}님 · 교재 ${count}권 · ${formatWon(o?.total_amount ?? 0)} (입금자 ${o?.depositor_name ?? values.depositor_name})` +
-        (when ? ` · ${when} 학원에서 받아요` : ""),
+        (when ? ` · ${when} 학원에서 받아요` : "") +
+        (transferResult === "attached" ? " · 이체 캡처 있음" : ""),
       url: "/admin/textbook-orders",
     });
   });
 
   revalidatePath("/my/textbook");
-  return when ? { ok: true, pickup: when } : { ok: true };
+  revalidatePath("/admin/textbook-orders");
+  return { ok: true, ...(when ? { pickup: when } : {}), ...(transferResult ? { transfer: transferResult } : {}) };
+}
+
+export type TransferResult = { ok: boolean; error?: string };
+
+/**
+ * **이체 캡처 올리기 · 다시 올리기** (2026-11-04 Alan — "학생이 이체를 하고 난 뒤에, 해당 화면을 스크린샷찍어서 올려주면 조교들이 바로 확인하고 배송을 시작").
+ * 브라우저가 `textbook-transfers/{내 id}/` 에 올린 사진을 내 주문에 붙인다 — 금액확인 전(requested)에만, DB 함수(`attach_textbook_transfer`)가 `auth.uid()` 로 다시 본다.
+ * 바꾸기 전 캡처는 저장소에서 지운다. 못 붙이면 화면이 올린 파일을 지운다 (`ok: false`). 캡처가 붙으면 조교 · 강사에게 교재주문 알림 한 줄.
+ */
+export async function attachTextbookTransfer(input: { orderId: number; file: UploadedFile }): Promise<TransferResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "로그인이 필요해요." };
+  const orderId = Number(input.orderId);
+  if (!Number.isInteger(orderId) || orderId <= 0) return { ok: false, error: "주문을 찾을 수 없어요. 새로고침해 주세요." };
+  const file = input.file;
+  const problem = transferUploadProblem(user.id, file);
+  if (problem) return { ok: false, error: problem };
+
+  // 진짜 올라간 파일인지 — 비대면 인증과 같은 확인
+  const name = file.path.slice(user.id.length + 1);
+  const { data: found } = await supabase.storage.from(TRANSFER_BUCKET).list(user.id, { search: name, limit: 5 });
+  if (!(found ?? []).some((o) => o.name === name)) return { ok: false, error: "올린 캡처를 찾을 수 없어요. 다시 시도해 주세요." };
+
+  const { data: previous, error } = await supabase.rpc("attach_textbook_transfer", {
+    p_id: orderId,
+    p_path: file.path,
+    p_type: file.type,
+    p_size: file.size,
+    p_name: file.name,
+  });
+  if (error) return { ok: false, error: transferAttachError(error.message) };
+  if (previous && previous !== file.path) await supabase.storage.from(TRANSFER_BUCKET).remove([previous]);
+
+  // 조교 · 강사에게 — 캡처가 왔으니 바로 확인할 수 있다 (교재주문 알림 종류 그대로). 내 주문 행은 내 세션으로 읽는다
+  after(async () => {
+    const { data: o } = await supabase.from("textbook_orders").select("recipient_name, total_amount, depositor_name").eq("id", orderId).eq("user_id", user.id).maybeSingle();
+    await notifyStaff("textbook_order", {
+      title: "교재주문 이체 캡처 도착",
+      body: `${o?.recipient_name ?? "학생"}님 · ${formatWon(o?.total_amount ?? 0)} (입금자 ${o?.depositor_name ?? "-"}) · 캡처를 보고 금액확인해 주세요`,
+      url: "/admin/textbook-orders?status=requested",
+    });
+  });
+
+  revalidatePath("/my/textbook");
+  revalidatePath("/admin/textbook-orders");
+  revalidatePath("/admin");
+  return { ok: true };
 }
 
 /** 입금 확인 전에만 본인이 취소한다 (DB 함수가 상태를 다시 본다) */

@@ -470,7 +470,7 @@ export function textbookOrderError(message: string | undefined): string {
  * 강사 · 조교 화면은 `TEXTBOOK_ADMIN_STATUS` (같은 상태를 하는 일의 이름으로 부른다).
  */
 export const TEXTBOOK_STATUS: Record<string, { label: string; hint: string }> = {
-  requested: { label: "주문완료", hint: "입금하시면 강사님이 통장과 대조해 금액을 확인해요" },
+  requested: { label: "주문완료", hint: "입금한 뒤 이체 화면 캡처를 올리면 조교 선생님이 바로 확인해요 (안 올리면 강사님이 통장과 대조해요)" },
   confirmed: { label: "배송확인", hint: "금액이 확인됐어요. 곧 교재를 보내 드려요" },
   shipped: { label: "배송시작", hint: "교재가 출발했어요. 받으셨으면 배송완료를 눌러 주세요 — 내역에서 사라져요" },
   cancelled: { label: "취소", hint: "" },
@@ -481,7 +481,7 @@ export const TEXTBOOK_STATUS: Record<string, { label: string; hint: string }> = 
  * 강사가 금액확인 → `입금확인`(그 날짜에 받으러 오면 된다), 조교가 건네면 → `수령완료` (그 주문은 학생 내역에서 사라진다 — `received_at` 을 함께 찍는다).
  */
 export const TEXTBOOK_PICKUP_STATUS: Record<string, { label: string; hint: string }> = {
-  requested: { label: "주문완료", hint: "입금하시면 강사님이 통장과 대조해 금액을 확인해요" },
+  requested: { label: "주문완료", hint: "입금한 뒤 이체 화면 캡처를 올리면 조교 선생님이 바로 확인해요 (안 올리면 강사님이 통장과 대조해요)" },
   confirmed: { label: "입금확인", hint: `금액이 확인됐어요. 고른 날짜에 ${PICKUP_PLACE}에서 받아 가세요` },
   shipped: { label: "수령완료", hint: "교재를 받았어요. 확인을 누르면 내역에서 사라져요" },
   cancelled: { label: "취소", hint: "" },
@@ -491,11 +491,15 @@ export const TEXTBOOK_PICKUP_STATUS: Record<string, { label: string; hint: strin
 export const textbookStatus = (status: string, pickup: boolean): { label: string; hint: string } =>
   (pickup ? TEXTBOOK_PICKUP_STATUS : TEXTBOOK_STATUS)[status] ?? { label: status, hint: "" };
 
-/** 학생 주문 카드의 안내 한 줄 — 현장수령은 금액이 확인되면 받으러 올 날짜 · 시각을 그대로 적는다 */
-export function orderHint(o: { status: string; delivery_method?: string | null; pickup_date?: string | null; pickup_time?: string | null }): string {
+/**
+ * 학생 주문 카드의 안내 한 줄 — 현장수령은 금액이 확인되면 받으러 올 날짜 · 시각을 그대로 적는다.
+ * 금액확인 전에 이체 캡처를 올렸으면(2026-11-04) 조교 · 강사가 캡처를 보고 확인한다고 적는다
+ */
+export function orderHint(o: { status: string; delivery_method?: string | null; pickup_date?: string | null; pickup_time?: string | null; transfer_path?: string | null }): string {
   if (isPickup(o) && o.status === "confirmed" && o.pickup_date && o.pickup_time) {
     return `금액이 확인됐어요. ${pickupLabel(o.pickup_date, o.pickup_time)} ${PICKUP_PLACE}에서 받아 가세요`;
   }
+  if (o.status === "requested" && o.transfer_path) return "이체 캡처를 올렸어요. 조교 · 강사님이 캡처를 보고 금액을 확인해요";
   return textbookStatus(o.status, isPickup(o)).hint;
 }
 
