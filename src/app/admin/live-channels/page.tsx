@@ -9,6 +9,7 @@ import { LIVE_MATCH_MINUTES, streamState, type StreamTone } from "@/lib/live-det
 import { createClient } from "@/lib/supabase/server";
 import { youtubeConfigured } from "@/lib/youtube";
 import { cn, formatDate, todayKST, TRACK_LABEL } from "@/lib/utils";
+import { ofPart, partLabel, partsOf, partSubject, partTimeBlock } from "@/lib/class-parts";
 import { disconnectYoutube } from "./actions";
 
 export const metadata: Metadata = { title: "유튜브 자동 연결", robots: { index: false } };
@@ -35,7 +36,6 @@ const TONE: Record<StreamTone, string> = {
 };
 
 const when = (iso: string | null) => (iso ? formatDate(iso, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "아직 없음");
-const one = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? (v[0] ?? null) : (v ?? null));
 
 /** 선생님 안내의 바깥 링크 — 새 창, 밑줄 (누르면 무언가 일어나는 값에는 밑줄을 남긴다) */
 function Ext({ href, children }: { href: string; children: React.ReactNode }) {
@@ -93,17 +93,26 @@ export default async function LiveChannelsPage({ searchParams }: { searchParams:
     supabase
       .from("session_dates")
       .select(
-        "id, seq, date, section:class_sections(id, track, time_block, recorded, live_to_replay, instructor_id, course:courses(name, program)), session_streams(detected_at, promoted_at), session_live_links(source), replays(id)",
+        "id, seq, date, section:class_sections(id, track, time_block, subject, first_subject, second_start, recorded, live_to_replay, instructor_id, course:courses(name, program)), session_streams(detected_at, promoted_at, part), session_live_links(source, part), replays(id, part)",
       )
       .eq("date", today),
   ]);
 
   const mine = (channels ?? []).find((c) => c.user_id === user.id);
   const nameOf = new Map((staff ?? []).map((p) => [p.id, p.name]));
-  // 송출을 거는 반 = 담당 강사가 있는 시간 단위 반 (묶음·속성반은 담당이 비어 있다 — 도메인 규칙 1)
+  // 과목 선생님 — 두 교시 반(방학달 통짜)의 교시 담당 (DB private.subject_teacher 와 같은 고르기: 강사를 관리자보다 앞에)
+  const teacherOf = (subject: string | null) =>
+    (staff ?? []).find((p) => p.subject === subject && p.role === "instructor")?.id ?? (staff ?? []).find((p) => p.subject === subject && p.role === "admin")?.id ?? null;
+  // 송출을 거는 반 = 담당 강사가 있는 시간 단위 반 (묶음·속성반은 담당이 비어 있다 — 도메인 규칙 1) + **두 교시 반은 교시마다** (2026-11-05)
   const todays = (sessions ?? [])
-    .filter((s) => s.section && s.section.instructor_id)
-    .sort((a, b) => (a.section!.time_block ?? "").localeCompare(b.section!.time_block ?? "") || (a.section!.course?.name ?? "").localeCompare(b.section!.course?.name ?? "", "ko"));
+    .filter((s) => s.section && (s.section.instructor_id || partsOf(s.section).length === 2))
+    .sort((a, b) => (a.section!.time_block ?? "").localeCompare(b.section!.time_block ?? "") || (a.section!.course?.name ?? "").localeCompare(b.section!.course?.name ?? "", "ko"))
+    .flatMap((s) =>
+      partsOf(s.section!).map((part) => {
+        const label = partLabel(s.section!, part);
+        return { s, part, label, instructorId: label ? teacherOf(partSubject(s.section!, part)) : s.section!.instructor_id, block: label ? partTimeBlock(s.section!, part) : s.section!.time_block };
+      }),
+    );
 
   return (
     <>
@@ -239,24 +248,25 @@ export default async function LiveChannelsPage({ searchParams }: { searchParams:
             <p className="mt-3 text-sm text-slate">오늘은 수업이 없어요.</p>
           ) : (
             <ul className="mt-3 divide-y divide-line">
-              {todays.map((s) => {
+              {todays.map(({ s, part, label, instructorId, block }) => {
                 const sec = s.section!;
-                const stream = one(s.session_streams);
+                const stream = ofPart(s.session_streams, part);
                 const state = streamState({
                   recorded: sec.recorded,
                   liveToReplay: sec.live_to_replay,
                   stream,
-                  hasReplay: (s.replays?.length ?? 0) > 0,
-                  connected: (channels ?? []).some((c) => c.user_id === sec.instructor_id),
-                  liveLinked: one(s.session_live_links)?.source === "youtube",
+                  hasReplay: !!ofPart(s.replays, part),
+                  connected: (channels ?? []).some((c) => c.user_id === instructorId),
+                  liveLinked: ofPart(s.session_live_links, part)?.source === "youtube",
                 });
                 return (
-                  <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
+                  <li key={`${s.id}:${part}`} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
                     <div className="min-w-0">
                       <p className="font-bold text-ink">
-                        {sec.time_block} · {sec.course?.name ?? "강좌"} {TRACK_LABEL[sec.track] ?? sec.track} · {s.seq}회차
+                        {block} · {sec.course?.name ?? "강좌"} {TRACK_LABEL[sec.track] ?? sec.track} · {s.seq}회차
+                        {label && <span className="ml-1.5 rounded-full bg-ink px-1.5 py-0.5 text-[10px] font-black text-white">{label}</span>}
                       </p>
-                      <p className="text-xs text-slate">담당 {nameOf.get(sec.instructor_id!) ?? "-"}</p>
+                      <p className="text-xs text-slate">담당 {(instructorId && nameOf.get(instructorId)) ?? "-"}</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold", TONE[state.tone])}>

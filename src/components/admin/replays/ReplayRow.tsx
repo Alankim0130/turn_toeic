@@ -7,6 +7,7 @@ import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
 import { labelKo } from "@/components/admin/sections/dates";
+import type { Part } from "@/lib/class-parts";
 
 type Replay = { id: number; video_url: string; published_at: string };
 
@@ -23,6 +24,8 @@ export function ReplayRow({
   time,
   replay,
   readOnly,
+  part = 1,
+  partLabel = null,
 }: {
   sectionId: number;
   sessionDateId: number;
@@ -31,6 +34,10 @@ export function ReplayRow({
   time: string;
   replay: Replay | null;
   readOnly: boolean;
+  /** 교시 — 방학달 통짜 반만 1 · 2 (2026-11-05 두 교시 · 두 방송). 시간 단위 반은 1 */
+  part?: Part;
+  /** `앞 교시 LC` — 두 교시 반에서만 */
+  partLabel?: string | null;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<"view" | "edit" | "confirm">("view");
@@ -65,7 +72,12 @@ export function ReplayRow({
         <span className="w-12 text-lg font-black text-brand-600">{seq}회</span>
         <div className="min-w-[9rem]">
           <p className="font-bold text-ink">{labelKo(date)}</p>
-          {time && <p className="text-xs text-slate">{time}</p>}
+          {(time || partLabel) && (
+            <p className="text-xs text-slate">
+              {partLabel && <span className="mr-1.5 rounded-full bg-ink px-1.5 py-0.5 text-[10px] font-black text-white">{partLabel}</span>}
+              {time}
+            </p>
+          )}
         </div>
 
         {replay && mode === "view" && (
@@ -97,6 +109,7 @@ export function ReplayRow({
         <form action={addAction} className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input type="hidden" name="session_date_id" value={sessionDateId} />
           <input type="hidden" name="section_id" value={sectionId} />
+          <input type="hidden" name="part" value={part} />
           <input
             name="video_url"
             type="url"
@@ -105,7 +118,7 @@ export function ReplayRow({
             placeholder="https://youtu.be/… 녹화본 주소"
             className="input !py-2"
             defaultValue={addState.value}
-            aria-label={`${seq}회 다시보기 주소`}
+            aria-label={`${seq}회${partLabel ? ` ${partLabel}` : ""} 다시보기 주소`}
           />
           <SubmitButton className="shrink-0 whitespace-nowrap sm:w-auto !py-2" pendingText="등록 중…">등록</SubmitButton>
         </form>

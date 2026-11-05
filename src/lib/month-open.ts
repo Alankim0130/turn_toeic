@@ -32,6 +32,10 @@ export type OpenSlot = {
   book_set: string | null;
   subject_mwf: string | null;
   subject_ttf: string | null;
+  /** 통짜 줄 — 앞 교시 과목 · 뒤 교시 시작 (2026-11-05). 예전 조회에는 없을 수 있어 선택 */
+  first_mwf?: string | null;
+  first_ttf?: string | null;
+  second_start?: string | null;
 };
 export type OpenCourse = { id: number; program: string; target_score: number | null };
 export type OpenTrack = "mwf" | "ttf";
@@ -100,7 +104,7 @@ export function sectionInsertOf(input: {
   instructorId: string | null;
 }): SectionInsert {
   const { term, course, slot, kind, track } = input;
-  const plan = slot && kind ? fieldsFor(kind, slot) : { book_set: null, subject_mwf: null, subject_ttf: null };
+  const plan = slot && kind ? fieldsFor(kind, slot, slot) : { book_set: null, subject_mwf: null, subject_ttf: null, first_mwf: null, first_ttf: null, second_start: null };
   const evening = !!slot?.ttf_recorded;
   return {
     term_id: term.id,
@@ -115,6 +119,9 @@ export function sectionInsertOf(input: {
     status: input.status,
     book_set: plan.book_set,
     subject: track === "mwf" ? plan.subject_mwf : plan.subject_ttf,
+    // 방학달 통짜 반의 두 교시 (2026-11-05) — 앞 교시 과목은 트랙별, 뒤 교시 시작은 줄 그대로. 통짜가 아니면 비어 있다 (`fieldsFor`)
+    first_subject: track === "mwf" ? plan.first_mwf : plan.first_ttf,
+    second_start: plan.second_start,
     recorded: evening && track === "ttf",
     live_to_replay: !evening,
     bundle_id: null,

@@ -15,6 +15,7 @@ import { timeBlockOf } from "@/components/admin/sections/bulk";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { TermChips } from "@/components/admin/TermChips";
 import { termParam } from "@/lib/study";
+import { ofPart, partLabel, partsOf, partTimeBlock } from "@/lib/class-parts";
 
 export const metadata: Metadata = { title: "다시보기 등록", robots: { index: false } };
 
@@ -28,7 +29,7 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
     supabase
       .from("class_sections")
       .select(
-        "id, term_id, course_id, track, start_time, end_time, time_block, status, enrollment_opens_at, closes_at, instructor_id, book_set, subject, recorded, course:courses(name, program, target_score, includes_levels), term:terms(year, month)",
+        "id, term_id, course_id, track, start_time, end_time, time_block, status, enrollment_opens_at, closes_at, instructor_id, book_set, subject, first_subject, second_start, recorded, course:courses(name, program, target_score, includes_levels), term:terms(year, month)",
       )
       .order("id", { ascending: false })
       .limit(200),
@@ -98,7 +99,7 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
 
   const [{ data: sessions }, { data: pairRows }] = await Promise.all([
     selected
-      ? supabase.from("session_dates").select("id, seq, date, start_time, end_time, replays(id, video_url, published_at)").eq("section_id", selected.id).order("date")
+      ? supabase.from("session_dates").select("id, seq, date, start_time, end_time, replays(id, video_url, published_at, part)").eq("section_id", selected.id).order("date")
       : Promise.resolve({ data: [] as never[] }),
     // 저녁 반(화목금 인강 · 월수금 현장) ↔ 녹화본을 올릴 오전 짝 (마이그레이션 20260920120000 · 20260923140000).
     // 규칙은 DB 한곳(private.recorded_source_section) — **화면에서 다시 계산하지 않는다** (도메인 규칙 1 "반 권한")
@@ -151,8 +152,11 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
   // DB 의 private.can_manage_section 과 같은 집합 — 강사 · 관리자 전부 + 담당 강사 (2026-10-29 점검 — 예전에는 `role === "admin"` 이라
   // 강사 두 분은 남의 반 · 담당이 빈 반(방학달 통짜 반)에서 DB 가 허락하는데도 '열람만' 이었다)
   const canManage = selected ? isAdmin(profile.role) || selected.instructor_id === user.id : false;
-  const registered = (sessions ?? []).filter((s) => (s.replays?.length ?? 0) > 0).length;
   const selectedParts = selected ? (packages.get(selected.id)?.parts ?? []) : [];
+  // 방학달 통짜 반은 교시(앞 · 뒤)마다 녹화본 하나 (2026-11-05 "각자 방송을 진행해") — 시간 단위 반은 교시 하나
+  const parts = selected ? partsOf(selected, { isPackage: selectedParts.length > 0 }) : [1 as const];
+  const cells = (sessions ?? []).flatMap((s) => parts.map((p) => ({ s, p, replay: ofPart(s.replays, p) })));
+  const registered = cells.filter((c) => c.replay).length;
 
   return (
     <div className="space-y-8">
@@ -202,7 +206,8 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
                   {selected.closes_at < today ? "종강해서 수강생에게는 더 보이지 않아요 — 기록만 남아 있어요" : "종강일까지 수강생이 시청할 수 있어요"}
                 </span>
                 <span className="ml-auto text-xs font-bold text-brand-600">
-                  등록 {registered} / {sessions?.length ?? 0}회차
+                  등록 {registered} / {cells.length}
+                  {parts.length > 1 ? "교시" : "회차"}
                 </span>
               </div>
             )}
@@ -294,17 +299,19 @@ export default async function AdminReplaysPage({ searchParams }: { searchParams:
             </div>
           )}
 
-          {selected && (sessions?.length ?? 0) > 0 && (
+          {selected && cells.length > 0 && (
             <ul className="space-y-3">
-              {(sessions ?? []).map((s) => (
+              {cells.map(({ s, p, replay }) => (
                 <ReplayRow
-                  key={s.id}
+                  key={`${s.id}:${p}`}
                   sectionId={selected.id}
                   sessionDateId={s.id}
                   seq={s.seq}
                   date={s.date}
-                  time={formatTimeRange(s.start_time, s.end_time)}
-                  replay={s.replays?.[0] ? { id: s.replays[0].id, video_url: s.replays[0].video_url, published_at: s.replays[0].published_at } : null}
+                  time={parts.length > 1 ? (partTimeBlock(selected, p) ?? "") : formatTimeRange(s.start_time, s.end_time)}
+                  part={p}
+                  partLabel={partLabel(selected, p)}
+                  replay={replay ? { id: replay.id, video_url: replay.video_url, published_at: replay.published_at } : null}
                   readOnly={!canManage}
                 />
               ))}

@@ -13,6 +13,8 @@
  *   크론이 잠깐 늦게 돌아도 같은 답이 나오고, 앞 교시 방송을 켜 둔 채 다음 교시가 되어도 그 방송이 다음 교시로 가지 않는다.
  * - 채널 주인 = 그 반의 담당 강사. 같은 강사·같은 시각 회차가 둘이면(합반) 둘 다 같은 방송을 받는다.
  * - 한 방송은 한 시각에만 — 두 교시를 한 방송으로 이어 가면 뒤 교시는 채워지지 않는다 (강사가 교시마다 새 방송을 켠다).
+ * - **방학달 통짜 반은 교시(part 1 · 2)마다 후보가 하나씩** (2026-11-05 Alan "각자 방송을 진행해") — 앞 교시는 그 과목 선생님 · 반 시작 시각,
+ *   뒤 교시는 다른 과목 선생님 · 뒤 교시 시작 시각 (DB `live_detect_candidates`). 같은 회차라도 교시가 다르면 다른 후보다.
  */
 
 export const LIVE_MATCH_MINUTES = 10;
@@ -25,7 +27,14 @@ export type LiveCandidate = {
   label: string;
   /** 끝나면 다시보기로 만드는 반인가 (오전 · 주간). 저녁 반은 꺼져 있다 — 불라방 링크만 들어간다 (2026-10-04) */
   live_to_replay: boolean;
+  /** 교시 — 방학달 통짜 반만 1 · 2, 그 밖은 1 (2026-11-05). 예전 DB 함수는 이 칸이 없어 1 로 본다 */
+  part?: number;
 };
+
+/** 후보의 교시 — 없으면 1 */
+export const candidatePart = (c: Pick<LiveCandidate, "part">): 1 | 2 => (c.part === 2 ? 2 : 1);
+/** 회차 · 교시 열쇠 — 한 방송이 같은 (회차, 교시)에 두 번 가지 않게 */
+const candidateKey = (c: Pick<LiveCandidate, "session_date_id" | "part">) => `${c.session_date_id}:${candidatePart(c)}`;
 export type Broadcast = {
   id: string;
   startedAt: string | null;
@@ -72,13 +81,13 @@ export function matchBroadcasts(
   minutes = LIVE_MATCH_MINUTES,
 ): { broadcast: Broadcast; sessions: LiveCandidate[] }[] {
   const live = broadcasts.filter((b) => b.lifeCycleStatus === "live");
-  const used = new Set<number>();
+  const used = new Set<string>();
   const out: { broadcast: Broadcast; sessions: LiveCandidate[] }[] = [];
   for (const b of live) {
     const started = b.startedAt ? new Date(b.startedAt).getTime() : now.getTime();
     if (Number.isNaN(started)) continue;
     const sessions = candidates.filter(
-      (c) => !used.has(c.session_date_id) && Math.abs(new Date(c.starts_at).getTime() - started) <= minutes * 60_000,
+      (c) => !used.has(candidateKey(c)) && Math.abs(new Date(c.starts_at).getTime() - started) <= minutes * 60_000,
     );
     // 창이 겹치면(드물다) 시작 시각이 가장 가까운 시각의 회차만 — 한 방송이 두 교시로 가지 않게
     if (sessions.length > 1) {
@@ -87,7 +96,7 @@ export function matchBroadcasts(
       const bestStart = sessions.find((c) => gap(c) === best)!.starts_at;
       sessions.splice(0, sessions.length, ...sessions.filter((c) => new Date(c.starts_at).getTime() === new Date(bestStart).getTime()));
     }
-    for (const s of sessions) used.add(s.session_date_id);
+    for (const s of sessions) used.add(candidateKey(s));
     out.push({ broadcast: b, sessions });
   }
   return out;

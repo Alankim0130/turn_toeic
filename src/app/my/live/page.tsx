@@ -135,10 +135,13 @@ export default async function LivePage() {
                       )}
                     </div>
 
-                    <a href={c.url} target="_blank" rel="noopener noreferrer" className="btn-primary mt-5 w-full !py-4 text-base">
-                      <Icon name="live" size={24} className="brightness-0 invert" />
-                      불라방 입장
-                    </a>
+                    {/* 두 교시 반(방학달 통짜)은 교시마다 입장 버튼 — 앞 교시 LC · 뒤 교시 RC (2026-11-05 "각자 방송을 진행해"). 시간 단위 반은 하나 */}
+                    {c.links.map((l) => (
+                      <a key={l.part} href={l.url} target="_blank" rel="noopener noreferrer" className="btn-primary mt-3 w-full !py-4 text-base first:mt-5">
+                        <Icon name="live" size={24} className="brightness-0 invert" />
+                        {l.label ? `${l.label} 입장${l.timeBlock ? ` · ${l.timeBlock.split("~")[0]}` : ""}` : "불라방 입장"}
+                      </a>
+                    ))}
                     <p className="mt-2 text-center text-xs text-mist">
                       {/* 유튜브 라이브만 끝나면 그 주소가 녹화본이다 — Zoom 입장 링크는 다시보기로 올라가지 않는다 (2026-09-30) */}
                       {c.kind === "today" && s.live_to_replay && isYoutubeUrl(c.url)

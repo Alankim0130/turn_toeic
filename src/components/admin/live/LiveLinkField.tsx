@@ -6,6 +6,7 @@ import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Icon } from "@/components/ui/Icon";
 import { linkKindLabel } from "@/lib/live-links";
 import { cn } from "@/lib/utils";
+import type { Part } from "@/lib/class-parts";
 
 function shorten(url: string, max: number) {
   const s = url.replace(/^https?:\/\//, "");
@@ -23,9 +24,12 @@ export function LiveLinkField({
   current,
   label,
   big = false,
+  part = 1,
 }: {
   sessionDateId: number;
   sectionId: number;
+  /** 교시 — 방학달 통짜 반만 1 · 2 (2026-11-05). 시간 단위 반은 1 */
+  part?: Part;
   current: string | null;
   /** 화면 읽기용 이름 (`750+ 월수금 10:00~11:00 3회차`) */
   label: string;
@@ -65,6 +69,7 @@ export function LiveLinkField({
     <form action={action} className="flex flex-col gap-1.5">
       <input type="hidden" name="session_date_id" value={sessionDateId} />
       <input type="hidden" name="section_id" value={sectionId} />
+      <input type="hidden" name="part" value={part} />
       <div className="flex flex-wrap items-center gap-2">
         <input
           name="live_url"

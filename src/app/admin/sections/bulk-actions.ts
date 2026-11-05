@@ -56,7 +56,7 @@ export async function bulkCreateSections(input: { termId: number; instructorId?:
   // 그 달 시간표 줄만 쓴다 (2026-09-29 — 달마다 한 벌). 다른 달 줄로 만들면 시간·과정·과목이 틀리게 박힌다
   const { data: slots } = await supabase
     .from("timetable_slots")
-    .select("id, year, month, level, program, start_time, end_time, ttf_recorded, book_set, subject_mwf, subject_ttf")
+    .select("id, year, month, level, program, start_time, end_time, ttf_recorded, book_set, subject_mwf, subject_ttf, first_mwf, first_ttf, second_start")
     .eq("year", term.year)
     .eq("month", term.month);
   const slotById = new Map((slots ?? []).map((s) => [s.id, s]));

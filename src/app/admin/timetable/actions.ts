@@ -33,7 +33,7 @@ import { autoOpenMonth, draftMonthTimetable } from "@/app/admin/sections/_lib/op
 
 const BACK = "/admin/timetable";
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
-const SLOT_COLUMNS = "id, year, month, level, program, start_time, end_time, ttf_recorded, book_set, subject_mwf, subject_ttf";
+const SLOT_COLUMNS = "id, year, month, level, program, start_time, end_time, ttf_recorded, book_set, subject_mwf, subject_ttf, first_mwf, first_ttf, second_start";
 
 type Supa = Awaited<ReturnType<typeof createClient>>;
 type SlotUpdate = Database["public"]["Tables"]["timetable_slots"]["Update"];
@@ -81,10 +81,14 @@ async function normalizeGroup(supabase: Supa, y: number, m: number, level: numbe
   for (const r of rows) {
     const kind = kinds.get(r.id)!;
     const patch: SlotUpdate = {};
-    const f = fieldsFor(kind, r);
+    const f = fieldsFor(kind, r, r);
     if (f.book_set !== r.book_set) patch.book_set = f.book_set;
     if (f.subject_mwf !== r.subject_mwf) patch.subject_mwf = f.subject_mwf;
     if (f.subject_ttf !== r.subject_ttf) patch.subject_ttf = f.subject_ttf;
+    // 통짜 줄의 교시 칸 (2026-11-05) — 시간이 바뀌어 통짜가 아니게 되면 비운다
+    if (f.first_mwf !== r.first_mwf) patch.first_mwf = f.first_mwf;
+    if (f.first_ttf !== r.first_ttf) patch.first_ttf = f.first_ttf;
+    if (f.second_start !== (r.second_start ? r.second_start.slice(0, 5) : null)) patch.second_start = f.second_start;
     if (kind === "package") {
       const parts = rows.filter((o) => o.id !== r.id && blockContains(slotLabelOf(r), slotLabelOf(o)));
       const evening = parts.length > 0 && parts.every((p) => p.ttf_recorded);
@@ -124,6 +128,10 @@ export async function saveTimetableSlot(formData: FormData) {
     bookSet: str(formData, "book_set"),
     subjectMwf: str(formData, "subject_mwf"),
     subjectTtf: str(formData, "subject_ttf"),
+    // 통짜 줄 — 앞 교시 과목 · 뒤 교시 시작 (2026-11-05). 시 · 분 중 하나만 고른 것은 빈 글자(joinTime)라 비운 것으로 본다
+    firstMwf: str(formData, "first_mwf"),
+    firstTtf: str(formData, "first_ttf"),
+    secondStart: joinTime(str(formData, "second_h"), str(formData, "second_m")) || null,
   });
   if (!parsed.ok) done(month, { error: parsed.error });
   const slot = parsed.slot;
@@ -137,7 +145,11 @@ export async function saveTimetableSlot(formData: FormData) {
   // 종류는 바꾼 뒤의 시간으로 본다 — 허락하지 않는 칸은 비운다 (한달완성·스파르타 줄에 과정이 남으면 그 반 학생의 교재가 틀어진다)
   const after = { id: id ?? -1, level: slot.level, program: slot.program, start_time: `${slot.start}:00`, end_time: `${slot.end}:00` };
   const kind = kindOf(after, [...group.filter((r) => r.id !== id), after]);
-  const fields = fieldsFor(kind, { book_set: slot.bookSet, subject_mwf: slot.subjectMwf, subject_ttf: slot.subjectTtf });
+  const fields = fieldsFor(
+    kind,
+    { book_set: slot.bookSet, subject_mwf: slot.subjectMwf, subject_ttf: slot.subjectTtf, first_mwf: slot.firstMwf, first_ttf: slot.firstTtf, second_start: slot.secondStart },
+    { start_time: slot.start, end_time: slot.end },
+  );
 
   const applied = before ? await sectionCount(supabase, slot.year, slot.month, slot.level, slot.program, slotLabelOf(before)) : 0;
   const row = {

@@ -101,9 +101,13 @@ export type SlotValues = {
   book_set: string | null;
   subject_mwf: string | null;
   subject_ttf: string | null;
+  /** 방학달 통짜 줄 — 앞 교시 과목(월수금 · 화목금) · 뒤 교시 시작 "HH:MM:SS" (2026-11-05). 그 밖의 줄은 null */
+  first_mwf?: string | null;
+  first_ttf?: string | null;
+  second_start?: string | null;
 };
 
-/** 출발점의 줄들로 새 달 줄을 만든다 — 이어지면 과목 그대로 · 과정은 달 수만큼 뒤집기, 끊겼으면 시간만 */
+/** 출발점의 줄들로 새 달 줄을 만든다 — 이어지면 과목 그대로 · 과정은 달 수만큼 뒤집기, 끊겼으면 시간만 (통짜 줄의 교시 칸도 이어질 때만) */
 export function draftMonth(source: MonthSource, rows: SlotValues[]): SlotValues[] {
   const carry = source.kind === "month" && source.carry;
   const flip = source.kind === "month" && source.flips % 2 === 1;
@@ -116,6 +120,9 @@ export function draftMonth(source: MonthSource, rows: SlotValues[]): SlotValues[
     book_set: carry ? (flip ? flipSet(r.book_set) : r.book_set === "A" || r.book_set === "B" ? r.book_set : null) : null,
     subject_mwf: carry && isSubject(r.subject_mwf) ? r.subject_mwf : null,
     subject_ttf: carry && isSubject(r.subject_ttf) ? r.subject_ttf : null,
+    first_mwf: carry && isSubject(r.first_mwf) ? r.first_mwf : null,
+    first_ttf: carry && isSubject(r.first_ttf) ? r.first_ttf : null,
+    second_start: carry && r.second_start ? r.second_start : null,
   }));
 }
 
@@ -187,22 +194,49 @@ export function slotKinds<T extends TimeRow>(rows: T[]): Map<number, SlotKind> {
   return out;
 }
 
-/** 종류가 허락하지 않는 값은 비운다 — 한달완성·스파르타 줄에 과정이 남으면 그 반 학생의 교재가 틀어진다 */
-export function fieldsFor(kind: SlotKind, v: { book_set: string | null; subject_mwf: string | null; subject_ttf: string | null }) {
+/** 줄의 고르는 칸 — 과정 · 트랙별 과목 · (통짜 줄) 앞 교시 과목 · 뒤 교시 시작 */
+export type SlotFields = {
+  book_set: string | null;
+  subject_mwf: string | null;
+  subject_ttf: string | null;
+  first_mwf?: string | null;
+  first_ttf?: string | null;
+  second_start?: string | null;
+};
+
+/** "HH:MM" · "HH:MM:SS" 모양만 남긴다 (초는 뗀다) */
+const timeOf = (v: string | null | undefined): string | null => {
+  const m = String(v ?? "").match(/^(\d{2}:\d{2})(?::\d{2})?$/);
+  return m ? m[1] : null;
+};
+
+/**
+ * 종류가 허락하지 않는 값은 비운다 — 한달완성·스파르타 줄에 과정이 남으면 그 반 학생의 교재가 틀어진다.
+ * 통짜 줄만 앞 교시 과목 · 뒤 교시 시작을 갖는다 (2026-11-05 — 두 교시 · 두 방송). 뒤 교시 시작은 줄의 시작 · 끝 사이일 때만 (`range` 를 주면 본다)
+ */
+export function fieldsFor(kind: SlotKind, v: SlotFields, range?: { start_time: string; end_time: string }) {
   const set = v.book_set === "A" || v.book_set === "B" ? v.book_set : null;
+  const second = kind === "block" ? timeOf(v.second_start) : null;
+  const inRange = !range || !second || (second > range.start_time.slice(0, 5) && second < range.end_time.slice(0, 5));
   return {
     book_set: kind === "hour" || kind === "block" ? set : null,
     subject_mwf: kind === "hour" && isSubject(v.subject_mwf) ? v.subject_mwf : null,
     subject_ttf: kind === "hour" && isSubject(v.subject_ttf) ? v.subject_ttf : null,
+    first_mwf: kind === "block" && isSubject(v.first_mwf) ? v.first_mwf : null,
+    first_ttf: kind === "block" && isSubject(v.first_ttf) ? v.first_ttf : null,
+    second_start: second && inRange ? second : null,
   };
 }
 
-/** 아직 안 고른 칸 — 비어 있으면 담당 강사 · LC 교재 · 다시보기 짝이 정해지지 않는다 */
-export function missingOf(kind: SlotKind, v: { book_set: string | null; subject_mwf: string | null; subject_ttf: string | null }): string[] {
+/** 아직 안 고른 칸 — 비어 있으면 담당 강사 · LC 교재 · 다시보기 짝(통짜 줄은 교시 · 유튜브 자동 연결)이 정해지지 않는다 */
+export function missingOf(kind: SlotKind, v: SlotFields): string[] {
   const out: string[] = [];
   if ((kind === "hour" || kind === "block") && !v.book_set) out.push("과정");
   if (kind === "hour" && !v.subject_mwf) out.push("월수금 과목");
   if (kind === "hour" && !v.subject_ttf) out.push("화목금 과목");
+  if (kind === "block" && !v.first_mwf) out.push("월수금 앞 교시");
+  if (kind === "block" && !v.first_ttf) out.push("화목금 앞 교시");
+  if (kind === "block" && !v.second_start) out.push("뒤 교시 시작");
   return out;
 }
 

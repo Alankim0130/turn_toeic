@@ -26,6 +26,10 @@ export type SlotInput = {
   /** 월수금 · 화목금 과목 lc|rc */
   subjectMwf: string | null;
   subjectTtf: string | null;
+  /** 통짜 줄 — 앞 교시 과목(월수금 · 화목금) · 뒤 교시 시작 "HH:MM" (2026-11-05 두 교시 · 두 방송). 그 밖의 줄은 비운다 (`fieldsFor`) */
+  firstMwf: string | null;
+  firstTtf: string | null;
+  secondStart: string | null;
 };
 
 /** "9:00" · "09:00" · "09:00:00" → "09:00". 아니면 null */
@@ -82,6 +86,10 @@ export function parseSlotInput(raw: {
   bookSet?: string | null;
   subjectMwf?: string | null;
   subjectTtf?: string | null;
+  /** 통짜 줄 — 앞 교시 과목(월수금 · 화목금) · 뒤 교시 시작 "HH:MM" (2026-11-05). 비우면 null */
+  firstMwf?: string | null;
+  firstTtf?: string | null;
+  secondStart?: string | null;
 }): { ok: true; slot: SlotInput } | { ok: false; error: string } {
   const ym = String(raw.month ?? "").match(/^(\d{4})-(\d{2})$/);
   const year = ym ? Number(ym[1]) : NaN;
@@ -95,6 +103,10 @@ export function parseSlotInput(raw: {
   if (!start || !end) return { ok: false, error: "시작·종료 시각을 시·분까지 골라 주세요." };
   if (end <= start) return { ok: false, error: "종료 시각이 시작 시각보다 뒤여야 해요." };
   const pick = (v: string | null | undefined, allowed: string[]) => (v && allowed.includes(v) ? v : null);
+  // 뒤 교시 시작 — 시 · 분을 다 골랐을 때만 값이고, 줄의 시작 · 끝 사이여야 한다 (한쪽만 고른 것은 비운다 — joinTime 이 빈 글자)
+  const second = raw.secondStart ? normalizeTime(raw.secondStart) : null;
+  if (raw.secondStart && !second) return { ok: false, error: "뒤 교시 시작 시각을 시·분까지 골라 주세요." };
+  if (second && !(second > start && second < end)) return { ok: false, error: "뒤 교시 시작은 줄의 시작과 끝 사이여야 해요." };
   return {
     ok: true,
     slot: {
@@ -108,6 +120,9 @@ export function parseSlotInput(raw: {
       bookSet: pick(raw.bookSet, ["A", "B"]),
       subjectMwf: pick(raw.subjectMwf, ["lc", "rc"]),
       subjectTtf: pick(raw.subjectTtf, ["lc", "rc"]),
+      firstMwf: pick(raw.firstMwf, ["lc", "rc"]),
+      firstTtf: pick(raw.firstTtf, ["lc", "rc"]),
+      secondStart: second,
     },
   };
 }

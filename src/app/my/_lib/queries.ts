@@ -16,6 +16,7 @@ import { sectionSubjects, type LectureWayRow } from "@/lib/lecture";
 import { groupLectureMaterials, type LectureMaterial } from "@/lib/lecture-materials";
 import type { Subject } from "@/lib/instructor-subject";
 import { nowKst, sessionStarted, sessionState } from "@/lib/live-links";
+import { partLabel, partTimeBlock, toPart, type Part } from "@/lib/class-parts";
 
 /**
  * 수강생 영역에서 쓰는 조회 함수. 전부 사용자 세션 클라이언트라 RLS 가 접근 범위를 정한다.
@@ -30,7 +31,7 @@ import { nowKst, sessionStarted, sessionState } from "@/lib/live-links";
  */
 
 const SECTION_COLS = `
-  id, course_id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status, book_set, subject, recorded, live_to_replay,
+  id, course_id, term_id, track, start_time, end_time, time_block, enrollment_opens_at, closes_at, status, book_set, subject, first_subject, second_start, recorded, live_to_replay,
   course:courses(name, course_type, target_score, program, includes_levels),
   term:terms(year, month)
 ` as const;
@@ -288,10 +289,16 @@ export async function getMyLiveLinks() {
 }
 export type MyLiveLink = Awaited<ReturnType<typeof getMyLiveLinks>>[number];
 
+/** 카드의 입장 링크 하나 — 두 교시 반(방학달 통짜)은 교시마다 (2026-11-05) */
+export type MyLiveLinkPart = { part: Part; label: string | null; timeBlock: string | null; url: string };
+
 export type MyLiveCard = {
   sectionId: number;
   section: NonNullable<MyLiveLink["section"]>;
+  /** 첫 입장 링크 (두 교시 반이면 앞 교시) — 예전 모양 그대로 */
   url: string;
+  /** 입장 링크 전부 — 시간 단위 반은 하나, 두 교시 반은 끝나지 않은 교시마다 (2026-11-05 "각자 방송을 진행해") */
+  links: MyLiveLinkPart[];
   /** today = 오늘 회차 링크 · next = 앞으로 올 회차 링크 · standing = 반의 상시 링크 */
   kind: "today" | "next" | "standing";
   seq?: number;
@@ -319,7 +326,7 @@ export async function getMyLiveCards(): Promise<MyLiveCard[]> {
     supabase.from("section_live_links").select(`section_id, live_url, updated_at, section:class_sections!inner(${SECTION_COLS})`).gte("section.closes_at", today),
     supabase
       .from("session_live_links")
-      .select(`session_date_id, live_url, session:session_dates!inner(id, seq, date, section_id, section:class_sections(${SECTION_COLS}))`)
+      .select(`session_date_id, part, live_url, session:session_dates!inner(id, seq, date, section_id, section:class_sections(${SECTION_COLS}))`)
       .gte("session.date", today),
     getMyOrders(),
   ]);
@@ -333,25 +340,40 @@ export async function getMyLiveCards(): Promise<MyLiveCard[]> {
   const isWebUrl = (u: string) => /^https?:\/\//i.test(u);
   for (const l of standing ?? [])
     if (l.section && isWebUrl(l.live_url) && (!mine || mine.has(l.section_id)))
-      cards.set(l.section_id, { sectionId: l.section_id, section: l.section, url: l.live_url, kind: "standing", until: untilOf(l.section.term_id) });
+      cards.set(l.section_id, {
+        sectionId: l.section_id,
+        section: l.section,
+        url: l.live_url,
+        links: [{ part: 1, label: null, timeBlock: l.section.time_block, url: l.live_url }],
+        kind: "standing",
+        until: untilOf(l.section.term_id),
+      });
   const upcoming = (perSession ?? [])
     .filter((l) => {
       const sec = l.session?.section;
       if (!sec || !isWebUrl(l.live_url) || (mine && !mine.has(l.session!.section_id))) return false;
-      // 끝난 수업은 지난 회차 — 오늘 회차도 시간대가 끝나면 (시간을 모르는 반은 그 날 내내 오늘 회차로 둔다)
-      if (sessionState({ date: l.session!.date, time_block: sec.time_block }, now.date, now.minutes) === "past") return false;
+      // 끝난 수업은 지난 회차 — 오늘 회차도 시간대가 끝나면 (시간을 모르는 반은 그 날 내내 오늘 회차로 둔다).
+      // 두 교시 반(방학달 통짜)은 그 교시의 시간으로 본다 — 앞 교시가 끝나면 앞 교시 링크만 빠진다 (2026-11-05)
+      if (sessionState({ date: l.session!.date, time_block: partTimeBlock(sec, toPart(l.part)) }, now.date, now.minutes) === "past") return false;
       const until = untilOf(sec.term_id);
       return !until || l.session!.date <= until;
     })
-    .sort((a, b) => a.session!.date.localeCompare(b.session!.date) || a.session!.seq - b.session!.seq);
+    .sort((a, b) => a.session!.date.localeCompare(b.session!.date) || a.session!.seq - b.session!.seq || toPart(a.part) - toPart(b.part));
   for (const l of upcoming) {
     const s = l.session!;
     const prev = cards.get(s.section_id);
-    if (prev && prev.kind !== "standing") continue; // 더 가까운 회차 링크가 이미 있다
+    const part = toPart(l.part);
+    const link: MyLiveLinkPart = { part, label: partLabel(s.section!, part), timeBlock: partTimeBlock(s.section!, part), url: l.live_url };
+    if (prev && prev.kind !== "standing") {
+      // 같은 회차의 다른 교시 링크 — 한 카드에 함께 (앞 교시 · 뒤 교시). 더 먼 회차면 버린다
+      if (prev.date === s.date && !prev.links.some((x) => x.part === part)) prev.links.push(link);
+      continue;
+    }
     cards.set(s.section_id, {
       sectionId: s.section_id,
       section: s.section!,
       url: l.live_url,
+      links: [link],
       kind: s.date === today ? "today" : "next",
       seq: s.seq,
       date: s.date,
@@ -419,7 +441,7 @@ export async function getMyReplays() {
     supabase
       .from("replays")
       .select(
-        `id, video_url, published_at,
+        `id, video_url, published_at, part,
          session:session_dates(id, seq, date, start_time, end_time, section:class_sections(${SECTION_COLS}))`,
       )
       .order("published_at", { ascending: false }),

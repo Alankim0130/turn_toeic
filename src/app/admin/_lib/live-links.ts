@@ -1,4 +1,5 @@
 import { sectionPackages } from "@/lib/time-blocks";
+import { partLabel, partsOf, partSubject, partTimeBlock, type Part } from "@/lib/class-parts";
 import type { DB } from "./queries";
 import { getProfileNames } from "./profile-names";
 
@@ -11,10 +12,17 @@ import { getProfileNames } from "./profile-names";
  *  - 속성반(program sparta) · 묶음 반(같은 기수·강좌·트랙에서 다른 반을 품는 반, `sectionPackages`)
  *  - 비공개(draft) 반
  * 방학달 120분 반은 안에 든 반이 없어 묶음이 아니다 — 그대로 남는다 (그 달엔 그것이 시간 단위 반이다).
+ * **방학달 통짜 반은 교시(앞 · 뒤)마다 한 줄** (2026-11-05 Alan "각자 방송을 진행해") — 시간대는 그 교시 시간, 담당은 그 교시 과목 선생님(`teachers`).
  */
 export type LiveLinkSession = {
+  /** 줄의 열쇠 `회차id:교시` — 두 교시 반은 회차 하나에 줄이 둘이라 id 만으로는 겹친다 */
+  key: string;
   /** session_dates.id */
   id: number;
+  /** 교시 — 방학달 통짜 반만 1 · 2, 그 밖은 1 */
+  part: Part;
+  /** `앞 교시 LC` — 두 교시 반에서만 */
+  partLabel: string | null;
   seq: number;
   date: string;
   time_block: string | null;
@@ -29,14 +37,29 @@ export type LiveLinkSession = {
   link: { url: string; source: string; updatedAt: string } | null;
 };
 
-export async function getLiveLinkSessions(supabase: DB, { from, to }: { from: string; to: string }): Promise<LiveLinkSession[]> {
+export async function getLiveLinkSessions(
+  supabase: DB,
+  {
+    from,
+    to,
+    teachers,
+    teacherNames,
+  }: {
+    from: string;
+    to: string;
+    /** 과목 → 선생님 id (두 교시 반의 교시 담당). 강사 화면은 내 과목만 넣는다 — 다른 과목 교시는 `subject:rc` 같은 표식이 되어 내 목록에서 빠진다 */
+    teachers?: ReadonlyMap<string, string>;
+    /** 과목 → 선생님 이름 (`subject_instructors` — 조교도 부른다) */
+    teacherNames?: ReadonlyMap<string, string>;
+  },
+): Promise<LiveLinkSession[]> {
   const { data } = await supabase
     .from("session_dates")
     .select(
       `id, seq, date,
-       section:class_sections(id, term_id, course_id, track, time_block, subject, recorded, status, live_to_replay, instructor_id,
+       section:class_sections(id, term_id, course_id, track, time_block, subject, first_subject, second_start, recorded, status, live_to_replay, instructor_id,
          course:courses(name, program, target_score)),
-       session_live_links(live_url, source, updated_at)`,
+       session_live_links(live_url, source, updated_at, part)`,
     )
     .gte("date", from)
     .lte("date", to)
@@ -51,23 +74,33 @@ export async function getLiveLinkSessions(supabase: DB, { from, to }: { from: st
   // 담당 강사 이름 — 이름 · 등급만 주는 함수로 (조교에게도 열린 화면이다 — 조교는 profiles 를 못 읽는다, 2026-10-03 `profile-names.ts`)
   const names = await getProfileNames(supabase, kept.map((r) => r.section!.instructor_id));
 
-  return kept.map((r) => {
+  return kept.flatMap((r) => {
     const s = r.section!;
-    const l = Array.isArray(r.session_live_links) ? r.session_live_links[0] : r.session_live_links;
-    return {
-      id: r.id,
-      seq: r.seq,
-      date: r.date,
-      time_block: s.time_block,
-      sectionId: s.id,
-      track: s.track,
-      subject: s.subject,
-      courseName: s.course?.name ?? "강좌",
-      level: s.course?.target_score ?? null,
-      instructorId: s.instructor_id,
-      instructorName: (s.instructor_id && names.get(s.instructor_id)?.name) || null,
-      liveToReplay: s.live_to_replay,
-      link: l ? { url: l.live_url, source: l.source, updatedAt: l.updated_at } : null,
-    };
+    const links = r.session_live_links == null ? [] : Array.isArray(r.session_live_links) ? r.session_live_links : [r.session_live_links];
+    return partsOf(s).map((part) => {
+      const l = links.find((x) => (x.part ?? 1) === part) ?? null;
+      const label = partLabel(s, part);
+      // 두 교시 반의 담당 = 그 교시 과목 선생님. 내 과목이면 내 id, 아니면 `subject:rc` 표식(강사 화면에서 빠진다 — `forInstructor`), 과목을 모르면 비운다
+      const subject = label ? partSubject(s, part) : s.subject;
+      const instructorId = label ? (subject ? (teachers?.get(subject) ?? `subject:${subject}`) : null) : s.instructor_id;
+      return {
+        key: `${r.id}:${part}`,
+        id: r.id,
+        part,
+        partLabel: label,
+        seq: r.seq,
+        date: r.date,
+        time_block: label ? partTimeBlock(s, part) : s.time_block,
+        sectionId: s.id,
+        track: s.track,
+        subject,
+        courseName: s.course?.name ?? "강좌",
+        level: s.course?.target_score ?? null,
+        instructorId,
+        instructorName: (instructorId && names.get(instructorId)?.name) || (label && subject ? (teacherNames?.get(subject) ?? null) : null),
+        liveToReplay: s.live_to_replay,
+        link: l ? { url: l.live_url, source: l.source, updatedAt: l.updated_at } : null,
+      };
+    });
   });
 }

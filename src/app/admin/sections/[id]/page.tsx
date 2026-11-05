@@ -9,6 +9,7 @@ import { Icon } from "@/components/ui/Icon";
 import { cn, formatDate, TRACK_LABEL } from "@/lib/utils";
 import { sectionTypeLabel } from "@/lib/section-type";
 import { LiveReplayToggle, SessionLiveLinkForm } from "@/components/admin/sections/SessionLiveLinkForm";
+import { ofPart, partLabel, partsOf, partTimeBlock, type Part } from "@/lib/class-parts";
 import { SectionEditForm } from "@/components/admin/sections/SectionEditForm";
 import { LiveLinkForm } from "@/components/admin/sections/LiveLinkForm";
 import { DeleteSectionButton } from "@/components/admin/sections/DeleteSectionButton";
@@ -38,7 +39,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
   const [{ data: sessions }, { data: sibling }, { data: live }, { count: enrolled }, { data: instructors }, { data: sameCourse }] = await Promise.all([
     supabase
       .from("session_dates")
-      .select("id, seq, date, replays(id, video_url), session_live_links(live_url, promoted_at, source), session_streams(video_url, promoted_at)")
+      .select("id, seq, date, replays(id, video_url, part), session_live_links(live_url, promoted_at, source, part), session_streams(video_url, promoted_at, part)")
       .eq("section_id", id)
       .order("date"),
     // 주5일 짝 = 같은 기수 · 강좌 · 시간대의 반대 트랙 반 (시간대가 없는 반은 하나씩 만들기의 bundle_id 로)
@@ -79,15 +80,11 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
   const parents = !isContainer ? (sameCourse ?? []).filter((s) => s.track === section.track && blockContains(s.time_block, section.time_block)) : [];
   // 종합/단과 (2026-09-18 Alan): 시간 단위 반은 담당 한 명의 단과(LC·RC), 묶음·스파르타만 종합. 과목은 반의 과목 칸으로 (2026-09-23)
   const typeLabel = sectionTypeLabel(section, { isPackage });
-  const sessionLink = (s: NonNullable<typeof sessions>[number]) => {
-    const l = s.session_live_links;
-    return (Array.isArray(l) ? l[0] : l) ?? null;
-  };
+  // 방학달 통짜 반은 교시(앞 · 뒤)마다 링크 · 송출 · 다시보기 하나 (2026-11-05 "각자 방송을 진행해") — 시간 단위 반은 교시 하나
+  const parts = partsOf(section, { isPackage });
+  const sessionLink = (s: NonNullable<typeof sessions>[number], part: Part) => ofPart(s.session_live_links, part);
   // Zoom 수업을 유튜브로 함께 송출한 방송 — 수업이 끝나면 이 주소가 다시보기가 된다 (2026-10-01, session_streams)
-  const sessionStream = (s: NonNullable<typeof sessions>[number]) => {
-    const st = s.session_streams;
-    return (Array.isArray(st) ? st[0] : st) ?? null;
-  };
+  const sessionStream = (s: NonNullable<typeof sessions>[number], part: Part) => ofPart(s.session_streams, part);
   const bookSetNote = isSparta
     ? "스파르타 반은 과목·과정을 두지 않아요. 두 과목을 이어 듣고, 함께 듣는 점수보장반의 과정·교재를 씁니다."
     : twoWeek
@@ -266,20 +263,29 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {sessionList.map((s) => {
-                  const rep = s.replays?.[0];
-                  const link = sessionLink(s);
-                  const stream = sessionStream(s);
+                {sessionList.flatMap((s) => parts.map((part) => {
+                  const rep = ofPart(s.replays, part);
+                  const link = sessionLink(s, part);
+                  const stream = sessionStream(s, part);
+                  const label = partLabel(section, part);
                   return (
-                    <tr key={s.id}>
-                      <td className="px-5 py-2.5 font-black text-brand-600">{s.seq}회</td>
-                      <td className="px-3 py-2.5 font-semibold text-ink">{labelKo(s.date)}</td>
+                    <tr key={`${s.id}:${part}`}>
+                      <td className="px-5 py-2.5 font-black text-brand-600">
+                        {part === 1 ? `${s.seq}회` : ""}
+                        {label && <span className="mt-0.5 block text-[11px] font-black text-ink">{label}</span>}
+                      </td>
+                      <td className="px-3 py-2.5 font-semibold text-ink">
+                        {part === 1 ? labelKo(s.date) : ""}
+                        {label && <span className="block text-[11px] font-semibold text-slate">{partTimeBlock(section, part)}</span>}
+                      </td>
                       <td className="px-3 py-2.5">
-                        {/* 회차마다 라이브 주소가 다르다 — 오전반은 수업이 끝나면 이 주소가 다시보기로 (2026-09-18 Alan) */}
+                        {/* 회차마다 라이브 주소가 다르다 — 오전반은 수업이 끝나면 이 주소가 다시보기로 (2026-09-18 Alan). 통짜 반은 교시마다 (2026-11-05) */}
                         <SessionLiveLinkForm
                           sessionDateId={s.id}
                           sectionId={id}
                           seq={s.seq}
+                          part={part}
+                          partLabel={label}
                           current={link?.live_url ?? ""}
                           promoted={!!link?.promoted_at}
                           autoReplay={section.live_to_replay}
@@ -303,7 +309,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
                       </td>
                     </tr>
                   );
-                })}
+                }))}
               </tbody>
             </table>
           </div>

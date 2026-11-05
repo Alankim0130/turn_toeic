@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { authorizedAppCall } from "@/lib/cron-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyUser } from "@/lib/push";
-import { detectedNote, matchBroadcasts, toBroadcasts, watchUrl, type LiveCandidate } from "@/lib/live-detect";
+import { candidatePart, detectedNote, matchBroadcasts, toBroadcasts, watchUrl, type LiveCandidate } from "@/lib/live-detect";
 import { activeBroadcasts, broadcastFailure, channelAccessToken, youtubeConfigured, type ChannelRow } from "@/lib/youtube";
 
 /**
@@ -17,6 +17,7 @@ import { activeBroadcasts, broadcastFailure, channelAccessToken, youtubeConfigur
  *    DB 트리거가 불라방 학생에게 알린다. 손으로 넣어 둔 Zoom 링크는 그대로다. 수업이 끝나면 같은 주소가 다시보기가 된다 (`promote_live_replays` —
  *    다시보기를 만드는 반만. 저녁 학생은 오전 짝 반의 녹화본을 본다).
  * 4. 걸어 뒀으면 그 강사에게 확인 푸시 (알림 설정의 "내 유튜브 자동 연결").
+ * 5. **방학달 통짜 반은 교시(part)마다** 후보가 오고 교시마다 따로 걸어 둔다 (2026-11-05 — `register_detected_stream(…, p_part)`).
  *
  * **응답에 영상 id·주소를 담지 않는다** — 일부공개 영상은 주소가 곧 시청권이다 (첫토익 D5).
  */
@@ -80,20 +81,25 @@ async function detectChannel(admin: ReturnType<typeof createAdminClient>, ch: Ch
   let found = false;
   for (const m of matchBroadcasts(candidates, toBroadcasts(res.json), now)) {
     if (m.sessions.length === 0) continue;
-    const { data: rows, error: regError } = await admin.rpc("register_detected_stream", {
-      p_session_date_ids: m.sessions.map((s) => s.session_date_id),
-      p_url: watchUrl(m.broadcast.id),
-    });
-    if (regError) {
-      console.error("[live-detect] register", regError.message);
-      continue;
+    // 교시마다 따로 걸어 둔다 (2026-11-05) — 한 방송이 맞는 회차는 보통 한 교시지만, 모양이 섞여도 교시별로 한 번씩
+    const regs: { session_date_id: number; part: 1 | 2; live_linked: boolean }[] = [];
+    for (const part of [...new Set(m.sessions.map(candidatePart))]) {
+      const { data: rows, error: regError } = await admin.rpc("register_detected_stream", {
+        p_session_date_ids: m.sessions.filter((s) => candidatePart(s) === part).map((s) => s.session_date_id),
+        p_url: watchUrl(m.broadcast.id),
+        p_part: part,
+      });
+      if (regError) {
+        console.error("[live-detect] register", regError.message);
+        continue;
+      }
+      for (const r of (rows ?? []) as { session_date_id: number; live_linked: boolean }[]) regs.push({ ...r, part });
     }
-    const regs = (rows ?? []) as { session_date_id: number; live_linked: boolean }[];
-    const inserted = new Set(regs.map((r) => r.session_date_id));
+    const inserted = new Set(regs.map((r) => `${r.session_date_id}:${r.part}`));
     if (inserted.size === 0) continue; // 그 사이 다른 방송이 먼저 잡혔다 — 알리지 않는다
     found = true;
     registered += inserted.size;
-    const hit = m.sessions.filter((s) => inserted.has(s.session_date_id));
+    const hit = m.sessions.filter((s) => inserted.has(`${s.session_date_id}:${candidatePart(s)}`));
     // 불라방 링크가 비어 있던 회차에는 같은 주소가 불라방 링크로도 들어갔다 (2026-10-01 Alan) — 손으로 넣은 Zoom 링크는 그대로.
     // 저녁 반은 다시보기를 만들지 않는다 (2026-10-04) — 알림이 "끝나면 다시보기로" 라고 말하지 않게
     const note = detectedNote({

@@ -148,7 +148,8 @@ describe("저장됐다고 하고 안 바뀌던 것 — 바뀐 줄을 센다", ()
 
   it("회차 불라방 링크 지우기 — 지운 줄이 없는데 링크가 남아 있으면 권한 오류로 알린다", () => {
     const body = fnBody(read("src/app/admin/sections/actions.ts"), "upsertSessionLiveLink");
-    expect(body).toMatch(/\.delete\(\)\.eq\("session_date_id", sessionDateId\)\.select\("session_date_id"\)/);
+    // 2026-11-05 교시 — 지우는 줄도 (회차, 교시) 하나다
+    expect(body).toMatch(/\.delete\(\)\.eq\("session_date_id", sessionDateId\)\.eq\("part", part\)\.select\("session_date_id"\)/);
     expect(body).toContain('if (still) return { error: "권한이 없어요. 본인 반만 수정할 수 있습니다." };');
   });
 });

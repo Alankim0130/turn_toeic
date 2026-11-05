@@ -6,6 +6,7 @@ import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rematchHeldVerifications } from "@/lib/rematch-held";
+import { toPart } from "@/lib/class-parts";
 import { requireCrew, requireStaff, isAdmin } from "@/lib/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import { isYmd, labelKo } from "@/components/admin/sections/dates";
@@ -490,21 +491,23 @@ function revalidateLive(sectionId: number) {
 
 export async function upsertSessionLiveLink(_prev: ActionState, formData: FormData): Promise<ActionState> {
   // 조교도 올린다 (2026-10-03 Alan "불라방 링크 올리기" — /admin/live). DB 정책 "session_live_links: 조교 등록·수정·삭제" 가 같은 집합이다.
-  // 이 파일의 나머지 액션(반 편성 · 상시 링크 · 다시보기 스위치 · 담당 강사)은 강사 · 관리자만이다
+  // 이 파일의 나머지 액션(반 편성 · 상시 링크 · 다시보기 스위치 · 담당 강사)은 강사 · 관리자만이다.
+  // 방학달 통짜 반은 교시(part 1 · 2)마다 링크 하나 (2026-11-05 — 두 교시 · 두 방송). 시간 단위 반은 늘 1
   await requireCrew();
   const sessionDateId = toInt(str(formData, "session_date_id"));
   const sectionId = toInt(str(formData, "section_id"));
+  const part = toPart(str(formData, "part"));
   const url = str(formData, "live_url");
   if (!sessionDateId || !sectionId) return { error: "잘못된 요청이에요." };
 
   const supabase = await createClient();
   if (url === "") {
-    const { data: gone, error } = await supabase.from("session_live_links").delete().eq("session_date_id", sessionDateId).select("session_date_id");
+    const { data: gone, error } = await supabase.from("session_live_links").delete().eq("session_date_id", sessionDateId).eq("part", part).select("session_date_id");
     if (error) return { error: rlsMessage(error.code) };
     if (!gone?.length) {
       // 지운 줄이 없다 (2026-10-29) — 원래 없었으면 그대로 성공이지만, 아직 있으면 RLS 가 막은 것이다(본인 반이 아님 · 테스트 등급).
       // 예전에는 그때도 "지웠어요" 가 떠서 학생 화면에 링크가 그대로 남은 줄 몰랐다. 남았는지는 서버 권한으로 본다(읽기만 — 세션은 그 줄을 못 볼 수 있다)
-      const { data: still } = await createAdminClient().from("session_live_links").select("session_date_id").eq("session_date_id", sessionDateId).maybeSingle();
+      const { data: still } = await createAdminClient().from("session_live_links").select("session_date_id").eq("session_date_id", sessionDateId).eq("part", part).maybeSingle();
       if (still) return { error: "권한이 없어요. 본인 반만 수정할 수 있습니다." };
     }
     revalidateLive(sectionId);
@@ -521,7 +524,7 @@ export async function upsertSessionLiveLink(_prev: ActionState, formData: FormDa
   const { data, error } = await supabase
     .from("session_live_links")
     // 손으로 고친 링크는 '수동' 이다 — 자동으로 들어간 링크를 강사가 바로잡으면 출처도 바뀐다 (2026-09-21)
-    .upsert({ session_date_id: sessionDateId, live_url: url, source: "manual" }, { onConflict: "session_date_id" })
+    .upsert({ session_date_id: sessionDateId, part, live_url: url, source: "manual" }, { onConflict: "session_date_id,part" })
     .select("session_date_id");
   if (error) return { error: rlsMessage(error.code), values: { live_url: url } };
   if (!data || data.length === 0) return { error: "권한이 없어요. 본인 반만 수정할 수 있습니다.", values: { live_url: url } };
