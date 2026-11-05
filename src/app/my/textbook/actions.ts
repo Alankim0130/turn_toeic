@@ -6,7 +6,7 @@ import { notifyStaff } from "@/lib/push";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { pickupDaysFrom, pickupLabel, pickupTimeError, pickupTimesFor, sameOrderItems, textbookOrderError } from "@/lib/textbook";
-import { TRANSFER_BUCKET, transferAttachError, transferUploadProblem } from "@/lib/textbook-transfer";
+import { TRANSFER_BUCKET, TRANSFER_REQUIRED, transferAttachError, transferUploadProblem } from "@/lib/textbook-transfer";
 import type { UploadedFile } from "@/lib/upload";
 import { formatWon } from "@/lib/utils";
 import { getMyOrders, getMyTextbookOrders } from "../_lib/queries";
@@ -60,7 +60,7 @@ export async function submitTextbookOrder(_prev: TextbookState, formData: FormDa
     .map((x) => Number(x))
     .filter((n) => Number.isInteger(n) && n > 0);
   const pickup = values.delivery === "pickup";
-  // 이체 캡처 (2026-11-04, 선택) — 브라우저가 textbook-transfers/{내 id}/ 에 먼저 올리고 경로만 보낸다 (서버 액션 본문 한도 1MB)
+  // 이체 캡처 (2026-11-04 · 2026-11-05 필수 — "스크린샷을 올려야지 주문이 완료되도록") — 브라우저가 textbook-transfers/{내 id}/ 에 먼저 올리고 경로만 보낸다 (서버 액션 본문 한도 1MB)
   const transfer: UploadedFile | null = v("transfer_path") ? { path: v("transfer_path"), name: v("transfer_name"), size: Number(v("transfer_size")), type: v("transfer_type") } : null;
 
   const termId = Number(values.term_id);
@@ -71,9 +71,10 @@ export async function submitTextbookOrder(_prev: TextbookState, formData: FormDa
   if (!pickup && !values.address) return { error: textbookOrderError("address"), values };
   if (!pickup && !values.address_detail) return { error: textbookOrderError("address_detail"), values };
   if (!values.depositor_name) return { error: textbookOrderError("depositor"), values };
+  if (!transfer) return { error: TRANSFER_REQUIRED, values };
 
   const supabase = await createClient();
-  if (transfer) {
+  {
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -123,18 +124,15 @@ export async function submitTextbookOrder(_prev: TextbookState, formData: FormDa
   if (error || !orderId) return { error: textbookOrderError(error?.message), values };
 
   // 캡처를 주문에 붙인다 — 못 붙이면 주문은 그대로 두고(이미 들어갔다) 올린 파일만 지운다. 학생은 내역 카드에서 다시 올린다
-  let transferResult: TextbookState["transfer"];
-  if (transfer) {
-    const { error: attachError } = await supabase.rpc("attach_textbook_transfer", {
-      p_id: orderId,
-      p_path: transfer.path,
-      p_type: transfer.type,
-      p_size: transfer.size,
-      p_name: transfer.name,
-    });
-    transferResult = attachError ? "failed" : "attached";
-    if (attachError) await supabase.storage.from(TRANSFER_BUCKET).remove([transfer.path]);
-  }
+  const { error: attachError } = await supabase.rpc("attach_textbook_transfer", {
+    p_id: orderId,
+    p_path: transfer.path,
+    p_type: transfer.type,
+    p_size: transfer.size,
+    p_name: transfer.name,
+  });
+  const transferResult: TextbookState["transfer"] = attachError ? "failed" : "attached";
+  if (attachError) await supabase.storage.from(TRANSFER_BUCKET).remove([transfer.path]);
 
   const when = pickup ? pickupLabel(values.pickup_date, values.pickup_time) : null;
   // 응답을 보낸 뒤에 알린다 — 주문한 행을 서버 전용 클라이언트로 읽는다 (방금 함수가 넣은 행이라 권한 확인은 끝났다)
@@ -153,7 +151,7 @@ export async function submitTextbookOrder(_prev: TextbookState, formData: FormDa
 
   revalidatePath("/my/textbook");
   revalidatePath("/admin/textbook-orders");
-  return { ok: true, ...(when ? { pickup: when } : {}), ...(transferResult ? { transfer: transferResult } : {}) };
+  return { ok: true, ...(when ? { pickup: when } : {}), transfer: transferResult };
 }
 
 export type TransferResult = { ok: boolean; error?: string };

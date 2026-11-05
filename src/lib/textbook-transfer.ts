@@ -4,8 +4,9 @@ import { contentTypeOf, isSafeObjectPath, MB, objectName, type UploadedFile } fr
  * 불라방 교재주문 — 학생이 올리는 **이체 화면 캡처** (2026-11-04 Alan — "불라방 교재주문할때 쌤들이 하나씩 확인하는게 힘들어. 그래서 학생이 이체를 하고 난 뒤에,
  * 해당 화면을 스크린샷찍어서 올려주면 조교들이 바로 확인하고 배송을 시작할 수 있도록 해주면 좋겠어").
  *
- * - 주문 한 건에 캡처 하나 (`textbook_orders.transfer_*`). 주문할 때 함께 올리거나, 주문 뒤 내역 카드에서 올린다 — **금액확인 전(requested)에만**, 다시 올리면 바뀐다.
- *   선택이다 — 안 올려도 주문은 된다 (그러면 예전처럼 강사님이 통장과 대조한다).
+ * - 주문 한 건에 캡처 하나 (`textbook_orders.transfer_*`). **주문 폼에서 캡처를 올려야 주문이 된다** (2026-11-05 Alan — "스크린샷을 올려야지 주문이 완료되도록") —
+ *   폼 · 서버 액션(`submitTextbookOrder`)이 막는다. 주문 뒤 내역 카드에서 다시 올릴 수 있다 — **금액확인 전(requested)에만**. 주문은 됐는데 캡처만 못 붙은 경우(드물다)와
+ *   그전 주문은 카드에서 올린다. DB 함수 `create_textbook_order` 는 건드리지 않았다 (금액 · 자격을 지키는 함수) — 캡처 없는 주문이 생겨도 예전처럼 강사님이 통장과 대조한다.
  * - **캡처가 있는 주문은 조교도 금액확인한다.** 없는 주문은 강사 · 관리자만 (교재비가 강사 통장으로 들어와 조교는 대조할 수 없다) —
  *   서버 액션(`confirmTextbookPayment`)과 DB 트리거(`private.guard_textbook_order_update`)가 같은 규칙이다. 마이그레이션 20261104100000.
  * - 버킷 `textbook-transfers`(비공개 · 사진 형식 · 10MB), 경로 `{학생 id}/{무작위}.ext` — 저장소 정책이 첫 폴더 = 본인 id 를 확인한다.
@@ -52,4 +53,6 @@ export function transferAttachError(message: string | null | undefined): string 
 export const crewCanConfirm = (o: { status: string; transfer_path?: string | null }) => o.status === "requested" && !!o.transfer_path;
 
 /** 학생 주문 카드 · 주문 폼의 안내 한 줄 */
-export const TRANSFER_HINT = "이체한 화면을 캡처해 올리면 조교 선생님이 바로 확인하고 보내 드려요.";
+export const TRANSFER_HINT = "입금한 뒤 이체 완료 화면(은행 앱 · 토스 등)을 캡처해 올려 주세요. 조교 선생님이 캡처를 보고 바로 확인하고 보내 드려요.";
+/** 캡처 없이 주문을 보냈을 때 — 폼과 서버 액션이 같은 말 */
+export const TRANSFER_REQUIRED = "이체 화면 캡처를 올려 주세요. 캡처를 올려야 주문이 완료돼요.";

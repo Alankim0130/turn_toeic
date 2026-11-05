@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { crewCanConfirm, isTransferImageType, transferAttachError, transferFileProblem, transferPath, transferUploadProblem, TRANSFER_BUCKET, TRANSFER_MAX_MB } from "./textbook-transfer";
+import { crewCanConfirm, isTransferImageType, transferAttachError, transferFileProblem, transferPath, transferUploadProblem, TRANSFER_BUCKET, TRANSFER_MAX_MB, TRANSFER_REQUIRED } from "./textbook-transfer";
 import { orderHint } from "./textbook";
 import { MB } from "./upload";
 
@@ -76,6 +76,11 @@ describe("서버 액션 · 파일 라우트", () => {
     expect(attach).toContain("if (previous && previous !== file.path) await supabase.storage.from(TRANSFER_BUCKET).remove([previous]);");
     expect(attach).toContain('notifyStaff("textbook_order"');
     const submit = actions.slice(actions.indexOf("export async function submitTextbookOrder"), actions.indexOf("export type TransferResult"));
+    // 2026-11-05 Alan "스크린샷을 올려야지 주문이 완료되도록" — 캡처 없는 주문은 폼 · 서버 액션 둘 다 받지 않는다
+    expect(submit).toContain("if (!transfer) return { error: TRANSFER_REQUIRED, values };");
+    expect(read("src/app/my/textbook/TextbookForm.tsx")).toMatch(/: !transfer\s*\? TRANSFER_REQUIRED\s*: null;/);
+    expect(read("src/app/my/textbook/TransferPicker.tsx")).toContain("(필수)");
+    expect(TRANSFER_REQUIRED).toContain("올려야 주문이 완료");
     expect(submit).toContain("transferUploadProblem(user.id, transfer)");
     expect(submit).toContain("if (attachError) await supabase.storage.from(TRANSFER_BUCKET).remove([transfer.path]);");
     // 주문 폼은 파일 칸에 name 이 없다 — 폼 데이터에 파일이 실리지 않는다 (서버 액션 본문 한도 1MB)
@@ -145,7 +150,7 @@ describe("작은 규칙", () => {
 
   it("학생 카드 안내 — 캡처를 올린 금액확인 전 주문은 '캡처를 보고 금액을 확인해요'", () => {
     expect(orderHint({ status: "requested", transfer_path: "x/y.png" })).toContain("캡처를 보고");
-    expect(orderHint({ status: "requested", transfer_path: null })).toContain("캡처를 올리면");
+    expect(orderHint({ status: "requested", transfer_path: null })).toContain("캡처를 올려 주세요");
     expect(orderHint({ status: "confirmed", transfer_path: "x/y.png" })).toContain("금액이 확인됐어요");
     expect(orderHint({ status: "requested", delivery_method: "pickup", transfer_path: "x/y.png" })).toContain("캡처를 보고");
   });
