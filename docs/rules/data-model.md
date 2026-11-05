@@ -540,6 +540,9 @@ create table textbook_settings (           -- 한 줄: shipping_fee · default_a
 --   address 는 not null 을 풀었고 check textbook_orders_pickup_check 가 "택배면 주소 · 현장수령이면 날짜 · 시각" 을 묶는다. 현장수령을 건네면 조교가 수령완료(shipped + received_at)
 --   public.textbook_pickup_days() (20261026100000) — 오늘(KST)부터 60일 안의 수업일 · 트랙(term_class_dates). 현장수령 날 = 이 날들, 시각 = 트랙대로(앱 PICKUP_TIME_RANGES).
 --   authenticated 실행 · 날짜 · 트랙만 준다 (homework_due_dates 와 같은 길). 주문 화면과 서버 액션이 같은 함수를 부른다
+--   (2026-11-05 두 교시 · 두 방송 — 마이그레이션 20261105100000) timetable_slots.first_mwf · first_ttf · second_start(방학달 통짜 줄의 앞 교시 과목 · 뒤 교시 시작) →
+--   class_sections.first_subject · second_start(트리거가 따라감). session_live_links · session_streams 에 part(PK (session_date_id, part)) · replays.part · private.live_start_notices.part.
+--   private.section_parts(반) · part_subject · part_start · part_end · subject_teacher(과목). live_detect_candidates 가 part 를 돌려주고 register_detected_stream(ids, url, part).
 --   트리거 private.guard_textbook_order_update: 조교 세션이 금액확인 전 · 취소 주문을 confirmed · shipped 로 넘기는 것을 막고,
 --   조교 세션은 status · tracking_no · updated_at · received_at 밖의 칸을 못 바꾸며(assistant_status_only, 20261003100000),
 --   shipped 가 아니게 되면 received_at 을 지운다

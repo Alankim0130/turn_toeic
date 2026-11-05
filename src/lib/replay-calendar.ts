@@ -16,8 +16,10 @@ export type ReplaySubject = "lc" | "rc";
 /** 녹화본 한 편 — 서버가 다 만들어서 넘긴다 (반 · 기수 객체를 클라이언트로 실어 보내지 않는다) */
 export type ReplayEntry = {
   id: number;
-  /** 회차(`session_dates.id`) — 한 회차에 영상이 둘 이상이면 번호를 단다 (`replayParts`) */
+  /** 회차(`session_dates.id`) — 한 회차 · 한 교시에 영상이 둘 이상이면 번호를 단다 (`replayParts`) */
   sessionId: number;
+  /** 교시 — 방학달 통짜 반만 1 · 2 (앞 교시 · 뒤 교시, 2026-11-05). 시간 단위 반은 1 (없으면 1) */
+  part?: number;
   /** 그 회차의 수업일 */
   date: string;
   /** 반의 회차 (그 반의 N번째 수업일 — 트랙마다 따로 센다). 정렬에만 쓴다 */
@@ -87,12 +89,15 @@ export function sortReplays<T extends Pick<ReplayEntry, "id" | "seq" | "level" |
 }
 
 /**
- * 한 회차에 녹화본이 둘 이상이면(강사가 나눠 올렸다 — 등록 화면이 막지 않는다) 올린 순서로 `영상 1` · `영상 2` …
- * 하나뿐인 회차에는 번호를 달지 않는다. 녹화본 id → 번호
+ * 한 회차(· 교시)에 녹화본이 둘 이상이면(강사가 나눠 올렸다 — 등록 화면이 막지 않는다) 올린 순서로 `영상 1` · `영상 2` …
+ * 하나뿐인 회차에는 번호를 달지 않는다. 두 교시 반의 앞 · 뒤 교시 녹화본은 다른 교시라 번호를 달지 않는다 (2026-11-05). 녹화본 id → 번호
  */
-export function replayParts(list: readonly Pick<ReplayEntry, "id" | "sessionId">[]): Map<number, number> {
-  const bySession = new Map<number, number[]>();
-  for (const r of list) bySession.set(r.sessionId, [...(bySession.get(r.sessionId) ?? []), r.id]);
+export function replayParts(list: readonly Pick<ReplayEntry, "id" | "sessionId" | "part">[]): Map<number, number> {
+  const bySession = new Map<string, number[]>();
+  for (const r of list) {
+    const key = `${r.sessionId}:${r.part ?? 1}`;
+    bySession.set(key, [...(bySession.get(key) ?? []), r.id]);
+  }
   const out = new Map<number, number>();
   for (const ids of bySession.values()) if (ids.length > 1) [...ids].sort((a, b) => a - b).forEach((id, k) => out.set(id, k + 1));
   return out;

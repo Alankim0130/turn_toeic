@@ -750,6 +750,8 @@ export type Database = {
           course_id: number
           created_at: string
           end_time: string | null
+          first_subject: string | null
+          second_start: string | null
           enrollment_opens_at: string
           id: number
           instructor_id: string | null
@@ -773,6 +775,8 @@ export type Database = {
           course_id: number
           created_at?: string
           end_time?: string | null
+          first_subject?: string | null
+          second_start?: string | null
           enrollment_opens_at: string
           id?: number
           instructor_id?: string | null
@@ -796,6 +800,8 @@ export type Database = {
           course_id?: number
           created_at?: string
           end_time?: string | null
+          first_subject?: string | null
+          second_start?: string | null
           enrollment_opens_at?: string
           id?: number
           instructor_id?: string | null
@@ -1927,18 +1933,21 @@ export type Database = {
           id: number
           published_at: string
           session_date_id: number
+          part: number
           video_url: string
         }
         Insert: {
           id?: number
           published_at?: string
           session_date_id: number
+          part?: number
           video_url: string
         }
         Update: {
           id?: number
           published_at?: string
           session_date_id?: number
+          part?: number
           video_url?: string
         }
         Relationships: [
@@ -1956,6 +1965,7 @@ export type Database = {
           live_url: string
           promoted_at: string | null
           session_date_id: number
+          part: number
           source: string
           updated_at: string
         }
@@ -1963,6 +1973,7 @@ export type Database = {
           live_url: string
           promoted_at?: string | null
           session_date_id: number
+          part?: number
           source?: string
           updated_at?: string
         }
@@ -1970,6 +1981,7 @@ export type Database = {
           live_url?: string
           promoted_at?: string | null
           session_date_id?: number
+          part?: number
           source?: string
           updated_at?: string
         }
@@ -1988,18 +2000,21 @@ export type Database = {
           detected_at: string
           promoted_at: string | null
           session_date_id: number
+          part: number
           video_url: string
         }
         Insert: {
           detected_at?: string
           promoted_at?: string | null
           session_date_id: number
+          part?: number
           video_url: string
         }
         Update: {
           detected_at?: string
           promoted_at?: string | null
           session_date_id?: number
+          part?: number
           video_url?: string
         }
         Relationships: [
@@ -3060,6 +3075,9 @@ export type Database = {
         Row: {
           book_set: string | null
           end_time: string
+          first_mwf: string | null
+          first_ttf: string | null
+          second_start: string | null
           id: number
           level: number
           month: number | null
@@ -3074,6 +3092,9 @@ export type Database = {
         Insert: {
           book_set?: string | null
           end_time: string
+          first_mwf?: string | null
+          first_ttf?: string | null
+          second_start?: string | null
           id?: number
           level: number
           month?: number | null
@@ -3088,6 +3109,9 @@ export type Database = {
         Update: {
           book_set?: string | null
           end_time?: string
+          first_mwf?: string | null
+          first_ttf?: string | null
+          second_start?: string | null
           id?: number
           level?: number
           month?: number | null
@@ -3292,7 +3316,7 @@ export type Database = {
       }
       live_detect_candidates: {
         Args: never
-        Returns: { instructor_id: string; label: string; live_to_replay: boolean; section_id: number; session_date_id: number; starts_at: string }[]
+        Returns: { instructor_id: string; label: string; live_to_replay: boolean; section_id: number; session_date_id: number; starts_at: string; part: number }[]
       }
       submit_student_survey: { Args: { p: Json }; Returns: undefined }
       set_study_level: {
@@ -3313,7 +3337,7 @@ export type Database = {
         Returns: { pickup_date: string; track: string }[]
       }
       register_detected_stream: {
-        Args: { p_session_date_ids: number[]; p_url: string }
+        Args: { p_session_date_ids: number[]; p_url: string; p_part?: number }
         Returns: { live_linked: boolean; session_date_id: number }[]
       }
       attendance_scan: {

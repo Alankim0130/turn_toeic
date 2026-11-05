@@ -7,6 +7,7 @@ import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
 import { isYoutubeUrl } from "@/lib/live-links";
 import { submitWithoutReset } from "@/lib/form-submit";
+import type { Part } from "@/lib/class-parts";
 
 function shorten(url: string, max = 36) {
   const s = url.replace(/^https?:\/\//, "");
@@ -27,10 +28,16 @@ export function SessionLiveLinkForm({
   autoReplay,
   readOnly,
   detected = false,
+  part = 1,
+  partLabel = null,
 }: {
   sessionDateId: number;
   sectionId: number;
   seq: number;
+  /** 교시 — 방학달 통짜 반만 1 · 2 (2026-11-05). 시간 단위 반은 1 */
+  part?: Part;
+  /** `앞 교시 LC` 처럼 화면 읽기용 이름 */
+  partLabel?: string | null;
   current: string;
   /** 이 링크로 다시보기가 이미 만들어졌다 */
   promoted: boolean;
@@ -98,6 +105,7 @@ export function SessionLiveLinkForm({
     <form action={action} className="flex flex-col gap-1">
       <input type="hidden" name="session_date_id" value={sessionDateId} />
       <input type="hidden" name="section_id" value={sectionId} />
+      <input type="hidden" name="part" value={part} />
       <span className="flex flex-wrap items-center gap-1.5">
         <input
           name="live_url"
@@ -106,7 +114,7 @@ export function SessionLiveLinkForm({
           placeholder="https://zoom.us/j/… 이 회차 입장 링크"
           className="input !w-56 !py-1 text-xs"
           defaultValue={value}
-          aria-label={`${seq}회 불라방 링크`}
+          aria-label={`${seq}회${partLabel ? ` ${partLabel}` : ""} 불라방 링크`}
         />
         <SubmitButton className="!w-auto !px-3 !py-1 text-xs" pendingText="저장 중…">저장</SubmitButton>
         {current && (

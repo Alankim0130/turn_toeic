@@ -42,15 +42,21 @@ export default async function LiveLinksPage() {
   const staff = isStaff(profile.role);
   const supabase = await createClient();
   const { date: today, minutes } = nowKst();
-  const all = await getLiveLinkSessions(supabase, { from: today, to: shiftDate(today, 13) });
+  // 두 교시 반(방학달 통짜)의 교시 담당 = 과목 선생님 (2026-11-05). 조교에게도 열린 화면이라 profiles 를 읽지 않는다 —
+  // 내 교시인지는 내 과목(프로필)으로, 이름은 과목 · 이름만 주는 함수(`subject_instructors`)로 안다
+  const { data: subjectNames } = await supabase.rpc("subject_instructors");
+  const teachers = new Map<string, string>();
+  if (profile.role === "instructor" && (profile.subject === "lc" || profile.subject === "rc")) teachers.set(profile.subject, user.id);
+  const teacherNames = new Map((subjectNames ?? []).map((r) => [r.subject, r.name]));
+  const all = await getLiveLinkSessions(supabase, { from: today, to: shiftDate(today, 13), teachers, teacherNames });
   const instructorView = profile.role === "instructor";
   const list = (instructorView ? forInstructor(all, user.id) : all).sort(compareSessions);
 
   const { focus, state } = pickFocus(list, today, minutes);
-  const focusIds = new Set(focus.map((f) => f.id));
-  const later = list.filter((r) => !focusIds.has(r.id) && sessionState(r, today, minutes) !== "past");
+  const focusIds = new Set(focus.map((f) => f.key));
+  const later = list.filter((r) => !focusIds.has(r.key) && sessionState(r, today, minutes) !== "past");
   const days = [...new Set(later.map((r) => r.date))].slice(0, UPCOMING_DAYS);
-  const pastToday = list.filter((r) => r.date === today && !focusIds.has(r.id) && sessionState(r, today, minutes) === "past");
+  const pastToday = list.filter((r) => r.date === today && !focusIds.has(r.key) && sessionState(r, today, minutes) === "past");
 
   const who = (s: LiveLinkSession) =>
     instructorView ? (s.instructorId === null ? "담당 강사 없음 — 두 선생님 모두에게 보여요" : null) : (s.instructorName ?? "담당 강사 없음");
@@ -97,9 +103,9 @@ export default async function LiveLinksPage() {
             ) : (
               <ul className="divide-y divide-line">
                 {focus.map((s) => (
-                  <li key={s.id} className="space-y-3 px-5 py-4">
+                  <li key={s.key} className="space-y-3 px-5 py-4">
                     <SessionHead s={s} who={who(s)} today={today} minutes={minutes} big />
-                    <LiveLinkField sessionDateId={s.id} sectionId={s.sectionId} current={s.link?.url ?? null} label={`${sessionName(s)} ${s.seq}회차`} big />
+                    <LiveLinkField sessionDateId={s.id} sectionId={s.sectionId} part={s.part} current={s.link?.url ?? null} label={`${sessionName(s)} ${s.seq}회차${s.partLabel ? ` ${s.partLabel}` : ""}`} big />
                   </li>
                 ))}
               </ul>
@@ -141,9 +147,9 @@ export default async function LiveLinksPage() {
                 </h2>
                 <ul className="divide-y divide-line">
                   {rows.map((s) => (
-                    <li key={s.id} className="space-y-2 px-5 py-3">
+                    <li key={s.key} className="space-y-2 px-5 py-3">
                       <SessionHead s={s} who={who(s)} today={today} minutes={minutes} />
-                      <LiveLinkField sessionDateId={s.id} sectionId={s.sectionId} current={s.link?.url ?? null} label={`${sessionName(s)} ${s.seq}회차`} />
+                      <LiveLinkField sessionDateId={s.id} sectionId={s.sectionId} part={s.part} current={s.link?.url ?? null} label={`${sessionName(s)} ${s.seq}회차${s.partLabel ? ` ${s.partLabel}` : ""}`} />
                     </li>
                   ))}
                 </ul>
@@ -156,9 +162,9 @@ export default async function LiveLinksPage() {
               <summary className="cursor-pointer px-5 py-3 text-sm font-black text-slate">오늘 지난 수업 {pastToday.length}개</summary>
               <ul className="divide-y divide-line border-t border-line">
                 {pastToday.map((s) => (
-                  <li key={s.id} className="space-y-2 px-5 py-3">
+                  <li key={s.key} className="space-y-2 px-5 py-3">
                     <SessionHead s={s} who={who(s)} today={today} minutes={minutes} />
-                    <LiveLinkField sessionDateId={s.id} sectionId={s.sectionId} current={s.link?.url ?? null} label={`${sessionName(s)} ${s.seq}회차`} />
+                    <LiveLinkField sessionDateId={s.id} sectionId={s.sectionId} part={s.part} current={s.link?.url ?? null} label={`${sessionName(s)} ${s.seq}회차${s.partLabel ? ` ${s.partLabel}` : ""}`} />
                   </li>
                 ))}
               </ul>
@@ -176,7 +182,12 @@ function SessionHead({ s, who, today, minutes, big = false }: { s: LiveLinkSessi
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
       <span className={cn("font-black text-ink", big ? "text-lg" : "text-sm")}>{s.time_block ?? "시간 미정"}</span>
-      {subject && <span className="rounded-full bg-ink px-2 py-0.5 text-[11px] font-black text-white">{subject}</span>}
+      {/* 두 교시 반(방학달 통짜)은 교시 이름 — 과목은 그 안에 있다 (2026-11-05) */}
+      {s.partLabel ? (
+        <span className="rounded-full bg-ink px-2 py-0.5 text-[11px] font-black text-white">{s.partLabel}</span>
+      ) : (
+        subject && <span className="rounded-full bg-ink px-2 py-0.5 text-[11px] font-black text-white">{subject}</span>
+      )}
       <span className={cn("min-w-0 font-bold text-ink-soft", big ? "text-base" : "text-sm")}>
         {s.courseName} · {TRACK_LABEL[s.track] ?? s.track}
       </span>

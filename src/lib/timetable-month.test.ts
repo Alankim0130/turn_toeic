@@ -121,6 +121,13 @@ describe("draftMonth — 새 달 줄 만들기", () => {
     expect(d[0]).toMatchObject({ book_set: null, subject_mwf: null, subject_ttf: "lc" });
   });
 
+  it("통짜 줄의 앞 교시 과목 · 뒤 교시 시작은 이어질 때만 따라온다 (1월 → 2월) — 끊기면 비운다 (2026-11-05)", () => {
+    const jan = [{ ...oct[1], first_mwf: "lc", first_ttf: "rc", second_start: "11:10:00" }];
+    expect(draftMonth({ kind: "month", from: { y: 2027, m: 1 }, carry: true, flips: 1 }, jan)[0]).toMatchObject({ first_mwf: "lc", first_ttf: "rc", second_start: "11:10:00" });
+    expect(draftMonth({ kind: "month", from: { y: 2026, m: 8 }, carry: false, flips: 5 }, jan)[0]).toMatchObject({ first_mwf: null, first_ttf: null, second_start: null });
+    expect(draftMonth({ kind: "template", season: "vacation" }, jan)[0]).toMatchObject({ first_mwf: null, second_start: null });
+  });
+
   it("안내 한 줄이 무엇을 가져오는지 말한다", () => {
     expect(sourceNote({ y: 2026, m: 11 }, { kind: "month", from: { y: 2026, m: 10 }, carry: true, flips: 1 })).toMatch(/2026년 10월 시간표를 가져와 과정 A\/B 는 뒤집고/);
     expect(sourceNote({ y: 2027, m: 7 }, { kind: "month", from: { y: 2027, m: 2 }, carry: false, flips: 5 })).toMatch(/시간만 가져와요. 7월은 방학달/);
@@ -158,17 +165,24 @@ describe("줄의 종류 — 무엇을 고르게 하나", () => {
     expect(slotKinds(mixed).get(1)).toBe("block");
   });
 
-  it("종류가 허락하지 않는 값은 비운다", () => {
-    const v = { book_set: "A", subject_mwf: "rc", subject_ttf: "lc" };
-    expect(fieldsFor("hour", v)).toEqual(v);
-    expect(fieldsFor("block", v)).toEqual({ book_set: "A", subject_mwf: null, subject_ttf: null });
-    expect(fieldsFor("package", v)).toEqual({ book_set: null, subject_mwf: null, subject_ttf: null });
-    expect(fieldsFor("sparta", v)).toEqual({ book_set: null, subject_mwf: null, subject_ttf: null });
+  it("종류가 허락하지 않는 값은 비운다 — 통짜 줄만 앞 교시 과목 · 뒤 교시 시작을 갖는다 (2026-11-05)", () => {
+    const v = { book_set: "A", subject_mwf: "rc", subject_ttf: "lc", first_mwf: "lc", first_ttf: "rc", second_start: "11:10:00" };
+    const none = { first_mwf: null, first_ttf: null, second_start: null };
+    expect(fieldsFor("hour", v)).toEqual({ book_set: "A", subject_mwf: "rc", subject_ttf: "lc", ...none });
+    expect(fieldsFor("block", v)).toEqual({ book_set: "A", subject_mwf: null, subject_ttf: null, first_mwf: "lc", first_ttf: "rc", second_start: "11:10" });
+    expect(fieldsFor("package", v)).toEqual({ book_set: null, subject_mwf: null, subject_ttf: null, ...none });
+    expect(fieldsFor("sparta", v)).toEqual({ book_set: null, subject_mwf: null, subject_ttf: null, ...none });
+    // 뒤 교시 시작은 줄의 시작 · 끝 사이일 때만
+    expect(fieldsFor("block", v, { start_time: "10:00:00", end_time: "12:10:00" }).second_start).toBe("11:10");
+    expect(fieldsFor("block", v, { start_time: "12:30:00", end_time: "14:40:00" }).second_start).toBeNull();
+    expect(fieldsFor("block", { ...v, first_mwf: "x", second_start: "11시" }).first_mwf).toBeNull();
+    expect(fieldsFor("block", { ...v, second_start: "11시" }).second_start).toBeNull();
   });
 
-  it("안 고른 칸을 알려 준다", () => {
+  it("안 고른 칸을 알려 준다 — 통짜 줄은 앞 교시 과목 · 뒤 교시 시작까지", () => {
     expect(missingOf("hour", { book_set: null, subject_mwf: "rc", subject_ttf: null })).toEqual(["과정", "화목금 과목"]);
-    expect(missingOf("block", { book_set: null, subject_mwf: null, subject_ttf: null })).toEqual(["과정"]);
+    expect(missingOf("block", { book_set: null, subject_mwf: null, subject_ttf: null })).toEqual(["과정", "월수금 앞 교시", "화목금 앞 교시", "뒤 교시 시작"]);
+    expect(missingOf("block", { book_set: "A", subject_mwf: null, subject_ttf: null, first_mwf: "lc", first_ttf: "rc", second_start: "11:10:00" })).toEqual([]);
     expect(missingOf("package", { book_set: null, subject_mwf: null, subject_ttf: null })).toEqual([]);
   });
 });
@@ -257,6 +271,9 @@ describe("짝수달 · 홀수달 종이 그대로 (2026-10-22 Alan — 10월 종
       book_set: cell?.[0] ?? null,
       subject_mwf: cell?.[1] ?? null,
       subject_ttf: cell?.[2] ?? null,
+      first_mwf: null,
+      first_ttf: null,
+      second_start: null,
     };
   };
   /** 종이 한 장 = 그 달 시간표 줄 전부 (시간 단위 + 한달완성 · 속성반 · 2주완성 줄) */

@@ -71,8 +71,18 @@ describe("parseSlotInput — 달 줄", () => {
     const r = parseSlotInput(base);
     expect(r).toEqual({
       ok: true,
-      slot: { year: 2027, month: 1, level: 650, program: "score", start: "17:00", end: "19:10", ttfRecorded: true, bookSet: null, subjectMwf: null, subjectTtf: null },
+      slot: { year: 2027, month: 1, level: 650, program: "score", start: "17:00", end: "19:10", ttfRecorded: true, bookSet: null, subjectMwf: null, subjectTtf: null, firstMwf: null, firstTtf: null, secondStart: null },
     });
+  });
+
+  it("통짜 줄 — 앞 교시 과목 · 뒤 교시 시작 (2026-11-05). 뒤 교시 시작은 줄의 시작 · 끝 사이, 시 · 분을 다 골라야 한다", () => {
+    const r = parseSlotInput({ ...base, start: "10:00", end: "12:10", firstMwf: "lc", firstTtf: "rc", secondStart: "11:10" });
+    expect(r.ok && [r.slot.firstMwf, r.slot.firstTtf, r.slot.secondStart]).toEqual(["lc", "rc", "11:10"]);
+    expect(parseSlotInput({ ...base, start: "10:00", end: "12:10", secondStart: "12:10" }).ok).toBe(false);
+    expect(parseSlotInput({ ...base, start: "10:00", end: "12:10", secondStart: "10:00" }).ok).toBe(false);
+    expect(parseSlotInput({ ...base, start: "10:00", end: "12:10", secondStart: "11:" }).ok).toBe(false);
+    const none = parseSlotInput({ ...base, start: "10:00", end: "12:10", firstMwf: "LC", secondStart: "" });
+    expect(none.ok && [none.slot.firstMwf, none.slot.secondStart]).toEqual([null, null]);
   });
 
   it("과정 · 트랙별 과목을 받는다 — 엉뚱한 값은 비운다", () => {
@@ -112,7 +122,7 @@ describe("duplicateSlot — 같은 달·자리에 같은 시간", () => {
     { id: 1, year: 2026, month: 10, level: 650, program: "score", start_time: "10:00:00", end_time: "12:10:00" },
     { id: 2, year: 2026, month: 11, level: 650, program: "score", start_time: "10:00:00", end_time: "12:10:00" },
   ];
-  const slot = { year: 2026, month: 10, level: 650, program: "score" as const, start: "10:00", end: "12:10", ttfRecorded: false, bookSet: null, subjectMwf: null, subjectTtf: null };
+  const slot = { year: 2026, month: 10, level: 650, program: "score" as const, start: "10:00", end: "12:10", ttfRecorded: false, bookSet: null, subjectMwf: null, subjectTtf: null, firstMwf: null, firstTtf: null, secondStart: null };
 
   it("같은 달·레벨·과정·시간이면 겹친다 (DB 시각의 초는 무시)", () => {
     expect(duplicateSlot(rows, slot)?.id).toBe(1);

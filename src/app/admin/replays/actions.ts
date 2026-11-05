@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/auth";
+import { toPart } from "@/lib/class-parts";
 
 export type ReplayState = { ok?: boolean; error?: string; message?: string; value?: string };
 
@@ -33,12 +34,14 @@ export async function addReplay(_prev: ReplayState, formData: FormData): Promise
   await requireStaff();
   const sessionDateId = Number(str(formData, "session_date_id"));
   const sectionId = Number(str(formData, "section_id")) || undefined;
+  // 교시 — 방학달 통짜 반만 1 · 2 (2026-11-05). 시간 단위 반은 1
+  const part = toPart(str(formData, "part"));
   const url = str(formData, "video_url");
   if (!Number.isInteger(sessionDateId)) return { error: "잘못된 요청이에요." };
   if (!validUrl(url)) return { error: "http(s):// 로 시작하는 영상 주소를 입력해 주세요.", value: url };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.from("replays").insert({ session_date_id: sessionDateId, video_url: url }).select("id");
+  const { data, error } = await supabase.from("replays").insert({ session_date_id: sessionDateId, part, video_url: url }).select("id");
   if (error) return { error: rlsMessage(error.code), value: url };
   if (!data || data.length === 0) return { error: "권한이 없어요.", value: url };
 

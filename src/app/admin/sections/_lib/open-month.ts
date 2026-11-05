@@ -13,7 +13,7 @@ import { chooseMonthSource, draftMonth, madeMonths, ymLabel, type MonthSource, t
 type Client = SupabaseClient<Database>;
 type DraftRow = SlotValues & { year: number; month: number };
 
-const SLOT_COLUMNS = "id, year, month, level, program, start_time, end_time, ttf_recorded, book_set, subject_mwf, subject_ttf";
+const SLOT_COLUMNS = "id, year, month, level, program, start_time, end_time, ttf_recorded, book_set, subject_mwf, subject_ttf, first_mwf, first_ttf, second_start";
 
 /**
  * 그 달 시간표 초안 — 시간표 설정의 'N월 시간표 만들기'(`createMonthTimetable`)와 평달 자동 세팅(`autoOpenMonth`)이 같이 쓴다.

@@ -7,6 +7,7 @@ import { ReplayPeriod } from "@/components/my/ReplayPeriod";
 import { formatDate, todayKST } from "@/lib/utils";
 import { monthsOf, replayInitialDay, replayRounds, replayTerms, termFlags, type ClassDay, type ReplayEntry } from "@/lib/replay-calendar";
 import { getMyAccessibleSections, getMyOrders, getMyReplays, getMySessions, getMyStudyEligibility } from "../_lib/queries";
+import { partSubject, partTimeBlock, toPart } from "@/lib/class-parts";
 
 export const metadata: Metadata = {
   title: "강의 다시보기",
@@ -46,13 +47,15 @@ export default async function ReplayPage() {
   const replays: ReplayEntry[] = found.map(({ r, s, sec }) => ({
     id: r.id,
     sessionId: s.id,
+    part: toPart(r.part),
     date: s.date,
     seq: s.seq,
     round: rounds.get(r.id) ?? s.seq,
     level: sec.course?.target_score ?? null,
-    subject: sec.subject === "lc" || sec.subject === "rc" ? sec.subject : null,
+    // 두 교시 반(방학달 통짜)은 교시의 과목 · 시간 — 앞 교시 LC 10:00~11:10 · 뒤 교시 RC 11:10~12:10 (2026-11-05). 시간 단위 반은 반의 과목 그대로
+    subject: partSubject(sec, toPart(r.part)),
     // 반 편성에서 시간을 받지 않아 회차 시간은 비어 있다 — 시간대 라벨(`10:00~11:00`)이 곧 수업 시간이다
-    time: sec.time_block ?? null,
+    time: partTimeBlock(sec, toPart(r.part)),
     track: sec.track,
     url: r.video_url,
     pair: mine.size > 0 && !mine.has(sec.id) ? (recordedTracks.has(sec.track) ? "recorded" : "evening") : null,

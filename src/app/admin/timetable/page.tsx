@@ -62,7 +62,7 @@ export default async function AdminTimetablePage({ searchParams }: { searchParam
     supabase.from("timetable_slots").select("year, month, season"),
     supabase
       .from("timetable_slots")
-      .select("id, year, month, level, program, start_time, end_time, ttf_recorded, book_set, subject_mwf, subject_ttf")
+      .select("id, year, month, level, program, start_time, end_time, ttf_recorded, book_set, subject_mwf, subject_ttf, first_mwf, first_ttf, second_start")
       .eq("year", ym.y)
       .eq("month", ym.m)
       .order("start_time")
@@ -336,7 +336,21 @@ export default async function AdminTimetablePage({ searchParams }: { searchParam
 
 /* ─── 카드 안 줄 순서 ──────────────────────────────────────────────────────── */
 
-type Row = { id: number; level: number; program: string; start_time: string; end_time: string; ttf_recorded: boolean; book_set: string | null; subject_mwf: string | null; subject_ttf: string | null };
+type Row = {
+  id: number;
+  level: number;
+  program: string;
+  start_time: string;
+  end_time: string;
+  ttf_recorded: boolean;
+  book_set: string | null;
+  subject_mwf: string | null;
+  subject_ttf: string | null;
+  /** 통짜 줄 — 앞 교시 과목 · 뒤 교시 시작 (2026-11-05 두 교시 · 두 방송) */
+  first_mwf: string | null;
+  first_ttf: string | null;
+  second_start: string | null;
+};
 type Item<R extends Row> =
   | { kind: "row"; row: R }
   | { kind: "package"; row: R; parts: R[] }
@@ -403,8 +417,17 @@ function SlotRowForm({ row, kind, title, monthKey, used }: { row: Row; kind: Slo
                 <Seg name="subject_ttf" title="화목금" tone="ttf" value={row.subject_ttf} options={[["lc", "LC"], ["rc", "RC"]]} label={`${name} 화목금 과목`} />
               </>
             ) : (
-              <p className="pb-1 text-[11px] text-slate">두 과목을 이어 듣는 줄이라 과목은 없어요. 과정 글자가 LC 교재예요.</p>
+              <p className="basis-full text-[11px] text-slate">두 과목을 이어 듣는 줄이라 과목은 없어요. 과정 글자가 LC 교재예요.</p>
             )}
+          </div>
+        )}
+        {/* 통짜 줄 — 두 교시 · 두 방송 (2026-11-05 Alan "각자 방송을 진행해"): 앞 교시 과목과 뒤 교시 시작을 적어야 유튜브 송출이 교시마다 잡힌다 */}
+        {kind === "block" && (
+          <div className="flex flex-wrap items-end gap-x-4 gap-y-2 rounded-xl bg-surface px-3 py-2">
+            <Seg name="first_mwf" title="월수금 앞 교시" tone="mwf" value={row.first_mwf} options={[["lc", "LC"], ["rc", "RC"]]} label={`${name} 월수금 앞 교시 과목`} />
+            <Seg name="first_ttf" title="화목금 앞 교시" tone="ttf" value={row.first_ttf} options={[["lc", "LC"], ["rc", "RC"]]} label={`${name} 화목금 앞 교시 과목`} />
+            <TimePick part="second" value={row.second_start} label={`${name} 뒤 교시 시작`} optional />
+            <p className="basis-full text-[11px] text-slate">앞 교시가 끝나고 다른 과목 선생님이 이어서 해요. 뒤 교시 시작 시각으로 유튜브 송출 · 다시보기 · 시작 알림이 교시마다 갈려요.</p>
           </div>
         )}
         <div className="flex items-center justify-between gap-3">
@@ -520,12 +543,13 @@ function Seg({ name, title, value, options, label, tone }: { name: string; title
  */
 const PICK = "input select-chevron !w-auto !py-2 !pl-2 !pr-[1.375rem] text-base font-bold tabular-nums";
 
-function TimePick({ part, value, label }: { part: "start" | "end"; value?: string | null; label: string }) {
+function TimePick({ part, value, label, optional = false }: { part: "start" | "end" | "second"; value?: string | null; label: string; optional?: boolean }) {
   const t = splitTime(value);
   return (
     <span className="inline-flex items-center gap-0.5">
-      <select name={`${part}_h`} defaultValue={t?.h ?? ""} required className={PICK} aria-label={`${label} 시`}>
-        {!t && <option value="">시</option>}
+      {optional && <span className="mr-1 text-xs font-bold text-slate">뒤 교시 시작</span>}
+      <select name={`${part}_h`} defaultValue={t?.h ?? ""} required={!optional} className={PICK} aria-label={`${label} 시`}>
+        {(!t || optional) && <option value="">시</option>}
         {HOURS.map((h) => (
           <option key={h} value={h}>
             {h}
@@ -535,8 +559,8 @@ function TimePick({ part, value, label }: { part: "start" | "end"; value?: strin
       <span aria-hidden className="font-black text-ink-soft">
         :
       </span>
-      <select name={`${part}_m`} defaultValue={t?.m ?? ""} required className={PICK} aria-label={`${label} 분`}>
-        {!t && <option value="">분</option>}
+      <select name={`${part}_m`} defaultValue={t?.m ?? ""} required={!optional} className={PICK} aria-label={`${label} 분`}>
+        {(!t || optional) && <option value="">분</option>}
         {minuteOptions(t?.m).map((m) => (
           <option key={m} value={m}>
             {m}

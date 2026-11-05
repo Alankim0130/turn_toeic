@@ -139,8 +139,11 @@ describe("DB — 들어오면 부르고, 가져가며 표시한다 (마이그레
     expect(fn).toContain("not es.recorded");
     expect(fn).toContain("private.section_includes(e.section_id, p_section_id)");
     expect(fn).toContain("distinct on (e.student_id)");
-    expect(fn).toContain("on conflict (section_id, class_date) do nothing");
+    // 2026-11-05 두 교시 — (반, 날짜, 교시)마다 한 번 · 두 교시 반 본문에는 `LC 교시`
+    expect(fn).toContain("on conflict (section_id, class_date, part) do nothing");
     expect(fn).toContain("upper(r.subject)");
+    expect(fn).toContain("upper(private.part_subject(p_section_id, p_part)) || ' 교시'");
+    expect(fn).toContain("private.today_kst() between es.enrollment_opens_at and es.closes_at");
   });
 });
 
