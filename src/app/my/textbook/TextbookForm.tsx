@@ -3,7 +3,7 @@
 import { startTransition, useActionState, useState } from "react";
 import { submitTextbookOrder, type TextbookState } from "./actions";
 import { TransferPicker } from "./TransferPicker";
-import { TRANSFER_BUCKET, transferPath } from "@/lib/textbook-transfer";
+import { TRANSFER_BUCKET, TRANSFER_REQUIRED, transferPath } from "@/lib/textbook-transfer";
 import { uploadFile } from "@/lib/upload-client";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
@@ -47,9 +47,10 @@ const initialPick = (t: OrderTerm | undefined) => new Set(t && !t.locked && t.it
  * 화목금 수업일은 낮만. 3시 · 9시는 퇴근이라 마지막 칸은 2시 30분 · 8시 30분이다 (2026-10-27 Alan — "3시와 9시는 없애줘", `PICKUP_TIME_RANGES`).
  * 저녁에 받을 수 있는 날에는 날짜 옆에 '저녁 가능' 을 붙인다. 서버 액션이 같은 함수로 다시 본다.
  *
- * **이체 화면 캡처** (2026-11-04 Alan — "학생이 이체를 하고 난 뒤에, 해당 화면을 스크린샷찍어서 올려주면 조교들이 바로 확인하고 배송을 시작"):
- * 선택이다. 고른 캡처는 **보내기 직전에** 브라우저가 저장소(`textbook-transfers/{내 id}/`)에 올리고 폼에는 경로만 싣는다 (서버 액션 본문 한도 1MB) —
- * 서버 액션이 주문을 넣은 뒤 그 주문에 붙인다. 올리기에 실패하면 주문을 보내지 않는다(캡처를 빼고 다시 누르면 된다). 주문 뒤에 내역 카드에서 올려도 된다.
+ * **이체 화면 캡처** (2026-11-04 Alan — "학생이 이체를 하고 난 뒤에, 해당 화면을 스크린샷찍어서 올려주면 조교들이 바로 확인하고 배송을 시작" →
+ * 2026-11-05 "스크린샷을 올려야지 주문이 완료되도록"): **캡처를 골라야 주문 버튼이 열린다** (`missing` · 서버 액션도 같은 규칙). 고른 캡처는 **보내기 직전에**
+ * 브라우저가 저장소(`textbook-transfers/{내 id}/`)에 올리고 폼에는 경로만 싣는다 (서버 액션 본문 한도 1MB) — 서버 액션이 주문을 넣은 뒤 그 주문에 붙인다.
+ * 올리기에 실패하면 주문을 보내지 않는다.
  *
  * @param pickupDays 받으러 올 수 있는 날 (오늘부터 60일 안의 수업일 · 트랙, DB `textbook_pickup_days`). null = 읽지 못했다 — 현장수령을 잠근다
  */
@@ -111,7 +112,9 @@ export function TextbookForm({
               ? "입금 계좌가 아직 없어요"
               : !depositor.trim()
                 ? "입금자명을 적어 주세요"
-                : null;
+                : !transfer
+                  ? TRANSFER_REQUIRED
+                  : null;
 
   if (state.ok) {
     const who = state.transfer === "attached" ? "올린 이체 캡처를 보고 조교 · 강사님이 금액을 확인해요" : "안내한 계좌로 입금하시면 강사님이 통장과 대조해 금액을 확인해요";
@@ -474,7 +477,7 @@ export function TextbookForm({
               <p className="mt-1 text-xs text-slate">부모님 이름으로 입금하면 그 이름을 적어 주세요. 강사님이 통장과 대조해요.</p>
             </div>
 
-            {/* 이체 화면 캡처 (2026-11-04, 선택) — 있으면 조교도 바로 금액확인한다 */}
+            {/* 이체 화면 캡처 (2026-11-04 · 2026-11-05 필수) — 올려야 주문이 되고, 조교가 캡처를 보고 바로 금액확인한다 */}
             <TransferPicker file={transfer} onChange={setTransfer} disabled={uploading} />
           </section>
 

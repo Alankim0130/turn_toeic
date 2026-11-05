@@ -5,8 +5,8 @@ import { cn } from "@/lib/utils";
 import { TRANSFER_HINT, TRANSFER_MAX_MB, transferFileProblem } from "@/lib/textbook-transfer";
 
 /**
- * 주문 폼의 **이체 화면 캡처 고르기** (2026-11-04 Alan — "학생이 이체를 하고 난 뒤에, 해당 화면을 스크린샷찍어서 올려주면").
- * 선택이다 — 고르면 작은 미리보기와 이름, 빼기. 파일 칸에는 `name` 이 없어 폼 데이터에 실리지 않는다 (서버 액션 본문 한도 1MB) —
+ * 주문 폼의 **이체 화면 캡처 고르기** (2026-11-04 Alan — "학생이 이체를 하고 난 뒤에, 해당 화면을 스크린샷찍어서 올려주면" → 2026-11-05 "스크린샷을 올려야지 주문이 완료되도록").
+ * **꼭 올린다** — 안 고르면 주문 버튼이 잠긴다 (`TextbookForm` 의 `missing`). 고르면 작은 미리보기와 이름, 빼기. 파일 칸에는 `name` 이 없어 폼 데이터에 실리지 않는다 (서버 액션 본문 한도 1MB) —
  * 보내기 직전에 폼이 저장소에 올리고 경로만 싣는다 (`TextbookForm`). 사진 미리보기는 `URL.createObjectURL` 이라 바꾸거나 빼면 풀어 준다.
  */
 export function TransferPicker({ file, onChange, disabled = false }: { file: File | null; onChange: (file: File | null) => void; disabled?: boolean }) {
@@ -31,9 +31,9 @@ export function TransferPicker({ file, onChange, disabled = false }: { file: Fil
   return (
     <div className="mt-4">
       <p className="label !mb-1">
-        이체 화면 캡처 <span className="font-normal text-mist">(선택)</span>
+        이체 화면 캡처 <span className="font-normal text-brand-700">(필수)</span>
       </p>
-      <p className="mb-2 text-xs text-slate">{TRANSFER_HINT} 나중에 아래 내역에서 올려도 돼요.</p>
+      <p className="mb-2 text-xs text-slate">{TRANSFER_HINT} 캡처를 올려야 주문이 완료돼요.</p>
       {file && preview ? (
         <div className="flex items-center gap-3 rounded-xl border border-brand-200 bg-white p-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
