@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { deleteAudioTrack, moveAudioTrack, setAudioTracks, setLessonOffset, setTrackLabel } from "@/app/admin/lc-audio/actions";
+import { deleteAudioTrack, moveAudioTrack, setAudioTracks, setLessonOffset, setTrackLabel, updateAudioTrack } from "@/app/admin/lc-audio/actions";
 import { MoveButtons } from "@/components/admin/class-materials/MaterialFilePicker";
 import { AudioPlayer } from "@/components/lc/AudioPlayer";
 import { Icon } from "@/components/ui/Icon";
@@ -30,6 +30,7 @@ type Pending = { file: File; day: number; label: string };
 /**
  * 관리자: 교재 한 권의 음원 — 수업/숙제 종류를 고르고 강 칸을 채운다.
  * 한 강에 파일이 여러 개일 수 있어(650A 3강 = 교과서 현재진행형 + 영국발음) 덮어쓰지 않고 더한다.
+ * 올린 음원은 줄의 `수정` 으로 고친다 — 파일 바꾸기 · 강 · 종류 · 구분 이름 (`TrackEditor`, 2026-11-09 Alan "파일을 잘못올려서 수정할려고 들어가면 삭제만 있고 수정이 없어").
  */
 export function AudioDays({
   bookId,
@@ -51,6 +52,7 @@ export function AudioDays({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<number | null>(null);
+  const [editId, setEditId] = useState<number | null>(null);
   const [offset, setOffset] = useState(String(lessonOffset));
   const [savingOffset, startOffset] = useTransition();
   const [deleting, startDelete] = useTransition();
@@ -356,6 +358,19 @@ export function AudioDays({
                           type="button"
                           onClick={() => {
                             reset();
+                            setConfirmId(null);
+                            setEditId(editId === t.id ? null : t.id);
+                          }}
+                          disabled={working}
+                          className="btn-ghost !px-3 !py-1 text-xs"
+                        >
+                          {editId === t.id ? "닫기" : "수정"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            reset();
+                            setEditId(null);
                             setConfirmId(t.id);
                           }}
                           disabled={working}
@@ -365,6 +380,21 @@ export function AudioDays({
                         </button>
                       </div>
                       <AudioPlayer src={`/files/audio/${t.id}`} title={`${lesson(day)} ${t.label ?? ""}`.trim()} note={AUDIO_KIND_LABEL[kind]} />
+
+                      {editId === t.id && (
+                        <TrackEditor
+                          key={`edit-${t.id}`}
+                          bookId={bookId}
+                          track={t}
+                          lesson={lesson}
+                          onClose={() => setEditId(null)}
+                          onSaved={(message) => {
+                            setEditId(null);
+                            setDone(message);
+                            router.refresh();
+                          }}
+                        />
+                      )}
 
                       {confirmId === t.id && (
                         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50/60 p-3 text-sm">
@@ -394,3 +424,142 @@ export function AudioDays({
     </div>
   );
 }
+
+/**
+ * 음원 하나 고치기 (2026-11-09) — 파일 바꾸기 · 강 · 종류 · 구분 이름. 새 파일은 브라우저가 저장소에 먼저 올리고 서버 액션(`updateAudioTrack`)이 행을 바꾼다.
+ * 저장을 **보낸 뒤** 끊기면 올린 파일을 지우지 않는다 (서버가 이미 바꿨을 수 있다 — 지우면 음원이 재생되지 않는다). 못 바꿨으면 지운다.
+ */
+function TrackEditor({
+  bookId,
+  track,
+  lesson,
+  onClose,
+  onSaved,
+}: {
+  bookId: number;
+  track: AudioDayTrack;
+  lesson: (day: number) => string;
+  onClose: () => void;
+  onSaved: (message: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [day, setDay] = useState(track.day);
+  const [kind, setKind] = useState<AudioKind>(isAudioKindValue(track.kind) ? track.kind : "lesson");
+  const [label, setLabel] = useState(track.label ?? "");
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const changed = day !== track.day || kind !== track.kind || label.trim() !== (track.label ?? "") || !!file;
+
+  const pick = (list: FileList | null) => {
+    const f = list?.[0] ?? null;
+    if (fileRef.current) fileRef.current.value = "";
+    setError(null);
+    if (!f) return;
+    if (!isAudioType(contentTypeOf(f))) return setError(`${f.name}: 음원 파일(mp3 · m4a · wav 등)만 올릴 수 있어요.`);
+    if (f.size > MAX) return setError(`${f.name}: 50MB 이하 파일만 올릴 수 있어요.`);
+    setFile(f);
+  };
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!changed || busy) return;
+    setError(null);
+    setBusy(true);
+    let uploaded: UploadedFile | null = null;
+    let sent = false;
+    try {
+      if (file) {
+        setProgress("파일 올리는 중…");
+        uploaded = await uploadFile(BUCKET, `${bookId}/${objectName(file)}`, file);
+      }
+      setProgress("저장하는 중…");
+      sent = true;
+      const res = await updateAudioTrack({ id: track.id, day, kind, label: label.trim(), file: uploaded });
+      if (!res.ok) {
+        if (uploaded) await removeUploaded(BUCKET, [uploaded.path]);
+        setError(res.error ?? "고치지 못했어요.");
+        return;
+      }
+      const moved = day !== track.day || kind !== track.kind;
+      onSaved(moved ? `${AUDIO_KIND_LABEL[kind]} ${lesson(day)} 으로 옮겼어요.${file ? " 파일도 바꿨어요." : ""}` : file ? "파일을 바꿨어요." : "저장했어요.");
+    } catch (err) {
+      if (uploaded && !sent) await removeUploaded(BUCKET, [uploaded.path]);
+      setError(sent ? "인터넷이 끊겨 고쳐졌는지 확인하지 못했어요. 새로고침해 목록을 먼저 봐 주세요." : err instanceof Error ? err.message : "고치지 못했어요.");
+    } finally {
+      setBusy(false);
+      setProgress(null);
+    }
+  }
+
+  return (
+    <form onSubmit={save} className="mt-2 grid gap-2 rounded-xl border border-brand-200 bg-brand-50/50 p-3 sm:grid-cols-[8rem_8rem_1fr] sm:items-end">
+      <label className="block text-xs font-bold text-slate">
+        종류
+        <select value={kind} onChange={(e) => setKind(e.target.value as AudioKind)} disabled={busy} className="input mt-1 !py-1.5 text-xs">
+          {AUDIO_KINDS.map((k) => (
+            <option key={k} value={k}>
+              {AUDIO_KIND_LABEL[k]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block text-xs font-bold text-slate">
+        강 칸
+        <select value={day} onChange={(e) => setDay(Number(e.target.value))} disabled={busy} className="input mt-1 !py-1.5 text-xs">
+          {DAYS.map((d) => (
+            <option key={d} value={d}>
+              {lesson(d)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block text-xs font-bold text-slate">
+        구분 이름
+        <input value={label} onChange={(e) => setLabel(e.target.value)} maxLength={40} placeholder="예: 영국발음 (선택)" disabled={busy} className="input mt-1 !py-1.5 text-xs" />
+      </label>
+      <div className="sm:col-span-3">
+        <p className="text-xs font-bold text-slate">파일</p>
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+          <span className="min-w-0 truncate text-ink">
+            {file ? (
+              <>
+                <span className="rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-black text-white">새 파일</span> <b>{file.name}</b> · {formatBytes(file.size)}
+              </>
+            ) : (
+              <>
+                지금 파일 <b>{track.file_name}</b> · {formatBytes(track.file_size)}
+              </>
+            )}
+          </span>
+          <label className={cn("cursor-pointer rounded-full bg-surface px-3 py-1 font-bold text-ink-soft ring-1 ring-line hover:text-brand-600", busy && "pointer-events-none opacity-60")}>
+            <input ref={fileRef} type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg" className="sr-only" disabled={busy} onChange={(e) => pick(e.target.files)} aria-label={`${track.file_name} 대신 올릴 파일`} />
+            {file ? "다른 파일 고르기" : "파일 바꾸기"}
+          </label>
+          {file && (
+            <button type="button" onClick={() => setFile(null)} disabled={busy} className="btn-ghost !px-2 !py-1 text-xs">
+              새 파일 빼기
+            </button>
+          )}
+        </div>
+        <p className="mt-1 text-[11px] text-mist">파일을 바꾸면 옛 파일은 지워지고 학생 화면에서 바로 새 파일이 들려요. 강 · 종류를 바꾸면 그 칸의 맨 끝에 서요.</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 sm:col-span-3">
+        <button type="submit" disabled={!changed || busy} aria-busy={busy} className="btn-primary !px-4 !py-1.5 text-xs">
+          {busy ? (progress ?? "저장 중…") : "저장"}
+        </button>
+        <button type="button" onClick={onClose} disabled={busy} className="btn-ghost !px-3 !py-1.5 text-xs">
+          취소
+        </button>
+        {error && (
+          <p role="alert" className="text-xs font-semibold text-red-600">
+            {error}
+          </p>
+        )}
+      </div>
+    </form>
+  );
+}
+
+const isAudioKindValue = (v: string): v is AudioKind => (AUDIO_KINDS as readonly string[]).includes(v);

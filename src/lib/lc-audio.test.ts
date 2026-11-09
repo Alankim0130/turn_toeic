@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { bookSectionsByLevel, bookTimeLabel, bookTimesLabel, explicitBookSet } from "./lc-audio";
 
@@ -81,3 +82,27 @@ describe("bookTimeLabel — 왜 이 교재인지 적는다", () => {
     expect(bookTimesLabel([], TRACK)).toBe("");
   });
 });
+
+describe("음원 고치기 — updateAudioTrack (2026-11-09 Alan '삭제만 있고 수정이 없어')", () => {
+  const actions = readFileSync("src/app/admin/lc-audio/actions.ts", "utf8");
+  const fn = actions.slice(actions.indexOf("export async function updateAudioTrack"));
+  it("맨 위 requireStaff · 옛 행을 읽고 · 새 파일은 교재 폴더의 음원만 · 바뀐 줄을 센 뒤에야 옛 파일을 지운다", () => {
+    expect(fn).toMatch(/^export async function updateAudioTrack[^\n]*\n  const \{ user \} = await requireStaff\(\);/);
+    expect(fn).toContain('select("id, book_id, kind, day, label, sort_order, file_path").eq("id", id).maybeSingle()');
+    expect(fn).toContain("isSafeObjectPath(file.path, `${me.book_id}/`) || !isAudioType(file.type)");
+    expect(fn).toContain('.update(patch).eq("id", id).select("id")');
+    expect(fn.indexOf('.update(patch)')).toBeLessThan(fn.indexOf("storage.from(AUDIO_BUCKET).remove([me.file_path])"));
+    expect(fn).toContain('if (!data?.length) return { ok: false, error: "음원을 찾을 수 없어요. 새로고침해 주세요." };');
+    // 강 · 종류가 바뀌면 그 칸의 맨 끝 — 끝 번호를 못 읽으면 옮기지 않는다
+    expect(fn).toContain("if (day !== me.day || kind !== me.kind) {");
+    expect(fn).toContain("if (lastError) return { ok: false");
+    expect(fn).toContain("patch.sort_order = (last?.sort_order ?? -1) + 1;");
+  });
+  it("화면 — 줄마다 수정, 저장을 보낸 뒤 끊기면 올린 파일을 지우지 않는다", () => {
+    const ui = readFileSync("src/components/admin/lc-audio/AudioDays.tsx", "utf8");
+    expect(ui).toContain('{editId === t.id ? "닫기" : "수정"}');
+    expect(ui).toContain("if (uploaded && !sent) await removeUploaded(BUCKET, [uploaded.path]);");
+    expect(ui).toContain("const res = await updateAudioTrack({ id: track.id, day, kind, label: label.trim(), file: uploaded });");
+  });
+});
+
