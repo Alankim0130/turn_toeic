@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import type { Database } from "@/lib/supabase/database.types";
 import { isAudioType, isSafeObjectPath, MB, type UploadedFile } from "@/lib/upload";
 import { DAY_COUNT, isAudioKind, isDay } from "@/lib/lc-audio";
 import { studyErrorMessage } from "@/lib/study";
@@ -98,7 +99,7 @@ export async function removeBookCover(bookId: number): Promise<AudioResult> {
 /**
  * 브라우저가 lc-audio/{교재 id}/ 에 올린 음원을 강 칸에 **더한다**.
  * 한 강에 파일이 여러 개일 수 있으므로(650A 3강 = 교과서 현재진행형 + 영국발음) 덮어쓰지 않는다.
- * 파일을 바꾸려면 기존 음원을 지우고 다시 올린다.
+ * 올린 음원을 고치는 것(파일 바꾸기 · 강 · 종류 · 구분 이름)은 `updateAudioTrack` (2026-11-09).
  */
 export async function setAudioTracks(input: {
   bookId: number;
@@ -237,6 +238,66 @@ export async function deleteAudioTrack(id: number): Promise<AudioResult> {
   if (!data?.length) return { ok: false, error: "음원을 찾을 수 없어요." };
 
   await supabase.storage.from(AUDIO_BUCKET).remove(data.map((d) => d.file_path));
+  revalidateAudio();
+  return { ok: true };
+}
+
+/**
+ * **음원 하나 고치기** (2026-11-09 Alan — "LC 음원들어보기 부분도 파일 수정이 가능하게 해줘. 파일을 잘못올려서 수정할려고 들어가면 '삭제' 만 있고 수정이 없어").
+ * 강 · 종류(수업 · 숙제) · 구분 이름을 바꾸고, 새 파일을 올렸으면(브라우저가 `lc-audio/{교재 id}/` 에 먼저 올린다 — 서버 액션 본문 한도 1MB) 그 파일로 바꾼 뒤
+ * 옛 파일을 저장소에서 지운다. 강 · 종류가 바뀌면 옮겨 간 칸의 맨 끝에 선다. **바뀐 줄을 센다** — 못 바꿨으면 새 파일은 화면이 지운다 (옛 파일은 그대로다).
+ * 학생 화면의 주소(`/files/audio/{id}`)는 그대로라 바꾼 파일이 바로 들린다.
+ */
+export async function updateAudioTrack(input: { id: number; day?: number | null; kind?: string | null; label?: string | null; file?: UploadedFile | null }): Promise<AudioResult> {
+  const { user } = await requireStaff();
+  const id = Number(input.id);
+  if (!Number.isInteger(id)) return { ok: false, error: "잘못된 요청이에요." };
+
+  const supabase = await createClient();
+  const { data: me, error: meError } = await supabase.from("lc_audio_tracks").select("id, book_id, kind, day, label, sort_order, file_path").eq("id", id).maybeSingle();
+  if (meError) return { ok: false, error: studyErrorMessage(meError, "음원을 읽지 못했어요.") };
+  if (!me) return { ok: false, error: "음원을 찾을 수 없어요. 새로고침해 주세요." };
+
+  const day = input.day == null ? me.day : Number(input.day);
+  if (!isDay(day)) return { ok: false, error: `강 칸은 1~${DAY_COUNT} 까지예요.` };
+  const kind = input.kind == null ? me.kind : input.kind;
+  if (!isAudioKind(kind)) return { ok: false, error: "종류를 확인해 주세요." };
+  const label = input.label === undefined ? me.label : String(input.label ?? "").trim().slice(0, 40) || null;
+  const file = input.file ?? null;
+  if (file) {
+    if (!isSafeObjectPath(file.path, `${me.book_id}/`) || !isAudioType(file.type)) return { ok: false, error: "음원 파일 정보가 올바르지 않아요." };
+    if (!(file.size > 0 && file.size <= 50 * MB)) return { ok: false, error: "50MB 이하 파일만 올릴 수 있어요." };
+  }
+
+  const patch: Database["public"]["Tables"]["lc_audio_tracks"]["Update"] = { day, kind, label, updated_at: new Date().toISOString() };
+  if (day !== me.day || kind !== me.kind) {
+    // 옮겨 간 칸의 맨 끝에 선다 — 읽기에 실패하면 옮기지 않는다 (순서가 겹치면 학생 화면 순서가 흔들린다)
+    const { data: last, error: lastError } = await supabase
+      .from("lc_audio_tracks")
+      .select("sort_order")
+      .eq("book_id", me.book_id)
+      .eq("kind", kind)
+      .eq("day", day)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastError) return { ok: false, error: studyErrorMessage(lastError, "옮길 칸을 읽지 못했어요.") };
+    patch.sort_order = (last?.sort_order ?? -1) + 1;
+  }
+  if (file) {
+    patch.file_path = file.path;
+    patch.file_name = String(file.name).slice(0, 200);
+    patch.file_size = file.size;
+    patch.content_type = file.type;
+    patch.uploaded_by = user.id;
+  }
+
+  const { data, error } = await supabase.from("lc_audio_tracks").update(patch).eq("id", id).select("id");
+  if (error) return { ok: false, error: studyErrorMessage(error, "음원을 고치지 못했어요.") };
+  if (!data?.length) return { ok: false, error: "음원을 찾을 수 없어요. 새로고침해 주세요." };
+
+  // 새 파일로 바꿨으면 옛 파일은 지운다 (못 지워도 음원은 이미 새 파일이다)
+  if (file && me.file_path && me.file_path !== file.path) await supabase.storage.from(AUDIO_BUCKET).remove([me.file_path]);
   revalidateAudio();
   return { ok: true };
 }
