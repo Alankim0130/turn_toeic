@@ -8,7 +8,7 @@ import { loadHomeworkAlertsOff } from "./homework-alerts";
  * 빈 목록으로 보면 끈 학생까지 모두 '켜짐' 으로 보인다.
  */
 
-type Res = { data: { user_id: string }[] | null; error: unknown; count?: number | null };
+type Res = { data: { user_id: string; created_at: string }[] | null; error: unknown; count?: number | null };
 
 /** `from("homework_missing_optouts").select().order().range()` 만 흉내 낸다 */
 function fakeDb(answer: (from: number, to: number) => Res) {
@@ -30,13 +30,23 @@ function fakeDb(answer: (from: number, to: number) => Res) {
   return { db: db as unknown as DB, calls };
 }
 
-const rows = (from: number, n: number) => Array.from({ length: n }, (_, i) => ({ user_id: `u${from + i}` }));
+const AT = "2026-11-05T01:00:00+00:00";
+const rows = (from: number, n: number) => Array.from({ length: n }, (_, i) => ({ user_id: `u${from + i}`, created_at: AT }));
 
 describe("loadHomeworkAlertsOff — 숙제 미제출 알림을 끈 학생", () => {
-  it("끈 학생의 id 집합 — 알림 안 받기 표를 읽는다", async () => {
-    const { db, calls } = fakeDb(() => ({ data: [{ user_id: "a" }, { user_id: "b" }], error: null, count: 2 }));
+  it("끈 학생 → 끈 때 — 알림 안 받기 표를 읽는다", async () => {
+    const { db, calls } = fakeDb(() => ({
+      data: [
+        { user_id: "a", created_at: AT },
+        { user_id: "b", created_at: "2026-11-10T03:00:00+00:00" },
+      ],
+      error: null,
+      count: 2,
+    }));
     const off = await loadHomeworkAlertsOff(db, { test_role: null });
-    expect(off && [...off].sort()).toEqual(["a", "b"]);
+    expect(off && [...off.keys()].sort()).toEqual(["a", "b"]);
+    expect(off?.get("a")).toBe(AT);
+    expect(off?.has("c")).toBe(false);
     expect(calls.map((c) => c.table)).toEqual(["homework_missing_optouts"]);
   });
 
