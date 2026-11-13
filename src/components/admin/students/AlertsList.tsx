@@ -6,6 +6,8 @@ import { ClassChips, Glyph, type StudentCardClass } from "./StudentCard";
  * 학생명단 보기 `숙제 알림받기` · `숙제 알림끄기` (2026-11-13 Alan — "미제출을 (숙제검사를 원치 않는분) 별도로 뺀 리스트를 만들어줘" →
  * 같은 날 휴대폰 화면을 보내며 "지금처럼하지말고, 반별명단, 레벨별 명단 저기 왼쪽에 추가부탁해. 숙제 알림받기, 숙제 알림끄기 이렇게 두개를 만들어줘").
  * 처음 몇 시간은 등록생 탭 맨 위에 늘 서 있는 `끈 학생` 카드였다 — **보기 고르기 줄의 두 칸으로 옮겼다(맨 위 카드로 되돌리지 말 것).**
+ * **숙제 미제출 알림 화면에도 같은 두 보기가 있다** (같은 날 Alan "그건 조교들이 볼 수 있도록 해줘") — 학생명단은 강사 · 관리자 화면이라 조교는 거기서 본다.
+ * 그 화면은 조교 화면이라 **이름 · 조교 표시 · 반 이름만** 넘긴다(수강 방식 없음 — `modeLabel` 빈 글자). 전화번호 같은 개인정보를 이 목록에 넣지 말 것.
  *
  * 미제출 알림은 모두가 기본으로 받고 숙제제출 화면의 스위치를 끈 학생만 빠진다 (도메인 규칙 7). `on` = 켜 둔 학생, `off` = 끈 학생.
  * 레벨별 묶음 · 가나다순(카드와 같은 `groupByLevel` — 두 레벨을 들으면 두 묶음에, 반이 없으면 `반 미배정`),
@@ -42,7 +44,7 @@ export function AlertsList({
   groups,
   total,
   ok,
-  tabLabel,
+  scope,
 }: {
   mode: "on" | "off";
   groups: AlertsListGroup[] | null;
@@ -50,7 +52,8 @@ export function AlertsList({
   total: number;
   /** 카드 밖 학생의 이름을 다 읽었나 */
   ok: boolean;
-  tabLabel: string;
+  /** 제목 뒤 회색 글자 — 학생명단은 `등록생` · `예비등록생`, 숙제 미제출 알림은 `2026년 11월` */
+  scope: string;
 }) {
   const copy = COPY[mode];
   return (
@@ -59,7 +62,7 @@ export function AlertsList({
         <Glyph name={mode === "on" ? "bell" : "bellOff"} size={16} className={mode === "on" ? "text-brand-600" : "text-amber-600"} />
         {copy.title}
         {groups && <span className={mode === "on" ? "text-brand-600" : "text-amber-700"}>{total}명</span>}
-        <span className="text-xs font-semibold text-mist">· {tabLabel}</span>
+        <span className="text-xs font-semibold text-mist">· {scope}</span>
       </h2>
       <p className="mt-1 text-xs text-slate">{copy.note}</p>
 

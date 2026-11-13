@@ -34,6 +34,7 @@ export type StudentCardClass = {
   id: number;
   label: string;
   mode: string | null;
+  /** 현장 · 불라방 — 빈 글자면 적지 않는다 (숙제 미제출 알림 화면의 `숙제 알림받기` 목록은 수강 방식을 모른다) */
   modeLabel: string;
   /** `RC단과` · `LC단과` — 단과일 때만. 종합은 적지 않는다 (2026-10-05 Alan "종합반이 대부분이니 RC단과, LC단과만", `singleSubjectOf`) */
   single?: string | null;
@@ -151,7 +152,7 @@ export function ClassChips({ classes, className }: { classes: StudentCardClass[]
         >
           {/* 현장 · 불라방 — 표에서는 줄 끝에 묻혀 제일 먼저 잘려 나갔다 (2026-09-18 Alan "대면/비대면 신청").
               좁은 화면에서 "불라/방" 으로 갈리지 않게 붙여 둔다 */}
-          <span className={cn("whitespace-nowrap", c.mode === "live" ? "text-brand-600" : "text-ink")}>{c.modeLabel}</span>
+          {c.modeLabel && <span className={cn("whitespace-nowrap", c.mode === "live" ? "text-brand-600" : "text-ink")}>{c.modeLabel}</span>}
           {/* 단과는 수강 방식 바로 뒤 — 줄 끝에 두면 좁은 화면에서 먼저 밀려난다 (현장 · 불라방을 앞에 둔 것과 같은 까닭) */}
           {c.single && <span className="whitespace-nowrap rounded bg-ink px-1 text-white">{c.single}</span>}
           <span className="text-slate">{c.label}</span>

@@ -21,7 +21,7 @@ import { getRosterSets, sectionChip, TERM_COLUMNS } from "../_lib/queries";
 import { loadClassRoster } from "./_lib/class-roster";
 import { ROLE_LABEL, requireStaff } from "@/lib/auth";
 import { hiddenFromRoster, isAssistantAccount } from "@/lib/roster-accounts";
-import { loadHomeworkAlertsOff } from "./_lib/homework-alerts";
+import { loadHomeworkAlertsOff } from "../_lib/homework-alerts";
 
 export const metadata: Metadata = { title: "학생명단", robots: { index: false } };
 
@@ -383,7 +383,7 @@ export default async function StudentsPage({
               groups={alertGroups}
               total={alertPeople?.length ?? 0}
               ok={extraList.ok}
-              tabLabel={tab === "active" ? "등록생" : "예비등록생"}
+              scope={tab === "active" ? "등록생" : "예비등록생"}
             />
           )}
 
