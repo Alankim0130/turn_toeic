@@ -9,6 +9,7 @@ import { PwaRegister } from "@/components/pwa/PwaRegister";
 import { PullToRefresh } from "@/components/pwa/PullToRefresh";
 import { VisibleViewportVars } from "@/components/layout/VisibleViewportVars";
 import { AppSplash } from "@/components/pwa/AppSplash";
+import { StatusBarTint } from "@/components/pwa/StatusBarTint";
 import { IOS_STARTUP_IMAGES } from "@/lib/ios-startup";
 import { getSessionProfile, getStudentAccess } from "@/lib/auth";
 import { site } from "@/lib/site";
@@ -81,6 +82,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-dvh">
         {/* 홈 화면 앱으로 켤 때만 보이는 첫 화면. DOM 맨 앞에 두어 하이드레이션 전에도 먼저 그려진다 */}
         <AppSplash />
+        {/* 아이폰 홈 화면 앱의 상태 표시줄 색 — 스플래시 · 새로고침 알약 색이 남지 않게 (2026-11-13) */}
+        <StatusBarTint />
         {/* 홈 화면 앱에는 주소창이 없다 — 맨 위에서 당기면 새로고침 (2026-09-16 Alan) */}
         <PullToRefresh />
         <TestModeBanner profile={profile} />
