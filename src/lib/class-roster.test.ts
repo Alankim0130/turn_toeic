@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildClassRoster,
+  filterRoster,
   groupByLevel,
   columnDetail,
   columnHeading,
@@ -327,6 +328,48 @@ describe("레벨별 명단 — 한 칸이 한 레벨의 한 트랙 · 시간을 
     });
     expect(r.levels[0].columns.map((c) => [c.title, c.sectionIds, c.students.map((s) => s.name + marksText(s.marks))])).toEqual([["650 월수금", [71, 73], ["다온", "라온"]]]);
     expect(r.empty.map((c) => c.title)).toEqual(["650 화목금"]);
+  });
+});
+
+describe("filterRoster — 숙제 알림받기 · 숙제 알림끄기 명단 (2026-11-13 \"숙제 알림 명단을 이런식으로\")", () => {
+  const byTrack = () => build("2026-10-14", { by: "track" });
+
+  it("남길 사람만 — 칸 · 표시 · 순서는 그대로, 사람이 안 남은 칸 · 레벨은 빠진다", () => {
+    // 알림을 끈 학생: 나리(속성반 · 세 칸) · 하늘(650 · 750 두 레벨)
+    const off = new Set(["uSparta", "uTwoLevels"]);
+    const r = filterRoster(byTrack(), (id) => off.has(id));
+    expect(view(r)).toEqual({
+      "650 월수금": ["나리(불/프)", "하늘(RC)"],
+      "650 화목금": ["나리(불/프)"],
+      "750 화목금": ["하늘(불/LC)"],
+      "850 월수금": ["나리(불/프)"],
+      "850 화목금": ["나리(불/프)"],
+    });
+    // 사람 수는 남은 사람으로 다시 — 한 사람은 한 번 (레벨마다 · 전체)
+    expect(r.levels.map((l) => [l.label, l.count, l.tone])).toEqual([
+      ["650", 2, 0],
+      ["750", 1, 1],
+      ["850", 1, 2],
+    ]);
+    expect(r.total).toBe(2);
+    expect(r.by).toBe("track");
+    expect(r.empty).toEqual([]);
+    expect(r.unplaced).toBe(0);
+  });
+
+  it("나머지(켜 둔 학생)를 남기면 두 명단을 합쳐 원래 명단이 된다 — 빠지는 사람이 없다", () => {
+    const off = new Set(["uSparta", "uTwoLevels"]);
+    const on = filterRoster(byTrack(), (id) => !off.has(id));
+    const offR = filterRoster(byTrack(), (id) => off.has(id));
+    expect(on.total + offR.total).toBe(byTrack().total);
+    expect(on.levels.map((l) => l.label)).toEqual(["650", "850"]); // 750 은 하늘 한 명뿐이라 켜 둔 명단에서 빠진다
+    expect(view(on)["850 월수금"]).toEqual(["바다(2주)"]);
+  });
+
+  it("아무도 안 남으면 빈 명단", () => {
+    const r = filterRoster(byTrack(), () => false);
+    expect(r.levels).toEqual([]);
+    expect(r.total).toBe(0);
   });
 });
 

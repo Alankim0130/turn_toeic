@@ -9,18 +9,18 @@ import { signedAvatarUrls } from "@/lib/avatar-url";
 import { STUDY_KIND_LABEL, STUDY_KINDS, termParam } from "@/lib/study";
 import { week5SectionIds, groupWeek5 } from "@/lib/week5";
 import { SINGLE_SUBJECT_LABEL, singleSubjectOf } from "@/lib/section-type";
-import { groupByLevel, ROSTER_NAME, rosterFileName, rosterPeriod, rosterTerms, type RosterBy } from "@/lib/class-roster";
+import { filterRoster, groupByLevel, ROSTER_NAME, rosterFileName, rosterPeriod, rosterTerms, type RosterBy } from "@/lib/class-roster";
 import { pickCurrentTerm } from "@/lib/term-window";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterTabs } from "@/components/admin/FilterTabs";
-import { StudentCard, type StudentCardClass, type StudentCardMeta } from "@/components/admin/students/StudentCard";
-import { AlertsList, type AlertsListPerson } from "@/components/admin/students/AlertsList";
+import { StudentCard, type StudentCardMeta } from "@/components/admin/students/StudentCard";
 import { ClassRosterView, RosterViewSwitch, ROSTER_VIEWS, isAlertView, type RosterView } from "@/components/admin/students/ClassRosterView";
+import { AlertsRoster } from "@/components/admin/students/AlertsRoster";
 import { getRosterSets, sectionChip, TERM_COLUMNS } from "../_lib/queries";
 import { loadClassRoster } from "./_lib/class-roster";
 import { ROLE_LABEL, requireStaff } from "@/lib/auth";
-import { hiddenFromRoster, isAssistantAccount } from "@/lib/roster-accounts";
+import { hiddenFromRoster } from "@/lib/roster-accounts";
 import { loadHomeworkAlertsOff } from "../_lib/homework-alerts";
 
 export const metadata: Metadata = { title: "학생명단", robots: { index: false } };
@@ -54,11 +54,11 @@ export default async function StudentsPage({
   // 반별 명단 (2026-10-14 Alan — 종이 명단처럼 "레벨별로 가나다순 … Pc모드에서는 지금 올린 이미지처럼 한페이지에서"):
   // 등록생 · 예비등록생 탭에서, 이름을 찾는 중이 아닐 때. 보기를 고르지 않으면 PC 는 반별 명단 · 휴대폰은 카드 (둘 다 그리고 화면 폭으로 숨긴다).
   // 레벨별 명단(같은 날 밤 Alan "시간대는 없애고 같은 레벨별로 … 월수금/ 화목금만 분리")은 골랐을 때만 — 반별 명단 자리에 대신 선다
-  // 숙제 알림받기 · 숙제 알림끄기(2026-11-13 Alan — 반별 명단 왼쪽)는 알림을 켜 둔 · 끈 학생 목록이다 (`AlertsList`)
+  // 숙제 알림받기 · 숙제 알림끄기(2026-11-13 — 반별 명단 왼쪽)는 그 달 레벨별 명단에서 알림을 켜 둔 · 끈 학생만 남긴 명단이다 (`AlertsRoster`)
   const view: RosterView | null = ROSTER_VIEWS.find((v) => v === viewParam) ?? null;
-  const rosterBy: RosterBy = view === "levels" ? "track" : "time";
   const classTab = (tab === "active" || tab === "preliminary") && !q;
   const alertView = classTab && isAlertView(view) ? view : null;
+  const rosterBy: RosterBy = view === "levels" || alertView ? "track" : "time";
 
   const supabase = await createClient();
   const today = todayKST();
@@ -73,8 +73,7 @@ export default async function StudentsPage({
     (tab === "preliminary" ? rosterOptions.find((t) => today < (t.enrollment_opens_at ?? "")) : undefined) ??
     pickCurrentTerm(rosterOptions, today);
   // 명단과 따로 도는 조회 — 카드 쪽 조회를 기다리지 않게 먼저 띄운다
-  // 알림 목록 보기에서는 반별 명단을 그리지 않는다 — 읽지도 않는다
-  const classRosterP = classTab && rosterTerm && !alertView ? loadClassRoster(supabase, rosterTerm, today, rosterBy) : Promise.resolve(null);
+  const classRosterP = classTab && rosterTerm ? loadClassRoster(supabase, rosterTerm, today, rosterBy) : Promise.resolve(null);
   // 숙제 미제출 알림을 끈 학생 (2026-11-13 Alan "신청했는지 안했는지 알 수 있으면 좋겠어") — 등록생 · 예비등록생 탭에서만.
   // 모두가 기본으로 받고 끈 학생만 빠진다 (도메인 규칙 7). 못 읽었으면 null — 켜짐 · 꺼짐을 적지 않는다
   const alertTab = tab === "active" || tab === "preliminary";
@@ -107,19 +106,9 @@ export default async function StudentsPage({
   }
   const ids = (profiles ?? []).map((p) => p.id);
 
-  // 숙제 알림받기 · 숙제 알림끄기 목록 — 그 탭의 학생 전부에서 고른다 (카드의 300명 상한 · 이름순과 상관없이).
-  // 대개 카드에 이미 선 학생이라 따로 읽을 것이 없고, 카드 밖(방학 300명 넘김)의 학생만 이름 · 등급을 더 읽는다. 반 배지는 카드와 같은 배정 읽기에 싣는다
-  const alertsOff = await alertsOffP;
-  const listIds = new Set(
-    alertView && alertsOff ? (tab === "active" ? roster.activeIds : roster.preliminaryIds).filter((id) => alertsOff.has(id) === (alertView === "alerts-off")) : [],
-  );
-  const inCards = new Set(ids);
-  const extraListIds = [...listIds].filter((id) => !inCards.has(id));
-  const enrollIds = [...ids, ...extraListIds];
-
-  const [{ data: enrollments }, { data: expiredOrders }, { count: testerCount }, { data: accounts }, { data: studySignups }, extraList] = await Promise.all([
+  const [{ data: enrollments }, { data: expiredOrders }, { count: testerCount }, { data: accounts }, { data: studySignups }] = await Promise.all([
     // 학생 300명 × 지난달들까지의 배정은 1,000줄을 넘는다 — id 를 100개씩 나눠 1,000줄씩 읽는다 (2026-10-29: 넘친 학생의 반 배지가 조용히 빠졌다)
-    readAllIn(enrollIds, (chunk, from, to, count) =>
+    readAllIn(ids, (chunk, from, to, count) =>
       supabase
         .from("enrollments")
         .select(
@@ -159,18 +148,6 @@ export default async function StudentsPage({
             .range(from, to),
         ).then((r) => ({ data: r.rows }))
       : Promise.resolve({ data: [] as { user_id: string; study: { kind: string } | null }[] }),
-    // 알림 목록에 설 카드 밖 학생의 이름 · 등급
-    extraListIds.length
-      ? readAllIn(extraListIds, (chunk, from, to, count) =>
-          supabase
-            .from("profiles")
-            .select("id, name, role", count ? { count: "exact" } : undefined)
-            .in("id", chunk)
-            .is("merged_into", null)
-            .order("id")
-            .range(from, to),
-        )
-      : Promise.resolve({ rows: [] as { id: string; name: string; role: string }[], ok: true }),
   ]);
 
   const enrollByUser = new Map<string, NonNullable<typeof enrollments>>();
@@ -186,7 +163,7 @@ export default async function StudentsPage({
 
   const counts = { active: roster.activeIds.length, preliminary: roster.preliminaryIds.length };
   const rows = profiles ?? [];
-  const classRoster = await classRosterP;
+  const [classRoster, alertsOff] = await Promise.all([classRosterP, alertsOffP]);
   /** 지금 주소에서 몇 칸만 바꾼 주소 — 달 · 보기를 들고 다닌다 */
   const href = (patch: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
@@ -202,37 +179,10 @@ export default async function StudentsPage({
   };
   // 프로필 사진 — 올린 사진(서명 URL)이 있으면 그것, 없으면 카카오·구글 사진 (2026-10-02 Alan).
   // 강사·관리자만 눌러서 크게 본다
-  const avatarUrls = await signedAvatarUrls(supabase, alertView ? [] : rows.map((p) => p.avatar_path));
+  const avatarUrls = await signedAvatarUrls(supabase, rows.map((p) => p.avatar_path));
   const photoOf = (p: { id: string; avatar_path: string | null }) =>
     pickPhoto(p.avatar_path ? avatarUrls.get(p.avatar_path) : null, safePhotoUrl(accountById.get(p.id)?.avatar_url));
   const canZoom = me.role === "instructor" || me.role === "admin";
-
-  /** 등록생 · 예비등록생 탭에는 **아직 종강하지 않은 반**만 — 지난 달 반이 이번 달 반 옆에 쌓이지 않게 (2026-09-22) */
-  const myEnrollOf = (id: string) =>
-    (enrollByUser.get(id) ?? []).filter((e) => (tab === "active" || tab === "preliminary" ? !!e.section && e.section.closes_at >= today : true));
-  /** 반 배정 배지 — 카드 · 알림을 끈 학생 목록이 같이 쓴다 */
-  const classChipsOf = (myEnroll: ReturnType<typeof myEnrollOf>): StudentCardClass[] => {
-    // 주5일이면 월수금·화목금 두 줄을 한 줄 `주5일` 로 합친다 (2026-09-19 Alan).
-    // 짝은 **그 학생이 듣는 반 안에서만** 찾는다 — 전체 명단으로 찾으면 다른 학생의 반과 짝이 된다
-    const mySections = myEnroll.map((e) => e.section).filter((x) => !!x);
-    const week5 = week5SectionIds(mySections);
-    // 한 줄 = 주5일이면 월수금 + 화목금 두 배정 (월수금이 앞)
-    return groupWeek5(myEnroll, (e) => e.section, week5).map((line) => {
-      const e = line[0];
-      // 합친 줄의 수강 방식은 두 트랙이 다르면 둘 다 적는다 — 한쪽만 적으면 없는 말이 된다
-      const modes = [...new Set(line.map((x) => x.mode))];
-      // 단과(RC · LC)만 적고 종합은 적지 않는다 — 주5일 60분은 두 트랙의 과목이 달라 단과가 아니다 (2026-10-05 Alan)
-      const single = singleSubjectOf(line.flatMap((x) => (x.section ? [x.section] : [])));
-      return {
-        id: e.id,
-        label: sectionChip(e.section, week5),
-        // 둘이 섞이면 색을 한쪽으로 칠할 수 없다 (null = 잉크)
-        mode: modes.length === 1 ? modes[0] : null,
-        modeLabel: modes.map((m) => MODE_LABEL[m] ?? m).join(" · "),
-        single: single ? SINGLE_SUBJECT_LABEL[single] : null,
-      };
-    });
-  };
 
   /** 학생 한 사람 = 카드 한 장 */
   const card = (p: (typeof rows)[number]) => {
@@ -240,12 +190,19 @@ export default async function StudentsPage({
     // 등록생 · 예비등록생은 **날짜로** 가른다 (개강일 ≤ 오늘 ≤ 종강일 / 오늘 < 개강일) — getRosterSets 와 같다
     const prelimOrder = orders.filter((o) => today < o.activates_on).sort((a, b) => a.activates_on.localeCompare(b.activates_on))[0];
     const activeOrder = orders.filter((o) => o.activates_on <= today && today <= o.access_until).sort((a, b) => b.access_until.localeCompare(a.access_until))[0];
-    const myEnroll = myEnrollOf(p.id);
+    // 등록생 · 예비등록생 탭에는 **아직 종강하지 않은 반**만 — 지난 달 반이 이번 달 반 옆에 쌓이지 않게 (2026-09-22)
+    const myEnroll = (enrollByUser.get(p.id) ?? []).filter((e) => (tab === "active" || tab === "preliminary" ? !!e.section && e.section.closes_at >= today : true));
     // "N월 예비등록생" 의 N 은 **기수의 달** — 개강일의 달이 아니다 (10월 기수가 9/30 에 개강할 수 있다)
     const prelimTerm = myEnroll
       .map((e) => e.section)
       .filter((s): s is NonNullable<typeof s> => !!s && today < s.enrollment_opens_at)
       .sort((x, y) => x.enrollment_opens_at.localeCompare(y.enrollment_opens_at))[0]?.term;
+    // 주5일이면 월수금·화목금 두 줄을 한 줄 `주5일` 로 합친다 (2026-09-19 Alan).
+    // 짝은 **그 학생이 듣는 반 안에서만** 찾는다 — 전체 명단으로 찾으면 다른 학생의 반과 짝이 된다
+    const mySections = myEnroll.map((e) => e.section).filter((x) => !!x);
+    const week5 = week5SectionIds(mySections);
+    // 한 줄 = 주5일이면 월수금 + 화목금 두 배정 (월수금이 앞)
+    const myLines = groupWeek5(myEnroll, (e) => e.section, week5);
     const account = accountById.get(p.id);
     const kinds = studiesByUser.get(p.id);
     const studyValue = kinds ? STUDY_KINDS.filter((k) => kinds.has(k)).map(studyShort).join(" · ") : "";
@@ -290,7 +247,21 @@ export default async function StudentsPage({
         zoom={canZoom}
         affiliation={[p.university, p.department].filter(Boolean).join(" · ")}
         chip={tab === "preliminary" && prelimOrder ? `${prelimTerm?.month ?? Number(prelimOrder.activates_on.slice(5, 7))}월 예비등록생` : undefined}
-        classes={classChipsOf(myEnroll)}
+        classes={myLines.map((line) => {
+          const e = line[0];
+          // 합친 줄의 수강 방식은 두 트랙이 다르면 둘 다 적는다 — 한쪽만 적으면 없는 말이 된다
+          const modes = [...new Set(line.map((x) => x.mode))];
+          // 단과(RC · LC)만 적고 종합은 적지 않는다 — 주5일 60분은 두 트랙의 과목이 달라 단과가 아니다 (2026-10-05 Alan)
+          const single = singleSubjectOf(line.flatMap((x) => (x.section ? [x.section] : [])));
+          return {
+            id: e.id,
+            label: sectionChip(e.section, week5),
+            // 둘이 섞이면 색을 한쪽으로 칠할 수 없다 (null = 잉크)
+            mode: modes.length === 1 ? modes[0] : null,
+            modeLabel: modes.map((m) => MODE_LABEL[m] ?? m).join(" · "),
+            single: single ? SINGLE_SUBJECT_LABEL[single] : null,
+          };
+        })}
         metas={metas}
       />
     );
@@ -298,34 +269,11 @@ export default async function StudentsPage({
 
   // 등록생 · 예비등록생은 레벨별 묶음 — 그 탭의 반(등록생은 수강 중인 반, 예비등록생은 개강 전 반)의 레벨. 졸업생 · 강사·조교 · 전체는 한 묶음
   const grouped = tab === "active" || tab === "preliminary";
-  const levelsOf = (id: string) =>
-    (enrollByUser.get(id) ?? [])
+  const cardLevels = (p: (typeof rows)[number]) =>
+    (enrollByUser.get(p.id) ?? [])
       .map((e) => e.section)
       .filter((s): s is NonNullable<typeof s> => !!s && (tab === "active" ? s.enrollment_opens_at <= today && today <= s.closes_at : today < s.enrollment_opens_at))
       .map((s) => s.course?.target_score ?? null);
-  const cardLevels = (p: (typeof rows)[number]) => levelsOf(p.id);
-  // 숙제 알림받기 · 숙제 알림끄기 목록 — 강사 · 관리자 계정은 빼고(미제출 명단에 서지 않는다) 조교는 `조교`, 레벨별 묶음 · 가나다순 (카드와 같다).
-  // 알림 설정을 못 읽었으면 null — "아무도 안 껐다" · "모두 받는다" 고 말하지 않는다
-  const alertPeople: AlertsListPerson[] | null =
-    alertView && alertsOff
-      ? [...rows.filter((p) => listIds.has(p.id)), ...extraList.rows]
-          .filter((p) => !hiddenFromRoster(p.role))
-          .map((p) => ({
-            id: p.id,
-            name: p.name ?? "",
-            assistant: isAssistantAccount(p.role),
-            since: alertView === "alerts-off" ? shortDay(kstDay(alertsOff.get(p.id) ?? "")) || null : null,
-            classes: classChipsOf(myEnrollOf(p.id)),
-          }))
-      : null;
-  const alertGroups = alertPeople
-    ? groupByLevel(alertPeople, (p) => levelsOf(p.id), (p) => p.name).map((g) => ({
-        key: String(g.level),
-        label: g.level != null ? String(g.level) : "반 미배정",
-        items: g.items,
-      }))
-    : null;
-
   const cardGroups = (
     grouped
       ? groupByLevel(rows, cardLevels, (p) => p.name ?? "")
@@ -376,16 +324,25 @@ export default async function StudentsPage({
             )}
           </div>
 
-          {/* 숙제 알림받기 · 숙제 알림끄기 (2026-11-13 Alan) — 고르면 반별 명단 · 카드 자리에 대신 선다 */}
-          {alertView && (
-            <AlertsList
-              mode={alertView === "alerts-on" ? "on" : "off"}
-              groups={alertGroups}
-              total={alertPeople?.length ?? 0}
-              ok={extraList.ok}
-              scope={tab === "active" ? "등록생" : "예비등록생"}
-            />
-          )}
+          {/* 숙제 알림받기 · 숙제 알림끄기 — 레벨별 명단과 같은 모양 (2026-11-13). 고르면 반별 명단 · 카드 자리에 대신 선다 */}
+          {alertView &&
+            (rosterTerm && classRoster ? (
+              <AlertsRoster
+                mode={alertView === "alerts-on" ? "on" : "off"}
+                roster={alertsOff ? filterRoster(classRoster.roster, (id) => alertsOff.has(id) === (alertView === "alerts-off")) : null}
+                ok={classRoster.ok}
+                month={`${rosterTerm.month}월`}
+                period={rosterPeriod(rosterTerm)}
+                terms={rosterOptions.map((t) => ({
+                  key: termParam(t.year, t.month),
+                  label: `${t.month}월`,
+                  href: href({ term: termParam(t.year, t.month) }),
+                  active: t.id === rosterTerm.id,
+                }))}
+              />
+            ) : (
+              <p className="card mb-6 px-4 py-6 text-center text-sm text-slate">지금 수업 중이거나 곧 시작하는 달이 없어요. 반 편성에서 다음 달을 열면 여기에 명단이 생겨요.</p>
+            ))}
 
           {/* 반별 명단 — 종이 명단처럼 칸 = 수업 한 반 (2026-10-14 Alan). 고르지 않으면 PC 에서만 보인다.
               레벨별 명단(칸 = 레벨 × 월수금 · 화목금)을 고르면 이 자리에 그것이 선다 */}
@@ -418,22 +375,19 @@ export default async function StudentsPage({
           )}
 
           {/* 카드 — 등록생 · 예비등록생은 레벨별 · 가나다순 (2026-10-14 Alan "레벨별로 가나다순으로"). 표가 아니라 카드다 — 휴대폰에서 옆으로 밀지 않고 한 화면에 다 보이게 (2026-09-18 Alan) */}
-          {/* 숙제 알림받기 · 숙제 알림끄기를 골랐으면 카드를 그리지 않는다 (목록이 그 자리에 선다) */}
-          {!alertView && (
-            <div className={cn(classTab && (view === "classes" || view === "levels" ? "hidden" : view === "cards" ? "" : "lg:hidden"))}>
-              {cardGroups.map((g) => (
-                <section key={g.key} aria-label={g.label} className={cn(grouped && "mb-6")}>
-                  {grouped && (
-                    <h2 className="mb-2 flex items-baseline gap-1.5 text-sm font-black text-ink">
-                      {g.label}
-                      <span className="text-xs font-bold text-mist">{g.items.length}명</span>
-                    </h2>
-                  )}
-                  <ul className="grid gap-3 lg:grid-cols-2">{g.items.map((p) => card(p))}</ul>
-                </section>
-              ))}
-            </div>
-          )}
+          <div className={cn(classTab && (view === "classes" || view === "levels" || alertView ? "hidden" : view === "cards" ? "" : "lg:hidden"))}>
+            {cardGroups.map((g) => (
+              <section key={g.key} aria-label={g.label} className={cn(grouped && "mb-6")}>
+                {grouped && (
+                  <h2 className="mb-2 flex items-baseline gap-1.5 text-sm font-black text-ink">
+                    {g.label}
+                    <span className="text-xs font-bold text-mist">{g.items.length}명</span>
+                  </h2>
+                )}
+                <ul className="grid gap-3 lg:grid-cols-2">{g.items.map((p) => card(p))}</ul>
+              </section>
+            ))}
+          </div>
         </>
       )}
     </>
