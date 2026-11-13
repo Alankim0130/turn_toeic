@@ -263,30 +263,47 @@ function TrackLevels({ levels, alertsOff }: { levels: RosterLevel[]; alertsOff: 
   );
 }
 
-export type RosterView = "classes" | "levels" | "cards";
+export const ROSTER_VIEWS = ["alerts-on", "alerts-off", "classes", "levels", "cards"] as const;
+export type RosterView = (typeof ROSTER_VIEWS)[number];
+/** 숙제 미제출 알림 목록 보기 (`AlertsList`) */
+export const isAlertView = (v: RosterView | null): v is "alerts-on" | "alerts-off" => v === "alerts-on" || v === "alerts-off";
 
 /**
- * 반별 명단 ↔ 레벨별 명단 ↔ 카드. **고르지 않으면 PC 는 반별 명단 · 휴대폰은 카드** — 같은 페이지에 둘 다 그리고 화면 폭으로 하나를 숨긴다
+ * 숙제 알림받기 · 숙제 알림끄기 | 반별 명단 ↔ 레벨별 명단 ↔ 카드. **고르지 않으면 PC 는 반별 명단 · 휴대폰은 카드** — 같은 페이지에 둘 다 그리고 화면 폭으로 하나를 숨긴다
  * (서버는 기기를 모른다). 누르면 `?view=` 로 그 화면에 고정된다. 레벨별 명단(2026-10-14 밤)은 골랐을 때만 보인다.
+ * **`숙제 알림받기` · `숙제 알림끄기` 는 반별 명단 왼쪽**(2026-11-13 Alan "반별명단, 레벨별 명단 저기 왼쪽에 추가부탁해") — 알림을 켜 둔 · 끈 학생 목록(`AlertsList`).
+ * 다섯 칸이 한 알약에 들면 휴대폰(393px)에서 넘치므로 알약을 둘로 나눴다 — PC 는 한 줄, 좁은 화면은 두 줄(둘 다 오른쪽 정렬).
  */
 export function RosterViewSwitch({ view, href }: { view: RosterView | null; href: Record<RosterView, string> }) {
   const base = "whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-black transition";
   const on = "bg-brand-500 text-white";
   const off = "text-slate hover:text-brand-600";
+  const group = "flex gap-1 rounded-full bg-surface p-1 ring-1 ring-line";
   const classes = view === "classes" ? on : view ? off : "text-slate hover:text-brand-600 lg:bg-brand-500 lg:text-white lg:hover:text-white";
   const levels = view === "levels" ? on : off;
   const cards = view === "cards" ? on : view ? off : "bg-brand-500 text-white lg:bg-transparent lg:text-slate lg:hover:text-brand-600";
   return (
-    <span className="flex gap-1 rounded-full bg-surface p-1 ring-1 ring-line" role="group" aria-label="보기">
-      <Link href={href.classes} aria-current={view === "classes" ? "page" : undefined} className={cn(base, classes)}>
-        반별 명단
-      </Link>
-      <Link href={href.levels} aria-current={view === "levels" ? "page" : undefined} className={cn(base, levels)}>
-        레벨별 명단
-      </Link>
-      <Link href={href.cards} aria-current={view === "cards" ? "page" : undefined} className={cn(base, cards)}>
-        카드
-      </Link>
+    // flex-1 — 앞의 `176명` 옆 남은 폭을 쓴다 (폭을 다 달라고 하면 `176명` 아래 줄로 통째로 내려가 휴대폰에서 세 줄이 된다)
+    <span className="flex min-w-0 flex-1 flex-wrap justify-end gap-2">
+      <span className={group} role="group" aria-label="숙제 미제출 알림">
+        <Link href={href["alerts-on"]} aria-current={view === "alerts-on" ? "page" : undefined} className={cn(base, view === "alerts-on" ? on : off)}>
+          숙제 알림받기
+        </Link>
+        <Link href={href["alerts-off"]} aria-current={view === "alerts-off" ? "page" : undefined} className={cn(base, view === "alerts-off" ? on : off)}>
+          숙제 알림끄기
+        </Link>
+      </span>
+      <span className={group} role="group" aria-label="보기">
+        <Link href={href.classes} aria-current={view === "classes" ? "page" : undefined} className={cn(base, classes)}>
+          반별 명단
+        </Link>
+        <Link href={href.levels} aria-current={view === "levels" ? "page" : undefined} className={cn(base, levels)}>
+          레벨별 명단
+        </Link>
+        <Link href={href.cards} aria-current={view === "cards" ? "page" : undefined} className={cn(base, cards)}>
+          카드
+        </Link>
+      </span>
     </span>
   );
 }
