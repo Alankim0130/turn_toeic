@@ -19,6 +19,8 @@ import { ClassRosterView, RosterViewSwitch, type RosterView } from "@/components
 import { getRosterSets, sectionChip, TERM_COLUMNS } from "../_lib/queries";
 import { loadClassRoster } from "./_lib/class-roster";
 import { ROLE_LABEL, requireStaff } from "@/lib/auth";
+import { hiddenFromRoster } from "@/lib/roster-accounts";
+import { loadHomeworkAlertsOff } from "./_lib/homework-alerts";
 
 export const metadata: Metadata = { title: "학생명단", robots: { index: false } };
 
@@ -69,6 +71,10 @@ export default async function StudentsPage({
     pickCurrentTerm(rosterOptions, today);
   // 명단과 따로 도는 조회 — 카드 쪽 조회를 기다리지 않게 먼저 띄운다
   const classRosterP = classTab && rosterTerm ? loadClassRoster(supabase, rosterTerm, today, rosterBy) : Promise.resolve(null);
+  // 숙제 미제출 알림을 끈 학생 (2026-11-13 Alan "신청했는지 안했는지 알 수 있으면 좋겠어") — 등록생 · 예비등록생 탭에서만.
+  // 모두가 기본으로 받고 끈 학생만 빠진다 (도메인 규칙 7). 못 읽었으면 null — 켜짐 · 꺼짐을 적지 않는다
+  const alertTab = tab === "active" || tab === "preliminary";
+  const alertsOffP = alertTab ? loadHomeworkAlertsOff(supabase, me) : Promise.resolve(null);
 
   // 대상 프로필
   // 합쳐진 옛 계정(merged_into)은 명단에서 뺀다 — 로그인도 못 하고 기록은 남은 계정에 있다 (2026-10-02)
@@ -154,7 +160,7 @@ export default async function StudentsPage({
 
   const counts = { active: roster.activeIds.length, preliminary: roster.preliminaryIds.length };
   const rows = profiles ?? [];
-  const classRoster = await classRosterP;
+  const [classRoster, alertsOff] = await Promise.all([classRosterP, alertsOffP]);
   /** 지금 주소에서 몇 칸만 바꾼 주소 — 달 · 보기를 들고 다닌다 */
   const href = (patch: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
@@ -218,6 +224,14 @@ export default async function StudentsPage({
     if (seen) metas.push({ icon: "clock", label: "접속", value: seen });
     if (foot) metas.push({ icon: "calendar", label: foot.label, value: foot.value });
     if (studyValue) metas.push({ icon: "check", label: "스터디", value: studyValue });
+    // 숙제 미제출 알림 — 켜짐은 다른 줄처럼 조용히, 꺼짐은 빗금 친 종 · 호박색 (2026-11-13). 강사 · 관리자 계정은 미제출 명단에 서지 않으므로 적지 않는다
+    if (alertsOff && !hiddenFromRoster(p.role)) {
+      metas.push(
+        alertsOff.has(p.id)
+          ? { icon: "bellOff", label: "미제출 알림", value: "꺼짐", tone: "off" }
+          : { icon: "bell", label: "미제출 알림", value: "켜짐" },
+      );
+    }
 
     return (
       <StudentCard
@@ -327,6 +341,7 @@ export default async function StudentsPage({
                   pdfName={rosterFileName(rosterTerm, rosterBy)}
                   docxHref={`/admin/students/roster-docx?term=${termParam(rosterTerm.year, rosterTerm.month)}${rosterBy === "track" ? "&view=levels" : ""}`}
                   docxName={rosterFileName(rosterTerm, rosterBy, "docx")}
+                  alertsOff={alertsOff}
                 />
               ) : (
                 <p className="card px-4 py-6 text-center text-sm text-slate">
