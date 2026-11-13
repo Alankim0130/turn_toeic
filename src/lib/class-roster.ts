@@ -329,6 +329,23 @@ export function buildClassRoster(input: {
 }
 
 /**
+ * 명단에서 몇 사람만 남긴다 — `숙제 알림받기` · `숙제 알림끄기` 명단 (2026-11-13 — 레벨별 명단을 보내며 "숙제 알림 명단을 이런식으로 만들어줘").
+ * 칸 · 레벨 · 색 · 이름 순서 · 표시(`(불/RC)`)는 그대로 두고 `keep` 이 참인 학생만 남긴다. 사람이 하나도 안 남은 칸 · 레벨은 뺀다
+ * (빈 칸을 `empty` 로 옮기지 않는다 — "학생이 없는 요일" 은 명단 전체에 대한 말이라 걸러 낸 명단에는 맞지 않는다).
+ * 사람 수(`count` · `total`)는 남은 사람으로 다시 센다(한 사람은 한 번). `unplaced`(칸을 못 찾은 학생)는 누구인지 모르므로 0 으로 둔다.
+ */
+export function filterRoster(roster: ClassRoster, keep: (studentId: string) => boolean): ClassRoster {
+  const ids = (cols: readonly RosterColumn[]) => new Set(cols.flatMap((c) => c.students.map((s) => s.id)));
+  const levels = roster.levels
+    .map((l) => {
+      const columns = l.columns.map((c) => ({ ...c, students: c.students.filter((s) => keep(s.id)) })).filter((c) => c.students.length > 0);
+      return { ...l, columns, count: ids(columns).size };
+    })
+    .filter((l) => l.columns.length > 0);
+  return { by: roster.by, levels, empty: [], total: ids(levels.flatMap((l) => l.columns)).size, unplaced: 0 };
+}
+
+/**
  * 카드 명단을 **레벨별 · 가나다순**으로 (2026-10-14 Alan "레벨별로 가나다순으로 보이도록") — 휴대폰 기본 화면 · `카드` 보기.
  * 학생마다 레벨(그 탭의 반 — 등록생은 수강 중인 반, 예비등록생은 개강 전 반)을 받아 레벨마다 묶는다.
  * 두 레벨을 듣는 학생(650 단과 + 750 단과)은 두 묶음에 다 선다. 반이 없으면 맨 끝 `반 미배정`. 레벨은 작은 것부터, 묶음 안은 이름 가나다순.

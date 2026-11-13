@@ -226,8 +226,9 @@ function StudentName({ student: st, alertOff }: { student: RosterStudent; alertO
  * 레벨별 명단 — 레벨마다 한 줄 전체에 `월수금 | 화목금` (휴대폰은 위아래). 화목금 칸은 늘 오른쪽 — 화목금 학생만 있는 레벨도 다른 레벨과 칸 자리가 맞게.
  * 칸 안의 이름은 칸 폭만큼 여러 단으로 흘린다 (신문처럼 위에서 아래로 → 옆 단, `columns`) — 한 칸에 수십 명이 서도 화면이 길어지지 않게.
  * 칸 바탕은 칸에 깔아 두 칸 높이가 달라도 바닥까지 같은 색이다.
+ * `숙제 알림받기` · `숙제 알림끄기` 명단(`AlertsRoster`, 2026-11-13)도 이 그림을 그대로 쓴다 (`alertsOff` 를 null 로 — 이름 옆 종 없이).
  */
-function TrackLevels({ levels, alertsOff }: { levels: RosterLevel[]; alertsOff: AlertsOff | null }) {
+export function TrackLevels({ levels, alertsOff }: { levels: RosterLevel[]; alertsOff: AlertsOff | null }) {
   return (
     <div className="mt-4 space-y-4">
       {levels.map((level) => {
@@ -265,13 +266,13 @@ function TrackLevels({ levels, alertsOff }: { levels: RosterLevel[]; alertsOff: 
 
 export const ROSTER_VIEWS = ["alerts-on", "alerts-off", "classes", "levels", "cards"] as const;
 export type RosterView = (typeof ROSTER_VIEWS)[number];
-/** 숙제 미제출 알림 목록 보기 (`AlertsList`) */
+/** 숙제 알림받기 · 숙제 알림끄기 명단 보기 (`AlertsRoster` — 레벨별 명단 모양) */
 export const isAlertView = (v: RosterView | null): v is "alerts-on" | "alerts-off" => v === "alerts-on" || v === "alerts-off";
 
 /**
  * 숙제 알림받기 · 숙제 알림끄기 | 반별 명단 ↔ 레벨별 명단 ↔ 카드. **고르지 않으면 PC 는 반별 명단 · 휴대폰은 카드** — 같은 페이지에 둘 다 그리고 화면 폭으로 하나를 숨긴다
  * (서버는 기기를 모른다). 누르면 `?view=` 로 그 화면에 고정된다. 레벨별 명단(2026-10-14 밤)은 골랐을 때만 보인다.
- * **`숙제 알림받기` · `숙제 알림끄기` 는 반별 명단 왼쪽**(2026-11-13 Alan "반별명단, 레벨별 명단 저기 왼쪽에 추가부탁해") — 알림을 켜 둔 · 끈 학생 목록(`AlertsList`).
+ * **`숙제 알림받기` · `숙제 알림끄기` 는 반별 명단 왼쪽**(2026-11-13 Alan "반별명단, 레벨별 명단 저기 왼쪽에 추가부탁해") — 알림을 켜 둔 · 끈 학생 명단(`AlertsRoster` — 레벨별 명단 모양).
  * 다섯 칸이 한 알약에 들면 휴대폰(393px)에서 넘치므로 알약을 둘로 나눴다 — PC 는 한 줄, 좁은 화면은 두 줄(둘 다 오른쪽 정렬).
  */
 export function RosterViewSwitch({ view, href }: { view: RosterView | null; href: Record<RosterView, string> }) {

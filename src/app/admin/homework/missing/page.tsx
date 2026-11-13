@@ -10,7 +10,8 @@ import { FilterTabs } from "@/components/admin/FilterTabs";
 import { TermChips } from "@/components/admin/TermChips";
 import { MissingBoard, type MissingDayView, type MissingGroupView } from "@/components/admin/homework/MissingBoard";
 import { MissingAutoCard, type MissingAutoView } from "@/components/admin/homework/MissingAutoCard";
-import { AlertsList, type AlertsListGroup } from "@/components/admin/students/AlertsList";
+import { AlertsRoster } from "@/components/admin/students/AlertsRoster";
+import { filterRoster, rosterPeriod } from "@/lib/class-roster";
 import {
   buildMissingBoard,
   buildMissingDays,
@@ -35,7 +36,7 @@ import { isStaff, requireCrew } from "@/lib/auth";
 import { pickTerm, termLabel, TERM_COLUMNS, type DB } from "../../_lib/queries";
 import { getProfileNames } from "../../_lib/profile-names";
 import { loadHomeworkAlertsOff } from "../../_lib/homework-alerts";
-import { shortDay as dotDay, kstDay as kstDate } from "@/lib/account";
+import { loadClassRoster } from "../../students/_lib/class-roster";
 import { groupClasses, loadMissingData, readAll, sectionSortKey } from "../_lib/missing";
 
 export const metadata: Metadata = { title: "숙제 미제출 알림", robots: { index: false } };
@@ -64,9 +65,10 @@ const TERM_CHIPS = 6;
  * 날짜별은 같은 격자를 수업일마다 뒤집은 것이고(`buildMissingDays`) 월수금 · 화목금을 나란히 두고 'N강 · 10월 6일 (화)' 마다 안 낸 학생을 적는다.
  * 고른 학생 · 보내기는 두 보기가 함께 쓴다 (보기를 바꿔도 고른 것이 남는다).
  *
- * 2026-11-13 Alan ("방금 만든 숙제미제출 알림있지? 그건 조교들이 볼 수 있도록 해줘") — 학생명단(강사 · 관리자 화면)에 만든 **`숙제 알림받기` · `숙제 알림끄기`** 를
- * 이 화면 첫째 줄에도 둔다 (`?view=alerts-on` · `alerts-off`, 숫자 = 그 달 학생 수 · 조교 계정은 세지 않는다). 고르면 레벨 줄 · 격자 대신 **그 달 모든 레벨**의
- * 켜 둔 학생 / 끈 학생 목록(`AlertsList` — 레벨별 · 가나다순 · 반 이름 · 끈 날짜)이 선다. 조교 화면이라 이름 · 반 이름만 싣는다 (도메인 규칙 3 — 학생 정보는 이름만).
+ * 2026-11-13 ("방금 만든 숙제미제출 알림있지? 그건 조교들이 볼 수 있도록 해줘" → 레벨별 명단 화면을 보내며 "숙제 알림 명단을 이런식으로 만들어줘") —
+ * 첫째 줄에 **`숙제 알림받기` · `숙제 알림끄기`** (`?view=alerts-on` · `alerts-off`). 학생명단(강사 · 관리자 화면)의 두 보기와 같은 명단이다:
+ * 그 달(기수 칩) 레벨별 명단에서 알림을 켜 둔 · 끈 학생만 남긴 것(`AlertsRoster` — 레벨 색 띠 · `월수금 | 화목금` · 이름 여러 단 · `(불/프/RC)`).
+ * 고르면 레벨 줄 · 격자 대신 그 명단만 선다(숙제 기록은 읽지 않는다). **조교 화면이라 이름 · 등급은 `getProfileNames`** 로 읽는다 (도메인 규칙 3 — 학생 정보는 이름만).
  * 학생명단은 그대로 강사 · 관리자만 연다 — 조교 화면을 늘린 것이 아니다.
  */
 export default async function HomeworkMissingPage({ searchParams }: { searchParams: Promise<{ term?: string; level?: string; all?: string; view?: string }> }) {
@@ -122,25 +124,64 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
   chips.sort((a, b) => b.year * 12 + b.month - (a.year * 12 + a.month));
 
   const termKey = termParam(term.year, term.month);
+  const level0 = levels.includes(Number(sp.level)) ? String(Number(sp.level)) : undefined;
+  const viewKeep = view === "students" ? undefined : view;
+  const termChips = (
+    <TermChips basePath="/admin/homework/missing" terms={chips} current={termKey} keep={{ level: level0, view: viewKeep, all: showAll ? "1" : undefined }} />
+  );
+  // 보기 — 첫째 줄 (출석 · 비대면 인증과 같은 자리). 레벨은 둘째 줄 outline (한 화면에 줄이 둘이면 둘째 줄은 테두리만).
+  // 숙제 알림받기 · 숙제 알림끄기 (2026-11-13) — 학생명단의 두 보기와 같은 명단을 조교도 본다
+  const viewTabs = (
+    <FilterTabs
+      basePath="/admin/homework/missing"
+      paramKey="view"
+      current={view}
+      keep={{ term: termKey, level: level0, all: showAll ? "1" : undefined }}
+      tabs={[
+        { value: "students", label: "학생별" },
+        { value: "dates", label: "날짜별" },
+        { value: "alerts-on", label: "숙제 알림받기" },
+        { value: "alerts-off", label: "숙제 알림끄기" },
+      ]}
+    />
+  );
+
+  if (alertView) {
+    // 그 달 레벨별 명단 (이름 · 등급은 조교도 읽는 `getProfileNames`) + 알림을 끈 학생 — 숙제 기록은 읽지 않는다
+    const [classRoster, alertsOff] = await Promise.all([
+      loadClassRoster(supabase, term, today, "track", (ids) => getProfileNames(supabase, ids)),
+      loadHomeworkAlertsOff(supabase, profile),
+    ]);
+    return (
+      <>
+        {header}
+        {autoCard}
+        {termChips}
+        {viewTabs}
+        <AlertsRoster
+          mode={alertView === "alerts-on" ? "on" : "off"}
+          roster={alertsOff ? filterRoster(classRoster.roster, (id) => alertsOff.has(id) === (alertView === "alerts-off")) : null}
+          ok={classRoster.ok}
+          month={`${term.month}월`}
+          period={rosterPeriod(term)}
+        />
+      </>
+    );
+  }
   // 보낸 알림 기록은 격자 데이터를 기다릴 까닭이 없다 — 함께 묻는다 (2026-10-09 "숙제미제출 알림 페이지를 클릭하면 로딩시간이 오래걸려").
   // 학생 × 레벨마다 한 줄이라 방학달에 1,000줄(API 한 번에 주는 끝)을 넘을 수 있다 — 넘친 학생은 '알림 받은 적 없음' 으로 보여
   // 미제출 전체선택에 다시 골라졌다 (2026-10-16 점검). 그래서 쪽으로 나눠 읽는다
   // 이 화면을 그린 시각 — 읽기 전에 잰다. 보내기가 이 뒤에 받은 알림을 가려 같은 알림이 두 번 가지 않게 한다 (2026-10-22 오류 점검)
   const loadedAt = renderedAt();
-  const [data, { rows: sentRows }, alertsOff] = await Promise.all([
+  const [data, { rows: sentRows }] = await Promise.all([
     loadMissingData(supabase, term),
-    // 알림 목록 보기는 보낸 기록을 쓰지 않는다
-    alertView
-      ? Promise.resolve({ rows: [] as { user_id: string; level: number | null; sent_at: string }[] })
-      : readAll<{ user_id: string; level: number | null; sent_at: string }>((from, to, count) =>
-          supabase
-            .rpc("homework_missing_notices", { p_term_id: term.id }, count ? { count: "exact" } : undefined)
-            .order("user_id")
-            .order("level")
-            .range(from, to),
-        ),
-    // 끈 날짜 — `숙제 알림끄기` 보기만 (못 읽었으면 · 테스트 등급이면 null — 그때는 날짜만 빠진다)
-    alertView === "alerts-off" ? loadHomeworkAlertsOff(supabase, profile) : Promise.resolve(null),
+    readAll<{ user_id: string; level: number | null; sent_at: string }>((from, to, count) =>
+      supabase
+        .rpc("homework_missing_notices", { p_term_id: term.id }, count ? { count: "exact" } : undefined)
+        .order("user_id")
+        .order("level")
+        .range(from, to),
+    ),
   ]);
   const sortKeyOf = sectionSortKey(data.meta);
   const boards = new Map<number, MissingGroup[]>(levels.map((l) => [l, buildMissingBoard({ level: l, ...data, sortKeyOf })]));
@@ -193,34 +234,6 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
         }))
       : [];
   const flagged = missingStudentCount(full);
-  const viewKeep = view === "students" ? undefined : view;
-
-  // 숙제 알림받기 · 숙제 알림끄기 — 그 달 모든 레벨의 학생을 켜짐 · 꺼짐(줄의 `alerts` — 명단과 같은 안 받기 표)으로 가른다 (레벨마다 한 묶음 · 가나다순, 두 레벨이면 두 묶음에).
-  // 숙제 기록 · 이름 · 등급 · 안 받기를 다 못 읽었거나(`data.ok`) 테스트 등급이면(정책이 학생으로 보아 오류 없이 비어 온다) null — "아무도 안 껐다" · "모두 받는다" 고 말하지 않는다.
-  // 탭 숫자도 여기서 센다 (학생별 · 날짜별에서도 보인다)
-  const alertLists = (() => {
-    if (!data.ok || profile.test_role) return null;
-    const lists = { on: [] as AlertsListGroup[], off: [] as AlertsListGroup[] };
-    const counted = { on: new Set<string>(), off: new Set<string>() };
-    for (const l of levels) {
-      const per = { on: new Map<string, AlertsListGroup["items"][number]>(), off: new Map<string, AlertsListGroup["items"][number]>() };
-      for (const g of boards.get(l) ?? []) {
-        const classes = groupClasses(data.meta, g.sectionIds).map((label, i) => ({ id: i, label, mode: null, modeLabel: "" }));
-        for (const r of g.rows) {
-          const which = r.alerts ? "on" : "off";
-          if (!r.assistant) counted[which].add(r.id);
-          const offAt = which === "off" ? alertsOff?.get(r.id) : undefined;
-          const since = offAt ? dotDay(kstDate(offAt)) || null : null;
-          if (!per[which].has(r.id)) per[which].set(r.id, { id: r.id, name: r.name, assistant: r.assistant, since, classes });
-        }
-      }
-      for (const which of ["on", "off"] as const) {
-        const items = [...per[which].values()].sort((a, b) => a.name.localeCompare(b.name, "ko") || a.id.localeCompare(b.id));
-        if (items.length > 0) lists[which].push({ key: String(l), label: String(l), items });
-      }
-    }
-    return { lists, count: { on: counted.on.size, off: counted.off.size } };
-  })();
   const allHref = `/admin/homework/missing?term=${termKey}${level != null ? `&level=${level}` : ""}${viewKeep ? `&view=${viewKeep}` : ""}${showAll ? "" : "&all=1"}`;
 
   return (
@@ -228,110 +241,73 @@ export default async function HomeworkMissingPage({ searchParams }: { searchPara
       {header}
       {autoCard}
 
-      <TermChips
-        basePath="/admin/homework/missing"
-        terms={chips}
-        current={termKey}
-        keep={{ level: level != null ? String(level) : undefined, view: viewKeep, all: showAll ? "1" : undefined }}
-      />
-      {/* 보기 둘 — 첫째 줄 (출석 · 비대면 인증과 같은 자리). 레벨은 둘째 줄 outline (한 화면에 줄이 둘이면 둘째 줄은 테두리만) */}
+      {termChips}
+      {viewTabs}
       <FilterTabs
         basePath="/admin/homework/missing"
-        paramKey="view"
-        current={view}
-        keep={{ term: termKey, level: level != null ? String(level) : undefined, all: showAll ? "1" : undefined }}
-        tabs={[
-          { value: "students", label: "학생별" },
-          { value: "dates", label: "날짜별" },
-          // 학생명단의 두 보기와 같다 — 숫자는 그 달 학생 수 (조교 계정은 세지 않는다)
-          { value: "alerts-on", label: "숙제 알림받기", count: alertLists?.count.on },
-          { value: "alerts-off", label: "숙제 알림끄기", count: alertLists?.count.off },
-        ]}
+        paramKey="level"
+        current={level != null ? String(level) : ""}
+        keep={{ term: termKey, view: viewKeep, all: showAll ? "1" : undefined }}
+        variant="outline"
+        tabs={levels.map((l) => ({ value: String(l), label: `${l}`, count: missingStudentCount(boards.get(l) ?? []) }))}
       />
-      {alertView ? (
-        <>
-          {!data.ok && (
-            <Alert kind="warning" title="숙제 기록을 다 읽지 못했어요">
-              잠시 뒤 새로고침해 주세요.
-            </Alert>
-          )}
-          <AlertsList
-            mode={alertView === "alerts-on" ? "on" : "off"}
-            groups={alertLists ? alertLists.lists[alertView === "alerts-on" ? "on" : "off"] : null}
-            total={alertLists ? alertLists.count[alertView === "alerts-on" ? "on" : "off"] : 0}
-            ok
-            scope={termLabel(term)}
-          />
-        </>
-      ) : (
-        <>
-          <FilterTabs
-            basePath="/admin/homework/missing"
-            paramKey="level"
-            current={level != null ? String(level) : ""}
-            keep={{ term: termKey, view: viewKeep, all: showAll ? "1" : undefined }}
-            variant="outline"
-            tabs={levels.map((l) => ({ value: String(l), label: `${l}`, count: missingStudentCount(boards.get(l) ?? []) }))}
-          />
 
-          {!data.ok && (
-            <Alert kind="warning" title="숙제 기록을 다 읽지 못했어요">
-              낸 숙제가 &lsquo;안 냄&rsquo; 으로 보이거나 이름이 비어 보일 수 있어요. 잠시 뒤 새로고침해 주세요.
-            </Alert>
-          )}
+      {!data.ok && (
+        <Alert kind="warning" title="숙제 기록을 다 읽지 못했어요">
+          낸 숙제가 &lsquo;안 냄&rsquo; 으로 보이거나 이름이 비어 보일 수 있어요. 잠시 뒤 새로고침해 주세요.
+        </Alert>
+      )}
 
-          {/* 몇 명을 보고 있는지 + 알림을 끈 학생도 볼지 (숙제점검의 '점검완료 포함' 과 같은 자리 · 같은 모양) */}
-          <div className="mb-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <p className="text-sm font-bold text-ink-soft">
-              {termLabel(term)} · {level ?? "-"} · 알림 받는 학생 <span className="text-ink tabular-nums">{alerted}</span>명 중 기한 지난 숙제를 안 낸 학생{" "}
-              <span className="text-ink tabular-nums">{flagged}</span>명
-              {assistants > 0 && (
-                <>
-                  {" "}· 조교 <span className="text-ink tabular-nums">{assistants}</span>명은 세지 않아요
-                </>
+      {/* 몇 명을 보고 있는지 + 알림을 끈 학생도 볼지 (숙제점검의 '점검완료 포함' 과 같은 자리 · 같은 모양) */}
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <p className="text-sm font-bold text-ink-soft">
+          {termLabel(term)} · {level ?? "-"} · 알림 받는 학생 <span className="text-ink tabular-nums">{alerted}</span>명 중 기한 지난 숙제를 안 낸 학생{" "}
+          <span className="text-ink tabular-nums">{flagged}</span>명
+          {assistants > 0 && (
+            <>
+              {" "}· 조교 <span className="text-ink tabular-nums">{assistants}</span>명은 세지 않아요
+            </>
+          )}
+        </p>
+        {(optedOut > 0 || showAll) && (
+          <Link href={allHref} className="flex items-center gap-2 text-sm font-bold text-ink-soft transition hover:text-brand-600">
+            <span
+              aria-hidden
+              className={cn("flex size-5 items-center justify-center rounded-md border-2 transition", showAll ? "border-brand-500 bg-brand-500 text-white" : "border-line bg-paper")}
+            >
+              {showAll && (
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-none stroke-current stroke-[3.5]">
+                  <path d="m5 13 5 5L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               )}
-            </p>
-            {(optedOut > 0 || showAll) && (
-              <Link href={allHref} className="flex items-center gap-2 text-sm font-bold text-ink-soft transition hover:text-brand-600">
-                <span
-                  aria-hidden
-                  className={cn("flex size-5 items-center justify-center rounded-md border-2 transition", showAll ? "border-brand-500 bg-brand-500 text-white" : "border-line bg-paper")}
-                >
-                  {showAll && (
-                    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-none stroke-current stroke-[3.5]">
-                      <path d="m5 13 5 5L19 7" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </span>
-                알림 안 받는 학생도 보기 <span className="tabular-nums text-mist">({optedOut}명)</span>
-                <span className="sr-only">{showAll ? " — 지금 켜짐, 누르면 끕니다" : " — 지금 꺼짐, 누르면 켭니다"}</span>
-              </Link>
-            )}
-          </div>
-          <p className="mb-4 text-xs text-mist">
-            숙제 기한은 같은 트랙의 다음 수업일 {HOMEWORK_DUE_LABEL}예요 (월수금 월요일 숙제는 수요일 5시, 금요일 숙제는 다음 주 첫 수업일 5시 · 화목금도 같고, 주5일은 두 트랙을
-            따로 봐요). 그 시간이 지나도 안 냈으면 &lsquo;안 냄&rsquo; 이에요. 숙제제출 화면에서 알림을 끈 학생은 명단에서 빠지고 알림도 가지 않아요.
-            미제출 전체선택은 마지막 알림 뒤에 새로 기한이 지난 숙제가 있는 학생을 골라요.
-            {view === "dates" && " 날짜별에서는 수업마다 안 낸 학생을 보여 줘요 — N강은 그 트랙(월수금 · 화목금)의 N번째 수업이에요."}
-          </p>
+            </span>
+            알림 안 받는 학생도 보기 <span className="tabular-nums text-mist">({optedOut}명)</span>
+            <span className="sr-only">{showAll ? " — 지금 켜짐, 누르면 끕니다" : " — 지금 꺼짐, 누르면 켭니다"}</span>
+          </Link>
+        )}
+      </div>
+      <p className="mb-4 text-xs text-mist">
+        숙제 기한은 같은 트랙의 다음 수업일 {HOMEWORK_DUE_LABEL}예요 (월수금 월요일 숙제는 수요일 5시, 금요일 숙제는 다음 주 첫 수업일 5시 · 화목금도 같고, 주5일은 두 트랙을
+        따로 봐요). 그 시간이 지나도 안 냈으면 &lsquo;안 냄&rsquo; 이에요. 숙제제출 화면에서 알림을 끈 학생은 명단에서 빠지고 알림도 가지 않아요.
+        미제출 전체선택은 마지막 알림 뒤에 새로 기한이 지난 숙제가 있는 학생을 골라요.
+        {view === "dates" && " 날짜별에서는 수업마다 안 낸 학생을 보여 줘요 — N강은 그 트랙(월수금 · 화목금)의 N번째 수업이에요."}
+      </p>
 
-          {full.length === 0 ? (
-            <EmptyState
-              icon="homework"
-              title={`${level ?? ""} 숙제를 내는 반이 없어요`}
-              description="이 달에 이 레벨 반에 배정된 학생이 없거나 수업일이 아직 없어요. 다른 레벨 칸을 눌러 보세요."
-            />
-          ) : groups.length === 0 ? (
-            <EmptyState
-              icon="bell"
-              title="이 레벨 학생이 모두 알림을 껐어요"
-              description={`숙제제출 화면에서 알림을 끈 학생은 명단에서 빠져요. ${optedOut}명은 위의 '알림 안 받는 학생도 보기' 로 볼 수 있어요.`}
-            />
-          ) : (
-            // 기수 · 레벨이 바뀌면 고른 것을 비운다 (보기를 바꾸는 것은 그대로 둔다 — 날짜별에서 고르고 학생별에서 확인할 수 있게)
-            <MissingBoard key={`${term.id}-${level}`} termId={term.id} level={level!} view={view === "dates" ? "dates" : "students"} groups={groups} days={days} picks={defaultPicks(full, lastSent)} loadedAt={loadedAt} />
-          )}
-        </>
+      {full.length === 0 ? (
+        <EmptyState
+          icon="homework"
+          title={`${level ?? ""} 숙제를 내는 반이 없어요`}
+          description="이 달에 이 레벨 반에 배정된 학생이 없거나 수업일이 아직 없어요. 다른 레벨 칸을 눌러 보세요."
+        />
+      ) : groups.length === 0 ? (
+        <EmptyState
+          icon="bell"
+          title="이 레벨 학생이 모두 알림을 껐어요"
+          description={`숙제제출 화면에서 알림을 끈 학생은 명단에서 빠져요. ${optedOut}명은 위의 '알림 안 받는 학생도 보기' 로 볼 수 있어요.`}
+        />
+      ) : (
+        // 기수 · 레벨이 바뀌면 고른 것을 비운다 (보기를 바꾸는 것은 그대로 둔다 — 날짜별에서 고르고 학생별에서 확인할 수 있게)
+        <MissingBoard key={`${term.id}-${level}`} termId={term.id} level={level!} view={view === "dates" ? "dates" : "students"} groups={groups} days={days} picks={defaultPicks(full, lastSent)} loadedAt={loadedAt} />
       )}
     </>
   );
