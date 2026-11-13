@@ -6,6 +6,9 @@ import { columnDetail, columnHeading, marksText, rosterMarks, toneOf, type Class
 import { cn } from "@/lib/utils";
 import { Glyph } from "./StudentCard";
 
+/** 알림을 끈 학생인지 묻기만 한다 (집합이든 끈 때를 단 Map 이든) */
+type AlertsOff = { has(id: string): boolean };
+
 /**
  * 학생명단의 **반별 명단** (2026-10-14 Alan — 종이 명단 사진을 보내며 "Pc모드에서는 지금 올린 이미지처럼 한페이지에서 구분이 가능하면 좋겠어").
  * 칸 하나 = 한 레벨의 수업 시간 한 칸(`650B 10:00~11:00` — 월수금 · 화목금을 합친다, 둘째 줄 `월 RC · 화 LC`), 레벨마다 종이와 같은 색,
@@ -50,7 +53,7 @@ export function ClassRosterView({
   docxHref: string;
   docxName: string;
   /** 숙제 미제출 알림을 끈 학생 (`homework_missing_optouts`). null = 못 읽음 — 아무에게도 표시하지 않는다 */
-  alertsOff: ReadonlySet<string> | null;
+  alertsOff: AlertsOff | null;
 }) {
   const byTrack = roster.by === "track";
   // 이 명단에 선 사람 가운데 알림을 끈 사람 (한 사람이 여러 칸에 서도 한 번)
@@ -224,7 +227,7 @@ function StudentName({ student: st, alertOff }: { student: RosterStudent; alertO
  * 칸 안의 이름은 칸 폭만큼 여러 단으로 흘린다 (신문처럼 위에서 아래로 → 옆 단, `columns`) — 한 칸에 수십 명이 서도 화면이 길어지지 않게.
  * 칸 바탕은 칸에 깔아 두 칸 높이가 달라도 바닥까지 같은 색이다.
  */
-function TrackLevels({ levels, alertsOff }: { levels: RosterLevel[]; alertsOff: ReadonlySet<string> | null }) {
+function TrackLevels({ levels, alertsOff }: { levels: RosterLevel[]; alertsOff: AlertsOff | null }) {
   return (
     <div className="mt-4 space-y-4">
       {levels.map((level) => {

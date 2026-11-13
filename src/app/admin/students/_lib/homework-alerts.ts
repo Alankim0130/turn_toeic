@@ -11,15 +11,17 @@ import type { DB } from "../../_lib/queries";
  * **모르면 `null`** — 화면은 그때 켜짐 · 꺼짐을 적지 않는다 (읽기 오류를 빈 목록으로 보면 끈 학생까지 모두 '켜짐' 으로 보인다):
  *  - 읽다 실패했을 때
  *  - **테스트 등급을 켠 강사 · 관리자** — 조회 정책(`is_crew()`)이 테스트 등급으로 판정해 본인 줄만 오류 없이 돌려준다 (0줄 = 모두 켜짐 으로 보인다)
+ *
+ * 값은 끈 때(`created_at`) — 학생명단의 `숙제 미제출 알림을 끈 학생` 목록이 `11/5 끔` 으로 적는다 (같은 날 Alan "별도로 뺀 리스트").
  */
-export async function loadHomeworkAlertsOff(supabase: DB, viewer: { test_role?: string | null }): Promise<ReadonlySet<string> | null> {
+export async function loadHomeworkAlertsOff(supabase: DB, viewer: { test_role?: string | null }): Promise<ReadonlyMap<string, string> | null> {
   if (viewer.test_role) return null;
-  const { rows, ok } = await readAll<{ user_id: string }>((from, to, count) =>
+  const { rows, ok } = await readAll<{ user_id: string; created_at: string }>((from, to, count) =>
     supabase
       .from("homework_missing_optouts")
-      .select("user_id", count ? { count: "exact" } : undefined)
+      .select("user_id, created_at", count ? { count: "exact" } : undefined)
       .order("user_id")
       .range(from, to),
   );
-  return ok ? new Set(rows.map((r) => r.user_id)) : null;
+  return ok ? new Map(rows.map((r) => [r.user_id, r.created_at])) : null;
 }

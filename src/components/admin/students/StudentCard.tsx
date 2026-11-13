@@ -106,28 +106,7 @@ export function StudentCard({
 
           {affiliation && <p className="mt-1 truncate text-xs text-slate">{affiliation}</p>}
 
-          {classes.length > 0 && (
-            <ul className="mt-1.5 flex flex-wrap gap-1">
-              {classes.map((c) => (
-                <li
-                  key={c.id}
-                  className={cn(
-                    "inline-flex items-center rounded-lg bg-surface px-1.5 py-1 text-[10px] font-bold",
-                    // 단과 이름표가 붙어 길어진 배지는 좁은 화면(360px 안드로이드)에서 반 이름이 **통째로** 다음 줄로 내려간다 —
-                    // 반 이름 한가운데서 시간만 떨어져 나가지 않게. 이름표가 없는 배지는 예전 그대로다
-                    c.single ? "flex-wrap gap-x-1 gap-y-0.5" : "gap-1",
-                  )}
-                >
-                  {/* 현장 · 불라방 — 표에서는 줄 끝에 묻혀 제일 먼저 잘려 나갔다 (2026-09-18 Alan "대면/비대면 신청").
-                      좁은 화면에서 "불라/방" 으로 갈리지 않게 붙여 둔다 */}
-                  <span className={cn("whitespace-nowrap", c.mode === "live" ? "text-brand-600" : "text-ink")}>{c.modeLabel}</span>
-                  {/* 단과는 수강 방식 바로 뒤 — 줄 끝에 두면 좁은 화면에서 먼저 밀려난다 (현장 · 불라방을 앞에 둔 것과 같은 까닭) */}
-                  {c.single && <span className="whitespace-nowrap rounded bg-ink px-1 text-white">{c.single}</span>}
-                  <span className="text-slate">{c.label}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ClassChips classes={classes} className="mt-1.5" />
 
           {metas.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
@@ -152,6 +131,33 @@ export function StudentCard({
         <Glyph name="chevron" className="self-center text-mist" size={18} />
       </div>
     </li>
+  );
+}
+
+/** 반 배정 배지 줄 — 학생명단 카드 · `숙제 미제출 알림을 끈 학생` 목록(2026-11-13)이 같이 쓴다 */
+export function ClassChips({ classes, className }: { classes: StudentCardClass[]; className?: string }) {
+  if (classes.length === 0) return null;
+  return (
+    <ul className={cn("flex flex-wrap gap-1", className)}>
+      {classes.map((c) => (
+        <li
+          key={c.id}
+          className={cn(
+            "inline-flex items-center rounded-lg bg-surface px-1.5 py-1 text-[10px] font-bold",
+            // 단과 이름표가 붙어 길어진 배지는 좁은 화면(360px 안드로이드)에서 반 이름이 **통째로** 다음 줄로 내려간다 —
+            // 반 이름 한가운데서 시간만 떨어져 나가지 않게. 이름표가 없는 배지는 예전 그대로다
+            c.single ? "flex-wrap gap-x-1 gap-y-0.5" : "gap-1",
+          )}
+        >
+          {/* 현장 · 불라방 — 표에서는 줄 끝에 묻혀 제일 먼저 잘려 나갔다 (2026-09-18 Alan "대면/비대면 신청").
+              좁은 화면에서 "불라/방" 으로 갈리지 않게 붙여 둔다 */}
+          <span className={cn("whitespace-nowrap", c.mode === "live" ? "text-brand-600" : "text-ink")}>{c.modeLabel}</span>
+          {/* 단과는 수강 방식 바로 뒤 — 줄 끝에 두면 좁은 화면에서 먼저 밀려난다 (현장 · 불라방을 앞에 둔 것과 같은 까닭) */}
+          {c.single && <span className="whitespace-nowrap rounded bg-ink px-1 text-white">{c.single}</span>}
+          <span className="text-slate">{c.label}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
