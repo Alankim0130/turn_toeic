@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { READ_PAGE } from "@/lib/read-all";
-import type { DB } from "../../_lib/queries";
+import type { DB } from "./queries";
 import { loadHomeworkAlertsOff } from "./homework-alerts";
 
 /**

@@ -22,4 +22,14 @@ describe("학생명단 보기 — 숙제 알림받기 · 숙제 알림끄기", (
     expect(page).toMatch(/\{alertView && \(\s*<AlertsList/);
     expect(page).not.toMatch(/AlertsOffList/);
   });
+
+  it("조교도 본다 — 숙제 미제출 알림 화면(조교 화면)에 같은 두 보기, 학생명단은 그대로 강사 · 관리자만", () => {
+    const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), "utf8");
+    const missing = read("src/app/admin/homework/missing/page.tsx");
+    expect(missing).toMatch(/await requireCrew\(\)/);
+    expect(missing).toMatch(/value: "alerts-on", label: "숙제 알림받기"/);
+    expect(missing).toMatch(/value: "alerts-off", label: "숙제 알림끄기"/);
+    expect(missing).toMatch(/<AlertsList/);
+    expect(read("src/app/admin/students/page.tsx")).toMatch(/await requireStaff\(\)/);
+  });
 });

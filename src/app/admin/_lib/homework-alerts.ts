@@ -1,5 +1,5 @@
 import { readAll } from "@/lib/read-all";
-import type { DB } from "../../_lib/queries";
+import type { DB } from "./queries";
 
 /**
  * 학생명단에 숙제 미제출 알림을 **끈 학생** 표시 (2026-11-13 Alan — "학생명단에서 숙제 미제출 알림 희망자를 신청했는지 안했는지 알 수 있으면 좋겠어.
@@ -12,7 +12,8 @@ import type { DB } from "../../_lib/queries";
  *  - 읽다 실패했을 때
  *  - **테스트 등급을 켠 강사 · 관리자** — 조회 정책(`is_crew()`)이 테스트 등급으로 판정해 본인 줄만 오류 없이 돌려준다 (0줄 = 모두 켜짐 으로 보인다)
  *
- * 값은 끈 때(`created_at`) — 학생명단의 `숙제 미제출 알림을 끈 학생` 목록이 `11/5 끔` 으로 적는다 (같은 날 Alan "별도로 뺀 리스트").
+ * 값은 끈 때(`created_at`) — `숙제 알림끄기` 목록이 `2026.11.5 끔` 으로 적는다 (같은 날 Alan "별도로 뺀 리스트").
+ * 쓰는 곳: 학생명단(강사 · 관리자) · 숙제 미제출 알림(조교도 — 같은 날 Alan "조교들이 볼 수 있도록"). 조회 정책이 조교(`is_crew`)에게도 열려 있다.
  */
 export async function loadHomeworkAlertsOff(supabase: DB, viewer: { test_role?: string | null }): Promise<ReadonlyMap<string, string> | null> {
   if (viewer.test_role) return null;
