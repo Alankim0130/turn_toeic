@@ -243,6 +243,26 @@ body {
 html[data-splash-seen] .app-splash { display: none; }
 html .app-splash[data-phase="play"], html .app-splash[data-phase="leave"] { display: flex; }
 
+/* 아이폰 홈 화면 앱의 상태 표시줄 색 잡이 (2026-11-13, StatusBarTint.tsx) — 아이폰 앱은 theme-color 대신 맨 위에 붙은 불투명 fixed 요소의 색을 칠하고
+   그런 것이 없으면 마지막 색(스플래시 핑크 · 새로고침 알약 파랑)을 그대로 둔다. 그래서 아이폰 앱에서만(-webkit-touch-callout = iOS) 맨 위에 모드 색 띠를 늘 세운다.
+   스플래시(z 100)보다 위 · 머리줄과 같이 유령 키보드 칸(--vv-ghost)을 따른다. 색: 학생 · 랜딩 = 브랜드 핑크, 관리자 = 관리자 바탕 회색 (theme-color.ts 와 같은 값) */
+.status-tint { display: none; }
+@media (display-mode: standalone) {
+  @supports (-webkit-touch-callout: none) {
+    .status-tint {
+      display: block;
+      position: fixed;
+      inset-inline: 0;
+      top: var(--vv-ghost, 0px);
+      height: 6px;
+      z-index: 101;
+      pointer-events: none;
+      background-color: var(--color-brand-500);
+    }
+    :root:has([data-admin-theme]) .status-tint { background-color: var(--color-surface); }
+  }
+}
+
 /* 스크롤 진입 애니메이션 */
 .reveal {
   opacity: 0;
