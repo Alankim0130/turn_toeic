@@ -15,8 +15,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterTabs } from "@/components/admin/FilterTabs";
 import { StudentCard, type StudentCardClass, type StudentCardMeta } from "@/components/admin/students/StudentCard";
-import { AlertsOffList, type AlertsOffPerson } from "@/components/admin/students/AlertsOffList";
-import { ClassRosterView, RosterViewSwitch, type RosterView } from "@/components/admin/students/ClassRosterView";
+import { AlertsList, type AlertsListPerson } from "@/components/admin/students/AlertsList";
+import { ClassRosterView, RosterViewSwitch, ROSTER_VIEWS, isAlertView, type RosterView } from "@/components/admin/students/ClassRosterView";
 import { getRosterSets, sectionChip, TERM_COLUMNS } from "../_lib/queries";
 import { loadClassRoster } from "./_lib/class-roster";
 import { ROLE_LABEL, requireStaff } from "@/lib/auth";
@@ -54,9 +54,11 @@ export default async function StudentsPage({
   // 반별 명단 (2026-10-14 Alan — 종이 명단처럼 "레벨별로 가나다순 … Pc모드에서는 지금 올린 이미지처럼 한페이지에서"):
   // 등록생 · 예비등록생 탭에서, 이름을 찾는 중이 아닐 때. 보기를 고르지 않으면 PC 는 반별 명단 · 휴대폰은 카드 (둘 다 그리고 화면 폭으로 숨긴다).
   // 레벨별 명단(같은 날 밤 Alan "시간대는 없애고 같은 레벨별로 … 월수금/ 화목금만 분리")은 골랐을 때만 — 반별 명단 자리에 대신 선다
-  const view: RosterView | null = viewParam === "classes" || viewParam === "levels" || viewParam === "cards" ? viewParam : null;
+  // 숙제 알림받기 · 숙제 알림끄기(2026-11-13 Alan — 반별 명단 왼쪽)는 알림을 켜 둔 · 끈 학생 목록이다 (`AlertsList`)
+  const view: RosterView | null = ROSTER_VIEWS.find((v) => v === viewParam) ?? null;
   const rosterBy: RosterBy = view === "levels" ? "track" : "time";
   const classTab = (tab === "active" || tab === "preliminary") && !q;
+  const alertView = classTab && isAlertView(view) ? view : null;
 
   const supabase = await createClient();
   const today = todayKST();
@@ -71,7 +73,8 @@ export default async function StudentsPage({
     (tab === "preliminary" ? rosterOptions.find((t) => today < (t.enrollment_opens_at ?? "")) : undefined) ??
     pickCurrentTerm(rosterOptions, today);
   // 명단과 따로 도는 조회 — 카드 쪽 조회를 기다리지 않게 먼저 띄운다
-  const classRosterP = classTab && rosterTerm ? loadClassRoster(supabase, rosterTerm, today, rosterBy) : Promise.resolve(null);
+  // 알림 목록 보기에서는 반별 명단을 그리지 않는다 — 읽지도 않는다
+  const classRosterP = classTab && rosterTerm && !alertView ? loadClassRoster(supabase, rosterTerm, today, rosterBy) : Promise.resolve(null);
   // 숙제 미제출 알림을 끈 학생 (2026-11-13 Alan "신청했는지 안했는지 알 수 있으면 좋겠어") — 등록생 · 예비등록생 탭에서만.
   // 모두가 기본으로 받고 끈 학생만 빠진다 (도메인 규칙 7). 못 읽었으면 null — 켜짐 · 꺼짐을 적지 않는다
   const alertTab = tab === "active" || tab === "preliminary";
@@ -104,15 +107,17 @@ export default async function StudentsPage({
   }
   const ids = (profiles ?? []).map((p) => p.id);
 
-  // 숙제 미제출 알림을 끈 학생 목록 (같은 날 Alan "별도로 뺀 리스트") — 그 탭의 학생 전부에서 고른다 (카드의 300명 상한 · 이름순과 상관없이).
+  // 숙제 알림받기 · 숙제 알림끄기 목록 — 그 탭의 학생 전부에서 고른다 (카드의 300명 상한 · 이름순과 상관없이).
   // 대개 카드에 이미 선 학생이라 따로 읽을 것이 없고, 카드 밖(방학 300명 넘김)의 학생만 이름 · 등급을 더 읽는다. 반 배지는 카드와 같은 배정 읽기에 싣는다
   const alertsOff = await alertsOffP;
-  const offIds = classTab && alertsOff ? (tab === "active" ? roster.activeIds : roster.preliminaryIds).filter((id) => alertsOff.has(id)) : [];
+  const listIds = new Set(
+    alertView && alertsOff ? (tab === "active" ? roster.activeIds : roster.preliminaryIds).filter((id) => alertsOff.has(id) === (alertView === "alerts-off")) : [],
+  );
   const inCards = new Set(ids);
-  const extraOffIds = offIds.filter((id) => !inCards.has(id));
-  const enrollIds = [...ids, ...extraOffIds];
+  const extraListIds = [...listIds].filter((id) => !inCards.has(id));
+  const enrollIds = [...ids, ...extraListIds];
 
-  const [{ data: enrollments }, { data: expiredOrders }, { count: testerCount }, { data: accounts }, { data: studySignups }] = await Promise.all([
+  const [{ data: enrollments }, { data: expiredOrders }, { count: testerCount }, { data: accounts }, { data: studySignups }, extraList] = await Promise.all([
     // 학생 300명 × 지난달들까지의 배정은 1,000줄을 넘는다 — id 를 100개씩 나눠 1,000줄씩 읽는다 (2026-10-29: 넘친 학생의 반 배지가 조용히 빠졌다)
     readAllIn(enrollIds, (chunk, from, to, count) =>
       supabase
@@ -154,18 +159,19 @@ export default async function StudentsPage({
             .range(from, to),
         ).then((r) => ({ data: r.rows }))
       : Promise.resolve({ data: [] as { user_id: string; study: { kind: string } | null }[] }),
+    // 알림 목록에 설 카드 밖 학생의 이름 · 등급
+    extraListIds.length
+      ? readAllIn(extraListIds, (chunk, from, to, count) =>
+          supabase
+            .from("profiles")
+            .select("id, name, role", count ? { count: "exact" } : undefined)
+            .in("id", chunk)
+            .is("merged_into", null)
+            .order("id")
+            .range(from, to),
+        )
+      : Promise.resolve({ rows: [] as { id: string; name: string; role: string }[], ok: true }),
   ]);
-  const extraOff = extraOffIds.length
-    ? await readAllIn(extraOffIds, (chunk, from, to, count) =>
-        supabase
-          .from("profiles")
-          .select("id, name, role", count ? { count: "exact" } : undefined)
-          .in("id", chunk)
-          .is("merged_into", null)
-          .order("id")
-          .range(from, to),
-      )
-    : { rows: [] as { id: string; name: string; role: string }[], ok: true };
 
   const enrollByUser = new Map<string, NonNullable<typeof enrollments>>();
   for (const e of enrollments ?? []) enrollByUser.set(e.student_id, [...(enrollByUser.get(e.student_id) ?? []), e]);
@@ -196,7 +202,7 @@ export default async function StudentsPage({
   };
   // 프로필 사진 — 올린 사진(서명 URL)이 있으면 그것, 없으면 카카오·구글 사진 (2026-10-02 Alan).
   // 강사·관리자만 눌러서 크게 본다
-  const avatarUrls = await signedAvatarUrls(supabase, rows.map((p) => p.avatar_path));
+  const avatarUrls = await signedAvatarUrls(supabase, alertView ? [] : rows.map((p) => p.avatar_path));
   const photoOf = (p: { id: string; avatar_path: string | null }) =>
     pickPhoto(p.avatar_path ? avatarUrls.get(p.avatar_path) : null, safePhotoUrl(accountById.get(p.id)?.avatar_url));
   const canZoom = me.role === "instructor" || me.role === "admin";
@@ -292,26 +298,33 @@ export default async function StudentsPage({
 
   // 등록생 · 예비등록생은 레벨별 묶음 — 그 탭의 반(등록생은 수강 중인 반, 예비등록생은 개강 전 반)의 레벨. 졸업생 · 강사·조교 · 전체는 한 묶음
   const grouped = tab === "active" || tab === "preliminary";
-  const cardLevels = (p: (typeof rows)[number]) =>
-    (enrollByUser.get(p.id) ?? [])
+  const levelsOf = (id: string) =>
+    (enrollByUser.get(id) ?? [])
       .map((e) => e.section)
       .filter((s): s is NonNullable<typeof s> => !!s && (tab === "active" ? s.enrollment_opens_at <= today && today <= s.closes_at : today < s.enrollment_opens_at))
       .map((s) => s.course?.target_score ?? null);
-  // 숙제 미제출 알림을 끈 학생 (같은 날 Alan "별도로 뺀 리스트") — 강사 · 관리자 계정은 빼고(미제출 명단에 서지 않는다) 조교는 `조교`, 이름 가나다순.
-  // 알림 설정을 못 읽었으면 null — "아무도 안 껐다" 고 말하지 않는다
-  const offPeople: AlertsOffPerson[] | null =
-    classTab && alertsOff
-      ? [...rows.filter((p) => alertsOff.has(p.id)), ...extraOff.rows]
+  const cardLevels = (p: (typeof rows)[number]) => levelsOf(p.id);
+  // 숙제 알림받기 · 숙제 알림끄기 목록 — 강사 · 관리자 계정은 빼고(미제출 명단에 서지 않는다) 조교는 `조교`, 레벨별 묶음 · 가나다순 (카드와 같다).
+  // 알림 설정을 못 읽었으면 null — "아무도 안 껐다" · "모두 받는다" 고 말하지 않는다
+  const alertPeople: AlertsListPerson[] | null =
+    alertView && alertsOff
+      ? [...rows.filter((p) => listIds.has(p.id)), ...extraList.rows]
           .filter((p) => !hiddenFromRoster(p.role))
           .map((p) => ({
             id: p.id,
             name: p.name ?? "",
             assistant: isAssistantAccount(p.role),
-            since: shortDay(kstDay(alertsOff.get(p.id) ?? "")),
+            since: alertView === "alerts-off" ? shortDay(kstDay(alertsOff.get(p.id) ?? "")) || null : null,
             classes: classChipsOf(myEnrollOf(p.id)),
           }))
-          .sort((a, b) => a.name.localeCompare(b.name, "ko") || a.id.localeCompare(b.id))
       : null;
+  const alertGroups = alertPeople
+    ? groupByLevel(alertPeople, (p) => levelsOf(p.id), (p) => p.name).map((g) => ({
+        key: String(g.level),
+        label: g.level != null ? String(g.level) : "반 미배정",
+        items: g.items,
+      }))
+    : null;
 
   const cardGroups = (
     grouped
@@ -359,16 +372,24 @@ export default async function StudentsPage({
               {rows.length}명{rows.length === 300 && <span className="ml-1 font-semibold text-mist">(300명까지 보여요 — 이름으로 찾아보세요)</span>}
             </p>
             {classTab && (
-              <RosterViewSwitch view={view} href={{ classes: href({ view: "classes" }), levels: href({ view: "levels" }), cards: href({ view: "cards" }) }} />
+              <RosterViewSwitch view={view} href={Object.fromEntries(ROSTER_VIEWS.map((v) => [v, href({ view: v })])) as Record<RosterView, string>} />
             )}
           </div>
 
-          {/* 숙제 미제출 알림을 끈 학생만 따로 (2026-11-13 Alan) — 반별 명단 · 레벨별 명단 · 카드 어느 보기에서도 맨 위 */}
-          {classTab && <AlertsOffList people={offPeople} ok={extraOff.ok} tabLabel={tab === "active" ? "등록생" : "예비등록생"} />}
+          {/* 숙제 알림받기 · 숙제 알림끄기 (2026-11-13 Alan) — 고르면 반별 명단 · 카드 자리에 대신 선다 */}
+          {alertView && (
+            <AlertsList
+              mode={alertView === "alerts-on" ? "on" : "off"}
+              groups={alertGroups}
+              total={alertPeople?.length ?? 0}
+              ok={extraList.ok}
+              tabLabel={tab === "active" ? "등록생" : "예비등록생"}
+            />
+          )}
 
           {/* 반별 명단 — 종이 명단처럼 칸 = 수업 한 반 (2026-10-14 Alan). 고르지 않으면 PC 에서만 보인다.
               레벨별 명단(칸 = 레벨 × 월수금 · 화목금)을 고르면 이 자리에 그것이 선다 */}
-          {classTab && (
+          {classTab && !alertView && (
             <div className={cn("mb-6", view === "classes" || view === "levels" ? "" : view === "cards" ? "hidden" : "hidden lg:block")}>
               {rosterTerm && classRoster ? (
                 <ClassRosterView
@@ -397,19 +418,22 @@ export default async function StudentsPage({
           )}
 
           {/* 카드 — 등록생 · 예비등록생은 레벨별 · 가나다순 (2026-10-14 Alan "레벨별로 가나다순으로"). 표가 아니라 카드다 — 휴대폰에서 옆으로 밀지 않고 한 화면에 다 보이게 (2026-09-18 Alan) */}
-          <div className={cn(classTab && (view === "classes" || view === "levels" ? "hidden" : view === "cards" ? "" : "lg:hidden"))}>
-            {cardGroups.map((g) => (
-              <section key={g.key} aria-label={g.label} className={cn(grouped && "mb-6")}>
-                {grouped && (
-                  <h2 className="mb-2 flex items-baseline gap-1.5 text-sm font-black text-ink">
-                    {g.label}
-                    <span className="text-xs font-bold text-mist">{g.items.length}명</span>
-                  </h2>
-                )}
-                <ul className="grid gap-3 lg:grid-cols-2">{g.items.map((p) => card(p))}</ul>
-              </section>
-            ))}
-          </div>
+          {/* 숙제 알림받기 · 숙제 알림끄기를 골랐으면 카드를 그리지 않는다 (목록이 그 자리에 선다) */}
+          {!alertView && (
+            <div className={cn(classTab && (view === "classes" || view === "levels" ? "hidden" : view === "cards" ? "" : "lg:hidden"))}>
+              {cardGroups.map((g) => (
+                <section key={g.key} aria-label={g.label} className={cn(grouped && "mb-6")}>
+                  {grouped && (
+                    <h2 className="mb-2 flex items-baseline gap-1.5 text-sm font-black text-ink">
+                      {g.label}
+                      <span className="text-xs font-bold text-mist">{g.items.length}명</span>
+                    </h2>
+                  )}
+                  <ul className="grid gap-3 lg:grid-cols-2">{g.items.map((p) => card(p))}</ul>
+                </section>
+              ))}
+            </div>
+          )}
         </>
       )}
     </>
