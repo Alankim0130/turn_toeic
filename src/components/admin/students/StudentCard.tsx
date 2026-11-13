@@ -21,9 +21,13 @@ import { cn } from "@/lib/utils";
  * (링크 안에 링크를 넣으면 HTML 이 깨지므로 겹치는 방식을 쓴다).
  */
 
-export type GlyphName = "phone" | "mail" | "key" | "calendar" | "clock" | "check";
+export type GlyphName = "phone" | "mail" | "key" | "calendar" | "clock" | "check" | "bell" | "bellOff";
 
-export type StudentCardMeta = { icon: GlyphName; label?: string; value: string; href?: string };
+/**
+ * `tone: "off"` = 꺼 둔 것 (숙제 미제출 알림을 끈 학생 — 2026-11-13). 아이콘 · 값을 호박색으로 칠해 40명 카드 사이에서 눈에 띈다.
+ * 모두가 기본으로 받는 알림이라 켜짐은 다른 줄처럼 조용히 두고, 끈 학생만 도드라지게 한다
+ */
+export type StudentCardMeta = { icon: GlyphName; label?: string; value: string; href?: string; tone?: "off" };
 
 /** 반 배정 배지 — 첫토익의 `불라방 1단계 · 주4일` 자리 */
 export type StudentCardClass = {
@@ -129,7 +133,7 @@ export function StudentCard({
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
               {metas.map((m) => (
                 <span key={`${m.icon}-${m.label ?? ""}-${m.value}`} className="inline-flex min-w-0 max-w-full items-center gap-1">
-                  <Glyph name={m.icon} />
+                  <Glyph name={m.icon} className={m.tone === "off" ? "text-amber-600" : undefined} />
                   {m.label && <span className="shrink-0 text-mist">{m.label}</span>}
                   {/* `min-w-0` 이 없으면 긴 이메일이 flex 안에서 줄어들지 않아 카드를 통째로 넘친다 (320px 에서 실제로 넘쳤다) */}
                   {m.href ? (
@@ -137,7 +141,7 @@ export function StudentCard({
                       {m.value}
                     </a>
                   ) : (
-                    <span className="min-w-0 truncate font-semibold text-ink">{m.value}</span>
+                    <span className={cn("min-w-0 truncate", m.tone === "off" ? "font-bold text-amber-700" : "font-semibold text-ink")}>{m.value}</span>
                   )}
                 </span>
               ))}
@@ -164,8 +168,9 @@ function Badge({ children, tone }: { children: React.ReactNode; tone: "brand" | 
  * 한 줄짜리 아이콘 — **도형(인라인 SVG)** 이다.
  * `public/icons/*.png` 는 힉스필드 컬러 아이콘이라 13px 로 줄이면 뭉개지고 글자 색을 따라오지 못한다
  * (LC 플레이어의 재생 버튼·랜딩 재생 삼각형과 같은 이유로 도형을 쓴다). 이모지는 쓰지 않는다.
+ * 반별 · 레벨별 명단(`ClassRosterView`)도 이름 옆 `bellOff`(숙제 미제출 알림 끔)를 여기서 가져다 쓴다.
  */
-function Glyph({ name, className, size = 13 }: { name: GlyphName | "chevron"; className?: string; size?: number }) {
+export function Glyph({ name, className, size = 13 }: { name: GlyphName | "chevron"; className?: string; size?: number }) {
   const common = {
     width: size,
     height: size,
@@ -218,6 +223,22 @@ function Glyph({ name, className, size = 13 }: { name: GlyphName | "chevron"; cl
         <svg {...common}>
           <circle cx="12" cy="12" r="9" />
           <path d="M8 12.5l2.5 2.5L16 9.5" />
+        </svg>
+      );
+    // 종 · 빗금 친 종 — 휴대폰 무음 표시처럼 켜짐 · 꺼짐이 바로 읽힌다 (숙제 미제출 알림, 2026-11-13)
+    case "bell":
+      return (
+        <svg {...common}>
+          <path d="M18 9.5a6 6 0 00-12 0c0 6-2.5 8-2.5 8h17S18 15.5 18 9.5z" />
+          <path d="M10.3 20.5a2 2 0 003.4 0" />
+        </svg>
+      );
+    case "bellOff":
+      return (
+        <svg {...common}>
+          <path d="M8.2 4.6A6 6 0 0118 9.5c0 2.4.4 4.2.9 5.5M17.5 17.5h-14S6 15.5 6 9.5c0-.6.1-1.2.3-1.8" />
+          <path d="M10.3 20.5a2 2 0 003.4 0" />
+          <path d="M3 3l18 18" />
         </svg>
       );
     case "chevron":

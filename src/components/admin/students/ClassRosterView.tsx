@@ -4,6 +4,7 @@ import { Alert } from "@/components/ui/Alert";
 import { FileDownloadButton } from "@/components/admin/FileDownloadButton";
 import { columnDetail, columnHeading, marksText, rosterMarks, toneOf, type ClassRoster, type RosterLevel, type RosterStudent } from "@/lib/class-roster";
 import { cn } from "@/lib/utils";
+import { Glyph } from "./StudentCard";
 
 /**
  * 학생명단의 **반별 명단** (2026-10-14 Alan — 종이 명단 사진을 보내며 "Pc모드에서는 지금 올린 이미지처럼 한페이지에서 구분이 가능하면 좋겠어").
@@ -18,6 +19,9 @@ import { cn } from "@/lib/utils";
  * - **레벨별 명단**(`roster.by === "track"`, 같은 날 밤 Alan "시간대는 없애고 같은 레벨별로 … 월수금/ 화목금만 분리")도 이 틀로 그린다 —
  *   레벨마다 한 줄에 `월수금 | 화목금` 두 칸(휴대폰은 위아래)이고 칸 안의 이름은 칸 폭만큼 여러 단으로 흘린다 (`TrackLevels`).
  *   반별 명단 쪽 모양은 손대지 않았다.
+ * - **숙제 미제출 알림을 끈 학생은 이름 뒤에 빗금 친 종** (2026-11-13 Alan — "숙제 미제출 알림 희망자를 신청했는지 안했는지 알 수 있으면 좋겠어.
+ *   직관적으로 표시가 되어있으면 좋겠어"). 모두가 기본으로 받으므로 **표시가 없으면 받는다** — 받는 학생 수십 명에게 종을 달면 이름이 묻힌다.
+ *   범례 줄에 `끈 학생 N명` 을 함께 적는다. 화면에만 그린다 — PDF · Word(종이 명단)에는 넣지 않았다. 못 읽었으면(`alertsOff` 가 null) 표시하지 않고 범례에 그렇게 적는다.
  */
 export function ClassRosterView({
   roster,
@@ -29,6 +33,7 @@ export function ClassRosterView({
   pdfName,
   docxHref,
   docxName,
+  alertsOff,
 }: {
   roster: ClassRoster;
   ok: boolean;
@@ -44,8 +49,14 @@ export function ClassRosterView({
   /** Word 로 받기 — 같은 쪽 · 같은 칸을 고쳐 쓸 수 있는 표로 (`역전토익_반별명단_2026-10.docx`) */
   docxHref: string;
   docxName: string;
+  /** 숙제 미제출 알림을 끈 학생 (`homework_missing_optouts`). null = 못 읽음 — 아무에게도 표시하지 않는다 */
+  alertsOff: ReadonlySet<string> | null;
 }) {
   const byTrack = roster.by === "track";
+  // 이 명단에 선 사람 가운데 알림을 끈 사람 (한 사람이 여러 칸에 서도 한 번)
+  const offCount = alertsOff
+    ? new Set(roster.levels.flatMap((l) => l.columns.flatMap((c) => c.students.filter((st) => alertsOff.has(st.id)).map((st) => st.id)))).size
+    : 0;
   return (
     <section aria-labelledby="class-roster-title" className="card p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -103,6 +114,15 @@ export function ClassRosterView({
             <b className="text-ink">({m.mark})</b> {m.label}
           </span>
         ))}
+        {alertsOff ? (
+          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+            <Glyph name="bellOff" size={12} className="text-amber-600" />
+            숙제 미제출 알림 끔 <b className="text-amber-700">{offCount}명</b>
+            <span className="text-mist">· 표시가 없으면 받아요</span>
+          </span>
+        ) : (
+          <span className="whitespace-nowrap text-mist">숙제 미제출 알림 설정을 불러오지 못했어요</span>
+        )}
       </p>
 
       {!ok && (
@@ -114,7 +134,7 @@ export function ClassRosterView({
       {roster.levels.length === 0 ? (
         <p className="mt-4 rounded-xl2 bg-surface px-4 py-6 text-center text-sm text-slate">이 달 반에 배정된 학생이 없어요.</p>
       ) : byTrack ? (
-        <TrackLevels levels={roster.levels} />
+        <TrackLevels levels={roster.levels} alertsOff={alertsOff} />
       ) : (
         <div className="mt-4 flex flex-wrap gap-3">
           {roster.levels.map((level) => {
@@ -147,7 +167,7 @@ export function ClassRosterView({
                       <ol className="px-2 py-1" style={{ background: tone.body }}>
                         {col.students.map((st) => (
                           <li key={st.id} className="flex min-w-0 items-baseline gap-1 py-[3px] text-[13px] leading-tight">
-                            <StudentName student={st} />
+                            <StudentName student={st} alertOff={!!alertsOff?.has(st.id)} />
                           </li>
                         ))}
                       </ol>
@@ -179,14 +199,22 @@ export function ClassRosterView({
   );
 }
 
-/** 이름 한 줄 — 이름은 검은 글자 · 누르면 학생 관리, 뒤에 표시 `(불/RC)` (반별 명단 · 레벨별 명단이 같이 쓴다) */
-function StudentName({ student: st }: { student: RosterStudent }) {
+/**
+ * 이름 한 줄 — 이름은 검은 글자 · 누르면 학생 관리, 뒤에 표시 `(불/RC)` (반별 명단 · 레벨별 명단이 같이 쓴다).
+ * 숙제 미제출 알림을 끈 학생은 맨 뒤에 빗금 친 종 (2026-11-13) — 이름이 잘려도 종은 남는다(`shrink-0`)
+ */
+function StudentName({ student: st, alertOff }: { student: RosterStudent; alertOff: boolean }) {
   return (
     <>
       <Link href={`/admin/students/${st.id}`} className="min-w-0 truncate font-bold text-ink hover:underline">
         {st.name || "이름 없음"}
       </Link>
       {st.marks.length > 0 && <span className="shrink-0 text-[11px] font-bold text-slate">{marksText(st.marks)}</span>}
+      {alertOff && (
+        <span role="img" aria-label="숙제 미제출 알림 끔" title="숙제 미제출 알림을 껐어요" className="shrink-0 self-center">
+          <Glyph name="bellOff" size={12} className="text-amber-600" />
+        </span>
+      )}
     </>
   );
 }
@@ -196,7 +224,7 @@ function StudentName({ student: st }: { student: RosterStudent }) {
  * 칸 안의 이름은 칸 폭만큼 여러 단으로 흘린다 (신문처럼 위에서 아래로 → 옆 단, `columns`) — 한 칸에 수십 명이 서도 화면이 길어지지 않게.
  * 칸 바탕은 칸에 깔아 두 칸 높이가 달라도 바닥까지 같은 색이다.
  */
-function TrackLevels({ levels }: { levels: RosterLevel[] }) {
+function TrackLevels({ levels, alertsOff }: { levels: RosterLevel[]; alertsOff: ReadonlySet<string> | null }) {
   return (
     <div className="mt-4 space-y-4">
       {levels.map((level) => {
@@ -218,7 +246,7 @@ function TrackLevels({ levels }: { levels: RosterLevel[] }) {
                   <ol className="columns-[6.25rem] gap-x-3 px-2 py-1">
                     {col.students.map((st) => (
                       <li key={st.id} className="flex min-w-0 break-inside-avoid items-baseline gap-1 py-[3px] text-[13px] leading-tight">
-                        <StudentName student={st} />
+                        <StudentName student={st} alertOff={!!alertsOff?.has(st.id)} />
                       </li>
                     ))}
                   </ol>
