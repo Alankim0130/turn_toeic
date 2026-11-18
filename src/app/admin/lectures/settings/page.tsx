@@ -13,7 +13,7 @@ import { LectureOpenButton } from "@/components/admin/lectures/LectureOpenButton
 import { LectureSettingsForm } from "@/components/admin/lectures/LectureSettingsForm";
 import { LectureMaterialsPanel } from "@/components/admin/lectures/LectureMaterialsPanel";
 import { groupLectureMaterials } from "@/lib/lecture-materials";
-import { LECTURE_STATE_CLASS, LECTURE_STATE_LABEL, lectureState, lectureTitle } from "@/lib/lecture";
+import { LECTURE_STATE_CLASS, LECTURE_STATE_LABEL, lectureSettingsAnchor, lectureState, lectureTitle } from "@/lib/lecture";
 import { termParam } from "@/lib/study";
 import { pickTerm } from "../../_lib/queries";
 import { getLectureTerms, getTermLectures, lectureTypeOf, lectureTypeTabs, pickLectureType } from "../_lib/lectures";
@@ -102,7 +102,7 @@ export default async function LectureSettingsPage({ searchParams }: { searchPara
           const state = lectureState(l, l.ways, today);
           const past = l.date < today;
           return (
-            <section key={l.id} className="card overflow-hidden">
+            <section key={l.id} id={lectureSettingsAnchor(l.id)} className="card scroll-mt-24 overflow-hidden target:ring-2 target:ring-brand-300">
               <div className="flex flex-wrap items-start justify-between gap-2 border-b border-line bg-violet-50/50 px-4 py-3">
                 <div className="min-w-0">
                   <p className="font-black text-ink">{lectureTitle(l)}</p>

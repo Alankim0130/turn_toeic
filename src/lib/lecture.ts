@@ -129,6 +129,9 @@ export const lectureCondition = (v: unknown): LectureCondition => (isLectureCond
 export const lectureConditionLabel = (v: unknown) => LECTURE_CONDITIONS.find((c) => c.value === lectureCondition(v))!.label;
 export const lectureConditionOf = (v: unknown) => LECTURE_CONDITIONS.find((c) => c.value === lectureCondition(v))!;
 
+/** 특강 설정의 특강 카드 주소 조각 — 특강 신청 카드의 `조건 · 정원 바꾸기` 가 그 특강으로 바로 간다 (2026-11-18) */
+export const lectureSettingsAnchor = (lectureId: number) => `lecture-settings-${lectureId}`;
+
 /** 조건이 있는 방식을 고르면 신청하기 버튼 위에 뜨는 안내 (2026-10-16 Alan "단, 조건을 이수완료하고 신청하기를 눌러달라는 안내문") */
 export const LECTURE_CONDITION_NOTICE = "신청 조건을 다 마친 뒤에 신청하기를 눌러 주세요.";
 

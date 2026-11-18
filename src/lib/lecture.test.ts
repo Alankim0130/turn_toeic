@@ -347,7 +347,11 @@ describe("신청 — 한 특강에 한 방식 · 방식마다 정원 · 닫힌 �
     expect(page).toContain('paramKey="way"');
     expect(page).toContain("LectureOpenButton");
     expect(page).toContain("/admin/lectures/settings");
+    // 특강 카드마다 신청 조건이 보이고(조건 없음도), 특강 설정의 그 특강으로 바로 가는 길이 있다 (2026-11-18 Alan "조건설정을 어디에서 하는지 안보여")
+    expect(page).not.toContain('condition !== "none" && <span');
+    expect(page).toMatch(/href=\{`\$\{settingsHref\}#\$\{lectureSettingsAnchor\(l\.id\)\}`\}[\s\S]*?조건 · 정원 바꾸기/);
     const settings = readFileSync("src/app/admin/lectures/settings/page.tsx", "utf8");
+    expect(settings).toContain("id={lectureSettingsAnchor(l.id)}");
     expect(settings).toContain("await requireStaff()");
     expect(settings).toContain('paramKey="type"');
     expect(settings).toContain("LectureSettingsForm");

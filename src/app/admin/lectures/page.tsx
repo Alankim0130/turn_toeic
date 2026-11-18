@@ -18,6 +18,7 @@ import {
   LECTURE_STATE_LABEL,
   lectureCondition,
   lectureConditionOf,
+  lectureSettingsAnchor,
   lectureState,
   lectureTitle,
   reviewLinkKey,
@@ -170,8 +171,8 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
                 </span>
               </div>
 
-              {/* 방식마다 신청 수 · 정원 · 조건 — 꺼진 방식은 흐리게 */}
-              <ul className="flex flex-wrap gap-1.5 border-b border-line px-4 py-2.5 text-xs">
+              {/* 방식마다 신청 수 · 정원 · 조건 — 꺼진 방식은 흐리게. 조건 없음도 적는다 (2026-11-18 Alan "특강 신청 조건설정을 어디에서 하는지 안보여") */}
+              <ul className="flex flex-wrap items-center gap-1.5 border-b border-line px-4 py-2.5 text-xs">
                 {l.ways.map((w) => {
                   const condition = lectureCondition(w.signup_condition);
                   return (
@@ -182,7 +183,7 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
                     >
                       {lectureWayLabel(w.way)} {w.applied_count}
                       {w.capacity !== null && ` / ${w.capacity}`}명
-                      {condition !== "none" && <span className="font-semibold"> · {lectureConditionOf(condition).short}</span>}
+                      <span className="font-semibold"> · {lectureConditionOf(condition).short}</span>
                     </li>
                   );
                 })}
@@ -192,6 +193,16 @@ export default async function AdminLecturesPage({ searchParams }: { searchParams
                     인스타 새로 팔로우 {follows.new} · 기존 {follows.existing}
                   </li>
                 )}
+                {/* 이 특강의 신청 조건 · 정원 · 안내 — 특강 설정의 같은 특강 카드로 바로 간다 */}
+                <li className="ml-auto">
+                  <Link
+                    href={`${settingsHref}#${lectureSettingsAnchor(l.id)}`}
+                    className="inline-flex items-center gap-1 rounded-full border border-line bg-paper px-2.5 py-1 font-bold text-ink transition hover:border-brand-300 hover:text-brand-700"
+                  >
+                    <Icon name="admin" size={14} />
+                    조건 · 정원 바꾸기
+                  </Link>
+                </li>
               </ul>
 
               {shownRows.length === 0 ? (
