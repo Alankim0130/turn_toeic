@@ -141,7 +141,7 @@
 - **주5일 = 같은 기수 · 강좌 · 시간대의 월수금 + 화목금 두 반.** 학생에게는 `주5일` 한 가지로 보인다(`week5.ts`). 관리자 편성은 트랙 그대로, 명단 · 학생 관리만 합친다.
   60분 반과 120분(묶음) 반은 다른 등록이다. 과정 A/B 와 과목 LC/RC 는 시간표의 시간대마다 정한다 — **"홀수달 = A" 처럼 달로 짐작하지 말 것.**
 - **반 권한(묶음 반 · 속성반 · 2주완성이 품는 반)은 DB `private.section_includes` 한곳** — 화면에서 따로 계산하지 말 것(표시용 `sectionPackages` 만 예외).
-  그릇 반 판정은 `isContainerProgram` 한곳(`program === "sparta"` 로 가르지 말 것). 2주완성 종강일 = `private.term_half_date` = 앱 `termHalfDate` (바꾸면 둘 다). (`d1-section-access.md` · `d1-twoweek.md`)
+  그릇 반 판정은 `isContainerProgram` 한곳(`program === "sparta"` 로 가르지 말 것), 속성반은 `isSpartaProgram`(스파르타 + 합반 `combo`). 2주완성 종강일 = `private.term_half_date` = 앱 `termHalfDate` (바꾸면 둘 다). (`d1-section-access.md` · `d1-twoweek.md`)
 - **담당 강사는 반의 과목으로 DB 가 저절로 정한다** — 반을 만들 때 만든 사람을 담당으로 넣지 말 것. 묶음 · 속성 · 2주완성 반은 담당 null.
 - **불라방**: 링크는 시간 단위 반에, 다시보기로 올라가는 것은 유튜브 주소뿐, 강사가 넣은 링크(Zoom)는 덮어쓰지 않는다. 시작 알림 문구는 SQL(`private.notify_live_session`) 한곳.
   **방학달 통짜 반은 두 교시(part 1 · 2) — 링크 · 송출 · 다시보기 · 알림이 (회차, 교시)마다 하나.** 교시 판정은 DB `private.section_parts` = 앱 `sectionParts`(`class-parts.ts`) — 바꾸면 둘 다. (`d1-live.md`)

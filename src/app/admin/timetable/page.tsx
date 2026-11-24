@@ -6,7 +6,7 @@ import { Icon } from "@/components/ui/Icon";
 import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { cn, todayKST } from "@/lib/utils";
-import { courseShortName, PROGRAM_LABEL, PROGRAMS, SEASON_LABEL, seasonOfMonth, VACATION_MONTHS, type Program } from "@/lib/timetable";
+import { courseShortName, levelTitle, PROGRAM_LABEL, PROGRAMS, SEASON_LABEL, seasonOfMonth, VACATION_MONTHS, type Program } from "@/lib/timetable";
 import { buildBlockTree, dashLabel } from "@/lib/time-blocks";
 import { HOURS, minuteOptions, splitTime } from "@/lib/timetable-admin";
 import {
@@ -92,14 +92,20 @@ export default async function AdminTimetablePage({ searchParams }: { searchParam
   const usedBy = (r: SlotRow) => sectionCount.get(`${r.level}|${r.program}|${slotLabelOf(r)}`) ?? 0;
   const missingRows = slots.filter((r) => missingOf(kinds.get(r.id)!, r).length > 0).length;
 
-  // 카드 제목: 점수보장반은 레벨 숫자, 스파르타는 강좌 이름의 짧은 이름 (`650 중급속성`) — 이름은 courses 한곳
+  // 카드 제목: 점수보장반은 레벨 숫자, 스파르타는 강좌 이름의 짧은 이름 (`650 중급속성` · 합반은 `650+750 속성반`) — 이름은 courses 한곳
   const cardTitle = (level: number, program: Program) => {
     if (program === "score") return `${level}`;
     const c = (courses ?? []).find((c) => c.program === program && c.target_score === level);
-    return c ? `${level} ${courseShortName(c.name)}` : `${level} ${PROGRAM_LABEL[program]}`;
+    return c ? levelTitle(level, courseShortName(c.name)) : `${level} ${PROGRAM_LABEL[program]}`;
   };
-  // 스파르타 · 2주완성 카드는 그 레벨에 그 과정 강좌가 있을 때만 (스파르타 850 은 없다 · 2주완성은 850 만)
+  // 스파르타 · 합반 속성반 · 2주완성 카드는 그 레벨에 그 과정 강좌가 있을 때만 (스파르타 850 은 없다 · 2주완성은 850 만)
   const hasProgram = (level: number, program: Program) => program === "score" || (courses ?? []).some((c) => c.program === program && c.target_score === level);
+  // 제목 묶음 — 합반 속성반(2026-11-24 Alan "650+750 속성반이 하나 더 있어")은 스파르타반 제목 아래 카드로 선다 (속성반 셋이 한자리에)
+  const headings = PROGRAMS.filter((p) => p !== "combo");
+  const cardsUnder = (heading: Program) =>
+    (heading === "sparta" ? (["sparta", "combo"] as const) : [heading]).flatMap((program) =>
+      levels.filter((l) => hasProgram(l.level, program)).map((l) => ({ program, l })),
+    );
 
   const prev = shiftYm(ym, -1);
   const next = shiftYm(ym, 1);
@@ -242,11 +248,11 @@ export default async function AdminTimetablePage({ searchParams }: { searchParam
 
       {showCards && (
         <div className="space-y-6">
-          {PROGRAMS.map((program) => (
-            <section key={program} aria-labelledby={`program-${program}`}>
-              <h2 id={`program-${program}`} className="mb-3 text-lg font-black text-ink">{PROGRAM_LABEL[program]}</h2>
+          {headings.map((heading) => (
+            <section key={heading} aria-labelledby={`program-${heading}`}>
+              <h2 id={`program-${heading}`} className="mb-3 text-lg font-black text-ink">{PROGRAM_LABEL[heading]}</h2>
               {/* 2주완성 (2026-10-05 Alan "850반 2주완성반이 있어 … 절반만 수업을 듣는거야. 개강일부터 시작") — 반의 종강일은 저절로 정해진다 */}
-              {program === "twoweek" && (
+              {heading === "twoweek" && (
                 <p className="-mt-2 mb-3 text-xs text-slate">
                   같은 레벨 수업을 <strong className="text-ink">개강일부터 앞 절반</strong>만 들어요 — 반의 종강일은 그 달 수업일(월수금 + 화목금) 앞 절반의 마지막 날로
                   저절로 정해져요 (18일이면 9번째 날). 과정 · 과목은 같은 레벨 수업 것을 써요. 시간은 그 달 같은 레벨 수업 전체와 같게 적어요 —
@@ -255,7 +261,7 @@ export default async function AdminTimetablePage({ searchParams }: { searchParam
               )}
               {/* 카드는 PC 넓은 화면(xl)에서만 두 줄 — 세 줄로 두면 카드가 좁아져 시각이 잘리고 줄마다 접혔다 */}
               <div className="grid gap-4 xl:grid-cols-2">
-                {levels.filter((l) => hasProgram(l.level, program)).map((l) => {
+                {cardsUnder(heading).map(({ program, l }) => {
                   const title = cardTitle(l.level, program);
                   const group = slots.filter((s) => s.level === l.level && s.program === program);
                   const items = cardItems(group, program);

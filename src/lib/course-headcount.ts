@@ -1,5 +1,5 @@
 import { blockMinutes, buildBlockTree, flattenBlockTree } from "./time-blocks";
-import { courseShortName, programRank } from "./timetable";
+import { courseShortName, isSpartaProgram, programRank } from "./timetable";
 import { isContainerProgram } from "./two-week";
 
 /**
@@ -39,7 +39,7 @@ const TESTER_ROLES = new Set(["instructor", "admin"]);
 const countable = (r: HeadcountRow): r is HeadcountRow & { course_id: number } => r.course_id != null && !(r.role && TESTER_ROLES.has(r.role));
 
 export function headcountLabel(c: Pick<HeadcountCourse, "name" | "program" | "target_score">): string {
-  if (c.program === "sparta") return courseShortName(c.name);
+  if (isSpartaProgram(c.program)) return courseShortName(c.name);
   // 2주완성(2026-10-05)은 레벨을 붙인다 — `850 2주완성` (같은 850 이라 레벨이 빠지면 무엇의 2주완성인지 모른다)
   if (c.program === "twoweek") return c.target_score != null ? `${c.target_score} ${courseShortName(c.name)}` : c.name;
   return c.target_score != null ? String(c.target_score) : c.name;

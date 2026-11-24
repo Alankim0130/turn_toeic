@@ -3,7 +3,7 @@
 import { useId, useMemo, useState } from "react";
 import { cn, TRACK_LABEL } from "@/lib/utils";
 import { blockMinutes, buildBlockTree, dashLabel, flattenBlockTree, minutesLabel, TRACKS, tracksLabel } from "@/lib/time-blocks";
-import { programRank } from "@/lib/timetable";
+import { isSpartaProgram, PROGRAM_LABEL, programRank } from "@/lib/timetable";
 
 export type PickerSection = {
   id: number;
@@ -245,7 +245,7 @@ function CourseGroup({
         {/* 이름과 배지만 접힌다 — 꺾쇠는 늘 오른쪽 가운데 (320px 에서 스파르타 이름이 두 줄이 돼도) */}
         <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-black text-ink">{course.name}</span>
-          {course.program === "sparta" && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-black text-brand-700">스파르타반</span>}
+          {isSpartaProgram(course.program) && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-black text-brand-700">{PROGRAM_LABEL[course.program as "sparta" | "combo"]}</span>}
           {course.program === "twoweek" && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-black text-brand-700">앞 절반</span>}
           {hasPicked && <span className="rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-black text-white">고름</span>}
           {hasTaken && <span className="rounded-full bg-line px-2 py-0.5 text-[11px] font-black text-slate">배정됨</span>}

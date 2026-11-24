@@ -7,6 +7,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Icon } from "@/components/ui/Icon";
 import { TRACK_LABEL, cn, formatDate } from "@/lib/utils";
 import { isTwoWeek } from "@/lib/two-week";
+import { isSpartaProgram, PROGRAM_LABEL } from "@/lib/timetable";
 import { dashLabel } from "@/lib/time-blocks";
 import { SectionsTabs } from "@/components/admin/sections/SectionsTabs";
 import { loadTermData, parseTerm } from "../_lib/term-data";
@@ -164,9 +165,9 @@ export default async function AdminSectionClassesPage({
                                   )}
                                 </p>
                               )}
-                              {s.course?.program === "sparta" && (
+                              {isSpartaProgram(s.course?.program) && (
                                 <p className="mt-2 text-xs text-slate">
-                                  <span className="mr-1 rounded-full bg-brand-50 px-2 py-0.5 font-black text-brand-700">스파르타반</span>
+                                  <span className="mr-1 rounded-full bg-brand-50 px-2 py-0.5 font-black text-brand-700">{PROGRAM_LABEL[s.course!.program as "sparta" | "combo"]}</span>
                                   {includedBySection.get(s.id)?.length
                                     ? <>이 반 학생에게 함께 열리는 반: <strong className="text-ink">{includedBySection.get(s.id)!.join(" · ")}</strong></>
                                     : <span className="text-amber-700">같은 트랙·시간에 함께 들을 반이 아직 없어요. 포함 레벨의 반을 먼저 개설해 주세요.</span>}

@@ -4,7 +4,7 @@ import { Reveal } from "@/components/ui/Reveal";
 import { InstructorCameo } from "@/components/ui/InstructorCameo";
 import { KakaoChatButton } from "@/components/ui/KakaoChatButton";
 import { todayKST } from "@/lib/utils";
-import { LANDING_PROGRAMS, SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
+import { isSpartaProgram, LANDING_PROGRAMS, SEASON_LABEL, seasonOfMonth } from "@/lib/timetable";
 import { madeMonths, sameYm, ymIndex } from "@/lib/timetable-month";
 import { timeBlockOf } from "@/components/admin/sections/bulk";
 import { TimetableCard, type TimetableCardData } from "./TimetableCard";
@@ -30,13 +30,14 @@ async function loadTimetable() {
       .order("start_time", { referencedTable: "timetable_slots" }),
     // 스파르타는 두 레벨을 함께 듣는다 (650+ 중급속성 = 650 + 850). 구성은 courses.includes_levels 한곳 — 코드에 적지 않는다.
     // 2주완성은 카드 제목(850 2주완성)에 쓸 이름만
-    supabase.from("courses").select("program, target_score, name, includes_levels").in("program", ["sparta", "twoweek"]).eq("is_active", true),
+    supabase.from("courses").select("program, target_score, name, includes_levels").in("program", ["sparta", "combo", "twoweek"]).eq("is_active", true),
   ]);
 
   const rows = data ?? [];
   const courseOf = (program: string, level: number) => (containerCourses ?? []).find((c) => c.program === program && c.target_score === level);
-  const spartaOf = (level: number): TimetableCardData["sparta"] => {
-    const c = courseOf("sparta", level);
+  // 합반 속성반(2026-11-24 — 650+750)도 스파르타처럼 함께 듣는 레벨을 적는다
+  const spartaOf = (program: string, level: number): TimetableCardData["sparta"] => {
+    const c = courseOf(program, level);
     if (!c) return null;
     return { name: c.name, levels: [level, ...c.includes_levels.filter((l) => l !== level).sort((a, b) => a - b)] };
   };
@@ -53,7 +54,7 @@ async function loadTimetable() {
         program,
         // 레벨 메모는 점수보장반 카드에만. **인강 여부는 여기가 아니라 시간대마다** `recorded` 로 넘긴다
         note: program === "score" ? t.note : null,
-        sparta: program === "sparta" ? spartaOf(t.level) : null,
+        sparta: isSpartaProgram(program) ? spartaOf(program, t.level) : null,
         twoWeek: program === "twoweek" ? twoWeekOf(t.level) : null,
         slots: t.timetable_slots
           .filter((s) => keep(s) && s.program === program)
