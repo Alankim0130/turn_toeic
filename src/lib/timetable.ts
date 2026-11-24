@@ -22,22 +22,28 @@ export const seasonOfMonth = (month: number): Season => (VACATION_MONTHS.include
 export const isSeason = (v: unknown): v is Season => typeof v === "string" && (SEASONS as readonly string[]).includes(v);
 
 /**
- * 과정 (2026-09-16 Alan — 브로슈어의 두 과정 → 2026-10-05 2주완성). `courses.program` · `timetable_slots.program` 이 이 값을 담는다.
+ * 과정 (2026-09-16 Alan — 브로슈어의 두 과정 → 2026-10-05 2주완성 → 2026-11-24 합반 속성반). `courses.program` · `timetable_slots.program` 이 이 값을 담는다.
  * 같은 650 이라도 점수보장반(10:00~12:10)과 스파르타반(10:00~13:40)은 시간대가 달라 과정으로 나눈다.
  * 스파르타반은 `courses.includes_levels`(예: 850)의 점수보장반 권한을 함께 받는다 — DB 의 private.section_includes.
+ * **합반 속성반**(`combo`, 2026-11-24 Alan "방학에는 650+750 속성반이 하나 더 있어! 새로운 등급을 하나만 더 만들어줘")은 스파르타반과 똑같이
+ * 포함 레벨의 시간 단위 반을 품는 속성반인데, 같은 레벨(650)에 이미 중급속성이 있어 시간표 줄 · 반이 짝지어지는 열쇠(레벨 × 과정)가 겹치므로 과정을 따로 둔다.
+ * 속성반으로 다룰 곳은 `isSpartaProgram` 한곳으로 본다.
  * 2주완성반(`twoweek`, 2026-10-05 Alan "850반 2주완성반이 있어 … 절반만 수업을 듣는거야")은 같은 레벨 점수보장반 수업의
  * **앞 절반**만 듣는다 — `src/lib/two-week.ts`. DB check(courses_program_check · timetable_slots_program_check)와 값이 같아야 한다.
  */
-export const PROGRAMS = ["score", "sparta", "twoweek"] as const;
+export const PROGRAMS = ["score", "sparta", "combo", "twoweek"] as const;
 export type Program = (typeof PROGRAMS)[number];
 
-export const PROGRAM_LABEL: Record<Program, string> = { score: "한 달 점수보장반", sparta: "스파르타반", twoweek: "2주완성반" };
+export const PROGRAM_LABEL: Record<Program, string> = { score: "한 달 점수보장반", sparta: "스파르타반", combo: "합반 속성반", twoweek: "2주완성반" };
+
+/** 속성반 — 스파르타반과 합반 속성반. 포함 레벨의 시간 단위 반을 품고 과정 · 과목 칸이 없다 (DB `section_includes` 의 같은 갈래) */
+export const isSpartaProgram = (p: string | null | undefined): boolean => p === "sparta" || p === "combo";
 
 /**
- * 랜딩 수업시간표에 카드로 세우는 과정 — 점수보장반 → 스파르타반 → 2주완성반 (2026-10-05 Alan "랜딩 수업시간표에도 넣어줘").
- * 카드는 그 달 시간표에 그 과정 줄이 있는 레벨만 선다 (지금 2주완성은 850 하나)
+ * 랜딩 수업시간표에 카드로 세우는 과정 — 점수보장반 → 스파르타반 → 합반 속성반 → 2주완성반 (2026-10-05 Alan "랜딩 수업시간표에도 넣어줘").
+ * 카드는 그 달 시간표에 그 과정 줄이 있는 레벨만 선다 (지금 2주완성은 850 하나, 합반 속성반은 방학달에만 줄이 있다)
  */
-export const LANDING_PROGRAMS: readonly Program[] = ["score", "sparta", "twoweek"];
+export const LANDING_PROGRAMS: readonly Program[] = ["score", "sparta", "combo", "twoweek"];
 
 export const isProgram = (v: unknown): v is Program => typeof v === "string" && (PROGRAMS as readonly string[]).includes(v);
 
@@ -54,8 +60,20 @@ export const programRank = (p: string | null | undefined): number => {
  * 떼고 나서 남는 글자가 없으면 원래 이름 그대로 돌려준다 (지어내지 않는다)
  */
 export function courseShortName(name: string): string {
-  const short = name.trim().replace(/^스파르타\s*/, "").replace(/^\d{3,4}\+?\s*/, "").trim();
+  const rest = name.trim().replace(/^스파르타\s*/, "");
+  // 두 레벨을 함께 듣는 합반 속성반(`650+750 속성반`)은 레벨 사슬이 곧 이름이다 — 앞 레벨만 떼면 `750 속성반` 이 된다
+  const short = (LEVEL_CHAIN.test(rest) ? rest : rest.replace(/^\d{3,4}\+?\s*/, "")).trim();
   return short || name.trim();
+}
+
+/** `650+750` 처럼 레벨 둘 이상으로 시작하는 이름 */
+const LEVEL_CHAIN = /^\d{3,4}\+\s*\d{3,4}/;
+
+/**
+ * 카드 · 이름표 제목 — 레벨 숫자 + 짧은 이름 (`650 중급속성`). 짧은 이름이 이미 레벨 사슬로 시작하면(`650+750 속성반`) 레벨을 또 붙이지 않는다
+ */
+export function levelTitle(level: number, short: string): string {
+  return LEVEL_CHAIN.test(short) && short.startsWith(String(level)) ? short : `${level} ${short}`;
 }
 
 /** 레벨 이름표의 재료 — `courses` 의 세 칸 */
@@ -76,7 +94,7 @@ export function courseLevelLabel(c: LevelCourse): string {
   const short = courseShortName(name);
   // 레벨 토큰을 떼고 남는 글자가 없던 이름(`스파르타 650+`)은 과정 이름으로 — `650 스파르타 650+` 처럼 레벨을 두 번 적지 않는다
   const kind = short === name ? (isProgram(program) ? PROGRAM_LABEL[program] : name) : short;
-  return `${c.target_score} ${kind}`;
+  return levelTitle(c.target_score, kind);
 }
 
 /**

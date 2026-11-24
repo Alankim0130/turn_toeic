@@ -48,8 +48,15 @@ export function TimetableCard({ card, delay = 0 }: { card: TimetableCardData; de
           <Icon name="timeslot" size={30} />
         </span>
         <h3 className="text-2xl font-black tracking-tight text-ink">
-          {card.level}
-          {card.program === "sparta" ? (
+          {card.program === "combo" && card.sparta ? (
+            // 합반 속성반(2026-11-24 — `650+750 속성반`)은 이름이 레벨 사슬로 시작해 레벨 숫자를 따로 붙이지 않는다
+            <span>{courseShortName(card.sparta.name)}</span>
+          ) : (
+            card.level
+          )}
+          {card.program === "combo" ? (
+            card.sparta ? null : <span className="ml-1.5 text-lg text-brand-600">{PROGRAM_LABEL.combo}</span>
+          ) : card.program === "sparta" ? (
             // 스파르타 카드는 "650 중급속성" — 이름은 courses.name 에서 온다 (2026-09-17 Alan "스파르타라고 하지말고 중급속성과 실전속성으로").
             // 강좌 행이 없을 때만 과정 이름으로 대신한다
             <span className="ml-1.5 text-lg text-brand-600">{card.sparta ? courseShortName(card.sparta.name) : PROGRAM_LABEL.sparta}</span>

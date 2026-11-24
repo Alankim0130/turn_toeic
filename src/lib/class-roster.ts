@@ -37,6 +37,7 @@ import { SUBJECT_LABEL, isSubject, type Subject } from "./instructor-subject";
 import { ASSISTANT_MARK } from "./roster-accounts";
 import { parseTimeBlock } from "./time-blocks";
 import { isContainerProgram } from "./two-week";
+import { isSpartaProgram } from "./timetable";
 import { TRACK_LABEL } from "./utils";
 
 /** 표시 글자와 뜻 — 화면 · PDF 의 범례가 이 순서로 쓴다 (종이 명단의 글자 + 단과) */
@@ -232,7 +233,7 @@ export function buildClassRoster(input: {
     // 조교 계정 — 맨 앞에 (2026-10-16)
     if (input.people.get(studentId)?.assistant) marks.push(ASSISTANT_MARK);
     if (via.some((d) => d.mode === "live")) marks.push("불");
-    if (via.some((d) => d.section.program === "sparta")) marks.push("프");
+    if (via.some((d) => isSpartaProgram(d.section.program))) marks.push("프");
     if (via.some((d) => d.section.program === "twoweek")) marks.push("2주");
     const single = via.every((d) => !isContainerProgram(d.section.program)) ? singleSubject(sameCourse) : null;
     if (single) {

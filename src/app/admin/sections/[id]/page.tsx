@@ -17,6 +17,7 @@ import { labelKo, termKey } from "@/components/admin/sections/dates";
 import { blockContains, dashLabel } from "@/lib/time-blocks";
 import { timetableRowOf } from "@/lib/timetable-row";
 import { isContainerProgram, isTwoWeek } from "@/lib/two-week";
+import { isSpartaProgram } from "@/lib/timetable";
 
 export const metadata: Metadata = { title: "반 상세", robots: { index: false } };
 
@@ -67,7 +68,7 @@ export default async function AdminSectionDetailPage({ params }: { params: Promi
 
   // 이 반 학생에게 함께 열리는 반 (DB 의 private.section_includes 와 같은 판정):
   // 스파르타 반 → 포함 레벨의 시간 단위 반, 2주완성 반 → 같은 레벨의 시간 단위 반, 묶음 반(120분·140분) → 안에 든 60분·70분 시간 단위 반
-  const isSparta = section.course?.program === "sparta";
+  const isSparta = isSpartaProgram(section.course?.program);
   const twoWeek = isTwoWeek(section.course?.program);
   const isContainer = isContainerProgram(section.course?.program);
   const { data: includeRows } = await supabase.rpc("term_section_includes", { p_term_id: section.term.id });

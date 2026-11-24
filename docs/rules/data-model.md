@@ -135,8 +135,8 @@ create table courses (                     -- 강좌 마스터
   course_type  text not null,              -- 'full' | 'lc' | 'rc'
   target_score int,
   is_active    boolean default true,
-  program      text not null default 'score',   -- score(한 달 점수보장반) | sparta(스파르타반) | twoweek(2주완성 — 같은 레벨의 앞 절반)  (20260916180000 · 20261005140000)
-  includes_levels int[] not null default '{}'   -- 스파르타가 함께 듣는 레벨 (예: {850}). 스파르타만 비어 있지 않다
+  program      text not null default 'score',   -- score(한 달 점수보장반) | sparta(스파르타반) | combo(합반 속성반 650+750, 20261124100000) | twoweek(2주완성 — 같은 레벨의 앞 절반)  (20260916180000 · 20261005140000)
+  includes_levels int[] not null default '{}'   -- 속성반이 함께 듣는 레벨 (예: {850}). 스파르타 · 합반만 비어 있지 않다
 );
 -- timetable_slots(level, program, season, start_time, end_time, ttf_recorded, year, month, book_set, subject_mwf, subject_ttf)
 --   — 랜딩 시간표 · 일괄 개설 시간대. **year·month 줄 = 그 달 시간표**(season null, 2026-09-29 — 20260929160000),

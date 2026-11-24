@@ -25,6 +25,7 @@
 
 import type { TRACK_LABEL } from "./utils";
 import { isContainerProgram, isTwoWeek } from "./two-week";
+import { isSpartaProgram } from "./timetable";
 
 export type ReplaySection = {
   id: number;
@@ -40,7 +41,7 @@ type PackageMap = Map<number, { parts: { id: number }[] }>;
 /** 트랙 정렬 순서 — 편성표와 같게 월수금이 먼저다 */
 const TRACK_ORDER: Record<string, number> = { mwf: 0, ttf: 1 };
 
-const isSparta = (s: ReplaySection) => s.course?.program === "sparta";
+const isSparta = (s: ReplaySection) => isSpartaProgram(s.course?.program);
 
 /** 그릇 반 = 점수보장반이 아닌 과정 (스파르타 · 2주완성, 2026-10-05) — 품은 시간 단위 반의 녹화본을 그대로 본다 */
 const isContainer = (s: ReplaySection) => isContainerProgram(s.course?.program);

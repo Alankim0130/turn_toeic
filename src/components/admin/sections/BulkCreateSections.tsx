@@ -10,6 +10,7 @@ import { cn, COURSE_TYPE_LABEL, TRACK_LABEL } from "@/lib/utils";
 import { blockMinutes, buildBlockTree, dashLabel, flattenBlockTree, minutesLabel, TRACKS, type BlockNode } from "@/lib/time-blocks";
 import { sectionKeyOf } from "./bulk";
 import { isContainerProgram, isTwoWeek } from "@/lib/two-week";
+import { isSpartaProgram, PROGRAM_LABEL } from "@/lib/timetable";
 
 /** 그 달 시간표 한 줄 — 과정 · 트랙별 과목은 시간표 설정에서 정한 값 (여기서는 보여 주기만 한다) */
 export type BulkSlot = { id: number; level: number; program: string; label: string; bookSet: string | null; subjectMwf: string | null; subjectTtf: string | null };
@@ -208,9 +209,9 @@ export function BulkCreateSections({
                     )}
                     {c.target_score && <span className="ml-1.5 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-black text-brand-700">{c.target_score}</span>}
                   </p>
-                  {c.program === "sparta" && (
+                  {isSpartaProgram(c.program) && (
                     <p className="mt-1 text-xs text-slate">
-                      스파르타반 · {[c.target_score, ...c.includes_levels].filter(Boolean).join(" + ")} 반을 함께 들어요. 이 반 학생에게는 같은 트랙·시간의 그 반들(시간 단위)이 함께 열립니다.
+                      {PROGRAM_LABEL[c.program as "sparta" | "combo"]} · {[c.target_score, ...c.includes_levels].filter(Boolean).join(" + ")} 반을 함께 들어요. 이 반 학생에게는 같은 트랙·시간의 그 반들(시간 단위)이 함께 열립니다.
                     </p>
                   )}
                   {/* 2주완성 (2026-10-05 Alan "850반 2주완성반이 있어 … 절반만 수업을 듣는거야. 개강일부터 시작") */}

@@ -20,7 +20,7 @@
 
 import { flipSet } from "./course-set";
 import { isSubject } from "./instructor-subject";
-import { SEASON_LABEL, seasonOfMonth, type Season } from "./timetable";
+import { isSpartaProgram, SEASON_LABEL, seasonOfMonth, type Season } from "./timetable";
 import { blockContains } from "./time-blocks";
 
 /* ─── 달 ─────────────────────────────────────────────────────────────────── */
@@ -166,7 +166,7 @@ export const slotMinutes = (r: { start_time: string; end_time: string }) => minu
 
 /** 같은 (레벨 · 과정) 줄들 안에서 이 줄의 종류 */
 export function kindOf(row: TimeRow, sameGroup: TimeRow[]): SlotKind {
-  if (row.program === "sparta") return "sparta";
+  if (isSpartaProgram(row.program)) return "sparta";
   if (row.program === "twoweek") return "twoweek";
   const label = slotLabelOf(row);
   if (sameGroup.some((o) => o.id !== row.id && blockContains(label, slotLabelOf(o)))) return "package";
