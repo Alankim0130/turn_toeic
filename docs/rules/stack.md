@@ -15,6 +15,11 @@
   (2026-09-19 에 `drop policy "verifications: 스태프 조회"` 를 쓸 뻔했는데, 그 이름은 이미 20260915045300 에서
   `"verifications: 본인·스태프 조회"` 로 합쳐져 사라진 뒤였다). **지금 살아 있는 이름은 마이그레이션을 파일 순서대로
   재생해 확인한다** — `src/lib/migrations.test.ts` 가 `npm test` 에서 그 재생을 자동으로 한다.
+  **★ 표의 검사 규칙(check)에서 실행 권한 없는 private 함수를 부르지 말 것** (2026-11-25 — 마이그레이션 20261125100000). 검사 규칙 안의 함수는 넣거나 고치는 사람의 권한으로 돌고,
+  private 스키마 새 함수는 기본으로 아무에게도(서버 service_role 도) 실행 권한이 없다. 20261105100000 이 class_sections 검사에 `private.time_block_start` 를 넣은 날부터
+  강사 · 관리자 · 서버의 반 넣기 · 고치기가 전부 `permission denied for function`(42501)로 실패했다 — 12월 반이 저절로 열리지 않았고 새 반 개설은 "권한이 없다".
+  배포는 성공으로 떴다(마이그레이션 재생은 슈퍼유저로 돌아 잡지 못한다). 같은 뜻을 함수 없이 적거나, 꼭 써야 하면 authenticated · service_role 에 실행 권한을 함께 준다 —
+  `src/lib/check-constraints.test.ts` 가 마이그레이션을 읽어 본다. 재생 DB 로 확인할 때는 **역할을 바꿔(`set local role service_role` · authenticated + jwt) 넣어 본다.**
   **★ 버전 번호(파일 이름 앞 14자리)가 겹치는 파일이 둘이면 뒤 것은 조용히 건너뛴다** (2026-10-01 실제로 겪었다 — 다른 세션이 같은 날
   `20261001130000_ybm_review_stats.sql` 을 올려 둔 것을 못 보고 같은 번호로 `youtube_stream_replay` 를 만들어 머지했더니, 배포는 성공으로
   뜨는데 표가 안 생겨 **반 상세 수업일 표가 빈 채로** 떴다. `20261001140000` 으로 바꿔 다시 머지했다). 파일을 만들기 전에
