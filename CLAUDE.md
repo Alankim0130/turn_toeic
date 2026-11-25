@@ -85,6 +85,7 @@
 - 마이그레이션 파일을 만들기 전 `ls supabase/migrations | tail` 로 마지막 번호를 보고 그보다 뒤 번호를 쓴다. **번호가 겹치면 뒤 파일은 조용히 건너뛴다.**
   **main 에 합친 뒤 push 하기 전에 `npx vitest run src/lib/migrations.test.ts`** 를 다시 돌린다.
 - **없는 정책을 `drop policy` 하면 배포가 통째로 실패한다** — 살아 있는 이름은 마이그레이션 재생(`migrations.test.ts`)으로 확인.
+- **표의 검사 규칙(check)에서 실행 권한 없는 private 함수를 부르지 말 것** — 넣는 사람 권한으로 돌아 쓰기가 전부 42501 로 막힌다 (`check-constraints.test.ts`).
 - 배포 전 확인: `npx tsc --noEmit && npx eslint src && npx vitest run && NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:1 npm run build`
   (이 환경에서 빌드는 Supabase 로 못 나가 멈추므로 닿지 않는 주소를 준다). OCR 을 건드렸으면 `npm run ocr:check`.
 - 이름이 바뀌는 칸 · 표는 **두 번에 나눠 배포**한다(넓히기 → 새 앱 확인 → 좁히기). 배포 사이 옛 앱이 몇 분 돈다.
